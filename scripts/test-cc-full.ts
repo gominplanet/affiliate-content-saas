@@ -55,13 +55,36 @@ check('the open-spots filter is what hides them (on by default)', /available_slo
 // ── Live spots after Smart-Scan ───────────────────────────────────────────────
 check('focus keyword first, else up to 3 distinct brands', JSON.stringify(liveSpotTerms('  dog ', ['A'])) === '["dog"]' && JSON.stringify(liveSpotTerms('', ['Alfa', 'alfa', null, 'Levoit', 'Dreame', 'Anker'])) === '["Alfa","Levoit","Dreame"]')
 const SS = read('components/campaigns/SmartScanPanel.tsx')
-check('Smart-Scan refreshes live spots for what it scanned and shows the outcome', /refreshLiveSpots\(terms\)/.test(SS) && /Live open spots updated for/.test(SS) && /Could not check live open spots on Amazon this time/.test(SS))
+check('Smart-Scan refreshes live spots for what it scanned and shows the outcome', /refreshLiveSpots\(terms\)/.test(SS) && /liveCheckWords\(liveSpots\)/.test(SS) && /Could not check live open spots on Amazon this time/.test(SS))
 const IL = read('app/api/campaigns/ingest-live/route.ts')
 check('ingest-live no longer writes the generated rep_asin or a missing updated_at', !/rep_asin:/.test(IL) && !/updated_at:/.test(IL))
 // 2026-10-07: a member scan writes only the live numbers it read (a field it
 // did not read is simply not sent, so the stored value stays), on campaigns
 // already in the catalogue; the rest are skipped and counted.
-check('a field Amazon left out keeps its value; rows that cannot be stored are skipped, counted', /if \(typeof v !== 'number' \|\| !Number\.isFinite\(v\) \|\| v < 0\) continue/.test(IL) && /skipped\+\+/.test(IL) && /return NextResponse\.json\(\{ ok: true, upserted, skipped, failed, nowFull, unknown, capped \}\)/.test(IL))
+check('a field Amazon left out keeps its value; rows that cannot be stored are skipped, counted', /if \(typeof v !== 'number' \|\| !Number\.isFinite\(v\) \|\| v < 0\) continue/.test(IL) && /skipped\+\+/.test(IL) && /return NextResponse\.json\(\{ ok: true, upserted, added, skipped, failed, nowFull, unknown, capped \}\)/.test(IL))
+// 2026-10-19 (Seb: "dreame" found 122 Dreamegg campaigns on Amazon and none
+// in MVP). The team's live search adds campaigns MVP does not have; a
+// member's still only refreshes numbers, and what it found but could not add
+// is counted and said, never folded into "nothing changed".
+check('only the team adds new campaigns, whole rows only', /const isTeam = intRow\?\.tier === 'admin'/.test(IL)
+  && /if \(!old && isTeam && r\.campaign_name && typeof r\.commission_pct === 'number' && r\.commission_pct > 0 && r\.ends_at\) \{ fresh\.push\(r\); continue \}/.test(IL)
+  && /if \(!old\) \{ unknown\+\+; continue \}/.test(IL))
+check('a live check sends every campaign Amazon returned, not only those with a spot count', /const found = r\.campaigns \|\| \[\]/.test(read('lib/cc-live-spots.ts')) && !/availableSlot != null\)/.test(read('lib/cc-live-spots.ts')))
+{
+  const { liveCheckWords } = require('../lib/cc-live-spots') as typeof import('../lib/cc-live-spots')
+  const base = { terms: ['dreame'], found: 122, saved: 0, added: 0, notInMvp: 122, nowFull: 0, failed: false }
+  check('Amazon having campaigns MVP lacks is said, with the count', /found 122\. 122 are new and not in MVP’s list yet/.test(liveCheckWords(base)))
+  check('the team adding them is said', /3 new to MVP added to the list for everyone/.test(liveCheckWords({ ...base, notInMvp: 0, added: 3 })))
+  check('none on Amazon is said as none', /Amazon has no open campaigns for it right now/.test(liveCheckWords({ ...base, found: 0, notInMvp: 0 })))
+}
+// The search page names the keyword its list was fetched for, drops a slower
+// answer that arrives after a newer one, and says when a search failed.
+{
+  const P = read('app/(dashboard)/cc-campaigns/page.tsx')
+  check('the headline names the list’s own keyword, not the box’s', /match\{totalMatching === 1 \? 'es' : ''\}\{resultsQ \? <> “\{resultsQ\}”<\/> : ''\}/.test(P) && /if \(!append\) setResultsQ\(q\.trim\(\)\)/.test(P))
+  check('an older answer never replaces a newer one', /const seq = append \? fetchSeq\.current : \+\+fetchSeq\.current/.test(P) && /if \(seq !== fetchSeq\.current\) return/.test(P))
+  check('a failed search is said where the list is', /setSearchError\(q\.trim\(\) \? `MVP could not search for “\$\{q\.trim\(\)\}”: \$\{why\}` : why\)/.test(P) && /The list below is still the one for/.test(P))
+}
 
 // ── Campaigns missing from Amazon's export are marked full, never deleted ─────
 {

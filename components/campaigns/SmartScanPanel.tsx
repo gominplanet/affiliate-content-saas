@@ -21,7 +21,7 @@ import { useState } from 'react'
 import { useEffect } from 'react'
 import { Sparkles, Loader2, ExternalLink, MessageCircle, ShoppingCart, Play, Star, Bookmark, BookmarkCheck, SlidersHorizontal } from 'lucide-react'
 import { requestCcSmartScan, requestProductSearch, type FinderProduct } from '@/lib/extension-frame'
-import { liveSpotTerms, refreshLiveSpots, type LiveSpotsResult } from '@/lib/cc-live-spots'
+import { liveSpotTerms, refreshLiveSpots, liveCheckWords, type LiveSpotsResult } from '@/lib/cc-live-spots'
 import {
   ONSITE_RULES, AMZ_MARKETPLACES, type AmzMarketplace,
   campaignRules, type CampaignRuleMode,
@@ -470,8 +470,8 @@ export default function SmartScanPanel({
         <div className="px-4 pb-3 text-[12px]" style={{ color: liveSpots !== 'checking' && liveSpots.failed && !liveSpots.saved ? '#d97706' : 'var(--text-faint)' }}>
           {liveSpots === 'checking'
             ? 'Checking live open spots on Amazon…'
-            : liveSpots.saved
-              ? `Live open spots updated for ${liveSpots.saved} campaign${liveSpots.saved === 1 ? '' : 's'} (${liveSpots.terms.join(', ')})${liveSpots.nowFull ? `, ${liveSpots.nowFull} now full and hidden for everyone` : ''}.`
+            : liveSpots.saved || liveSpots.added || liveSpots.notInMvp
+              ? liveCheckWords(liveSpots)
               : liveSpots.failed
                 ? 'Could not check live open spots on Amazon this time. The spot counts shown are from the last catalogue load.'
                 : `No live spot counts came back for ${liveSpots.terms.join(', ')}.`}

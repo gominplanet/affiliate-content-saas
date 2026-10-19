@@ -57,7 +57,15 @@ export async function POST(req: Request) {
       // ASIN goes first in asins rather than into rep_asin, which Postgres refuses.
       asins: c?.asin && /^[A-Z0-9]{10}$/i.test(String(c.asin)) && !asins.includes(String(c.asin).toUpperCase()) ? [String(c.asin).toUpperCase(), ...asins].slice(0, 60) : asins,
       commission_pct: num(c?.commissionPct),
-      ends_at: c?.endsAt ? String(c.endsAt) : null,
+      // A DATE, whatever shape Amazon sent it in (an ISO string or epoch
+      // milliseconds); anything unreadable is no date, so a new row without
+      // one is counted rather than refused by the database.
+      ends_at: (() => {
+        const v = c?.endsAt
+        if (v == null || v === '') return null
+        const t = typeof v === 'number' || /^\d{10,13}$/.test(String(v)) ? Number(v) * (String(v).length <= 10 ? 1000 : 1) : Date.parse(String(v))
+        return Number.isFinite(t) ? new Date(t).toISOString().slice(0, 10) : null
+      })(),
       budget: num(c?.budget),
       budget_remaining: num(c?.budgetRemaining),
       available_slot: num(c?.availableSlot),
@@ -104,10 +112,20 @@ export async function POST(req: Request) {
   let unknown = 0
   let capped = false
   const merged: Row[] = []
+  // THE TEAM'S LIVE SEARCH ADDS WHAT AMAZON HAS AND MVP DOES NOT (Seb,
+  // 2026-10-19: "dreame" found 122 Dreamegg campaigns on Amazon and none in
+  // MVP, because they started after the last weekly import). New campaigns
+  // come from the team, as the rule above says, and a team member's live
+  // search is the team adding them. A row needs a name, a commission and an
+  // end date to be stored; one without is counted, never half written.
+  const isTeam = intRow?.tier === 'admin'
+  const fresh: Row[] = []
+  let added = 0
   let skipped = 0
   let nowFull = 0
   for (const r of incoming) {
     const old = existing.get(r.campaign_id)
+    if (!old && isTeam && r.campaign_name && typeof r.commission_pct === 'number' && r.commission_pct > 0 && r.ends_at) { fresh.push(r); continue }
     if (!old) { unknown++; continue }
     const m: Row = { campaign_id: r.campaign_id }
     for (const k of LIVE_FIELDS) {
@@ -150,5 +168,15 @@ export async function POST(req: Request) {
     } catch { failed += chunk.length }
   }
 
-  return NextResponse.json({ ok: true, upserted, skipped, failed, nowFull, unknown, capped })
+  // The team's new campaigns, whole rows, signed like every live change.
+  for (let i = 0; i < fresh.length; i += 500) {
+    const chunk = fresh.slice(i, i + 500).map((m) => (audited ? { ...m, last_live_by: user.id, last_live_at: stamp } : m))
+    try {
+      const { error } = await sb.from('cc_campaign_catalog').upsert(chunk, { onConflict: 'campaign_id', ignoreDuplicates: true })
+      if (!error) added += chunk.length
+      else { failed += chunk.length; console.warn('[ingest-live] new campaigns not added:', error.message) }
+    } catch { failed += chunk.length }
+  }
+
+  return NextResponse.json({ ok: true, upserted, added, skipped, failed, nowFull, unknown, capped })
 }

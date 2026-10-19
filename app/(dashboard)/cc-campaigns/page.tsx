@@ -31,7 +31,7 @@ import FavoriteBrandsPanel from '@/components/campaigns/FavoriteBrandsPanel'
 import OutreachProfileModal from '@/components/collaborations/OutreachProfileModal'
 import SmartScanPanel from '@/components/campaigns/SmartScanPanel'
 import { ccProofIds } from '@/lib/cc-access'
-import { refreshLiveSpots, liveSpotTerms, type LiveSpotsResult } from '@/lib/cc-live-spots'
+import { refreshLiveSpots, liveSpotTerms, liveCheckWords, type LiveSpotsResult } from '@/lib/cc-live-spots'
 import { brandsToRecheck, spotAgeWords } from '@/lib/cc-spot-freshness'
 
 // Max campaigns selectable for one bulk-message run.
@@ -393,6 +393,17 @@ export default function CcCampaignsPage() {
   // it were the catalogue, so a search of 893,644 live campaigns read as "219
   // live campaigns". null = the server could not tell, which prints nothing.
   const [totalMatching, setTotalMatching] = useState<number | null>(null)
+  // THE KEYWORD THE LIST ON SCREEN WAS FETCHED FOR, which is not always the one
+  // in the box (Seb, 2026-10-19). The headline read "170,242 live campaigns
+  // match “dreame”" over a list that was never searched for it: the search for
+  // "dreame" had not answered, or failed, and the old list stayed under the new
+  // word. The headline now names the list's own keyword, and a search that
+  // failed says so where the list is.
+  const [resultsQ, setResultsQ] = useState('')
+  const [searchError, setSearchError] = useState<string | null>(null)
+  // Only the newest search may fill the list: an older, slower answer that
+  // arrives after it is dropped.
+  const fetchSeq = useRef(0)
   // Whether that figure is counted or guessed. A planner estimate printed as
   // fact is what showed "446,338 live campaigns" against a real 893,644.
   const [totalIsExact, setTotalIsExact] = useState(false)
@@ -657,13 +668,22 @@ export default function CcCampaignsPage() {
 
   const fetchPage = useCallback(async (page: number, append: boolean) => {
     if (append) setLoadingMore(true); else setLoading(true)
+    const seq = append ? fetchSeq.current : ++fetchSeq.current
     try {
       const p = new URLSearchParams({ page: String(page), sort, ...(q ? { q } : {}), ...(minCommission ? { minCommission: String(minCommission) } : {}), ...(payingOnly ? { payingOnly: '1' } : {}), ...(hasSpots && !joinedOnly ? { hasSpots: '1' } : {}), ...(joinedOnly ? { joinedOnly: '1' } : { ...(hideJoined ? { hideJoined: '1' } : {}), ...(hidePosted ? { hidePosted: '1' } : {}) }) })
       const res = await fetch(`/api/cc/campaigns?${p.toString()}`, { cache: 'no-store' })
       const j = await res.json().catch(() => ({}))
+      if (seq !== fetchSeq.current) return
       if (res.status === 403 && j?.needsCcVerify) { setLocked(true); if (!append) setCampaigns([]); return }
-      if (!res.ok || !j.ok) { toast.error(j?.error || 'Failed to load campaigns'); return }
+      if (!res.ok || !j.ok) {
+        const why = j?.error || 'Failed to load campaigns'
+        if (!append) setSearchError(q.trim() ? `MVP could not search for “${q.trim()}”: ${why}` : why)
+        toast.error(why)
+        return
+      }
       setLocked(false)
+      setSearchError(null)
+      if (!append) setResultsQ(q.trim())
       setCampaigns((prev) => append ? [...prev, ...j.campaigns] : j.campaigns)
       if (!append) setSpotsMissing(j.spotsMissing === true)
       setNextPage(j.nextPage)
@@ -678,7 +698,9 @@ export default function CcCampaignsPage() {
         setTotalIsExact(false)
       }
       setWindowCapped(!!j.windowCapped)
-    } finally { setLoadingMore(false); setLoading(false) }
+    } catch (e) {
+      if (seq === fetchSeq.current && !append) setSearchError(`MVP could not search${q.trim() ? ` for “${q.trim()}”` : ''}: ${e instanceof Error ? e.message : 'no answer'}`)
+    } finally { if (seq === fetchSeq.current) { setLoadingMore(false); setLoading(false) } }
   }, [sort, q, minCommission, payingOnly, hasSpots, hideJoined, hidePosted, joinedOnly])
 
   // Map a SCOUT joined campaign (from Amazon's real active list) onto the card
@@ -812,7 +834,7 @@ export default function CcCampaignsPage() {
     void refreshLiveSpots(terms).then((r) => {
       setLiveCheck({ state: 'done', r })
       // Reload so a campaign found full leaves the list now, not next visit.
-      if (r.saved > 0) void fetchPage(1, false)
+      if (r.saved > 0 || r.added > 0) void fetchPage(1, false)
     }).catch(() => setLiveCheck(null)).finally(() => { liveBusy.current = false })
   }, [joinedOnly, locked, loading, campaigns, q, sort, minCommission, payingOnly, hasSpots, fetchPage])
 
@@ -1114,11 +1136,18 @@ export default function CcCampaignsPage() {
             <p className="text-[11.5px] mb-2" style={{ color: liveCheck.state === 'done' && liveCheck.r.failed && !liveCheck.r.saved ? '#c2410c' : 'var(--text-3)' }}>
               {liveCheck.state === 'checking'
                 ? `Checking open spots live on Amazon for ${liveCheck.terms.join(', ')}…`
-                : liveCheck.r.failed && !liveCheck.r.saved
+                : liveCheck.r.failed && !liveCheck.r.found
                   ? 'Could not check spots live (SCOUT is not connected, or Amazon did not answer). Each card says how old its count is.'
-                  : liveCheck.r.saved
-                    ? `Checked ${liveCheck.r.terms.join(', ')} live on Amazon: ${liveCheck.r.saved.toLocaleString()} campaign${liveCheck.r.saved === 1 ? '' : 's'} updated${liveCheck.r.nowFull ? `, ${liveCheck.r.nowFull.toLocaleString()} turned out full and are now hidden` : ''}.`
-                    : `Checked ${liveCheck.r.terms.join(', ')} live on Amazon: nothing changed.`}
+                  : liveCheckWords(liveCheck.r)}
+            </p>
+          )}
+          {/* A SEARCH THAT FAILED, or has not answered yet, says so above the
+              list it did not replace, so the old list never passes for it. */}
+          {!joinedOnly && (searchError || (loading && q.trim() !== resultsQ)) && (
+            <p className="text-xs mb-2" style={{ color: searchError ? '#d97706' : 'var(--text-3)' }}>
+              {searchError
+                ? `${searchError} The list below is still the one for ${resultsQ ? `“${resultsQ}”` : 'all campaigns'}.`
+                : `Searching for ${q.trim() ? `“${q.trim()}”` : 'all campaigns'}…`}
             </p>
           )}
           <div className="flex items-center justify-between gap-3 flex-wrap mb-3">
@@ -1130,7 +1159,7 @@ export default function CcCampaignsPage() {
                   // `total` is the ranked, de-duplicated slice this request can
                   // page through, and printing THAT as "live campaigns" is what
                   // made 893,644 live campaigns read as 219.
-                  ? <>{totalIsExact ? '' : 'About '}<b style={{ color: 'var(--text-2)' }}>{totalMatching.toLocaleString()}</b> live campaign{totalMatching === 1 ? '' : 's'} match{totalMatching === 1 ? 'es' : ''}{q.trim() ? <> “{q.trim()}”</> : ''}
+                  ? <>{totalIsExact ? '' : 'About '}<b style={{ color: 'var(--text-2)' }}>{totalMatching.toLocaleString()}</b> live campaign{totalMatching === 1 ? '' : 's'} match{totalMatching === 1 ? 'es' : ''}{resultsQ ? <> “{resultsQ}”</> : ''}
                       {windowCapped
                         ? <span> · ranking the best {total.toLocaleString()}, add filters to narrow it</span>
                         : <span> · {total.toLocaleString()} after grouping duplicates</span>}
