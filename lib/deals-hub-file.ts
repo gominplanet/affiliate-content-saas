@@ -403,4 +403,9 @@ export const BRAND_REPEAT_PENALTY = 25
 
 /** How many deal posts one batch may write: picked, not mass imported (the
  *  June importer's posts were rarely looked at again). */
+/** Where a member downloads the Deals Hub file: Amazon Associates' Deals Hub
+ *  (Seb, 2026-10-19: "we also need to have the link for deals hub so people
+ *  can go and download it"). */
+export const AMAZON_DEALS_HUB_URL = 'https://affiliate-program.amazon.com/deals-hub'
+
 export const MAX_PER_BATCH = 20

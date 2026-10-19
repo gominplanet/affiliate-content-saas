@@ -19,9 +19,9 @@
 // for each picked deal the time it was scheduled for, or why it was not.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { FileUp, Loader2, X, Check, AlertTriangle, CalendarClock, Share2, FileText } from 'lucide-react'
+import { FileUp, Loader2, X, Check, AlertTriangle, CalendarClock, Share2, FileText, ExternalLink } from 'lucide-react'
 import {
-  CsvStream, mapColumns, readDeal, DealPool, filterDeals, MAX_PER_BATCH, FIELD_WORDS,
+  CsvStream, mapColumns, readDeal, DealPool, filterDeals, MAX_PER_BATCH, FIELD_WORDS, AMAZON_DEALS_HUB_URL,
   type ColumnMap, type HubDeal, type HubFilter, type HubSort,
 } from '@/lib/deals-hub-file'
 import { HUB_INTERVALS, HUB_MAX_BATCH } from '@/lib/deals-hub-socials'
@@ -271,15 +271,22 @@ export default function DealsHubImport({ onPosted, pinterestEnabled = false, ins
         <div className="min-w-0">
           <h2 className="text-sm font-semibold" style={{ color: 'var(--text)' }}>Import your Deals Hub file</h2>
           <p className="text-[13px] mt-1 max-w-2xl leading-relaxed" style={soft}>
-            Download the deals list from the Deals Hub in your Amazon Associates account, then open it here.
+            Download the deals list from the{' '}
+            <a href={AMAZON_DEALS_HUB_URL} target="_blank" rel="noopener noreferrer" className="underline font-medium" style={{ color: PURPLE }}>Deals Hub in your Amazon Associates account</a>, then open it here.
             It is read on this computer and never uploaded, however big it is. Pick the deals you want and MVP posts each one to your socials when its deal starts on Amazon, never before.
           </p>
         </div>
         {phase !== 'reading' && (
+          <div className="flex items-center gap-2 flex-wrap">
+          <a href={AMAZON_DEALS_HUB_URL} target="_blank" rel="noopener noreferrer"
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-[13px] font-semibold border" style={{ borderColor: PURPLE, color: PURPLE }}>
+            <ExternalLink size={14} /> Get the file from Amazon&rsquo;s Deals Hub
+          </a>
           <button type="button" onClick={() => inputRef.current?.click()} disabled={running}
             className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-[13px] font-semibold text-white disabled:opacity-60" style={{ background: PURPLE }}>
             <FileUp size={14} /> {phase === 'idle' ? 'Open the file' : 'Open another file'}
           </button>
+          </div>
         )}
         <input ref={inputRef} type="file" accept=".csv,.tsv,.txt,text/csv" className="hidden"
           onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) void readFile(f) }} />

@@ -36,7 +36,7 @@ import { activeKeys, activeRows, activeBy, rankActive, categoryCounts, latestTie
 import { GALLERY_KEY, readCardsBody, readAdCard, mergeGallery, type Gallery, type MetaAd } from '@/lib/trybe-adsgallery'
 import { HOOK_FIX_SYSTEM, checkHook } from '@/lib/trybe-hook'
 import {
-  cleanScript, toTranscribe, coverageWords, bestRank, whyNoWords, noWordsSentence, pickExamples, examplesBlock, type TopScript,
+  cleanScript, toTranscribe, coverageWords, openingOf, bestRank, whyNoWords, noWordsSentence, pickExamples, examplesBlock, type TopScript,
 } from '@/lib/trybe-scripts'
 import { briefFetchUrl, briefFromBody } from '@/lib/trybe-brand-page'
 import { assertPublicHttpUrl } from '@/lib/ssrf-guard'
@@ -1978,6 +1978,34 @@ export async function POST(request: Request) {
     // and a thin board that reads as a complete one sends a creator to copy
     // the wrong thing.
     return NextResponse.json({ ok: true, videos: rows, coverage: coverageWords(rows) })
+  }
+
+  if (action === 'top_lines') {
+    // WHAT'S WORKING, FROM THE SHARED COPY (Seb, 2026-10-19: "this takes too
+    // long and i'm not sure i get the value"). Each member's SCOUT asked TRYBE
+    // for 40 scripts one at a time, a minute or more, and TRYBE has words for
+    // few of them. The team's copy holds them (85 ready that evening, against
+    // 4 of 25 from TRYBE), so the opening lines of the Top 100 entries asked
+    // about come from here in one answer, with how many it had words for.
+    const ids = (Array.isArray(body.ids) ? body.ids : []).map(String).filter((id: string) => /^[A-Za-z0-9_-]{4,80}$/.test(id)).slice(0, 120)
+    if (!ids.length) return NextResponse.json({ ok: true, lines: {}, ready: 0, none: 0, waiting: 0, asked: 0 })
+    const { data, error } = await admin.from('trybe_top_scripts').select('submission_id,hook,script,state').in('submission_id', ids)
+    if (error) {
+      if (scriptsMissing(error.message)) return NextResponse.json({ error: setupWords(tier, SCRIPTS_SQL), needsMigration: true }, { status: 409 })
+      return NextResponse.json({ error: error.message }, { status: 500 })
+    }
+    const rows = (data ?? []) as Array<Pick<TopScript, 'submission_id' | 'hook' | 'script' | 'state'>>
+    const lines: Record<string, string> = {}
+    for (const r of rows) {
+      const line = r.state === 'ready' ? (r.hook || openingOf(r.script)) : null
+      if (line) lines[r.submission_id] = line
+    }
+    return NextResponse.json({
+      ok: true, lines, asked: ids.length,
+      ready: Object.keys(lines).length,
+      none: rows.filter((r) => r.state === 'none').length,
+      waiting: rows.filter((r) => r.state === 'waiting').length,
+    })
   }
 
   if (action === 'top_scripts_seen') {

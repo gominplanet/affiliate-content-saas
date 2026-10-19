@@ -139,6 +139,11 @@ check('a brand with ads whose cards were not read keeps its earlier ads', /if \(
 const working = read('components/labs/TrybeWorking.tsx')
 check('What’s working has one Category pick that narrows the tab', /aria-label="Category"/.test(working) && /const entries = useMemo\(\(\) => \(data\?\.entries \|\| \[\]\)\.filter\(\(e\) => !cat/.test(working) && /hookCounts\(lineList\)/.test(working) && /topCreators\(entries\)/.test(working))
 check('Top creators and the ads gallery are on the tab, the gallery even without SCOUT', /Top creators in TRYBE&rsquo;s Top 100/.test(working) && (working.match(/\{gallery\}/g) || []).length >= 3)
+// Seb, 2026-10-19: "this takes too long and i'm not sure i get the value".
+// The words come from the shared copy in one answer, not 40 SCOUT reads.
+const trybeRoute = read('app/api/labs/trybe/route.ts')
+check('What’s working reads the Top 100 words from MVP’s shared copy in one answer', /action: 'top_lines', ids/.test(working) && !/submissions\/\$\{encodeURIComponent\(todo\[i\]\.id/.test(working) && /if \(action === 'top_lines'\)/.test(trybeRoute) && /from\('trybe_top_scripts'\)\.select\('submission_id,hook,script,state'\)\.in\('submission_id', ids\)/.test(trybeRoute))
+check('it says how many had words and how many are still being transcribed', /openings MVP has the words for/.test(working) && /more are being transcribed/.test(working))
 const galleryUi = read('components/labs/TrybeAdsGallery.tsx')
 check('the gallery says who reads it and when nothing was copied', /only an admin’s read adds to them|only an admin's read adds/.test(galleryUi) && /No ads copied yet/.test(galleryUi) && /SCOUT_META_CARDS_MIN_VERSION/.test(galleryUi))
 

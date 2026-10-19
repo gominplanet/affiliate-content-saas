@@ -11,11 +11,18 @@
 // Working and Creators): one category narrows the whole tab, the top creators
 // behind the Top 100 (lib/trybe-creators), and the ads TRYBE brands run on
 // Meta (components/labs/TrybeAdsGallery).
+//
+// THE WORDS COME FROM THE SHARED COPY (Seb, 2026-10-19: "this takes too long
+// and i'm not sure i get the value for users"). Each visit asked TRYBE,
+// through SCOUT, for the words of 40 videos one at a time, a minute or more,
+// and TRYBE has words for few (4 of 25). The team's copy (trybe_top_scripts,
+// transcribed where TRYBE has none) had 85 that evening, so they are read
+// from MVP in one answer, and the tab says how many of the 100 had words.
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Loader2, AlertTriangle, RotateCcw, Play, Users } from 'lucide-react'
 import { requestTrybeApi } from '@/lib/extension-frame'
-import { readScript, keysOf } from '@/lib/trybe-mybrands'
+import { keysOf } from '@/lib/trybe-mybrands'
 import { readTopEntries, openingLine, hookType, hookCounts, middleHalf, HOOK_TYPES, type TopVideoEntry, type HookType } from '@/lib/trybe-working'
 import { topCreators } from '@/lib/trybe-creators'
 import { BrandMark } from '@/components/labs/TrybeFinderControls'
@@ -23,11 +30,9 @@ import TrybeAdsGallery from '@/components/labs/TrybeAdsGallery'
 
 const PURPLE = '#7C3AED'
 const AMBER = '#B45309'
-/** Videos whose words are read, one at a time through SCOUT. */
-const WORDS_FOR = 40
-const CACHE_KEY = 'mvp.trybe.working'
+const CACHE_KEY = 'mvp.trybe.working.v2'
 
-interface Read { at: number; entries: TopVideoEntry[]; lines: Record<string, string>; tried: number; keys: string }
+interface Read { at: number; entries: TopVideoEntry[]; lines: Record<string, string>; tried: number; keys: string; waiting: number }
 
 function cached(): Read | null {
   try {
@@ -65,16 +70,14 @@ export default function TrybeWorking({ canRead, isAdmin, newToTop, scoutVersion 
       if (!r.ok) { setError(`MVP could not read TRYBE's Top 100: ${r.error === 'not-allowed' ? 'this needs SCOUT 1.46.0 or newer.' : r.error || 'SCOUT did not answer.'}${r.status ? ` (TRYBE answered ${r.status})` : ''}`); return }
       const entries = readTopEntries(r.json)
       if (!entries.length) { setError(`TRYBE answered, but MVP could not read the Top 100 from it.${isAdmin ? ` (TRYBE sent: ${keysOf(r.json)})` : ''}`); return }
+      const ids = entries.map((e) => e.id).filter(Boolean) as string[]
+      setProgress({ done: 0, of: ids.length })
+      const res = await fetch('/api/labs/trybe', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'top_lines', ids }), signal: AbortSignal.timeout(30_000) })
+      const d = await res.json().catch(() => ({})) as { lines?: Record<string, string>; asked?: number; waiting?: number; error?: string }
+      if (!res.ok) { setError(`MVP could not read the words of the Top 100: ${d.error || `HTTP ${res.status}`}`); return }
       const lines: Record<string, string> = {}
-      const todo = entries.filter((e) => e.id).slice(0, WORDS_FOR)
-      setProgress({ done: 0, of: todo.length })
-      for (let i = 0; i < todo.length; i++) {
-        const s = await requestTrybeApi('GET', `/backend/api/creator/v2/submissions/${encodeURIComponent(todo[i].id as string)}/script`).catch(() => null)
-        const words = s && s.ok ? readScript(s.json) : null
-        if (words) lines[todo[i].id as string] = openingLine(words)
-        setProgress({ done: i + 1, of: todo.length })
-      }
-      const read: Read = { at: Date.now(), entries, lines, tried: todo.length, keys: keysOf(r.json) }
+      for (const [id, words] of Object.entries(d.lines || {})) { const line = openingLine(words); if (line) lines[id] = line }
+      const read: Read = { at: Date.now(), entries, lines, tried: d.asked ?? ids.length, keys: keysOf(r.json), waiting: d.waiting ?? 0 }
       setData(read)
       try { sessionStorage.setItem(CACHE_KEY, JSON.stringify(read)) } catch { /* read again next visit */ }
     } catch (e) { setError(e instanceof Error ? e.message : 'MVP could not read the Top 100.') }
@@ -146,7 +149,7 @@ export default function TrybeWorking({ canRead, isAdmin, newToTop, scoutVersion 
     )
   }
   if (!data) {
-    return <p className="text-[13px] inline-flex items-center gap-1.5" style={soft}><Loader2 size={13} className="animate-spin" /> {progress && progress.of ? `Reading the words of TRYBE's top videos: ${progress.done} of ${progress.of}` : 'Reading TRYBE’s Top 100 through SCOUT...'}</p>
+    return <p className="text-[13px] inline-flex items-center gap-1.5" style={soft}><Loader2 size={13} className="animate-spin" /> {progress && progress.of ? `Reading the words of TRYBE's top ${progress.of} videos` : 'Reading TRYBE’s Top 100 through SCOUT...'}</p>
   }
 
   return (
@@ -177,7 +180,7 @@ export default function TrybeWorking({ canRead, isAdmin, newToTop, scoutVersion 
         <Glance color={HOOK_TYPES.find((h) => h.type === top?.type)?.color || PURPLE} label="Most common opening"
           big={top && top.n ? `${Math.round(top.share * 100)}%` : 'Not read'}
           title={top && top.n ? HOOK_TYPES.find((h) => h.type === top.type)?.label || '' : ''}
-          sub={top && top.n ? `${top.n} of ${top.of} openings MVP could read` : `TRYBE shared the words of none of the ${data.tried} videos MVP asked about.`} />
+          sub={top && top.n ? `${top.n} of ${top.of} openings MVP has the words for${data.waiting ? `; ${data.waiting} more are being transcribed` : ''}` : `MVP has the words of none of the ${data.tried} videos yet${data.waiting ? `; ${data.waiting} are being transcribed` : ''}.`} />
         <Glance color="#0E7490" label="Typical length" big={lengths ? `${lengths.low} to ${lengths.high}s` : 'Not shared'}
           title={lengths ? 'Where the middle half lands' : ''} sub={lengths ? `${lengths.n} Top 100 videos with a length` : 'TRYBE did not send video lengths with its Top 100.'} />
         <Glance color="#16A34A" label="New to the Top 100" big={newToTop ? `${newToTop.length} brand${newToTop.length === 1 ? '' : 's'}` : 'Not counted'}
@@ -312,7 +315,7 @@ export default function TrybeWorking({ canRead, isAdmin, newToTop, scoutVersion 
 
       {gallery}
 
-      {isAdmin && <p className="text-[11px]" style={soft}>Admin: TRYBE&rsquo;s Top 100 answer had {data.keys}. Words read for {Object.keys(data.lines).length} of {data.tried} videos asked.</p>}
+      {isAdmin && <p className="text-[11px]" style={soft}>Admin: TRYBE&rsquo;s Top 100 answer had {data.keys}. Words from MVP&rsquo;s shared copy for {Object.keys(data.lines).length} of {data.tried} videos{data.waiting ? `, ${data.waiting} waiting to be transcribed` : ''}.</p>}
     </div>
   )
 }
