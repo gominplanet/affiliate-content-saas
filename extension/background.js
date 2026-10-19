@@ -15541,6 +15541,11 @@ const TRYBE_SENT_PATH = '/backend/api/discovery/creators/me/sent-requests'
 function trybeBrandIdOf(url) {
   try { const id = new URL(url).searchParams.get('brand') || ''; return /^[A-Za-z0-9-]{6,80}$/.test(id) ? id : null } catch (e) { return null }
 }
+// 1.53.4: the brand's program as MVP read it from TRYBE's own brand list (a
+// brand's details are refused, 403, until the creator has joined it).
+function trybeProgramIdOf(url) {
+  try { const id = new URL(url).searchParams.get('program') || ''; return /^[A-Za-z0-9-]{6,80}$/.test(id) ? id : null } catch (e) { return null }
+}
 /** True when TRYBE's sent list holds this brand. */
 function trybeSentHas(json, brandId) {
   try { return JSON.stringify(json == null ? '' : json).includes('"' + brandId + '"') } catch (e) { return false }
@@ -15585,8 +15590,11 @@ async function trybeSend({ url, name, message }) {
     if (before.error === 'trybe-not-open') return { outcome: 'failed', error: 'trybe-not-open', steps: [] }
     if (before.status === 401) return { outcome: 'failed', error: 'not-signed-in', steps: ['sent list'] }
     if (before.ok && trybeSentHas(before.json, brandId)) return { outcome: 'already', steps: ['sent list', 'already asked'] }
-    const details = await trybeApi({ method: 'GET', path: `/backend/api/creator/v2/brands/${encodeURIComponent(brandId)}/details` })
-    const program = details.ok ? trybeProgramOf(details.json) : null
+    // The program from MVP's copy of TRYBE's list first; else the brand's own
+    // details, which TRYBE gives for a brand the creator has joined.
+    const listed = trybeProgramIdOf(safe)
+    const details = listed ? null : await trybeApi({ method: 'GET', path: `/backend/api/creator/v2/brands/${encodeURIComponent(brandId)}/details` })
+    const program = listed ? { id: listed, name: "the one in TRYBE's brand list" } : details.ok ? trybeProgramOf(details.json) : null
     const steps = [program ? `program: ${program.name}` : details.ok ? 'no program listed' : `programs not read (${details.status || details.error || 'no answer'})`]
     asked = true
     const r = await trybeApi({ method: 'POST', path: TRYBE_JOIN_PATH, body: program ? { brandId, programId: program.id, message: String(message) } : { brandId, message: String(message) } })

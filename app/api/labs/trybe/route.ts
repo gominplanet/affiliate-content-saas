@@ -54,7 +54,7 @@ import { getWorkedWithBrands } from '@/lib/creator-brands'
 import { brandKey } from '@/lib/brand-normalize'
 const brandKeyOf = (n: string | null | undefined) => brandKey(n)
 import { researchBrandSite } from '@/lib/trybe-research'
-import { mergeDirectory, directorySearchText, nicheScore, readCategories, siteSearchText } from '@/lib/trybe-directory'
+import { mergeDirectory, directorySearchText, nicheScore, readCategories, siteSearchText, programOf } from '@/lib/trybe-directory'
 import {
   clampCap, countsTowardCap, sanitizeScanned, sendUrl, tidyDraft,
   DRAFT_SYSTEM, draftUserPrompt, DEFAULT_DAILY_CAP, type ScannedBrand,
@@ -2211,7 +2211,13 @@ export async function POST(request: Request) {
         .eq('user_id', ownerId).eq('brand_id', brandId).eq('status', 'sending')
       return NextResponse.json({ ok: false, capped: true, usedToday: after - 1, dailyCap: settings.dailyCap, nextFreeAt: await nextFree(admin, ownerId, settings.dailyCap) })
     }
-    return NextResponse.json({ ok: true, usedToday: used + 1, dailyCap: settings.dailyCap, nextFreeAt: used + 1 >= settings.dailyCap ? await nextFree(admin, ownerId, settings.dailyCap) : null, name: row.name, message: row.draft, url: sendUrl(row.brand_id, row.brand_url) })
+    // THE BRAND'S PROGRAM goes with the request (SCOUT 1.53.4; TRYBE answered
+    // "programId is required"), from the entry MVP kept from TRYBE's list.
+    // Not found is not a stop: SCOUT tries the brand's own details, and a
+    // refusal comes back in TRYBE's words.
+    const { data: dir } = await admin.from('trybe_directory').select('raw').eq('brand_id', row.brand_id).maybeSingle()
+    const programId = programOf((dir as { raw?: unknown } | null)?.raw ?? null)
+    return NextResponse.json({ ok: true, usedToday: used + 1, dailyCap: settings.dailyCap, nextFreeAt: used + 1 >= settings.dailyCap ? await nextFree(admin, ownerId, settings.dailyCap) : null, name: row.name, message: row.draft, url: sendUrl(row.brand_id, row.brand_url, programId) })
   }
 
   if (action === 'result') {

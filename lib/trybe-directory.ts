@@ -117,6 +117,34 @@ export function readDirectoryItem(raw: unknown): DirectoryBrand | null {
   }
 }
 
+// THE PROGRAM A REQUEST NAMES (SCOUT 1.53.4; Seb's test, 2026-10-19: TRYBE
+// answered "400: programId is required", and a brand's details are refused
+// (403) until the creator has joined it). TRYBE lists a brand once per offer,
+// so the entry MVP kept from TRYBE's list names its program itself, or lists
+// the brand's programs. An old-style "legacy:" program is no program.
+const PROGRAM_ID = /^[A-Za-z0-9-]{6,80}$/
+const idOf = (v: unknown): string | null => {
+  if (typeof v === 'string' && PROGRAM_ID.test(v)) return v
+  if (isObj(v)) return idOf(v.programId ?? v.program_id ?? v.id)
+  return null
+}
+/** The program a request to join this brand sends, from the entry MVP kept
+ *  from TRYBE's list. Null when it names none. Pure. */
+export function programOf(raw: unknown): string | null {
+  if (!isObj(raw)) return null
+  const direct = idOf(raw.programId) ?? idOf(raw.program_id) ?? idOf(raw.program) ?? idOf(raw.defaultProgramId) ?? idOf(raw.offerProgramId)
+  if (direct) return direct
+  const brandObj = isObj(raw.brand) ? raw.brand : null
+  const list = [raw.programs, brandObj?.programs, raw.offers].find(Array.isArray) as unknown[] | undefined
+  const all = (list || []).filter(isObj)
+  const main = all.find((p) => p.isDefault === true || p.default === true || p.isPrimary === true || p.primary === true)
+  for (const p of main ? [main, ...all] : all) {
+    const id = idOf(p.programId ?? p.program_id ?? p.program ?? p.id)
+    if (id) return id
+  }
+  return null
+}
+
 /** A page's entries, one per brand (TRYBE may list a brand more than once,
  *  one entry per offer): the first entry wins, gaps filled from later ones. */
 export function mergeDirectory(items: unknown[]): DirectoryBrand[] {

@@ -271,7 +271,10 @@ export function sanitizeScanned(raw: unknown): ScannedBrand | null {
 
 /** The send address for a brand: its own discover link when SCOUT saw one,
  *  else the discover page with the brand id (SCOUT finds it by name there). */
-export function sendUrl(brandId: string, brandUrl: string | null): string {
+export function sendUrl(brandId: string, brandUrl: string | null, programId?: string | null): string {
+  // With the brand's program (SCOUT 1.53.4 sends it with the request), the
+  // link is always built from the brand id, so both are in it.
+  if (programId) return `https://jointrybe.com/creator/discover?brand=${encodeURIComponent(brandId)}&program=${encodeURIComponent(programId)}`
   if (brandUrl) return brandUrl
   return `https://jointrybe.com/creator/discover?brand=${encodeURIComponent(brandId)}`
 }

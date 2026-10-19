@@ -11,7 +11,7 @@ import { clampCap, countsTowardCap, nextGapMs, sanitizeScanned, tidyDraft, sendU
 import { pageSummary, normalizeSite } from '../lib/trybe-research'
 import { inboxSnapshot, freshUnread, whoWrote, checkedAgo, TRYBE_ALERT_FRESH_MS } from '../lib/trybe-alerts'
 import { readDiscoveryPage, requestState, acceptRate } from '../lib/trybe-invites'
-import { readDirectoryItem, mergeDirectory, nicheScore, readCategories } from '../lib/trybe-directory'
+import { readDirectoryItem, mergeDirectory, nicheScore, readCategories, programOf } from '../lib/trybe-directory'
 import { seenCovers } from '../lib/trybe-read'
 
 const failures: string[] = []
@@ -298,19 +298,20 @@ const sendRun = (async () => {
   const src = BG.slice(BG.indexOf("const TRYBE_JOIN_PATH = "), BG.indexOf('\n}\n', BG.indexOf('async function trybeSend(')) + 2)
   type Ans = { ok?: boolean; status?: number; json?: unknown; error?: string; text?: string | null }
   const oneProgram = { ok: true, status: 200, json: { data: { programs: [{ programId: 'prog-123456', programName: 'UGC Program' }] } } }
-  const run = async (answers: { before: Ans; post?: Ans; after?: Ans; details?: Ans }) => {
+  const run = async (answers: { before: Ans; post?: Ans; after?: Ans; details?: Ans }, url = 'https://jointrybe.com/creator/discover?brand=brand-123456') => {
     const posts: unknown[] = []
     let gets = 0
+    let detailReads = 0
     const trybeApi = async (r: { method: string; path: string; body?: unknown }) => {
       if (r.method === 'POST') { posts.push(r.body); return answers.post || { ok: true, status: 200, json: {} } }
-      if (r.path === '/backend/api/creator/v2/brands/brand-123456/details') return answers.details || oneProgram
+      if (r.path === '/backend/api/creator/v2/brands/brand-123456/details') { detailReads++; return answers.details || oneProgram }
       gets++
       return gets === 1 ? answers.before : (answers.after || { ok: true, status: 200, json: { data: [] } })
     }
     const f = new Function('trybeApi', 'hasTrybeAccess', 'trybeSafeUrl', 'startKeepAlive', 'stopKeepAlive', '_sleep', `${src}; return trybeSend`)(
       trybeApi, async () => true, (u: string) => u, () => null, () => {}, async () => {})
-    const res = await f({ url: 'https://jointrybe.com/creator/discover?brand=brand-123456', name: 'Acme', message: 'Hello' })
-    return { res, posts }
+    const res = await f({ url, name: 'Acme', message: 'Hello' })
+    return { res, posts, detailReads }
   }
   const listed = { ok: true, status: 200, json: { data: [{ brandId: 'brand-123456' }] } }
   const empty = { ok: true, status: 200, json: { data: [] } }
@@ -325,6 +326,9 @@ const sendRun = (async () => {
   check('a brand with only an old-style program is sent with none, as TRYBE does', JSON.stringify(legacy.posts[0]) === JSON.stringify({ brandId: 'brand-123456', message: 'Hello' }) && legacy.res.steps.includes('no program listed'))
   const unread = await run({ before: empty, after: listed, details: { ok: false, status: 404 } })
   check('details TRYBE did not give are said, and the request still goes once', unread.posts.length === 1 && unread.res.steps.includes('programs not read (404)'))
+  // 1.53.4 (Seb's test: "programs not read (403)", details refused before joining).
+  const fromList = await run({ before: empty, after: listed, details: { ok: false, status: 403 } }, 'https://jointrybe.com/creator/discover?brand=brand-123456&program=prog-listed1')
+  check('the program MVP read from TRYBE\'s brand list is sent, and the details are not asked', JSON.stringify(fromList.posts[0]) === JSON.stringify({ brandId: 'brand-123456', programId: 'prog-listed1', message: 'Hello' }) && fromList.detailReads === 0 && fromList.res.outcome === 'sent')
   const c = await run({ before: empty, post: { ok: false, status: 400, json: { error: 'programId is required' } } })
   check('a request TRYBE turns down is failed with TRYBE\'s own words, sent once', c.res.outcome === 'failed' && c.res.error === 'trybe-refused (400: programId is required)' && c.posts.length === 1)
   const d = await run({ before: empty, post: { ok: false, status: 502 }, after: empty })
@@ -336,6 +340,13 @@ const sendRun = (async () => {
   const g = await run({ before: { ok: false, status: 401 } })
   check('signed out: nothing sent, and it says so', g.res.outcome === 'failed' && g.res.error === 'not-signed-in' && g.posts.length === 0)
 })().catch((e) => check(`the send runs against a fake TRYBE (it threw: ${e instanceof Error ? e.message : e})`, false))
+
+// THE PROGRAM FROM MVP'S COPY OF TRYBE'S LIST (lib/trybe-directory programOf).
+check('an entry that names its program gives it', programOf({ brandId: 'b-123456', programId: 'prog-aaaaaa' }) === 'prog-aaaaaa' && programOf({ program: { id: 'prog-bbbbbb' } }) === 'prog-bbbbbb')
+check('an entry that lists programs gives the default, else the first', programOf({ programs: [{ programId: 'prog-111111' }, { programId: 'prog-222222', isDefault: true }] }) === 'prog-222222' && programOf({ brand: { programs: [{ id: 'prog-333333' }] } }) === 'prog-333333')
+check('an old-style or missing program is none', programOf({ programId: 'legacy:Old' }) === null && programOf({ name: 'x' }) === null && programOf(null) === null)
+check('the send link carries the program when there is one', sendUrl('b-123456', null, 'prog-aaaaaa') === 'https://jointrybe.com/creator/discover?brand=b-123456&program=prog-aaaaaa' && sendUrl('b-123456', null) === 'https://jointrybe.com/creator/discover?brand=b-123456')
+check('the claim hands SCOUT the program from MVP\'s copy of TRYBE\'s list', /const programId = programOf\(\(dir as \{ raw\?: unknown \} \| null\)\?\.raw \?\? null\)/.test(ROUTE) && /url: sendUrl\(row\.brand_id, row\.brand_url, programId\)/.test(ROUTE))
 
 // MVP'S TRYBE PAGE says when no TRYBE tab is open, with the button that
 // opens one, and blocks Send all until it is.
