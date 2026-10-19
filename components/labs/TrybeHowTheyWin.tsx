@@ -55,7 +55,7 @@ async function post(body: Record<string, unknown>): Promise<{ ok: boolean; json:
 
 interface Written { hooks: string[]; script: string }
 interface BrandRow { id: string | null; name: string; videos: number; words: number }
-interface Stats { videos: number; words: number; heard: number; shared: number; brands: BrandRow[]; collectedAt: string | null }
+interface Stats { videos: number; words: number; heard: number; shared: number; without?: string; brands: BrandRow[]; collectedAt: string | null }
 
 const ago = (iso: string | null): string => {
   if (!iso) return 'never collected'
@@ -202,6 +202,10 @@ export default function TrybeHowTheyWin({ canRead, isAdmin }: { canRead: boolean
             <Stat n={stats.shared} label="TRYBE shared" note="free to read" />
             <Stat n={stats.heard} label="MVP listened" note="paid for once" />
           </div>
+        )}
+        {/* WHY THE REST HAVE NO WORDS, so 85 of 134 is never left to guess at. */}
+        {stats && !empty && stats.without && (
+          <p className="px-5 py-3 border-t text-[12.5px]" style={{ borderColor: 'var(--border)', color: 'var(--text-soft)' }}>{stats.without}</p>
         )}
       </div>
 

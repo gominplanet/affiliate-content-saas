@@ -37,7 +37,7 @@ import { GALLERY_KEY, readCardsBody, readAdCard, mergeGallery, type Gallery, typ
 import { HOOK_FIX_SYSTEM, checkHook } from '@/lib/trybe-hook'
 import {
   cleanScript, toTranscribe, coverageWords, rewriteMissing, rewritePrompt, readRewrite, bestRank,
-  readCloseness, tooAlike, SCRIPT_MAX, type TopScript,
+  readCloseness, tooAlike, SCRIPT_MAX, whyNoWords, noWordsSentence, type TopScript,
 } from '@/lib/trybe-scripts'
 import { transcriptionConfigured } from '@/lib/shorts-transcribe'
 import { hearTopVideo } from '@/lib/trybe-top-hear'
@@ -1977,12 +1977,12 @@ export async function POST(request: Request) {
     // What the store actually holds, so the page can lead with a sentence
     // rather than with an empty brand list. Read by any member.
     const { data, error } = await admin.from('trybe_top_scripts')
-      .select('brand_id,brand_name,state,source,updated_at').limit(4000)
+      .select('brand_id,brand_name,state,source,updated_at,detail,video_url').limit(4000)
     if (error) {
       if (scriptsMissing(error.message)) return NextResponse.json({ error: setupWords(tier, SCRIPTS_SQL), needsMigration: true }, { status: 409 })
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
-    const rows = (data ?? []) as Array<{ brand_id: string | null; brand_name: string | null; state: string; source: string; updated_at: string }>
+    const rows = (data ?? []) as Array<{ brand_id: string | null; brand_name: string | null; state: string; source: string; updated_at: string; detail: string | null; video_url: string | null }>
     const by = new Map<string, { id: string | null; name: string; videos: number; words: number }>()
     let words = 0, heard = 0, shared = 0, last = ''
     for (const r of rows) {
@@ -1995,7 +1995,9 @@ export async function POST(request: Request) {
       if (r.updated_at > last) last = r.updated_at
     }
     const brands = [...by.values()].sort((a, b) => b.words - a.words || b.videos - a.videos || a.name.localeCompare(b.name))
-    return NextResponse.json({ ok: true, videos: rows.length, words, heard, shared, brands: brands.slice(0, 60), collectedAt: last || null })
+    // WHY THE REST HAVE NONE, counted, so 85 of 134 is never left to guess at.
+    const without = noWordsSentence(whyNoWords(rows))
+    return NextResponse.json({ ok: true, videos: rows.length, words, heard, shared, without, brands: brands.slice(0, 60), collectedAt: last || null })
   }
 
   if (action === 'top_scripts_seen') {
@@ -2027,9 +2029,9 @@ export async function POST(request: Request) {
       .filter((r) => !!r.submission_id)
     if (!rows.length) return NextResponse.json({ ok: true, saved: 0, noId, need: [], hear: [] })
     const ids = rows.map((r) => r.submission_id as string)
-    const { data: had, error: hadErr } = await admin.from('trybe_top_scripts').select('submission_id,state,best_rank').in('submission_id', ids)
+    const { data: had, error: hadErr } = await admin.from('trybe_top_scripts').select('submission_id,state,best_rank,detail,video_url').in('submission_id', ids)
     if (hadErr && scriptsMissing(hadErr.message)) return NextResponse.json({ error: setupWords(tier, SCRIPTS_SQL), needsMigration: true }, { status: 409 })
-    const before = new Map(((had ?? []) as Array<{ submission_id: string; state: string; best_rank: number | null }>).map((r) => [r.submission_id, r]))
+    const before = new Map(((had ?? []) as Array<{ submission_id: string; state: string; best_rank: number | null; detail: string | null; video_url: string | null }>).map((r) => [r.submission_id, r]))
     // A BETTER PLACE IS KEPT, a worse one never overwrites it: best_rank is
     // the best this video has reached while we have been watching.
     const fresh = rows.map((r) => {
@@ -2058,8 +2060,13 @@ export async function POST(request: Request) {
     // of those is part of the answer rather than an absence the page has to
     // guess at.
     const noFile = waiting.filter((e) => !(typeof e.video === 'string' && /^https:\/\//i.test(e.video))).length
+    // TODAY'S ALREADY-DONE ONES, said: how many have their words, and why the
+    // rest have none. "Every one was already tried" hid 15 with no speech.
+    const earlier = [...before.values()]
+    const haveWords = earlier.filter((r) => r.state === 'ready').length
+    const noneWhy = noWordsSentence(whyNoWords(earlier.filter((r) => r.state === 'none')))
     return NextResponse.json({
-      ok: true, saved: fresh.length, noId, waiting: waiting.length, noFile,
+      ok: true, saved: fresh.length, noId, waiting: waiting.length, noFile, haveWords, noneWhy,
       need: waiting.map((e) => ({ submissionId: String(e.submissionId), rank: Number(e.rank) || null })).slice(0, 60),
       hear: hear.map((h) => h.submissionId), hearLeft,
     })

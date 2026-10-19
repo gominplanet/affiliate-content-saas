@@ -54,6 +54,10 @@ export async function collectTop100(o: { listen: boolean; onStep?: (s: string) =
   const noFile = Number(seen.json.noFile) || 0
   const waiting = Number(seen.json.waiting) || 0
   const hearLeft = Number(seen.json.hearLeft) || 0
+  // Today's videos that were filed on an earlier collection: how many have
+  // their words, and why the rest have none (lib/trybe-scripts whyNoWords).
+  const haveWords = Number(seen.json.haveWords) || 0
+  const noneWhy = typeof seen.json.noneWhy === 'string' ? seen.json.noneWhy : ''
 
   // FREE FIRST. TRYBE shares the words for some of them at no cost, and
   // readScript is what turns its answer into words.
@@ -102,7 +106,12 @@ export async function collectTop100(o: { listen: boolean; onStep?: (s: string) =
   if (need.length) lines.push(shared
     ? `TRYBE shared the words for ${shared} of the ${need.length} MVP asked about${turnedDown}.`
     : `TRYBE shared the words for none of the ${need.length} MVP asked about${turnedDown}.`)
-  else if (filed) lines.push('Every one of them was already tried on an earlier collection, so MVP did not ask TRYBE again.')
+  else if (filed) {
+    // UP TO DATE IS NOT A WARNING (Seb, 2026-10-19). The page said this in
+    // amber, with "nothing was paid for" under it, and read as a failure.
+    lines.push(`All of them were filed on an earlier collection, so there was nothing new to ask TRYBE about. ${haveWords} of today’s ${entries.length} have their words.`)
+    if (noneWhy) lines.push(noneWhy)
+  }
   if (empty) lines.push(`${empty} came back with nothing MVP could read.`)
   if (noFile) lines.push(`${noFile} of them have no video file in TRYBE’s answer, so nothing can listen to those.`)
   if (!o.listen) {
@@ -113,7 +122,7 @@ export async function collectTop100(o: { listen: boolean; onStep?: (s: string) =
   else if (toHear.length) lines.push(heard
     ? `MVP listened to ${heard} of ${toHear.length}.${failed ? ` ${failed} did not come back${reasons ? ` (${reasons})` : ''}.` : ''}`
     : `MVP could not listen to any of the ${toHear.length} it tried${reasons ? ` (${reasons})` : ''}.`)
-  else lines.push(`Nothing was left with a video file to listen to, so nothing was paid for.${withFile === 0 ? ' TRYBE sent no video files at all in this answer.' : ''}`)
+  else if (need.length || withFile === 0) lines.push(`Nothing was left with a video file to listen to, so nothing was paid for.${withFile === 0 ? ' TRYBE sent no video files at all in this answer.' : ''}`)
   // WHAT IS LEFT, so a board at 23 of 100 reads as a first pass rather
   // than the whole of it. Listening is capped per collection because it
   // costs, so the next press does the next ones.
@@ -124,5 +133,9 @@ export async function collectTop100(o: { listen: boolean; onStep?: (s: string) =
   // WHAT TRYBE DID SEND, when none of it was a video file, so the next
   // fix is a field name rather than a guess.
   if (withFile === 0) lines.push(`Each entry TRYBE sent has: ${topEntryFields(top.json)}.`)
-  return { ok: true, report: { tone: shared + heard > 0 ? 'ok' : 'warn', lines, filed, shared, heard } }
+  // AMBER ONLY FOR A PROBLEM: nothing filed, entries without an id, TRYBE
+  // refusing or answering with nothing, a listen that failed, transcription
+  // off, or no files at all. A collection with nothing new to do is fine.
+  const problem = !filed || noId > 0 || refused > 0 || empty > 0 || failed > 0 || notConfigured || withFile === 0
+  return { ok: true, report: { tone: problem ? 'warn' : 'ok', lines, filed, shared, heard } }
 }

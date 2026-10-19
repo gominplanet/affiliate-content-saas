@@ -90,6 +90,38 @@ export function toTranscribe<T extends { submissionId: string | null; rank: numb
     .slice(0, Math.max(0, max))
 }
 
+/** Why the filed videos without words have none, counted from their rows
+ *  (Seb, 2026-10-19: a board at 85 of 134 said nothing about the other 49).
+ *  'none' rows were heard with almost nothing said, or had no file; 'waiting'
+ *  rows are still to be listened to, or a listen fell over. Pure. */
+export interface NoWords { noSpeech: number; noFile: number; toListen: number; couldNot: number }
+export function whyNoWords(rows: Array<{ state: string; detail?: string | null; video_url?: string | null }>): NoWords {
+  const n: NoWords = { noSpeech: 0, noFile: 0, toListen: 0, couldNot: 0 }
+  for (const r of rows) {
+    if (r.state === 'ready') continue
+    const detail = String(r.detail || '')
+    const file = /^https:\/\//i.test(String(r.video_url || ''))
+    if (r.state === 'none') { if (/no video file/i.test(detail) || !file) n.noFile++; else n.noSpeech++ }
+    else if (!file) n.noFile++
+    else if (/^MVP could not listen to it/i.test(detail)) n.couldNot++
+    else n.toListen++
+  }
+  return n
+}
+
+/** The same count in words, '' when every video has its words. Pure. */
+export function noWordsSentence(n: NoWords): string {
+  const total = n.noSpeech + n.noFile + n.toListen + n.couldNot
+  if (!total) return ''
+  const parts = [
+    n.noSpeech ? `${n.noSpeech} ${n.noSpeech === 1 ? 'was' : 'were'} listened to and hardly anything is said in ${n.noSpeech === 1 ? 'it' : 'them'} (music, or words on screen only)` : '',
+    n.noFile ? `${n.noFile} came without a video file from TRYBE, so nothing can listen to ${n.noFile === 1 ? 'it' : 'them'}` : '',
+    n.toListen ? `${n.toListen} ${n.toListen === 1 ? 'is' : 'are'} still to be listened to, up to 25 a day` : '',
+    n.couldNot ? `${n.couldNot} could not be listened to, and Collect tries again while ${n.couldNot === 1 ? 'it is' : 'they are'} still in the Top 100` : '',
+  ].filter(Boolean)
+  return `${total} ${total === 1 ? 'has' : 'have'} no words: ${parts.join('; ')}.`
+}
+
 /**
  * The best place a video has reached while we have been watching.
  *

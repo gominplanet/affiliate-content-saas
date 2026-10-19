@@ -13,7 +13,7 @@
 //   creator's words to the same brand in the same month is the one that brand
 //   drops, and they would be doing it because MVP told them to.
 import { readFileSync, existsSync } from 'node:fs'
-import { bestRank, withTeamWords } from '../lib/trybe-scripts'
+import { bestRank, withTeamWords, whyNoWords, noWordsSentence } from '../lib/trybe-scripts'
 import { readTopEntries, topEntryFields } from '../lib/trybe-working'
 
 const fails: string[] = []
@@ -111,7 +111,7 @@ check('the press and the daily job listen with the same code', /hearTopVideo\(ad
   // The report: "nothing was paid for" only when nothing was listened to.
   const tail = COLLECT.slice(COLLECT.indexOf('else if (toHear.length) lines.push(heard'))
   check('a run that listened never says nothing was paid for',
-    /\n  else lines\.push\(`Nothing was left with a video file to listen to/.test(tail) && !/if \(stillWaiting\) \{[\s\S]{0,400}\} *\n *else if \(!notConfigured\) lines\.push\(`Nothing was left/.test(COLLECT))
+    /\n  else if \(need\.length \|\| withFile === 0\) lines\.push\(`Nothing was left with a video file to listen to/.test(tail) && !/if \(stillWaiting\) \{[\s\S]{0,400}\} *\n *else if \(!notConfigured\) lines\.push\(`Nothing was left/.test(COLLECT))
 }
 check('a video that already has words is never paid for again', /row\.state === 'ready'[\s\S]{0,80}already: true/.test(hear))
 check('a video with no file is written off with a reason, not queued for ever',
@@ -157,7 +157,25 @@ check('"Filed" is the count the route saved, not the count the page sent',
 check('filing none is said as none, and not shown with a tick', /MVP filed none of the \$\{entries\.length\}/.test(C) && /i === 0 && report\.filed \? <Check/.test(C))
 check('entries with no id are counted with the reason', /came without a video id in TRYBE/.test(C))
 check('asking about none says why, instead of "none of the 0"',
-  /if \(need\.length\) lines\.push\(shared/.test(C) && /else if \(filed\) lines\.push\('Every one of them was already tried on an earlier collection/.test(C))
+  /if \(need\.length\) lines\.push\(shared/.test(C) && /else if \(filed\) \{[\s\S]{0,400}All of them were filed on an earlier collection, so there was nothing new to ask TRYBE about\. \$\{haveWords\} of today/.test(C))
+// UP TO DATE IS NOT A WARNING (Seb, 2026-10-19: the screen read "Every one of
+// them was already tried" and "Nothing was left ... nothing was paid for" in
+// amber, and 49 of 134 without words were never explained).
+check('a collection with nothing new to do is not shown as a problem',
+  /const problem = !filed \|\| noId > 0 \|\| refused > 0 \|\| empty > 0 \|\| failed > 0 \|\| notConfigured \|\| withFile === 0/.test(C) && /tone: problem \? 'warn' : 'ok'/.test(C) && !/tone: shared \+ heard > 0 \? 'ok' : 'warn'/.test(C))
+check('and it says why the rest of today have no words', /if \(noneWhy\) lines\.push\(noneWhy\)/.test(C) && /noneWhy = noWordsSentence\(whyNoWords\(earlier\.filter/.test(read('app/api/labs/trybe/route.ts')))
+check('the board says why the videos without words have none', /const without = noWordsSentence\(whyNoWords\(rows\)\)/.test(read('app/api/labs/trybe/route.ts')) && /stats\.without && \(/.test(C))
+{
+  const n = whyNoWords([
+    { state: 'ready' }, { state: 'none', detail: 'MVP listened to it and heard only 12 characters of words.', video_url: 'https://x/v.mp4' },
+    { state: 'none', detail: 'TRYBE gave no video file for this one.' }, { state: 'waiting', video_url: 'https://x/a.mp4' },
+    { state: 'waiting', detail: 'MVP could not listen to it: timeout', video_url: 'https://x/b.mp4' },
+  ])
+  check('the count tells the four reasons apart', n.noSpeech === 1 && n.noFile === 1 && n.toListen === 1 && n.couldNot === 1, JSON.stringify(n))
+  const words = noWordsSentence(n)
+  check('and says them in words', /^4 have no words: 1 was listened to and hardly anything is said in it/.test(words) && /1 came without a video file/.test(words) && /1 is still to be listened to/.test(words), words)
+  check('every video with words says nothing', noWordsSentence(whyNoWords([{ state: 'ready' }])) === '')
+}
 // The second collection (Seb, 2026-10-18) read "TRYBE shared the words for
 // 7" and "5 did not come back": 53 refusals and five reasons, all unsaid.
 check('a collection that got some words still says how many were asked and refused',
