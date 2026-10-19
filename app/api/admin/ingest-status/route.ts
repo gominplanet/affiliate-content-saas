@@ -15,6 +15,16 @@ import { createServerClient } from '@/lib/supabase/server'
 
 export const runtime = 'nodejs'
 
+/** What the proxy's own answer means, and where to fix it (Webshare, the
+ *  provider in YT_DLP_PROXY on Railway). Pure. */
+function proxyHint(err: string): string {
+  if (/\b402\b/.test(err)) return 'A 402 means the proxy plan is out of credit: top it up in Webshare.'
+  if (/\b407\b/.test(err)) return 'A 407 means the proxy refused its username or password: copy them from Webshare into YT_DLP_PROXY on Railway.'
+  if (/\b50[23]\b/.test(err)) return 'A 502 or 503 means the proxy server itself could not open the connection: that proxy address is down or was replaced. In Webshare, check the proxy list and the plan, then put a working address (or the rotating one) into YT_DLP_PROXY on Railway.'
+  if (/resolve|could not resolve|timed out|Connection refused/i.test(err)) return 'The proxy address could not be reached at all: check the host and port in YT_DLP_PROXY on Railway against Webshare.'
+  return 'Check the proxy in Webshare and YT_DLP_PROXY on Railway.'
+}
+
 export async function GET() {
   const supabase = await createServerClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -43,7 +53,7 @@ export async function GET() {
   const verdict = error
     ? error
     : proxyDown
-      ? `The video service is up, but its proxy is refusing traffic, so every YouTube fetch fails: ${String(health?.proxyError || 'no reason given')}. A "402" means the proxy plan is out of credit: top it up with the provider in YT_DLP_PROXY on Railway.`
+      ? `The video service is up, but its proxy is refusing traffic, so every YouTube fetch through it fails (the service now tries once without it): ${String(health?.proxyError || 'no reason given')}. ${proxyHint(String(health?.proxyError || ''))}`
     : !build
       ? 'The service is up but does not report its build (it predates build reporting, or runs outside Railway). Redeploy it once so it reports one.'
       : same
