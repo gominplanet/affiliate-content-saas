@@ -1200,7 +1200,7 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
         if (c.nextFreeAt) setFreeAt(c.nextFreeAt)
         setCurrent(b.brand_id)
         patch(b.brand_id, { status: 'sending', send_started_at: new Date().toISOString(), error: null })
-        say(b.name, 'SCOUT is opening TRYBE to send it.', 'info')
+        say(b.name, ownTab ? 'SCOUT is sending it through your TRYBE tab.' : 'SCOUT is opening TRYBE to send it.', 'info')
         const res = await requestTrybeSend(c.url, c.name, c.message)
         // What TRYBE listed instead, when SCOUT could not find the brand (1.47.1).
         const seen = Array.isArray(res.seen) && res.seen.length ? `; TRYBE listed: ${res.seen.slice(0, 5).join(', ')}` : ''
@@ -1210,7 +1210,7 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
           status: res.outcome === 'sent' ? 'sent' : res.outcome === 'already' ? 'already' : res.outcome === 'failed' ? 'failed' : 'sending',
           error: res.outcome === 'sent' || res.outcome === 'already' ? null : (err || 'Not confirmed'),
         })
-        if (res.outcome === 'sent') say(b.name, 'Sent. TRYBE closed the request box.', 'ok')
+        if (res.outcome === 'sent') say(b.name, ownTab ? (res.steps?.includes('in your sent requests') ? 'Sent. It is in your TRYBE sent requests.' : 'Sent. TRYBE accepted it.') : 'Sent. TRYBE closed the request box.', 'ok')
         else if (res.outcome === 'already') say(b.name, 'TRYBE already shows a request to this brand.', 'warn')
         else if (res.outcome === 'failed') say(b.name, `Not sent: ${sendWords(err) || 'SCOUT could not send it'}.`, 'bad')
         else say(b.name, `Not confirmed: ${sendWords(err) || 'TRYBE did not show the box closing'}. Check TRYBE's Pending Requests.`, 'warn')
@@ -1981,7 +1981,9 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
           {!scoutRun?.on && scoutRun?.ended && scoutRun.endedAt && Date.now() - scoutRun.endedAt < 6 * 3600_000 && (
             <p className="text-[12px] mb-3" style={soft}>Last run by SCOUT, {new Date(scoutRun.endedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}: {scoutRun.ended}</p>
           )}
-          {pageRunning && <p className="text-[12px] mb-3" style={{ color: AMBER }}>{scoutAtLeast(scoutVersion, SCOUT_TRYBE_BACKGROUND_SEND_MIN_VERSION)
+          {pageRunning && <p className="text-[12px] mb-3" style={{ color: AMBER }}>{ownTab
+            ? `Keep this tab and your TRYBE tab open. SCOUT sends each request through your TRYBE tab, ${runSize < SHORT_RUN_UNDER ? `${SHORT_GAP_MS / 1000} seconds apart` : '45 seconds to 2 minutes apart, with a longer pause every five'}. Nothing opens or comes to the front.`
+            : scoutAtLeast(scoutVersion, SCOUT_TRYBE_BACKGROUND_SEND_MIN_VERSION)
             ? `Keep this tab open. SCOUT sends each request in a TRYBE tab behind this one, ${runSize < SHORT_RUN_UNDER ? `${SHORT_GAP_MS / 1000} seconds apart` : '45 seconds to 2 minutes apart, with a longer pause every five'}. It comes to the front only if TRYBE needs it.`
             : `Keep this tab open. SCOUT opens TRYBE for each request and brings you back, ${runSize < SHORT_RUN_UNDER ? `${SHORT_GAP_MS / 1000} seconds apart` : '45 seconds to 2 minutes apart, with a longer pause every five'}.`}</p>}
           {runLog.length > 0 && (
