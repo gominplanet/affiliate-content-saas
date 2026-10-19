@@ -10,6 +10,7 @@
 
 import { createAdminClient } from '@/lib/supabase/admin'
 import { ensureDisclaimer } from '@/lib/social-disclaimer'
+import { storeOf } from '@/lib/store-name'
 import { sendPrivateReply, replyToComment, refreshLongLivedToken } from '@/services/instagram'
 import { maybeDecrypt, maybeEncrypt } from '@/lib/secrets'
 import { resolveCloakedLink } from '@/lib/link-cloak'
@@ -79,7 +80,10 @@ export type { PostLinkStyle }
 export function renderMessage(template: string, link: string, amazonDestination = false): string {
   const t = stripStopLine(template) || 'Here you go \u{1F517} {link}'
   let out = t.includes('{link}') ? t.replace(/\{link\}/g, link) : `${t}\n${link}`
-  if (amazonDestination && !/\bamazon\b/i.test(out)) out = `${out}\n\nThis link goes to Amazon.`
+  // Another store a plain address names says so too (lib/store-name); a short
+  // link that hides its store gets no guess.
+  const store = amazonDestination ? 'Amazon' : storeOf(link)
+  if (store && !out.toLowerCase().includes(store.toLowerCase())) out = `${out}\n\nThis link goes to ${store}.`
   return ensureDisclaimer(out)
 }
 

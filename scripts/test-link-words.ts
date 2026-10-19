@@ -61,6 +61,10 @@ check('the writer is told to name the store in its own links', /const linkStoreW
 check('and not to guess one it does not know', /Do not name a store: this link's store is not known/.test(CLAUDE))
 check('a pin says where it goes', /const store = asin \? 'Amazon' : storeOf\(opts\.productUrl\)/.test(PIN) && /See it on \$\{store\}\./.test(PIN))
 
+const SINGLE = read('wp-plugin/mvp-affiliate-theme/single.php')
+const THEME_FN = read('wp-plugin/mvp-affiliate-theme/inc/customizations.php')
+check('the phone Buy bar names its store', /mvp_affiliate_store_for_link\(\$buy_url, \$buy_html\)/.test(SINGLE) && /Check today&rsquo;s price on ' \. esc_html\(\$buy_store\)/.test(SINGLE) && /function mvp_affiliate_store_for_link/.test(THEME_FN))
+
 const CLAUDE_MD = read('CLAUDE.md')
 check('the rule is written down', /Links say where they go/.test(CLAUDE_MD))
 

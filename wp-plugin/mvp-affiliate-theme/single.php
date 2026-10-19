@@ -54,12 +54,14 @@ get_header();
             geni.us / amzn.to / a.co); falls back to invisible if nothing
             matches. The bar is CSS-hidden on desktop. */ ?>
       <?php
-      $buy_url = mvp_affiliate_extract_affiliate_link(get_the_content());
+      $buy_html = get_the_content();
+      $buy_url = mvp_affiliate_extract_affiliate_link($buy_html);
+      $buy_store = $buy_url ? mvp_affiliate_store_for_link($buy_url, $buy_html) : '';
       if ($buy_url):
       ?>
       <div class="mvp-mobile-buy-bar" role="complementary" aria-label="Buy this product">
         <a href="<?php echo esc_url($buy_url); ?>" target="_blank" rel="noopener sponsored nofollow" class="mvp-mobile-buy-btn">
-          Check the price →
+          <?php echo $buy_store ? 'Check today&rsquo;s price on ' . esc_html($buy_store) . ' →' : 'Check the price →'; ?>
         </a>
       </div>
       <?php endif; ?>

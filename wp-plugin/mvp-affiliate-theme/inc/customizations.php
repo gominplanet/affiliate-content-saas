@@ -524,6 +524,25 @@ if (!function_exists('mvp_affiliate_extract_affiliate_link')) {
     }
 }
 
+/**
+ * The store the sticky Buy bar's link opens, for its words (Seb, 2026-10-19:
+ * a reader knows where a link goes before pressing it). An Amazon address
+ * says Amazon. A cloaked one (geni.us) hides it, so the post's own buttons
+ * ("Get the best price on Walmart") or its Amazon Associates line say it.
+ * '' when nothing does: the bar then names no store rather than a wrong one.
+ */
+if (!function_exists('mvp_affiliate_store_for_link')) {
+    function mvp_affiliate_store_for_link(string $url, string $html): string {
+        if (preg_match('/amazon\.|amzn\.to|(?:\/\/|\.)a\.co\//i', $url)) return 'Amazon';
+        if (preg_match('/(?:price|deal|it) on (Amazon|Walmart|Best Buy|Target|TikTok Shop)\b/i', $html, $s)) {
+            $names = ['amazon' => 'Amazon', 'walmart' => 'Walmart', 'best buy' => 'Best Buy', 'target' => 'Target', 'tiktok shop' => 'TikTok Shop'];
+            return $names[strtolower($s[1])] ?? $s[1];
+        }
+        if (stripos($html, 'As an Amazon Associate') !== false) return 'Amazon';
+        return '';
+    }
+}
+
 if (!function_exists('mvp_affiliate_render_newsletter_at')) {
     function mvp_affiliate_render_newsletter_at(string $surface, string $slot, array $atts = []): string {
         if (!mvp_affiliate_newsletter_enabled()) return '';

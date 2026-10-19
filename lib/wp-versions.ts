@@ -26,7 +26,8 @@
 
 export const WP_VERSIONS = {
   theme: {
-    version: '1.4.44',
+    // 1.4.45 (2026-10-19): the phone Buy bar names the store it opens.
+    version: '1.4.45',
     downloadUrl: 'https://www.mvpaffiliate.io/mvp-affiliate-theme.zip',
   },
   plugin: {
