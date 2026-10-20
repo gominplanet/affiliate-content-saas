@@ -48,7 +48,7 @@ const row = (href: string) => (nav.match(new RegExp(`href: '${href.replace(/[/?]
 check('Bulk Amazon upload is Pro and Amazon', /label: 'Bulk Amazon upload', gate: hasVideoTools\(effectiveTier\)[^\n]*onAmazon: 'included'/.test(row('/liftoff')))
 check('Clip Factory is Pro and Amazon', /gate: hasVideoTools\(effectiveTier\), onAmazon: 'included'/.test(row('/clip-factory')))
 check('YouTube Co-Pilot is in the Amazon plan', /label: 'YouTube Co-Pilot', onAmazon: 'included'/.test(row('/co-pilot')))
-check('Hashtag insights is Pro', /label: 'Hashtag insights', gate: isPro/.test(row('/pulse')))
+check('Hashtag insights is admin only (Seb, 2026-10-20)', /label: 'Hashtag insights', gate: isAdmin/.test(row('/pulse')) && /if \(caller\?\.tier !== 'admin'\) redirect\('\/dashboard'\)/.test(readFileSync('app/(dashboard)/pulse/page.tsx', 'utf8')))
 check('Pinned comments keeps its switch', /label: 'Pinned comments', gate: canUsePreview\('first_comment', effectiveTier\)/.test(nav))
 check('On sale comments keeps its switch', /label: 'On sale comments', gate: canUsePreview\('on_sale', effectiveTier\)/.test(nav))
 check('Follow-up keeps its switch', /href: '\/live-followup'[^\n]*gate: canUsePreview\('live_followup', effectiveTier\)/.test(nav))
@@ -88,11 +88,13 @@ check('the Amazon plan never sees the Writing voice tab it cannot open', /href: 
 
 // ── search finds the old names ──────────────────────────────────────────────
 const OLD_NAMES: Array<[string, string]> = [
-  ['liftoff', '/liftoff'], ['encore', '/encore'], ['pulse', '/pulse'], ['social influencer', '/amazon/social'],
+  ['liftoff', '/liftoff'], ['encore', '/encore'], ['social influencer', '/amazon/social'],
   ['brand deals', '/collaborations'], ['epc library', '/epc-library'], ['cc campaigns', '/cc-campaigns'], ['virtual assistant', '/agency'],
   ['help desk', '/assistant'], ['customize blog', '/customize'], ['voice training', '/learn'], ['blog post generator', '/content'],
   ['thumbnail generator', '/amazon/thumbnails'], ['brand hub', '/brand-hub'], ['amz research', '/amz-finder'],
 ]
+// Hashtag insights is admin only: admin finds it by its old name, members do not.
+check('admin finds Pulse by its old name, members do not see it', searchApp('pulse', { isAdmin: true, limit: 8 }).some((e) => e.href === '/pulse') && !searchApp('pulse', { limit: 8 }).some((e) => e.href === '/pulse'))
 for (const [q, href] of OLD_NAMES) {
   const hit = searchApp(q, { limit: 8 }).some((e) => e.href === href)
   check(`searching "${q}" finds ${href}`, hit)

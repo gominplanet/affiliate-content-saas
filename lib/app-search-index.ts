@@ -85,7 +85,7 @@ export const APP_SEARCH_INDEX: AppSearchEntry[] = [
   { label: 'Social designs', href: '/amazon/social', group: 'Share', keywords: 'social influencer pins pinterest instagram story designs amazon product' },
   { label: 'Social Launch Kit', href: '/social-launch-kit', group: 'Share', keywords: 'social launch kit name bio banner avatar setup guide new accounts' },
   { label: 'Meta Hub', href: '/meta', group: 'Share', keywords: 'facebook page group meta hub' },
-  { label: 'Hashtag insights', href: '/pulse', group: 'Share', keywords: 'pulse hashtags reach instagram reels tags' },
+  { label: 'Hashtag insights', href: '/pulse', group: 'Share', keywords: 'pulse hashtags reach instagram reels tags', admin: true },
   { label: 'Link in Bio', href: '/link-in-bio', group: 'Share', keywords: 'link in bio shop grid profile link storefront page' },
   { label: 'Passport links', href: '/passport', group: 'Share', keywords: 'passport links geo country amazon short links clicks geniuslink' },
   { label: 'Deals Hub', href: '/deals', group: 'Share', keywords: 'deals sale prime day discount occasion' },

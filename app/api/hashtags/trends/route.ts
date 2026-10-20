@@ -14,7 +14,7 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { parseInstagramCounts, readTikTokTrends, saveTrends, trendTag } from '@/lib/hashtag-trends'
-import { categoriesFor } from '@/lib/hashtag-map'
+import { categoriesFor, allCategoryTags } from '@/lib/hashtag-map'
 import { trendStanding } from '@/lib/hashtag-engine'
 import { canUsePreview } from '@/lib/labs-preview'
 
@@ -58,7 +58,10 @@ export async function GET() {
   for (const r of (asked ?? []) as Array<{ tag: string }>) { const k = trendTag(r.tag); if (k && !want.includes(k)) want.push(k) }
   const niches = Array.from(new Set(((mine ?? []) as Array<{ niche: string | null }>).map((r) => r.niche).filter(Boolean))) as string[]
   for (const c of categoriesFor(niches.join(' '), 3)) for (const t of [...c.niche, ...c.mid]) { const k = trendTag(t); if (k && !want.includes(k)) want.push(k) }
-  const { data: done } = await admin.from('hashtag_trends').select('tag').eq('source', 'instagram').in('tag', want.length ? want.slice(0, 300) : ['#-']).gte('seen_at', new Date(Date.now() - 14 * 86_400_000).toISOString())
+  // Then MVP's whole category list, so there is always something to count
+  // before any caption has asked (Seb, 2026-10-20: "0 tags waiting").
+  for (const t of allCategoryTags()) { const k = trendTag(t); if (k && !want.includes(k)) want.push(k) }
+  const { data: done } = await admin.from('hashtag_trends').select('tag').eq('source', 'instagram').in('tag', want.length ? want.slice(0, 600) : ['#-']).gte('seen_at', new Date(Date.now() - 14 * 86_400_000).toISOString())
   const checked = new Set(((done ?? []) as Array<{ tag: string }>).map((r) => r.tag))
   // WHAT WAS ACTUALLY READ, for the screen: TikTok's list as it stood, and
   // the Instagram counts, dead ends included.

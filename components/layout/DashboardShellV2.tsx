@@ -619,8 +619,9 @@ export default function DashboardShellV2({
         // Live for Pro 2026-10-16, beside Meta Hub (lib/labs-preview group_queue).
         { href: '/group-queue', icon: <ListChecks size={15} />, label: 'Group Post Queue', gate: previewOpenToPro('group_queue') ? isPro : isAdmin, badge: 'New' },
         // Was Pulse: which hashtags actually earn reach, from your posts and
-        // pooled across MVP per niche.
-        { href: '/pulse', icon: <Activity size={15} />, label: 'Hashtag insights', gate: isPro },
+        // pooled across MVP per niche. Admin only since 2026-10-20 (Seb: "I
+        // don't think users would ever need this"): captions use it anyway.
+        { href: '/pulse', icon: <Activity size={15} />, label: 'Hashtag insights', gate: isAdmin },
         { href: '/link-in-bio', icon: <Link2 size={15} />, label: 'Link in Bio', gate: canSeeNav('dealRadar', effectiveTier), onAmazon: 'included' },
         // The Amazon plan includes Passport (lib/feature-access NAV_ACCESS.passport).
         { href: '/passport', icon: <Globe size={15} />, label: 'Passport links', gate: canUsePassport(effectiveTier), onAmazon: 'included' },

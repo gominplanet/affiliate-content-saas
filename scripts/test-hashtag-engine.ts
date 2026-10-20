@@ -232,6 +232,8 @@ const asked: string[] = []
   check('the quiet read never opens, reloads or closes a tab', igQuiet.length > 100 && !/openWorkTab|tabs\.create|tabs\.reload|windows\.create/.test(igQuiet) && /if \(quiet\) \{\s*tabId = await igOwnTab\(\)\s*if \(tabId == null\) return \{ ok: false, error: 'no-tab' \}/.test(igRead) && /if \(opened && tabId != null\)/.test(igRead))
   check('the Instagram queue is read from what captions asked for', /from\('hashtag_wanted'\)/.test(read('app/api/hashtags/trends/route.ts')) && /create table if not exists public\.hashtag_wanted/.test(read('supabase/migrations/448_hashtag_wanted.sql')))
   check('the sizes show beside the captions creators edit', ['components/TikTokDirectModal.tsx', 'components/InstagramDirectModal.tsx', 'components/clip-factory/PublishPanel.tsx'].every((f) => /<TagCounts text=\{/.test(read(f))))
+  check('there is always something to count on Instagram, before any caption asks', /for \(const t of allCategoryTags\(\)\)/.test(read('app/api/hashtags/trends/route.ts')) && /return n\.error \|\| !n\.counted \? NO_TAB_MS : EVERY_MS/.test(READER))
+  check('the card\'s own Instagram button reads quietly too, and says when SCOUT is too old for it', /requestInstagramTagCounts\(tags\.map\(\(t\) => t\.replace\(\/\^#\/, ''\)\), \{ quiet \}\)/.test(read('components/pulse/HashtagTrends.tsx')) && /needs SCOUT \{SCOUT_IG_QUIET_MIN_VERSION\}/.test(read('components/pulse/HashtagTrends.tsx')))
   check('the background read says how it went on the Live hashtag data card', /lastIgRead\(\)/.test(read('components/pulse/HashtagTrends.tsx')) && /'no-tab':/.test(read('components/pulse/HashtagTrends.tsx')))
 
   if (fails.length) { console.error('hashtag-engine failed:\n - ' + fails.join('\n - ')); process.exit(1) }

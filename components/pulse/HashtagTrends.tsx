@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Flame, Loader2, RefreshCw, Check, AlertTriangle } from 'lucide-react'
 import { requestHashtagAccess, requestInstagramTagCounts } from '@/lib/extension-frame'
 import { lastIgRead, type IgReadNote } from '@/components/scout/InstagramTagReader'
+import { SCOUT_IG_QUIET_MIN_VERSION, scoutAtLeast } from '@/lib/scout-version'
 
 /**
  * LIVE HASHTAG DATA (Labs). Where the hashtag engine's trend readings come
@@ -56,6 +57,9 @@ const IG_WHY: Record<string, string> = {
 export default function HashtagTrends() {
   const [info, setInfo] = useState<Info | null>(null)
   const [access, setAccess] = useState<Access>('checking')
+  // The quiet read (through an open Instagram tab) needs SCOUT 1.53.6.
+  const [scoutVersion, setScoutVersion] = useState<string | null>(null)
+  const quiet = scoutAtLeast(scoutVersion, SCOUT_IG_QUIET_MIN_VERSION)
   const [busy, setBusy] = useState<'tiktok' | 'instagram' | 'allow' | null>(null)
   const [said, setSaid] = useState<Say>(null)
   const autoTried = useRef(false)
@@ -72,7 +76,7 @@ export default function HashtagTrends() {
   useEffect(() => { void load() }, [load])
   useEffect(() => {
     let alive = true
-    requestHashtagAccess(false).then((a) => { if (alive) setAccess(a.state) }).catch(() => { if (alive) setAccess('no-scout') })
+    requestHashtagAccess(false).then((a) => { if (alive) { setAccess(a.state); setScoutVersion(a.version ?? null) } }).catch(() => { if (alive) setAccess('no-scout') })
     return () => { alive = false }
   }, [])
 
@@ -99,7 +103,8 @@ export default function HashtagTrends() {
     if (!tags.length) { setSaid({ tone: 'info', text: IG_WHY['no-tags'] }); return }
     setBusy('instagram'); setSaid({ tone: 'info', text: `SCOUT is asking Instagram about ${tags.length} tag${tags.length === 1 ? '' : 's'}, one at a time...` })
     try {
-      const res = await requestInstagramTagCounts(tags.map((t) => t.replace(/^#/, '')))
+      // Quietly, through the Instagram tab open in this Chrome (1.53.6), never a window of SCOUT's own.
+      const res = await requestInstagramTagCounts(tags.map((t) => t.replace(/^#/, '')), { quiet })
       const items = (res.items || []).filter((i) => i.posts != null)
       if (items.length) {
         const r = await fetch('/api/hashtags/trends', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'instagram', items }) })
@@ -110,7 +115,7 @@ export default function HashtagTrends() {
       else setSaid({ tone: 'ok', text: `Instagram gave counts for ${items.length} of ${tags.length} tags. Saved.` })
       await load()
     } finally { setBusy(null) }
-  }, [load])
+  }, [load, quiet])
 
   // KEPT FRESH WITHOUT A PRESS: MVP reads TikTok every night; if that has
   // not happened for two days, the card reads it once a session on its own.
@@ -170,7 +175,10 @@ export default function HashtagTrends() {
         )}
 
         {/* THE BACKGROUND READ (components/scout/InstagramTagReader), as it went. */}
-        {access === 'granted' && (
+        {access === 'granted' && !quiet && (
+          <p className="text-[12px] text-[#c93400]">This Chrome has SCOUT {scoutVersion || 'of an older version'}. Counting Instagram tags in the background, through your open Instagram tab, needs SCOUT {SCOUT_IG_QUIET_MIN_VERSION}: open chrome://extensions, turn on Developer mode and press Update.</p>
+        )}
+        {access === 'granted' && quiet && (
           <p className="text-[12px]" style={{ color: bg?.error && bg.error !== 'no-tab' ? '#c93400' : '#6e6e73' }}>
             {!bg ? 'In the background, SCOUT 1.53.6 counts the tags captions asked for, every few hours, through an Instagram tab you have open. It has not read in this Chrome yet.'
               : bg.error ? `Background read ${ago(bg.at)}: ${bg.counted ? `${bg.counted} of ${bg.asked} counted. ` : ''}${IG_WHY[bg.error] || bg.error}`

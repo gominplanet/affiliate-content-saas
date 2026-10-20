@@ -156,8 +156,7 @@ export const WHATS_NEW: WhatsNewItem[] = [
     badge: 'NEW',
     tone: '#ff3b30',
     title: 'Better hashtags on every post',
-    desc: 'Every caption MVP writes now picks its hashtags the same way: your proven tags, what is active on that platform and about the post, the brand and the product\u2019s own category. Each platform gets the count it rewards: Instagram 5 including #ad, Threads 1, YouTube 3 to 5. Spam tags, years and repeats are taken out before anything posts. Hashtag insights now shows every platform you post to, and says plainly where a platform does not share results.',
-    href: '/pulse',
+    desc: 'Every caption MVP writes now picks its hashtags the same way: your proven tags, what is active on that platform and about the post, the brand and the product\u2019s own category. Each platform gets the count it rewards: Instagram 5 including #ad, Threads 1, YouTube 3 to 5. Spam tags, years and repeats are taken out before anything posts.',
   },
   // Ticks before a suggested TRYBE reply (2026-10-16).
   {

@@ -34,10 +34,12 @@ export function lastIgRead(): IgReadNote | null {
 }
 function keep(n: IgReadNote) { try { localStorage.setItem(KEY, JSON.stringify(n)) } catch { /* read again next visit */ } }
 
-/** How long to wait after this note before reading again. Pure. */
+/** How long to wait after this note before reading again: a read that had
+ *  nothing to count, no Instagram tab or no sign-in tries again soon. Pure. */
 export function igReadWait(n: IgReadNote | null): number {
   if (!n) return 0
-  return n.error === 'slow-down' ? SLOW_MS : n.error === 'no-tab' || n.error === 'not-signed-in' ? NO_TAB_MS : EVERY_MS
+  if (n.error === 'slow-down') return SLOW_MS
+  return n.error || !n.counted ? NO_TAB_MS : EVERY_MS
 }
 
 export default function InstagramTagReader() {
