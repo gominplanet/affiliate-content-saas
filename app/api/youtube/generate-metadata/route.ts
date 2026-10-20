@@ -28,6 +28,7 @@ import { getAuthAndOwner } from '@/lib/agency-auth'
 import { checkUsageCap, PRIMARY_FEATURE } from '@/lib/usage-cap'
 import { scoreTitle } from '@/lib/thumbnail-score'
 import { deriveProductName } from '@/lib/product-name'
+import { researchYouTubeTags, type TagResearch } from '@/lib/youtube-search-tags'
 import { decryptIntegrationRow } from '@/lib/integration-secrets'
 import { canUsePreview } from '@/lib/labs-preview'
 import { readComparisonSlots, shortProductName, comparisonLinkLines } from '@/lib/comparison-products'
@@ -1330,6 +1331,22 @@ export async function POST(request: Request) {
       })
       seoData.hashtags = [isProduct ? '#ad' : '', ...pick.tags.map((t) => t.tag)].filter(Boolean).join(' ')
     }
+    // THE TAGS FIELD FROM REAL YOUTUBE SEARCHES (lib/youtube-search-tags; Seb,
+    // 2026-10-20: "build from what people actually type into YouTube search
+    // boxes ... and keep only the ones that match the video"). The writer's
+    // tags follow only when they are about the video. If nothing at all
+    // matched (YouTube did not answer and the writer's did not fit), the
+    // writer's stay, and tagsResearch says so.
+    let tagsResearch: (TagResearch & { usedWriterUnchecked: boolean }) | null = null
+    {
+      const writerTagList: string[] = Array.isArray(seoData.tags) ? seoData.tags.map((t: unknown) => String(t)) : []
+      const r = await Promise.race([
+        researchYouTubeTags(createAdminClient(), { videoTitle, productTitle: product.title || null, productName: seoProductName, text: agentContext.slice(0, 4000), writer: writerTagList }).catch(() => null),
+        new Promise<null>((res) => setTimeout(() => res(null), 5000)),
+      ])
+      if (r && r.tags.length) { seoData.tags = r.tags; tagsResearch = { ...r, usedWriterUnchecked: false } }
+      else tagsResearch = { tags: writerTagList, fromSearches: 0, fromWriter: writerTagList.length, notAbout: [], asked: r?.asked ?? 0, answered: r?.answered ?? 0, usedWriterUnchecked: true }
+    }
 
     // ── SWARM PHASE 2: Title + Content + Engagement run in parallel ───────────
     // (Title strategist gets product analysis context; content + engagement agents get title)
@@ -1730,6 +1747,9 @@ export async function POST(request: Request) {
       // What the creator has already overridden, so Co-Pilot can compare an
       // edit against their current wording rather than MVP's defaults.
       descriptionLineOverrides: lineOverrides,
+      // Where the tags came from: real YouTube searches, the writer's kept as
+      // about the video, the writer's left out, and whether YouTube answered.
+      tagsResearch,
       agentInsights: {
         targetBuyer: productAnalysis.targetBuyer,
         topBenefits: productAnalysis.topBenefits,

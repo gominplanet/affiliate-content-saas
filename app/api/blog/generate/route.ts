@@ -1263,6 +1263,9 @@ async function handleGenerate(request: Request) {
   //          no user accounts (see lib/keyword-research.ts).
   let targetKeyword: string | null = null
   let supportingKeywords: string[] = []
+  // Which search boxes confirmed the keyword (people type it), and from what:
+  // said in the answer, so an unconfirmed keyword never reads as a confirmed one.
+  let keywordResearch: { keyword: string | null; from: 'listing' | 'video'; confirmedBy: string[]; asked: number; answered: number } | null = null
   // The product the Amazon listing names, kept for the title check before publishing.
   let titleProduct: { brand: string | null; canonical: string | null } | null = null
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1281,6 +1284,8 @@ async function handleGenerate(request: Request) {
           amazonBullets: product.bullets,
           videoTitle: rawTitle,
           brandName: (brand as Record<string, unknown>).name as string | undefined,
+          contentText: `${rawDescription.slice(0, 1500)}\n${transcript.slice(0, 4000)}`,
+          admin: createAdminClient(),
         }).catch(() => null)
         return { product, research }
       })(),
@@ -1328,6 +1333,25 @@ async function handleGenerate(request: Request) {
       supportingKeywords = amazonStep.research.supporting
       console.log('[blog/generate] keyword research', { primary: targetKeyword, supporting: supportingKeywords })
     }
+    if (amazonStep?.research) keywordResearch = { keyword: amazonStep.research.primary, from: 'listing', confirmedBy: amazonStep.research.confirmedBy, asked: amazonStep.research.asked, answered: amazonStep.research.answered }
+  }
+  // NO LISTING, ONLY THE VIDEO (Seb, 2026-10-20: "check the main keyword
+  // against Google search suggestion ... It'll expand our reach"): the
+  // video's topic, asked of Google's and Amazon's search boxes, kept only when
+  // a box suggests it and it is about the video. Otherwise the writer picks
+  // its own, as before, and the answer says no search confirmed one.
+  if (!targetKeyword && !asinOverride) {
+    const research = await withTimeout(researchKeyword({
+      videoTitle: rawTitle,
+      brandName: (brand as Record<string, unknown>).name as string | undefined,
+      contentText: `${rawDescription.slice(0, 1500)}\n${transcript.slice(0, 4000)}`,
+      admin: createAdminClient(),
+    }).catch(() => null), 8000, null)
+    if (research?.primary && research.confirmedBy.length) {
+      targetKeyword = research.primary
+      supportingKeywords = research.supporting
+    }
+    keywordResearch = { keyword: research?.primary && research.confirmedBy.length ? research.primary : null, from: 'video', confirmedBy: research?.confirmedBy || [], asked: research?.asked || 0, answered: research?.answered || 0 }
   }
 
   // ── 5.97. GSC feedback loop (Phase 3 — rebuilds only). When this video
@@ -1477,6 +1501,7 @@ async function handleGenerate(request: Request) {
         keepaFacts,
         keepaFetchedAt,
         targetKeyword,
+        targetKeywordFrom: keywordResearch?.from ?? null,
         supportingKeywords,
         gscQueries,
       },
@@ -3433,6 +3458,9 @@ ${NO_BRAND_IMAGE_CLAUSE} Landscape 4:3, photorealistic editorial product photogr
     success: true,
     postId: savedPost?.id,
     aio,
+    // The post's main keyword and which search boxes confirmed people type it
+    // (lib/keyword-research); confirmedBy empty means none did.
+    keywordResearch: keywordResearch ? { ...keywordResearch, used: generated.seoKeyword || null } : null,
     // HELD, said as held: a draft on WordPress, with the reasons.
     held: heldForReview ? { reasons: heldReasons } : null,
     // The title was changed before publishing because it did not name the product.

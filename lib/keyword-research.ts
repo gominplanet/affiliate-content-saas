@@ -20,10 +20,16 @@
 // Everything is best-effort: any network failure degrades to title/bullet
 // extraction so generation never blocks. Returns { primary: null } when there's
 // nothing usable — callers then let the model derive its own keyword (old path).
+//
+// CONFIRMED BY A REAL SEARCH (Seb, 2026-10-20: "check the main keyword against
+// Google search suggestion ... It'll expand our reach"). Every post, with an
+// Amazon listing or only a video: a phrase Google's or Amazon's search box
+// suggests, and that is about the content (every real word in it is a word
+// of the listing, the video or its transcript), wins over one that only reads
+// well; the result says which box confirmed it, or that none did. Answers are
+// remembered for everyone for a week (lib/search-suggest, migration 449).
 
-const UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
-const SUGGEST_TIMEOUT_MS = 3500
-const AMAZON_US_MARKETPLACE = 'ATVPDKIKX0DER'
+import { suggest, contentVocab, matchesContent, titleTopic } from '@/lib/search-suggest'
 
 export interface GscQuerySignal {
   query: string
@@ -38,6 +44,12 @@ export interface KeywordResearchInput {
   brandName?: string | null
   /** Optional site-winnability signal (Phase 3 passes this; Phase 2 omits it). */
   gscQueries?: GscQuerySignal[] | null
+  /** What the video says (transcript, description): a search is kept only
+   *  when it is about the listing, the video or this. */
+  contentText?: string | null
+  /** The service client, so search answers are remembered for everyone. */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  admin?: any
 }
 
 export interface KeywordCandidate {
@@ -50,6 +62,12 @@ export interface KeywordResearchResult {
   primary: string | null
   supporting: string[]
   candidates: KeywordCandidate[]
+  /** The search boxes that suggest the primary (people type it); empty when
+   *  none did, so an unconfirmed keyword never reads as a confirmed one. */
+  confirmedBy: Array<'google' | 'amazon' | 'gsc'>
+  /** Search boxes asked, and how many answered. */
+  asked: number
+  answered: number
 }
 
 // Generic words we never require for relevance, and units/sizes that are noise
@@ -82,43 +100,16 @@ function ngrams(tokens: string[]): string[] {
   return out
 }
 
-async function fetchGoogleSuggest(query: string): Promise<string[]> {
-  try {
-    const url = `https://suggestqueries.google.com/complete/search?client=firefox&hl=en&q=${encodeURIComponent(query)}`
-    const res = await fetch(url, {
-      headers: { 'User-Agent': UA, 'Accept-Language': 'en-US,en;q=0.9' },
-      signal: AbortSignal.timeout(SUGGEST_TIMEOUT_MS),
-    })
-    if (!res.ok) return []
-    // client=firefox returns ["query", ["s1","s2",...], ...] as JSON.
-    const data = JSON.parse(await res.text())
-    return Array.isArray(data?.[1]) ? (data[1] as unknown[]).filter((s): s is string => typeof s === 'string') : []
-  } catch { return [] }
-}
-
-async function fetchAmazonSuggest(query: string): Promise<string[]> {
-  try {
-    const url = `https://completion.amazon.com/api/2017/suggestions?limit=11&prefix=${encodeURIComponent(query)}&alias=aps&mid=${AMAZON_US_MARKETPLACE}&site-variant=desktop&client-info=amazon-search-ui&lop=en_US&b2b=0&fresh=0&suggestion-type=KEYWORD`
-    const res = await fetch(url, {
-      headers: { 'User-Agent': UA, Accept: 'application/json', 'Accept-Language': 'en-US,en;q=0.9' },
-      signal: AbortSignal.timeout(SUGGEST_TIMEOUT_MS),
-    })
-    if (!res.ok) return []
-    const data = await res.json() as { suggestions?: Array<{ type?: string; value?: string }> }
-    return (data.suggestions || [])
-      .filter(s => s.type === 'KEYWORD' && typeof s.value === 'string')
-      .map(s => s.value as string)
-  } catch { return [] }
-}
-
 /**
  * Research the best primary keyword (plus a few supporting phrases) for a post,
  * using only free sources. Safe to call on every generation — best-effort and
  * fully degradable. Returns { primary: null } when nothing usable surfaces.
  */
 export async function researchKeyword(input: KeywordResearchInput): Promise<KeywordResearchResult> {
-  const empty: KeywordResearchResult = { primary: null, supporting: [], candidates: [] }
-  const title = input.amazonTitle || input.videoTitle || ''
+  const empty: KeywordResearchResult = { primary: null, supporting: [], candidates: [], confirmedBy: [], asked: 0, answered: 0 }
+  // A video title is cleaned of the words nobody searches with first ("Don't
+  // buy a fat tire e-bike until you see this" -> "fat tire ebike").
+  const title = input.amazonTitle || titleTopic(input.videoTitle || '', 8)
   if (!title.trim()) return empty
 
   const rawTitleToks = meaningfulTokens(title, input.brandName)
@@ -130,7 +121,7 @@ export async function researchKeyword(input: KeywordResearchInput): Promise<Keyw
   // remain) and DENY it across every candidate. This is the fix for the
   // "purrugs dirt trapping" miss: strip the brand and the category phrase wins.
   // (input.brandName is the USER's brand, a different thing — also denied.)
-  const sellerBrand = rawTitleToks.length >= 3 ? rawTitleToks[0] : null
+  const sellerBrand = input.amazonTitle && rawTitleToks.length >= 3 ? rawTitleToks[0] : null
   const titleToks = sellerBrand ? rawTitleToks.slice(1) : rawTitleToks
   const deny = new Set<string>(meaningfulTokens(input.brandName || ''))
   if (sellerBrand) deny.add(sellerBrand)
@@ -142,19 +133,19 @@ export async function researchKeyword(input: KeywordResearchInput): Promise<Keyw
     titleToks.length >= 3 ? titleToks.slice(0, 3).join(' ') : '',
   ].filter(Boolean)))
 
-  // Fire all autocomplete calls in parallel — free, best-effort, time-boxed.
-  const calls: Array<Promise<{ engine: 'amazon' | 'google'; list: string[] }>> = []
-  for (const seed of seeds) {
-    calls.push(fetchAmazonSuggest(seed).then(list => ({ engine: 'amazon' as const, list })))
-    calls.push(fetchGoogleSuggest(seed).then(list => ({ engine: 'google' as const, list })))
-  }
-  const results = await Promise.all(calls)
+  // Fire all autocomplete calls in parallel — free, best-effort, time-boxed,
+  // remembered for a week (lib/search-suggest).
+  const results = await Promise.all(seeds.flatMap((seed) => [suggest('amazon', seed, input.admin), suggest('google', seed, input.admin)]))
   const amazonSug = new Set<string>()
   const googleSug = new Set<string>()
   for (const r of results) {
     const target = r.engine === 'amazon' ? amazonSug : googleSug
-    for (const s of r.list) target.add(norm(s))
+    // A box always offers back the words it was asked: that echo is no sign
+    // anyone searches the phrase, so only what it adds counts.
+    for (const s of r.phrases) if (norm(s) !== norm(r.seed)) target.add(norm(s))
   }
+  // What the content is about, for the searches: the listing, the video, its words.
+  const vocab = contentVocab([input.amazonTitle, ...(input.amazonBullets || []), input.videoTitle, input.contentText].filter(Boolean).join('\n'))
 
   // Candidate pool: title n-grams + bullet n-grams + autocomplete suggestions
   // (+ optional GSC queries). Score by source weight, corroboration, and fit.
@@ -175,8 +166,9 @@ export async function researchKeyword(input: KeywordResearchInput): Promise<Keyw
 
   ngrams(titleToks).forEach(p => add(p, 'amazon-title', 3))                                   // seller's strongest signal
   ;(input.amazonBullets || []).flatMap(b => ngrams(meaningfulTokens(b, input.brandName))).slice(0, 40).forEach(p => add(p, 'amazon-bullet', 1.5))
-  amazonSug.forEach(p => add(p, 'amazon-suggest', 4))                                          // real buyer-intent demand
-  googleSug.forEach(p => add(p, 'google-suggest', 2.5))
+  // A search is used only when it is about this content (never "... rack" for the bike itself).
+  amazonSug.forEach(p => { if (matchesContent(p, vocab)) add(p, 'amazon-suggest', 4) })         // real buyer-intent demand
+  googleSug.forEach(p => { if (matchesContent(p, vocab)) add(p, 'google-suggest', 2.5) })
   for (const g of input.gscQueries || []) add(g.query, 'gsc', g.position <= 20 ? 3 : 1.5)     // site winnability (Phase 3)
 
   // Final adjustments: length sweet spot + multi-source corroboration bonus.
@@ -189,10 +181,17 @@ export async function researchKeyword(input: KeywordResearchInput): Promise<Keyw
     if (e.sources.length >= 2) e.score += 1.5    // corroborated across sources
   }
 
-  const ranked = Array.from(cand.values()).sort((a, b) => b.score - a.score)
-  if (ranked.length === 0) return empty
+  // A REAL SEARCH FIRST: when any candidate is one people type (a search box
+  // suggested it, or Search Console saw it), the best of those is the
+  // primary; a phrase that only reads well comes after them.
+  const searched = (c: KeywordCandidate) => c.sources.some((x) => x === 'google-suggest' || x === 'amazon-suggest' || x === 'gsc')
+  const ranked = Array.from(cand.values()).sort((a, b) => Number(searched(b)) - Number(searched(a)) || b.score - a.score)
+  const asked = results.length
+  const answered = results.filter((r) => r.answered).length
+  if (ranked.length === 0) return { ...empty, asked, answered }
 
   const primary = ranked[0].phrase
+  const confirmedBy = ([['google-suggest', 'google'], ['amazon-suggest', 'amazon'], ['gsc', 'gsc']] as const).filter(([src]) => ranked[0].sources.includes(src)).map(([, name]) => name)
   const primaryToks = new Set(primary.split(' '))
   const supporting = ranked.slice(1)
     .filter(c => {
@@ -203,5 +202,5 @@ export async function researchKeyword(input: KeywordResearchInput): Promise<Keyw
     .slice(0, 5)
     .map(c => c.phrase)
 
-  return { primary, supporting, candidates: ranked.slice(0, 12) }
+  return { primary, supporting, candidates: ranked.slice(0, 12), confirmedBy: [...confirmedBy], asked, answered }
 }

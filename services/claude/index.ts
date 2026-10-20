@@ -108,6 +108,9 @@ export interface VideoInput {
    * Null → the model derives its own keyword (prior behavior).
    */
   targetKeyword?: string | null
+  /** Where the target keyword was researched from: the Amazon listing, or the
+   *  video alone (its topic, confirmed by Google's or Amazon's search box). */
+  targetKeywordFrom?: 'listing' | 'video' | null
   /** Secondary validated phrases to weave in naturally where they fit. */
   supportingKeywords?: string[]
   /**
@@ -2385,7 +2388,7 @@ The rest of the brand voice, tone, length, learn-profile rules, and formatting f
 
 VIDEO ID: ${video.videoId}
 TITLE: ${video.title}
-${video.targetKeyword ? `TARGET KEYWORD — researched from the Amazon seller's listing (title + "about this item" bullets) and validated against live Amazon + Google autocomplete demand. USE THIS VERBATIM as your seoKeyword and place it per rule 2c; do NOT invent a different one: "${video.targetKeyword}"${video.supportingKeywords && video.supportingKeywords.length ? `\nSUPPORTING KEYWORDS (secondary phrases buyers also search — weave in naturally ONLY where they genuinely fit, never force): ${video.supportingKeywords.join(', ')}` : ''}\n` : ''}${video.gscQueries && video.gscQueries.length ? `REAL GOOGLE QUERIES (Search Console, last 28 days) — Google ALREADY shows this post's live URL for these searches. This is proven demand for the exact page you are rewriting; do not waste it. Work EACH query below (or a close natural variant) into the post — the strongest as an H2/H3 subhead or FAQ question, the rest woven into body sentences. Queries at position 4-20 are one push from page 1: give those subhead/FAQ priority. Natural phrasing only — rules 1 and 2c still win; never stuff, never fabricate an experience to fit a query.
+${video.targetKeyword ? `TARGET KEYWORD — ${video.targetKeywordFrom === 'video' ? 'researched from this video\'s topic and confirmed by Google\'s or Amazon\'s search box: a phrase people actually type' : 'researched from the Amazon seller\'s listing (title + "about this item" bullets) and validated against live Amazon + Google autocomplete demand'}. USE THIS VERBATIM as your seoKeyword and place it per rule 2c; do NOT invent a different one: "${video.targetKeyword}"${video.supportingKeywords && video.supportingKeywords.length ? `\nSUPPORTING KEYWORDS (secondary phrases buyers also search — weave in naturally ONLY where they genuinely fit, never force): ${video.supportingKeywords.join(', ')}` : ''}\n` : ''}${video.gscQueries && video.gscQueries.length ? `REAL GOOGLE QUERIES (Search Console, last 28 days) — Google ALREADY shows this post's live URL for these searches. This is proven demand for the exact page you are rewriting; do not waste it. Work EACH query below (or a close natural variant) into the post — the strongest as an H2/H3 subhead or FAQ question, the rest woven into body sentences. Queries at position 4-20 are one push from page 1: give those subhead/FAQ priority. Natural phrasing only — rules 1 and 2c still win; never stuff, never fabricate an experience to fit a query.
 ${video.gscQueries.map(q => `- "${q.query}" — position ${q.position}, ${q.impressions} impressions (28d)`).join('\n')}
 ` : ''}${isProduct ? `AFFILIATE URL: ${affiliateUrl || '[AFFILIATE_LINK]'}` : 'AFFILIATE URL: (none — general video, no product)'}
 VIDEO TAGS: ${video.tags.join(', ')}
