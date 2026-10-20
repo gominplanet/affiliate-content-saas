@@ -18,7 +18,7 @@
 // step of a send run is written in the run log, so a run that could not start
 // says why instead of looking like nothing happened.
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { toast } from 'sonner'
 import { Loader2, Lock, Search, Sparkles, Send, Square, ExternalLink, Check, AlertTriangle, Globe, Star, Handshake, RotateCcw, X, Trash2, Tag,
   Dumbbell, Shirt, House, UtensilsCrossed, Baby, PawPrint, Gem, Cpu, Tent, Plane, BookOpen, Church, Palette, SprayCan, Moon, Pill, HeartPulse,
@@ -109,7 +109,7 @@ type Access = 'checking' | 'granted' | 'not-granted' | 'no-scout' | 'old'
 interface Directory { brands: number; listed?: number | null; firstCountAt?: string | null; joinedSinceFirst?: number | null; joinedStillListed?: number | null; withWebsite: number; websitesRead: number; lastCollectedAt: string | null; lastPartial?: { at: string; pages: number | null; totalPages: number | null } | null; categories: string[]; top100?: { at?: string; entries?: number; brands?: number; matched?: number } | null }
 /** The whole list is collected again after this long. */
 const RECOLLECT_MS = 20 * 3600_000
-type Tab = 'create' | 'upload' | 'find' | 'queue' | 'sent' | 'inbox' | 'analytics' | 'brands' | 'week' | 'changes' | 'working'
+export type Tab = 'create' | 'upload' | 'find' | 'queue' | 'sent' | 'inbox' | 'analytics' | 'brands' | 'week' | 'changes' | 'working'
 /** One brand from MVP's copy of TRYBE, as the live list shows it. */
 interface LiveBrand {
   brand_id: string; name: string; website: string | null; categories: string[]; about: string | null
@@ -308,10 +308,10 @@ function Stat({ label, value, hint, tone, accent = '#7C3AED', onClick }: { label
  *  "logical, visible and modern looking"): make the videos, get the brands,
  *  keep track. Every tab in sight, none behind a scroll. */
 type TabGroup = 'create' | 'brands' | 'track'
-const TAB_GROUPS: Array<{ id: TabGroup; label: string; says: string }> = [
-  { id: 'create', label: 'Create', says: 'Plan and film' },
-  { id: 'brands', label: 'Get brands', says: 'Reach out and reply' },
-  { id: 'track', label: 'Track', says: 'Pay and news' },
+const TAB_GROUPS: Array<{ id: TabGroup; label: string; says: string; color: string }> = [
+  { id: 'create', label: 'Create', says: 'Plan and film', color: '#E11D48' },
+  { id: 'brands', label: 'Get brands', says: 'Reach out and reply', color: '#7C3AED' },
+  { id: 'track', label: 'Track', says: 'Pay and news', color: '#059669' },
 ]
 const TABS: Array<{ id: Tab; label: string; icon: LucideIcon; group: TabGroup; says: string }> = [
   { id: 'create', label: 'Make videos', icon: Clapperboard, group: 'create', says: 'Pick a brand, pick the product you have, and get ten shooting scripts that follow its brief.' },
@@ -333,6 +333,91 @@ const TABS: Array<{ id: Tab; label: string; icon: LucideIcon; group: TabGroup; s
   { id: 'changes', label: 'What changed', icon: Bell, group: 'track', says: 'What changed on TRYBE this week: new brands, pay changes, more Meta ads, the Top 100. Your brands first.' },
 ]
 
+/** THE MENU AS TILES (Seb, 2026-10-20: "a lot more modern looking, a lot
+ *  simpler, and a lot easier to see that there are actual buttons that you
+ *  could press ... If we need to combine a couple of them, we can do that").
+ *  Nine buttons in the three groups, each its own colour and icon, what it is
+ *  for in a line, and its count. Ready to send and Sent are one, Outreach;
+ *  Analytics and My brands are one, Earnings: a switch inside moves between
+ *  the two, and each keeps its own page. */
+type Tile = { id: string; label: string; icon: LucideIcon; group: TabGroup; color: string; line: string; tabs: Tab[] }
+const TILES: Tile[] = [
+  { id: 'create', label: 'Make videos', icon: Clapperboard, group: 'create', color: '#E11D48', line: 'Scripts from each brand\u2019s brief', tabs: ['create'] },
+  { id: 'upload', label: 'Upload videos', icon: UploadCloud, group: 'create', color: '#DB2777', line: 'Send what you filmed to its brand', tabs: ['upload'] },
+  { id: 'week', label: 'This week', icon: CalendarDays, group: 'create', color: '#EA580C', line: 'Your samples and a 7 day plan', tabs: ['week'] },
+  { id: 'working', label: 'What\u2019s working', icon: Lightbulb, group: 'create', color: '#D97706', line: 'Your hook next to the Top 100', tabs: ['working'] },
+  { id: 'find', label: 'Find brands', icon: Search, group: 'brands', color: '#7C3AED', line: 'Brands that fit, first message written', tabs: ['find'] },
+  { id: 'outreach', label: 'Outreach', icon: Send, group: 'brands', color: '#4F46E5', line: 'Ready to send and sent, in one place', tabs: ['queue', 'sent'] },
+  { id: 'inbox', label: 'Inbox', icon: Inbox, group: 'brands', color: '#9333EA', line: 'Brand chats, a reply suggested', tabs: ['inbox'] },
+  { id: 'earnings', label: 'Earnings', icon: BarChart3, group: 'track', color: '#059669', line: 'Pay, approvals and ads, by brand', tabs: ['analytics', 'brands'] },
+  { id: 'changes', label: 'What changed', icon: Bell, group: 'track', color: '#0284C7', line: 'New brands and pay changes', tabs: ['changes'] },
+]
+
+/** The menu (TILES in TAB_GROUPS), on its own so it can be looked at alone. */
+export function TrybeMenu({ tab, lockedTab, preview, queue, history, unread, changes, go }: {
+  tab: Tab; lockedTab: Tab | null; preview: boolean; queue: unknown[]; history: unknown[]; unread: number
+  changes: ChangesRead | null; go: (t: Tab) => void
+}) {
+  return (
+    <>
+    {/* THE MENU: nine buttons in the three groups (TILES), every one in sight,
+        never a sideways scroll (Seb, 2026-10-13/14/20). Each is a card you
+        can see is pressable: its colour, its icon, what it is for, its
+        count, and an arrow that moves on hover. On a phone the groups stack
+        and the buttons sit two by two; a long name wraps, never cut. */}
+    <nav aria-label="TRYBE" className="grid gap-4 md:grid-cols-3">
+      {TAB_GROUPS.map((g) => (
+        <div key={g.id} className="min-w-0 flex flex-col">
+          <p className="px-1 pb-2 flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full" style={{ background: g.color }} />
+            <span className="text-[11px] font-bold uppercase tracking-[0.1em]" style={{ color: g.color }}>{g.label}</span>
+            <span className="text-[12px]" style={{ color: 'var(--text-3)' }}>{g.says}</span>
+          </p>
+          {/* Each column fills the height of the tallest, so the three line up. */}
+          <div className="grid grid-cols-2 md:grid-cols-1 gap-2 md:flex-1 md:[grid-auto-rows:1fr]">
+            {TILES.filter((t) => t.group === g.id).map((tile) => {
+              const { id: tileId, label, icon: Icon, color } = tile
+              // Something waiting on you is filled; a running total is quiet.
+              const countOf = (id: Tab) => preview ? 0 : id === 'queue' ? queue.length : id === 'sent' ? history.length : id === 'inbox' ? unread : id === 'changes' ? (changes?.changes.filter((c) => c.yours).length ?? 0) : 0
+              const n = countOf(tile.tabs[0])
+              const on = tile.tabs.includes(lockedTab ?? tab)
+              const locked = preview && !tile.tabs.includes('find')
+              const waiting = tileId === 'inbox' || tileId === 'outreach'
+              const line = tileId === 'outreach' && !preview && (queue.length || history.length) ? (queue.length ? `${queue.length} ready to send, ${history.length} sent` : `${history.length} sent, none waiting`) : tileId === 'inbox' && n ? `${n} waiting for a reply` : tile.line
+              return (
+                <button key={tileId} aria-current={on ? 'page' : undefined} title={locked ? 'On the Pro plan' : undefined}
+                  onClick={() => go(tileId === 'outreach' ? (queue.length || preview ? 'queue' : 'sent') : tile.tabs[0])}
+                  className="group relative w-full h-full flex items-center gap-3 rounded-2xl border px-3 py-3 text-left transition-all duration-150 hover:-translate-y-0.5 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
+                  style={{
+                    borderColor: on ? color : `${color}33`,
+                    // A wash of its own colour, so each reads as a button of its own.
+                    background: on ? `${color}17` : `linear-gradient(120deg, ${color}12 0%, transparent 60%), var(--surface)`,
+                    boxShadow: on ? `0 0 0 1px ${color}` : '0 1px 2px rgba(0,0,0,0.04)',
+                    ['--tw-ring-color' as string]: color,
+                  } as CSSProperties}>
+                  <span className="w-10 h-10 shrink-0 rounded-xl inline-flex items-center justify-center text-white transition-transform group-hover:scale-105"
+                    style={{ background: `linear-gradient(135deg, ${color}, ${color}cc)`, boxShadow: `0 4px 10px ${color}40` }}>
+                    <Icon size={19} />
+                  </span>
+                  <span className="flex-1 min-w-0">
+                    <span className="block text-[14.5px] font-bold leading-tight" style={{ color: on ? color : 'var(--text)' }}>{label}</span>
+                    <span className="hidden sm:block text-[12.5px] leading-snug mt-0.5" style={{ color: 'var(--text-3)' }}>{line}</span>
+                  </span>
+                  {locked
+                    ? <span className="text-[10px] font-bold uppercase tracking-wide rounded-full px-1.5 py-0.5 inline-flex items-center gap-0.5" style={{ background: 'var(--surface-2)', color: 'var(--text-3)' }}><Lock size={9} /> Pro</span>
+                    : n > 0
+                      ? <span className="text-[12px] font-bold rounded-full px-2 py-0.5 min-w-[1.6rem] text-center tabular-nums" style={waiting ? { background: color, color: '#fff' } : { background: `${color}1a`, color }}>{n}</span>
+                      : <ArrowRight size={16} className="hidden sm:block shrink-0 transition-transform group-hover:translate-x-0.5" style={{ color: on ? color : 'var(--text-3)' }} />}
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      ))}
+    </nav>
+    </>
+  )
+}
 
 /** When the next send opens up, in the creator's own clock. */
 function opensWords(at: string | null): string {
@@ -1431,55 +1516,39 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
         </p>
       )}
 
-      {/* THE MENU: three groups side by side, each tab a full row with its
-          count; on a phone the groups stack and their tabs sit two by two.
-          Every tab in sight, never a sideways scroll (Seb, 2026-10-13/14).
-          On a phone the icons step aside and a long name wraps, never cut. */}
-      <nav aria-label="TRYBE" className="rounded-2xl border p-2 grid gap-1 md:grid-cols-3 md:gap-0 md:divide-x" style={{ borderColor: 'var(--border-2)', background: 'var(--surface)' }}>
-        {TAB_GROUPS.map((g) => (
-          <div key={g.id} className="px-1.5 py-1.5 md:px-2" style={{ borderColor: 'var(--border-2)' }}>
-            <p className="px-2 pb-1.5 flex items-baseline gap-2">
-              <span className="text-[11px] font-bold uppercase tracking-[0.08em]" style={{ color: PURPLE }}>{g.label}</span>
-              <span className="text-[12px]" style={{ color: 'var(--text-3)' }}>{g.says}</span>
-            </p>
-            <div className="grid grid-cols-2 md:grid-cols-1 gap-1">
-              {TABS.filter((t) => t.group === g.id).map(({ id, label, icon: Icon }) => {
-                const n = preview ? 0 : id === 'queue' ? queue.length : id === 'sent' ? history.length : id === 'inbox' ? unread : id === 'changes' ? (changes?.changes.filter((c) => c.yours).length ?? 0) : 0
-                const on = (lockedTab ?? tab) === id
-                const locked = preview && id !== 'find'
-                // Something waiting on you is filled; a running total is quiet.
-                const waiting = id === 'inbox' || id === 'queue'
-                return (
-                  <button key={id} aria-current={on ? 'page' : undefined} onClick={() => go(id)} title={locked ? 'On the Pro plan' : undefined}
-                    className="group w-full flex items-center gap-2.5 rounded-xl px-2.5 sm:px-2 py-2 sm:py-1.5 text-left text-[13.5px] sm:text-[14px] font-semibold transition-colors hover:bg-[var(--surface-2)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7C3AED]"
-                    style={on ? { background: 'rgba(124,58,237,0.12)', color: PURPLE } : { color: 'var(--text)' }}>
-                    <span className="hidden sm:inline-flex w-7 h-7 shrink-0 rounded-lg items-center justify-center transition-colors"
-                      style={on ? { background: PURPLE, color: '#fff' } : { background: 'var(--surface-2)', color: 'var(--text-2)' }}>
-                      <Icon size={15} />
-                    </span>
-                    <span className="flex-1 min-w-0 leading-tight">{label}</span>
-                    {locked && <span className="text-[10px] font-bold uppercase tracking-wide rounded-full px-1.5 py-0.5 inline-flex items-center gap-0.5" style={{ background: 'var(--surface-2)', color: 'var(--text-3)' }}><Lock size={9} /> Pro</span>}
-                    {n > 0 && <span className="text-[11.5px] font-bold rounded-full px-2 py-0.5 min-w-[1.5rem] text-center tabular-nums"
-                      style={waiting ? { background: PURPLE, color: '#fff' } : { color: on ? PURPLE : 'var(--text-3)' }}>{n}</span>}
-                  </button>
-                )
-              })}
-            </div>
-          </div>
-        ))}
-      </nav>
+      <TrybeMenu tab={tab} lockedTab={lockedTab} preview={preview} queue={queue} history={history} unread={unread} changes={changes} go={go} />
       {/* Where you are, and what it is for. */}
       {(() => {
         const t = TABS.find((x) => x.id === (lockedTab ?? tab))
         if (!t) return null
         const Icon = t.icon
+        // Outreach and Earnings hold two pages each: the switch between them.
+        const tile = TILES.find((x) => x.tabs.includes(t.id))
+        const color = tile?.color ?? PURPLE
+        const pair = tile && tile.tabs.length > 1 ? tile.tabs : null
         return (
-          <div className="flex items-start gap-3 -mt-1">
-            <span className="mt-0.5 w-9 h-9 shrink-0 rounded-xl inline-flex items-center justify-center" style={{ background: 'rgba(124,58,237,0.12)', color: PURPLE }}><Icon size={18} /></span>
-            <div className="min-w-0">
+          <div className="flex flex-wrap items-start gap-3 -mt-1">
+            <span className="mt-0.5 w-9 h-9 shrink-0 rounded-xl inline-flex items-center justify-center" style={{ background: `${color}1f`, color }}><Icon size={18} /></span>
+            <div className="min-w-0 flex-1">
               <h2 className="text-[20px] font-bold leading-tight">{t.label}</h2>
               <p className="text-[14px]" style={{ color: 'var(--text-3)' }}>{t.says}</p>
             </div>
+            {pair && (
+              <div role="tablist" aria-label={tile!.label} className="inline-flex rounded-xl border p-1 gap-1" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
+                {pair.map((id) => {
+                  const p = TABS.find((x) => x.id === id)!
+                  const sel = (lockedTab ?? tab) === id
+                  const k = preview ? 0 : id === 'queue' ? queue.length : id === 'sent' ? history.length : 0
+                  return (
+                    <button key={id} role="tab" aria-selected={sel} onClick={() => go(id)}
+                      className="rounded-lg px-3 py-1.5 text-[13px] font-semibold inline-flex items-center gap-1.5 transition-colors"
+                      style={sel ? { background: color, color: '#fff' } : { color: 'var(--text-2)' }}>
+                      {p.label}{k > 0 && <span className="text-[11px] tabular-nums opacity-80">{k}</span>}
+                    </button>
+                  )
+                })}
+              </div>
+            )}
           </div>
         )
       })()}
