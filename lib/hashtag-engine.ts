@@ -151,6 +151,14 @@ export function contentWords(text: string): Set<string> {
   return out
 }
 
+/** The pairs contentWords runs together ("air fryer" -> airfryer). */
+function wordPairs(text: string): Set<string> {
+  const out = new Set<string>()
+  const list = String(text || '').toLowerCase().match(WORD) || []
+  for (let i = 0; i + 1 < list.length; i++) if (!STOP.has(list[i]) && !STOP.has(list[i + 1])) out.add(list[i] + list[i + 1])
+  return out
+}
+
 /** Is this tag about this content? A word of the content inside the tag, or
  *  the tag inside a word of the content. Short words only match whole. */
 /** Words a hashtag adds to a product without changing what it is about
@@ -179,6 +187,40 @@ export function madeOfContent(tag: string, words: Set<string>): boolean {
     }
   }
   return reach[body.length].ok && reach[body.length].real
+}
+
+/** Little words a tag may run in between the real ones (#catsofinstagram). */
+const JOIN = new Set(['of', 'in', 'on', 'my', 'to', 'up', 'at', 'for', 'the', 'and', 'with', 'insta', 'instagram', 'gram', 'gear', 'love', 'finds'])
+
+/** How many words a tag runs together, read with the content's own words,
+ *  the usual add-ons and the category's terms (#fattireebikecommute is fat,
+ *  tire, ebike, commute: 4). The fewest pieces that cover the whole tag, or
+ *  null when it cannot be read that way. Pure. */
+export function wordsInTag(tag: string, vocab: Set<string>): number | null {
+  const body = tag.replace(/^#/, '').toLowerCase()
+  if (!body) return null
+  const cost: number[] = Array(body.length + 1).fill(Infinity)
+  cost[0] = 0
+  for (let i = 0; i < body.length; i++) {
+    if (cost[i] === Infinity) continue
+    for (let j = i + 2; j <= body.length; j++) {
+      const piece = body.slice(i, j)
+      if (vocab.has(piece) || ADD_ON.has(piece) || JOIN.has(piece) || STOP.has(piece)) cost[j] = Math.min(cost[j], cost[i] + 1)
+    }
+  }
+  return cost[body.length] === Infinity ? null : cost[body.length]
+}
+
+/** A tag nobody searches for, because it is a phrase with its spaces taken
+ *  out, or null when it reads as a tag. For tags MVP did not vet itself (the
+ *  writer's, a niche the creator typed, the content's own words): a category
+ *  or trending tag has proved people use it. */
+export function phraseProblem(tag: string, vocab: Set<string>): string | null {
+  const body = tag.replace(/^#/, '')
+  const n = wordsInTag(tag, vocab)
+  if (n != null && n >= 4) return `${n} words run together: nobody searches for that`
+  if (body.length > 18) return 'too long: nobody searches for a tag that long'
+  return null
 }
 
 export function aboutContent(tag: string, words: Set<string>): boolean {
@@ -214,15 +256,27 @@ export function pickHashtags(input: TagInput): TagPick {
   const out: PickedTag[] = []
   const seen = new Set<string>()
   let broadUsed = 0
+  const pairs = wordPairs(`${input.text || ''} ${(input.niches || []).join(' ')}`)
   const trendBy = new Map((input.trends || []).map((t) => [hashify(t.tag), t] as const))
   // A tag the platform itself shows as a dead end is never used (the brand's
   // own tag excepted: brand tags are small and still the brand's).
   const deadBy = new Map((input.trends || []).filter((t) => trendStanding(t) === 'dead').map((t) => [hashify(t.tag), t] as const))
-  const take = (raw: string | null | undefined, source: TagSource, why: string, opts: { needsRelevance?: boolean; broad?: boolean } = {}): boolean => {
+  // The pieces a tag may be read in: the content's single words (not the
+  // pairs contentWords runs together, which would hide a phrase) and the
+  // category's own tags and terms.
+  const vocab = new Set<string>(Array.from(contentWords(`${input.text || ''} ${(input.niches || []).join(' ')}`)).filter((w) => !hasPair(w)))
+  for (const t of catTags) vocab.add(t.slice(1))
+  for (const c of cats) for (const m of c.match) for (const w of m.toLowerCase().split(/[^a-z0-9]+/)) if (w.length >= 2) vocab.add(w)
+  function hasPair(w: string) { return pairs.has(w) }
+  const take = (raw: string | null | undefined, source: TagSource, why: string, opts: { needsRelevance?: boolean; broad?: boolean; unvetted?: boolean } = {}): boolean => {
     if (!raw || out.length >= want) return out.length >= want
     const { tag, problem } = tagProblem(raw)
     if (!tag || seen.has(tag)) return out.length >= want
     if (problem) { dropped.push({ tag, why: problem }); seen.add(tag); return false }
+    // A phrase with its spaces taken out is not a tag anyone browses, unless
+    // MVP's own lists or the platform's trend list say people use it.
+    const phrase = opts.unvetted && !catTags.has(tag) && !trendBy.has(tag) ? phraseProblem(tag, vocab) : null
+    if (phrase) { dropped.push({ tag, why: phrase }); seen.add(tag); return false }
     if (opts.needsRelevance && !relevant(tag)) { dropped.push({ tag, why: 'not about this content' }); seen.add(tag); return false }
     const dead = deadBy.get(tag)
     if (dead && source !== 'brand') { dropped.push({ tag, why: dead.source === 'youtube' ? `almost no videos use it on YouTube (${compact(dead.posts || 0)})` : `almost no posts use it on Instagram (${compact(dead.posts || 0)})` }); seen.add(tag); return false }
@@ -262,7 +316,7 @@ export function pickHashtags(input: TagInput): TagPick {
     for (const t of trends) if (take(t.tag, trendSource(t), trendWhy(t))) break
     for (const k of kinds) if (take(k, 'category', 'what the product is')) break
     for (const c of cats) if (take(bySize(c.niche)[0], 'category', `MVP's ${c.key.replace(/-/g, ' ')} tags`)) break
-    for (const w of input.writer || []) if (take(w, 'writer', 'written for this post', { needsRelevance: true })) break
+    for (const w of input.writer || []) if (take(w, 'writer', 'written for this post', { needsRelevance: true, unvetted: true })) break
     take(brandTag, 'brand', "the product's brand")
     return { tags: out, dropped, rule }
   }
@@ -276,14 +330,14 @@ export function pickHashtags(input: TagInput): TagPick {
   for (const t of trends.slice(0, 3)) take(t.tag, trendSource(t), trendWhy(t))
   for (const c of cats) take(bySize(c.niche)[0], 'category', `MVP's ${c.key.replace(/-/g, ' ')} tags`)
   for (const t of members.slice(0, 2)) take(t.tag, 'members', liftWhy('lifted members’', t), { needsRelevance: true })
-  for (const w of input.writer || []) take(w, 'writer', 'written for this post', { needsRelevance: true })
+  for (const w of input.writer || []) take(w, 'writer', 'written for this post', { needsRelevance: true, unvetted: true })
   for (const c of cats) { take(bySize(c.mid)[0], 'category', `MVP's ${c.key.replace(/-/g, ' ')} tags`); take(bySize(c.niche)[1], 'category', `MVP's ${c.key.replace(/-/g, ' ')} tags`) }
   if (want < 3) take(brandTag, 'brand', "the product's brand")
   for (const c of cats) take(c.broad[0], 'category', `MVP's ${c.key.replace(/-/g, ' ')} tags, for reach`, { broad: true })
-  for (const n of input.niches || []) take(n, 'category', 'your niche', { needsRelevance: true })
+  for (const n of input.niches || []) take(n, 'category', 'your niche', { needsRelevance: true, unvetted: true })
   // Last: the content's own words, so a post is never left with nothing.
   if (out.length < rule.min) {
-    for (const w of Array.from(words).filter((x) => x.length >= 5 && !/s$/.test(x)).slice(0, 6)) take(w, 'keyword', "from the content's own words")
+    for (const w of Array.from(words).filter((x) => x.length >= 5 && !/s$/.test(x)).slice(0, 6)) take(w, 'keyword', "from the content's own words", { unvetted: true })
   }
   return { tags: out, dropped, rule }
 }

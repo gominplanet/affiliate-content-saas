@@ -13,8 +13,8 @@
 // through the engine, every post goes through the safety net, every platform
 // is tracked, and SCOUT reads trends without ever posting.
 import { readFileSync, existsSync } from 'node:fs'
-import { pickHashtags, fitHashtags, TAG_RULES, trendStanding, tagProblem, SOURCE_WORDS, madeOfContent, contentWords, sizeScore } from '../lib/hashtag-engine'
-import { categoriesFor } from '../lib/hashtag-map'
+import { pickHashtags, fitHashtags, TAG_RULES, trendStanding, tagProblem, SOURCE_WORDS, madeOfContent, contentWords, sizeScore, wordsInTag, phraseProblem } from '../lib/hashtag-engine'
+import { categoriesFor, deriveBrandTag } from '../lib/hashtag-map'
 
 const fails: string[] = []
 const check = (name: string, ok: boolean | undefined, detail?: unknown) => { if (!ok) fails.push(`${name}${detail !== undefined ? `: ${JSON.stringify(detail)}` : ''}`) }
@@ -64,6 +64,28 @@ check('a vacuum gets the vacuum trend, not the blower one or a generic one', vac
 check('"pet hair" on a vacuum is not hair care', !categoriesFor('Shark cordless vacuum with self-empty base, pet hair pickup', 3).some((c) => c.key === 'haircare') && !vac.tags.some((t) => /hair/.test(t.tag)), vac.tags)
 check('an electric blanket is bedding, not single words', categoriesFor('Electric blanket heated throw', 1)[0]?.key === 'bedding' && pickHashtags({ platform: 'tiktok', text: 'Electric blanket heated throw, cosy nights' }).tags.every((t) => t.source !== 'keyword'))
 check('whitening strips are oral care', categoriesFor('Crest whitening strips for yellow teeth', 1)[0]?.key === 'oral-care')
+
+// ── Terrible tags on an e-bike Short (Seb, 2026-10-20: "we still have an
+// issue with terrible hashtags", over "#dont #bicycle #mtb #fattireebikecommute") ──
+check('a title\'s first word is not a brand ("Don\'t", "Why", "This", "Stop")', ["Don't buy a fat tire e-bike", 'Don’t buy this', 'Why I sold my car', 'This e-bike', 'Stop buying cheap bikes', "I'm done", 'Fat Tire Electric Bike'].every((t) => deriveBrandTag(t) === null))
+check('a real maker still is, possessives too', deriveBrandTag('Jasion EB7 Fat Tire Electric Bike') === '#jasion' && deriveBrandTag('COSORI Pro LE') === '#cosori' && deriveBrandTag("L'Oreal Paris") === '#loreal')
+check('#fattireebikecommute is four words run together', wordsInTag('#fattireebikecommute', new Set(['fat', 'tire', 'ebike', 'commute'])) === 4 && !!phraseProblem('#fattireebikecommute', new Set(['fat', 'tire', 'ebike', 'commute'])))
+check('a real tag is not a phrase (#airfryerrecipes, #catsofinstagram, #contentcreator)', ['#airfryerrecipes', '#catsofinstagram', '#contentcreator', '#ebikelife'].every((t) => !phraseProblem(t, new Set(['air', 'fryer', 'cats', 'ebike']))))
+const vt = "Don't Buy a Fat Tire E-Bike Until You See This"
+const ebikeWriter = ['#dont', '#bicycle', '#mtb', '#fattireebikecommute']
+check('an e-bike is an e-bike, not a car (its tire) or a pedal bike', categoriesFor(`${vt}\nfat tire ebike for my commute`, 2).map((c) => c.key).join() === 'ebike', categoriesFor(`${vt}\nfat tire ebike for my commute`, 2))
+check('a car tire inflator is still a car thing', categoriesFor('Portable tire inflator for car tires, 150 PSI', 1)[0]?.key === 'auto')
+for (const platform of ['instagram', 'tiktok', 'youtube_short'] as const) {
+  // The video title passed as the brand, as some posts did.
+  const eb = pickHashtags({ platform, text: `${vt}\nMy daily commute on a fat tire ebike`, brand: vt, writer: ebikeWriter })
+  const got = eb.tags.map((t) => t.tag)
+  check(`${platform}: the e-bike Short gets e-bike tags`, got.includes('#ebike') || got.includes('#electricbike'), got)
+  check(`${platform}: never #dont, #mtb or a run-together phrase`, !got.some((t) => ['#dont', '#mtb', '#fattireebikecommute', '#tire', '#caressentials'].includes(t)), got)
+  check(`${platform}: the phrase is dropped and says why`, eb.dropped.some((d) => d.tag === '#fattireebikecommute' && /nobody searches/.test(d.why)), eb.dropped)
+}
+const withMaker = pickHashtags({ platform: 'instagram', text: `Jasion EB7 Fat Tire Electric Bike for Adults\n${vt}`, brand: 'Jasion EB7 Fat Tire Electric Bike for Adults', writer: ebikeWriter })
+check('with the product known, its maker leads', withMaker.tags[0]?.tag === '#jasion' && withMaker.tags.length >= 3, withMaker.tags)
+check('a video title is never passed as the brand of a caption', /brand: input\.product\?\.title \|\| null,/.test(read('lib/direct-caption.ts')) && !/brand: input\.product\?\.title \|\| input\.videoTitle/.test(read('lib/direct-caption.ts')))
 
 // ── What the platforms themselves say ────────────────────────────────────────
 check('standing: Instagram under 2K posts is a dead end, over 300M a crowd', trendStanding({ source: 'instagram', posts: 1500 }) === 'dead' && trendStanding({ source: 'instagram', posts: 4e8 }) === 'crowd' && trendStanding({ source: 'instagram', posts: 4e6 }) === 'active')

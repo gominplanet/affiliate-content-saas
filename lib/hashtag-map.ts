@@ -29,6 +29,9 @@ interface TagCategory {
   mid: string[]
   /** Specific, on-topic tags. */
   niche: string[]
+  /** Phrases taken out of the text before this category's terms are counted,
+   *  so a more specific category's words do not count here too. */
+  except?: string[]
 }
 
 // Grounded in Amazon's real department/sub-category tree (Electronics, Home &
@@ -153,8 +156,14 @@ const TAXONOMY: TagCategory[] = [
   { key: 'camping-outdoors',
     match: ['camping', 'hiking', 'tent', 'sleeping bag', 'backpacking', 'cooler', 'hammock', 'campfire', 'trekking', 'headlamp'],
     broad: ['outdoors', 'camping'], mid: ['campinggear', 'hiking'], niche: ['campvibes', 'outdooradventure', 'backpacking'] },
+  // E-bikes before bikes: an e-bike's buyers search #ebike, not #mtb or #roadcycling.
+  { key: 'ebike',
+    match: ['ebike', 'ebikes', 'e-bike', 'e-bikes', 'e bike', 'e bikes', 'electric bike', 'electric bikes', 'electric bicycle', 'fat tire bike', 'pedal assist'],
+    broad: ['ebike', 'cycling'], mid: ['electricbike', 'ebikes'], niche: ['ebikelife', 'ebikecommute', 'ebikeadventures'] },
   { key: 'cycling',
-    match: ['bike', 'bicycle', 'cycling', 'mountain bike', 'road bike', 'bike helmet', 'e-bike'],
+    match: ['bike', 'bicycle', 'cycling', 'mountain bike', 'road bike', 'bike helmet'],
+    // "bike" inside "e-bike" is the e-bike's, not a pedal bike's.
+    except: ['e-bike', 'e-bikes', 'e bike', 'e bikes', 'electric bike', 'electric bikes', 'electric bicycle', 'electric bicycles', 'fat tire bike', 'fat tire ebike', 'fat tire e-bike'],
     broad: ['cycling', 'bike'], mid: ['cyclinglife', 'biketok'], niche: ['mtb', 'roadcycling', 'bikelife'] },
   { key: 'fishing-hunting',
     match: ['fishing', 'fishing rod', 'tackle', 'fishing reel', 'lure', 'hunting', 'trail camera'],
@@ -190,7 +199,8 @@ const TAXONOMY: TagCategory[] = [
     broad: ['fashion', 'style'], mid: ['ootd', 'styletips'], niche: ['fashionfinds', 'styleinspo', 'outfitinspo'] },
   // ── Automotive (AFTER rc-hobby so RC products don't land here) ──
   { key: 'auto',
-    match: ['car accessory', 'car care', 'dash cam', 'car detailing', 'tire', 'car seat cover', 'car mount', 'motorcycle', 'jump starter', 'obd'],
+    // A car's tire, never a bike's: "Fat Tire E-Bike" filed e-bikes under cars (Seb, 2026-10-20).
+    match: ['car accessory', 'car care', 'dash cam', 'car detailing', 'car tire', 'car tires', 'tire inflator', 'tire pressure', 'tire shine', 'car seat cover', 'car mount', 'motorcycle', 'jump starter', 'obd'],
     broad: ['cars', 'auto'], mid: ['caraccessories', 'cartok'], niche: ['caressentials', 'cargadgets', 'cardetailing'] },
   // ── Musical Instruments ──
   { key: 'music-instruments',
@@ -210,11 +220,13 @@ const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 const COMPILED = TAXONOMY.map(c => ({
   cat: c,
   re: new RegExp(`\\b(?:${c.match.map(escapeRe).join('|')})\\b`, 'gi'),
+  except: c.except?.length ? new RegExp(`\\b(?:${c.except.map(escapeRe).join('|')})\\b`, 'gi') : null,
 }))
 
-/** How many category terms appear in `hay` (occurrence count). */
-function scoreWith(hay: string, re: RegExp): number {
-  const m = hay.match(re)
+/** How many category terms appear in `hay` (occurrence count), after the
+ *  category's `except` phrases are taken out. */
+function scoreWith(hay: string, x: { re: RegExp; except: RegExp | null }): number {
+  const m = (x.except ? hay.replace(x.except, ' ') : hay).match(x.re)
   return m ? m.length : 0
 }
 
@@ -238,6 +250,29 @@ const NOT_BRAND = new Set<string>([
   'generic', 'classic', 'standard', 'deluxe', 'compact', 'lightweight', 'heavy',
 ])
 
+// Words a video or post title opens with ("Why I ...", "Stop buying ...",
+// "This fat tire ...") and words that describe a product rather than name its
+// maker. Callers pass a title as the brand, so its first word is a brand only
+// when it is none of these.
+const TITLE_WORD = new Set<string>([
+  'why', 'how', 'what', 'when', 'where', 'who', 'which', 'whats', 'hows', 'heres', 'thats', 'theres',
+  'dont', 'cant', 'wont', 'isnt', 'arent', 'didnt', 'doesnt', 'wasnt', 'shouldnt', 'wouldnt', 'couldnt',
+  'stop', 'never', 'always', 'every', 'everything', 'everyone', 'all', 'only', 'just', 'still', 'even',
+  'this', 'these', 'that', 'those', 'here', 'there', 'its', 'our', 'your', 'you', 'they', 'their', 'his', 'her',
+  'are', 'was', 'were', 'does', 'did', 'should', 'would', 'could', 'will', 'can', 'must', 'may', 'might',
+  'before', 'after', 'about', 'finally', 'honest', 'honestly', 'review', 'reviews', 'reviewed', 'unboxing',
+  'testing', 'tested', 'test', 'watch', 'look', 'see', 'meet', 'introducing', 'top', 'worst', 'better',
+  'cheap', 'cheapest', 'budget', 'ultimate', 'first', 'last', 'one', 'two', 'three', 'four', 'five', 'ten',
+  'most', 'more', 'less', 'real', 'really', 'actually', 'wow', 'omg', 'yes', 'not', 'get', 'got', 'buy',
+  'buying', 'bought', 'tried', 'trying', 'try', 'made', 'make', 'making', 'using', 'use', 'used', 'day',
+  'days', 'week', 'month', 'year', 'years', 'time', 'times', 'versus', 'big', 'bigger', 'huge', 'tiny',
+  'little', 'long', 'short', 'cool', 'amazing', 'awesome', 'perfect', 'great', 'good', 'bad', 'love', 'hate',
+  'kids', 'women', 'men', 'adult', 'adults', 'unisex', 'girls', 'boys', 'fat', 'thick', 'thin', 'black',
+  'white', 'red', 'blue', 'green', 'pink', 'gray', 'grey', 'silver', 'gold', 'clear', 'home', 'car', 'bike',
+  'ebike', 'riding', 'ride', 'rode', 'drive', 'driving', 'going', 'goes', 'went', 'need', 'needs', 'want',
+  'worth', 'unpopular', 'secret', 'secrets', 'warning', 'update', 'part', 'episode', 'my', 'mine', 'off',
+])
+
 // Generic words that make weak fallback tags.
 const WEAK_WORD = new Set<string>([
   'with', 'this', 'that', 'from', 'your', 'have', 'will', 'when', 'what', 'them',
@@ -255,8 +290,9 @@ export function detectNiche(text: string): string | null {
   // COMPILED preserves TAXONOMY order and we replace only on a STRICTLY higher
   // score, so ties go to the earlier (more specific) category — which is why
   // rc-hobby beats auto for an "RC car".
-  for (const { cat, re } of COMPILED) {
-    const score = scoreWith(hay, re)
+  for (const x of COMPILED) {
+    const { cat } = x
+    const score = scoreWith(hay, x)
     if (score > 0 && (!best || score > best.score)) best = { key: cat.key, score }
   }
   return best?.key ?? null
@@ -267,7 +303,7 @@ export function detectNiche(text: string): string | null {
 export function categoriesFor(text: string, limit = 2): Array<{ key: string; match: string[]; broad: string[]; mid: string[]; niche: string[]; score: number }> {
   const hay = ` ${String(text || '')} `.toLowerCase()
   return COMPILED
-    .map((x) => ({ ...x.cat, score: scoreWith(hay, x.re) }))
+    .map((x) => ({ ...x.cat, score: scoreWith(hay, x) }))
     .filter((x) => x.score > 0)
     .sort((a, b) => b.score - a.score)
     .slice(0, limit)
@@ -290,10 +326,14 @@ export function hashify(raw: string): string {
  *  null when we can't be reasonably confident. */
 export function deriveBrandTag(source?: string | null): string | null {
   const first = String(source || '').trim().split(/[\s,/|–—-]+/)[0] || ''
+  // "Don't", "I'm", "You're": a sentence, never a brand (a video titled "Don't
+  // buy this e-bike" was tagged #dont, Seb 2026-10-20). A possessive stays
+  // ("Burt's", "L'Oreal").
+  if (/[a-z](?:['’](?:t|m|re|ll|ve|d))$/i.test(first)) return null
   const token = first.replace(/[^A-Za-z0-9]/g, '')
   if (token.length < 3 || token.length > 20) return null
   if (!/[A-Za-z]/.test(token)) return null            // pure numbers ("2026", "3")
-  if (NOT_BRAND.has(token.toLowerCase())) return null
+  if (NOT_BRAND.has(token.toLowerCase()) || TITLE_WORD.has(token.toLowerCase())) return null
   return `#${token.toLowerCase()}`
 }
 
@@ -345,7 +385,7 @@ export function selectHashtags(opts: SelectHashtagsOpts): string[] {
   for (const t of trending) if (push(t)) return out
 
   const cats = COMPILED
-    .map(x => ({ c: x.cat, score: scoreWith(hay, x.re) }))
+    .map(x => ({ c: x.cat, score: scoreWith(hay, x) }))
     .filter(x => x.score > 0)
     .sort((a, b) => b.score - a.score)   // stable → ties keep taxonomy order
     .map(x => x.c)
