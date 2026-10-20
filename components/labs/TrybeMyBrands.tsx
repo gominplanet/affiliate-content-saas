@@ -19,6 +19,7 @@ import { requestTrybeApi } from '@/lib/extension-frame'
 import { type Conversation } from '@/components/labs/TrybeInbox'
 import { sendInTrybeChat } from '@/components/labs/trybe-chat-send'
 import TrybeVideoIdeas from '@/components/labs/TrybeVideoIdeas'
+import TrybeBrandScripts from '@/components/labs/TrybeBrandScripts'
 import TrybeLink from '@/components/labs/TrybeLink'
 import { AmazonLine } from '@/components/labs/TrybeFinderControls'
 import { useTrybeAmazon } from '@/components/labs/useTrybeAmazon'
@@ -361,6 +362,8 @@ export default function TrybeMyBrands({ canRead, canSend, convos, me, myName, is
           </label>
           Focus means one of your top {FOCUS_COUNT} by what it paid you. Drop means it approves fewer than 1 in 3 of your videos, or 30 days and 5 videos went by with nothing approved. Too early means fewer than 3 videos decided. Approval counts videos the brand decided on, not ones still in review.
         </p>
+        {/* Your brands' top videos, word for word (Seb, 2026-10-20). */}
+        <TrybeBrandScripts brands={brands} isAdmin={isAdmin} />
       </>)}
     </div>
   )

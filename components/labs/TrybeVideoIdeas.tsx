@@ -355,7 +355,7 @@ export default function TrybeVideoIdeas({ brandId, name, plan: initial, canRead,
               {winners.wordsRead || winners.fromTeam
                 ? `${[
                   winners.wordsRead ? `TRYBE shared the words of ${winners.wordsRead} of these` : '',
-                  winners.fromTeam ? `MVP has the words of ${winners.fromTeam}${winners.wordsRead ? ' more' : ' of these'} from TRYBE’s Top 100` : '',
+                  winners.fromTeam ? `MVP has the words of ${winners.fromTeam}${winners.wordsRead ? ' more' : ' of these'}, written down from the brand’s top videos` : '',
                 ].filter(Boolean).join(', and ')}. ${plan ? 'Press New ideas' : 'Plan videos'} to build hooks from them.`
                 : `TRYBE did not share the words of ${winners.wordsTried === 1 ? 'this video' : 'these videos'}. Watch them, then plan: note the first 2 seconds and what they show.`}
             </p>

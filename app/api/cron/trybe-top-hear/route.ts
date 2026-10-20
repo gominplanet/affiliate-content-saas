@@ -22,8 +22,11 @@ export const runtime = 'nodejs'
 export const maxDuration = 300
 
 /** Listens a day, the team's presses included. A TRYBE video is under a
- *  minute, so this is cents a day. */
-const DAILY_CAP = 25
+ *  minute, so this is cents a day. 100 since 2026-10-20: each member's joined
+ *  brands' top videos are filed too (lib/trybe-brand-scripts), and a first
+ *  pass over 20 brands is a couple of hundred videos. Top 100 ones still go
+ *  first (best_rank), brand ones after. */
+const DAILY_CAP = 100
 /** Listens a run. Every two hours, so a day's filing is done by the evening. */
 const PER_RUN = 10
 /** A file link older than this is likely gone. */

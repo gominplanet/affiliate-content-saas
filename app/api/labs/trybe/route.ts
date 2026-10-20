@@ -39,6 +39,7 @@ import {
   cleanScript, toTranscribe, coverageWords, openingOf, bestRank, whyNoWords, noWordsSentence, pickExamples, examplesBlock, type TopScript,
 } from '@/lib/trybe-scripts'
 import { briefFetchUrl, briefFromBody } from '@/lib/trybe-brand-page'
+import { cleanFiling, hostOf } from '@/lib/trybe-brand-scripts'
 import { assertPublicHttpUrl } from '@/lib/ssrf-guard'
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
@@ -1962,6 +1963,62 @@ export async function POST(request: Request) {
 
   const SCRIPTS_SQL = 'How they win needs migration 442 in Supabase first.'
   const scriptsMissing = (m?: string) => /trybe_top_scripts/.test(m || '') && /does not exist|schema cache|could not find/i.test(m || '')
+
+  if (action === 'brand_top_seen') {
+    // YOUR BRANDS' TOP VIDEOS, FILED (lib/trybe-brand-scripts; Seb,
+    // 2026-10-20: "the exact scripts of the top videos"). The creator's SCOUT
+    // read each joined brand's page; its top videos go into the shared copy
+    // so the transcription job writes down what is said, once for everyone.
+    // Only adds: a row already there keeps everything, and only a waiting one
+    // takes the fresh file link (TRYBE's links expire).
+    const { data: known } = await admin.from('trybe_top_scripts').select('video_url').not('best_rank', 'is', null).like('video_url', 'https://%').limit(300)
+    const hosts = new Set(((known ?? []) as Array<{ video_url: string | null }>).map((r) => hostOf(r.video_url)).filter((h): h is string => !!h))
+    // The team's own filing may teach a new host; a member's may not.
+    if (tier === 'admin') for (const b of (Array.isArray(body.brands) ? body.brands : [])) for (const v of ((b as { videos?: unknown[] })?.videos || [])) { const h = hostOf((v as { video?: unknown })?.video); if (h) hosts.add(h) }
+    const brands = cleanFiling(body.brands, hosts)
+    const all = brands.flatMap((b) => b.videos.map((v) => ({ b, v })))
+    if (!all.length) return NextResponse.json({ ok: true, saved: 0, refreshed: 0, brands: brands.length })
+    const { data: had, error: hadErr } = await admin.from('trybe_top_scripts').select('submission_id,state,video_url').in('submission_id', all.map((x) => x.v.id))
+    if (hadErr) {
+      if (scriptsMissing(hadErr.message)) return NextResponse.json({ error: setupWords(tier, SCRIPTS_SQL), needsMigration: true }, { status: 409 })
+      return NextResponse.json({ error: hadErr.message }, { status: 500 })
+    }
+    const before = new Map(((had ?? []) as Array<{ submission_id: string; state: string; video_url: string | null }>).map((r) => [r.submission_id, r]))
+    const fresh = all.filter(({ v }) => !before.has(v.id)).map(({ b, v }) => ({
+      submission_id: v.id, brand_id: b.brandId, brand_name: b.brandName || null,
+      video_url: v.video, thumbnail: v.thumbnail, best_rank: null,
+      state: v.video ? 'waiting' : 'none', source: 'none',
+      detail: v.video ? null : 'TRYBE gave no video file MVP can listen to.',
+      updated_at: now,
+    }))
+    if (fresh.length) {
+      const { error } = await admin.from('trybe_top_scripts').upsert(fresh, { onConflict: 'submission_id', ignoreDuplicates: true })
+      if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    }
+    let refreshed = 0
+    for (const { v } of all) {
+      const was = before.get(v.id)
+      if (!was || was.state !== 'waiting' || !v.video || v.video === was.video_url) continue
+      const { error } = await admin.from('trybe_top_scripts').update({ video_url: v.video, updated_at: now }).eq('submission_id', v.id).eq('state', 'waiting')
+      if (!error) refreshed++
+    }
+    return NextResponse.json({ ok: true, saved: fresh.length, refreshed, brands: brands.length, noFile: fresh.filter((r) => !r.video_url).length })
+  }
+
+  if (action === 'brand_scripts') {
+    // The words of the top videos of the brands asked about (yours), from
+    // the shared copy, best placed first.
+    const ids = (Array.isArray(body.brandIds) ? body.brandIds : []).map(String).filter((id: string) => /^[A-Za-z0-9_-]{4,120}$/.test(id)).slice(0, 60)
+    if (!ids.length) return NextResponse.json({ ok: true, videos: [] })
+    const { data, error } = await admin.from('trybe_top_scripts')
+      .select('submission_id,brand_id,brand_name,video_url,thumbnail,script,hook,source,state,detail,best_rank')
+      .in('brand_id', ids).order('best_rank', { ascending: true, nullsFirst: false }).order('first_seen', { ascending: true }).limit(800)
+    if (error) {
+      if (scriptsMissing(error.message)) return NextResponse.json({ error: setupWords(tier, SCRIPTS_SQL), needsMigration: true }, { status: 409 })
+      return NextResponse.json({ error: error.message }, { status: 500 })
+    }
+    return NextResponse.json({ ok: true, videos: data ?? [] })
+  }
 
   if (action === 'top_scripts') {
     // One brand's Top 100 videos. Read by any member on a plan with TRYBE.

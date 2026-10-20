@@ -55,7 +55,7 @@ check('the page never listens; the server does', !/top_script_hear/.test(C) && /
   check('the listening job is scheduled', crons.some((c) => c.path === '/api/cron/trybe-top-hear'))
 }
 check('it needs the cron secret', /CRON_SECRET/.test(CRON))
-check('it stops at the daily cap', /const room = Math\.min\(PER_RUN, DAILY_CAP - done\)/.test(CRON) && /const DAILY_CAP = 25/.test(CRON) && /await countListen\(sb\)/.test(HEAR))
+check('it stops at the daily cap', /const room = Math\.min\(PER_RUN, DAILY_CAP - done\)/.test(CRON) && /const DAILY_CAP = 100/.test(CRON) && /await countListen\(sb\)/.test(HEAR))
 check('a count it cannot read stops it rather than letting it spend', /if \(error\) return Number\.POSITIVE_INFINITY/.test(HEAR))
 check('it listens only to fresh files, best placed first, and never retries a failure on its own',
   /\.gte\('updated_at', new Date\(Date\.now\(\) - FRESH_MS\)/.test(CRON) && /order\('best_rank', \{ ascending: true/.test(CRON)
