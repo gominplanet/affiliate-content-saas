@@ -53,12 +53,14 @@ export class FacebookService {
     return readPostResult(res, 'Facebook post')
   }
 
-  /** A text post. A link written in the text is still a tappable link. */
-  async postText(opts: { message: string }): Promise<{ id: string }> {
+  /** A text post. A link written in the text is still a tappable link.
+   *  `tagsLast`: #ad #sponsored close the post, when its only links are to the
+   *  creator's own Group (lib/social-disclaimer discloseSocialPost). */
+  async postText(opts: { message: string; tagsLast?: boolean }): Promise<{ id: string }> {
     const res = await fetchWithTimeout(`${GRAPH}/${this.pageId}/feed`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: discloseSocialPost(opts.message, 'facebook'), access_token: this.pageAccessToken }),
+      body: JSON.stringify({ message: discloseSocialPost(opts.message, 'facebook', { tagsLast: opts.tagsLast }), access_token: this.pageAccessToken }),
     })
     return readPostResult(res, 'Facebook post')
   }
@@ -67,13 +69,14 @@ export class FacebookService {
   async postPhoto(opts: {
     imageUrl: string
     caption: string
+    tagsLast?: boolean
   }): Promise<{ id: string; post_id?: string }> {
     const res = await fetchWithTimeout(`${GRAPH}/${this.pageId}/photos`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         url: opts.imageUrl,
-        caption: discloseSocialPost(opts.caption, 'facebook'),
+        caption: discloseSocialPost(opts.caption, 'facebook', { tagsLast: opts.tagsLast }),
         access_token: this.pageAccessToken,
       }),
     })

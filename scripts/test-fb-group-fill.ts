@@ -93,9 +93,9 @@ check('one missed status answer is not the end of the watch', /GROUP_WATCH_MISS_
 check('every way of not finding the post is its own state', ['closed', 'posted_no_link', 'not_seen', 'timeout'].every((k) => WATCH.includes(`state: '${k}'`)))
 const TR = read('app/api/blog/facebook-group-teaser/route.ts')
 check('the Page post route refuses any link that is not a Facebook Group', /if \(!isFacebookGroupLink\(link\)\) return NextResponse\.json/.test(TR))
-check('the Page post carries the thumbnail MVP made, and falls back to text saying so', /svc\.postPhoto\(\{ imageUrl, caption: text \}\)/.test(TR) && /if \(!id\) id = \(await svc\.postText\(\{ message: text \}\)\)\.id/.test(TR)
+check('the Page post carries the thumbnail MVP made, and falls back to text saying so', /svc\.postPhoto\(\{ imageUrl, caption: text, tagsLast: true \}\)/.test(TR) && /if \(!id\) id = \(await svc\.postText\(\{ message: text, tagsLast: true \}\)\)\.id/.test(TR)
   && /imageUrl: heroImageUrl \|\| undefined/.test(UI) && /as text only \(Facebook refused the thumbnail\)/.test(UI))
-check('the Group post link goes in the Page post text, never as a share Facebook refuses', /svc\.postText\(\{ message: text \}\)/.test(TR) && !/postLink\(/.test(TR) && /`\$\{message\}\\n\\n\$\{link\}`/.test(TR))
+check('the Group post link goes in the Page post text, never as a share Facebook refuses', /svc\.postText\(\{ message: text, tagsLast: true \}\)/.test(TR) && !/postLink\(/.test(TR) && /`\$\{message\}\\n\\n\$\{link\}`/.test(TR))
 
 check('Group links pass', isFacebookGroupLink('https://www.facebook.com/groups/mydeals/') && isFacebookGroupPostLink('https://www.facebook.com/groups/mydeals/posts/1234567890/'))
 check('outside links do not', !isFacebookGroupLink('https://amzn.to/abc') && !isFacebookGroupLink('https://www.facebook.com.evil.com/groups/x/') && !isFacebookGroupLink('http://www.facebook.com/groups/x/') && !isFacebookGroupLink('https://www.facebook.com/somepage'))

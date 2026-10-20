@@ -71,12 +71,14 @@ export async function POST(request: NextRequest) {
     let photoError: string | null = null
     if (imageUrl) {
       try {
-        const r = await svc.postPhoto({ imageUrl, caption: text })
+        // #ad #sponsored under the Group link, not on top (Seb, 2026-10-20):
+        // this post links only to the Group post, which opens with them.
+        const r = await svc.postPhoto({ imageUrl, caption: text, tagsLast: true })
         id = r.post_id || r.id
         photo = true
       } catch (e) { photoError = e instanceof Error ? e.message.slice(0, 200) : 'the photo was refused' }
     }
-    if (!id) id = (await svc.postText({ message: text })).id
+    if (!id) id = (await svc.postText({ message: text, tagsLast: true })).id
     return NextResponse.json({ ok: true, id, page: acct.displayName, link, photo, photoTried: !!imageUrl, photoError })
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : 'Facebook post failed' }, { status: 502 })

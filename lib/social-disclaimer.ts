@@ -14,6 +14,7 @@
 
 import { fitHashtags, type TagPlatform } from '@/lib/hashtag-engine'
 import { SOCIAL_LIMITS } from '@/lib/social-cap'
+import { isFacebookGroupLink } from '@/lib/facebook-group-link'
 
 export const AFFILIATE_DISCLAIMER_DEFAULT =
   '📌 As an Amazon Associate I earn from qualifying purchases. This post may contain affiliate links, and I may earn a small commission at no extra cost to you.'
@@ -368,14 +369,35 @@ function fitBody(text: string, max: number): string {
  * each inside the fold, and the whole thing back inside the platform's limits
  * by trimming the body. Idempotent: running it twice changes nothing.
  */
+/** Every link in the post goes to a Facebook Group (and there is one): no
+ *  affiliate or outside link in it. */
+export function onlyGroupLinks(text: string): boolean {
+  const links = String(text || '').match(/https?:\/\/[^\s<>()]+/gi) || []
+  return links.length > 0 && links.every((l) => isFacebookGroupLink(l.replace(/[.,!?;:]+$/, '')))
+}
+
+/** Both tags once, closing the post. */
+function tagsLast(text: string): string {
+  const t = tidy(String(text || '').replace(tagRe('ad'), '').replace(tagRe('sponsored'), ''))
+  return t ? `${t}\n\n#ad #sponsored` : '#ad #sponsored'
+}
+
 export function discloseSocialPost(
   text: string,
   platform: DisclosurePlatform,
-  opts: { known?: Record<string, LinkDestination | string> } = {},
+  opts: { known?: Record<string, LinkDestination | string>; tagsLast?: boolean } = {},
 ): string {
   const md = platform === 'telegram'
   let t = labelLinks(text || '', opts.known, { markdownV2: md })
-  t = ensureAdTags(t, { markdownV2: md, firstLine: TAGS_ON_FIRST_LINE.has(platform), afterLinkLead: platform === 'facebook', onlyAd: platform === 'instagram' })
+  // THE GROUP THEN PAGE POST (Seb, 2026-10-20: "I just don't want the hashtag
+  // ad and sponsored the first thing they see ... then have the Facebook
+  // group permalink for that post. And then after that, under there, you can
+  // put hashtag ad"). Only a Facebook Page post whose every link is the
+  // creator's own Group: the affiliate link and its disclosure are in the
+  // Group post, which still opens with them. A post with any other link keeps
+  // the tags where the rule below puts them.
+  if (platform === 'facebook' && opts.tagsLast && onlyGroupLinks(t)) t = tagsLast(t)
+  else t = ensureAdTags(t, { markdownV2: md, firstLine: TAGS_ON_FIRST_LINE.has(platform), afterLinkLead: platform === 'facebook', onlyAd: platform === 'instagram' })
   // THE HASHTAG SAFETY NET (lib/hashtag-engine fitHashtags), on every post:
   // duplicates, spam and years out, and no more than the platform takes.
   // Telegram is MarkdownV2 (its tags are escaped), so it is left as written.

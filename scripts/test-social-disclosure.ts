@@ -130,7 +130,7 @@ const SERVICES: Array<[string, string, number]> = [
   ['services/bluesky.ts', "discloseSocialPost(args.text, 'bluesky')", 1],
   ['services/threads/index.ts', "discloseSocialPost(text, 'threads')", 1],
   ['services/linkedin/index.ts', "discloseSocialPost(opts.text, 'linkedin')", 2],
-  ['services/facebook/index.ts', "'facebook')", 3],
+  ['services/facebook/index.ts', "discloseSocialPost(opts.", 3],
   ['lib/facebook-reels.ts', "discloseSocialPost(opts.description, 'facebook')", 2],
   ['services/telegram.ts', "'telegram')", 2],
   ['services/instagram.ts', "discloseSocialPost(opts.caption, 'instagram')", 2],
@@ -159,6 +159,18 @@ check('Bitly records its destination', /rememberLinkDestination\(link, url\)/.te
 check('blog share links record the blog', /rememberBlogUrl\(opts\.post\.wordpress_url\)/.test(read('lib/channel-share-url.ts')))
 // DMs are private messages, not posts, and stay untagged.
 check('lib/ig-dm.ts is not tagged', !/discloseSocialPost/.test(read('lib/ig-dm.ts')))
+
+// ── The Group then Page post: #ad under the Group link (Seb, 2026-10-20: "I
+// just don't want the hashtag ad and sponsored the first thing they see") ──
+const permalink = 'https://www.facebook.com/groups/gomin.tech.reviews/permalink/1132275689449319/'
+const teaserPost = `New in Gomin Tech Reviews:\n\nEver wondered if a smart thermometer can actually help you monitor your home better?\n\nThe full post, links and all, is in the Group 👇\n\n${permalink}`
+const pagePost = discloseSocialPost(teaserPost, 'facebook', { tagsLast: true })
+check('the Page post opens with its words, the Group link, then #ad #sponsored', pagePost.startsWith('New in Gomin Tech Reviews:') && pagePost.endsWith(`${permalink}\n\n#ad #sponsored`) && (pagePost.match(/#ad\b/g) || []).length === 1 && (pagePost.match(/#sponsored\b/g) || []).length === 1)
+check('a tag a writer put on top still ends up at the bottom, once', discloseSocialPost(`#ad #sponsored\n\n${teaserPost}`, 'facebook', { tagsLast: true }) === pagePost)
+check('any outside link keeps the tags on top', /^#ad #sponsored/.test(discloseSocialPost(`${teaserPost}\n\nhttps://www.amazon.com/dp/B0GTV1R5JY?tag=x-20`, 'facebook', { tagsLast: true })))
+check('a post with no link keeps the tags on top', /^#ad #sponsored/.test(discloseSocialPost('Ever wondered if a smart thermometer can help?', 'facebook', { tagsLast: true })))
+check('only Facebook takes it', /^#ad #sponsored/.test(discloseSocialPost(teaserPost, 'threads', { tagsLast: true })))
+check('the Group then Page post asks for it, both ways it can go out', (read('app/api/blog/facebook-group-teaser/route.ts').match(/tagsLast: true/g) || []).length === 2)
 
 if (failures.length) {
   console.error(`✗ social-disclosure: ${failures.length} failed`)
