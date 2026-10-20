@@ -48,13 +48,17 @@ export async function GET() {
     return { ...s, tags: error ? null : count ?? 0, lastAt: (last?.[0]?.seen_at as string | undefined) ?? null, missing: !!error && /does not exist|schema cache/i.test(error.message) }
   }))
   // INSTAGRAM, WHAT TO CHECK NEXT: this creator's own recent Instagram tags,
-  // then their niches' category tags, that nobody checked in two weeks.
+  // then the tags captions asked for (hashtag_wanted, migration 448: found
+  // and counted on YouTube as each caption was written), then their niches'
+  // category tags, that nobody checked in two weeks.
   const { data: mine } = await admin.from('reach_samples').select('hashtags,niche').eq('user_id', user.id).eq('platform', 'instagram').order('posted_at', { ascending: false }).limit(60)
   const want: string[] = []
   for (const r of (mine ?? []) as Array<{ hashtags: string[] | null; niche: string | null }>) for (const t of r.hashtags || []) { const k = trendTag(t); if (k && !want.includes(k)) want.push(k) }
+  const { data: asked } = await admin.from('hashtag_wanted').select('tag').eq('platform', 'instagram').order('wanted_at', { ascending: false }).limit(120)
+  for (const r of (asked ?? []) as Array<{ tag: string }>) { const k = trendTag(r.tag); if (k && !want.includes(k)) want.push(k) }
   const niches = Array.from(new Set(((mine ?? []) as Array<{ niche: string | null }>).map((r) => r.niche).filter(Boolean))) as string[]
   for (const c of categoriesFor(niches.join(' '), 3)) for (const t of [...c.niche, ...c.mid]) { const k = trendTag(t); if (k && !want.includes(k)) want.push(k) }
-  const { data: done } = await admin.from('hashtag_trends').select('tag').eq('source', 'instagram').in('tag', want.length ? want.slice(0, 200) : ['#-']).gte('seen_at', new Date(Date.now() - 14 * 86_400_000).toISOString())
+  const { data: done } = await admin.from('hashtag_trends').select('tag').eq('source', 'instagram').in('tag', want.length ? want.slice(0, 300) : ['#-']).gte('seen_at', new Date(Date.now() - 14 * 86_400_000).toISOString())
   const checked = new Set(((done ?? []) as Array<{ tag: string }>).map((r) => r.tag))
   // WHAT WAS ACTUALLY READ, for the screen: TikTok's list as it stood, and
   // the Instagram counts, dead ends included.
@@ -63,7 +67,7 @@ export async function GET() {
     .sort((a, b) => (a.rank ?? 999) - (b.rank ?? 999)).slice(0, 12)
   const { data: ig } = await admin.from('hashtag_trends').select('tag,posts,seen_at').eq('source', 'instagram').gte('seen_at', since).order('seen_at', { ascending: false }).limit(20)
   const instagramRecent = ((ig ?? []) as Array<{ tag: string; posts: number | null }>).map((r) => ({ tag: r.tag, posts: r.posts, standing: trendStanding({ source: 'instagram', posts: r.posts }) }))
-  return NextResponse.json({ ok: true, allowed: await allowed(admin, user.id), sources, tiktokTop, instagramRecent, instagramNext: want.filter((t) => !checked.has(t)).slice(0, 15) })
+  return NextResponse.json({ ok: true, allowed: await allowed(admin, user.id), sources, tiktokTop, instagramRecent, instagramNext: want.filter((t) => !checked.has(t)).slice(0, 20) })
 }
 
 export async function POST(request: Request) {

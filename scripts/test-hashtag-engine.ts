@@ -13,8 +13,9 @@
 // through the engine, every post goes through the safety net, every platform
 // is tracked, and SCOUT reads trends without ever posting.
 import { readFileSync, existsSync } from 'node:fs'
-import { pickHashtags, fitHashtags, TAG_RULES, trendStanding, tagProblem, SOURCE_WORDS, madeOfContent, contentWords, sizeScore, wordsInTag, phraseProblem } from '../lib/hashtag-engine'
+import { pickHashtags, fitHashtags, TAG_RULES, trendStanding, tagProblem, SOURCE_WORDS, madeOfContent, contentWords, sizeScore, wordsInTag, phraseProblem, sizeWords, SWEET_SPOT } from '../lib/hashtag-engine'
 import { categoriesFor, deriveBrandTag } from '../lib/hashtag-map'
+import { suggestionSeeds, tagsFromSearches, tagCandidates, researchTags, splitCounts, RESEARCH_MAX_READS } from '../lib/hashtag-research'
 
 const fails: string[] = []
 const check = (name: string, ok: boolean | undefined, detail?: unknown) => { if (!ok) fails.push(`${name}${detail !== undefined ? `: ${JSON.stringify(detail)}` : ''}`) }
@@ -172,5 +173,68 @@ check('the Creative Center watcher keeps a copy and changes nothing', /creative_
 check('the watcher is on only for the read', /registerContentScripts\(\[\{ id: CC_HOOK_ID, .*world: 'MAIN'/.test(BG) && /finally \{[\s\S]{0,200}unregisterContentScripts\(\{ ids: \[CC_HOOK_ID\] \}\)/.test(BG))
 check('a read that found nothing says so', /error: 'nothing-read'/.test(BG))
 
-if (fails.length) { console.error('hashtag-engine failed:\n - ' + fails.join('\n - ')); process.exit(1) }
-console.log('✅ hashtag-engine: one pick for every platform (Instagram 5 with #ad, Threads 1, YouTube up to 15), trends only when about the post, dead tags dropped, every post netted and tracked, SCOUT reads only')
+// ── 10K to 200K, found and counted live (Seb, 2026-10-20: "Do we actually go
+// online to find and pick the winning hashtags? ... I love a hashtag that is
+// anywhere between 10,000 and 200,000 ... way better than a hashtag like the
+// word bike") ──
+check('the sweet spot is 10K to 200K posts', SWEET_SPOT.min === 10_000 && SWEET_SPOT.max === 200_000)
+check('in range beats around it, beats big, beats a guess, beats a crowd', sizeScore({ source: 'youtube', posts: 49_000 }) > sizeScore({ source: 'youtube', posts: 289_000 }) && sizeScore({ source: 'youtube', posts: 289_000 }) > sizeScore({ source: 'youtube', posts: 2_800_000 }) && sizeScore({ source: 'youtube', posts: 2_800_000 }) > sizeScore(null) && sizeScore(null) > sizeScore({ source: 'youtube', posts: 10_000_000 }))
+// Counted live on YouTube for an e-bike, 2026-10-20.
+const ytBike = ([['#ebike', 1e6], ['#ebikelife', 49e3], ['#electricbikes', 27e3], ['#ebikes', 86e3], ['#electricbike', 289e3], ['#ebikereview', 9400], ['#ebikecommute', 409], ['#bike', 1e7], ['#cycling', 2e6], ['#jasion', 1000]] as const).map(([tag, posts]) => ({ tag, source: 'youtube', posts, label: `on YouTube: ${posts} videos` }))
+const bikeText = `Jasion EB7 Fat Tire Electric Bike for Adults, 750W Motor\n${vt}`
+const short = pickHashtags({ platform: 'youtube_short', text: bikeText, brand: 'Jasion EB7 Fat Tire Electric Bike', writer: ['#bike', '#fattireebikecommute'], found: ['#ebikelife', '#electricbikes', '#ebikes', '#ebikereview'], trends: ytBike })
+const shortTags = short.tags.map((t) => t.tag)
+check('a Short leads with the brand, then tags YouTube counted at 10K to 200K', shortTags[0] === '#jasion' && ['#ebikelife', '#electricbikes', '#ebikes'].every((t) => shortTags.includes(t)) && short.tags.filter((t) => t.source === 'measured').length >= 3, short.tags)
+const pedal = pickHashtags({ platform: 'youtube_short', text: 'A bike for the city, light and quick', writer: ['#bike'], trends: [{ tag: '#bike', source: 'youtube', posts: 1e7, label: 'on YouTube: 10M videos' }] })
+check('#bike (10M) is never used while there is room for better, and is said to be a crowd', !shortTags.includes('#bike') && !pedal.tags.some((t) => t.tag === '#bike') && pedal.tags.length >= 3 && pedal.dropped.some((d) => d.tag === '#bike' && /crowd/.test(d.why)), pedal)
+check('the huge "for reach" tag is gone unless counted in range', !shortTags.includes('#cycling'), shortTags)
+check('every measured pick says its count', short.tags.filter((t) => t.source === 'measured').every((t) => /on YouTube: \d+ videos/.test(t.why)), short.tags)
+const igBike = pickHashtags({ platform: 'instagram', text: bikeText, brand: 'Jasion EB7 Fat Tire Electric Bike', found: ['#ebikelife', '#ebikes'], elsewhere: ytBike.map((r) => ({ ...r, platform: 'youtube' })) })
+check('with no Instagram count, YouTube\'s guides the pick and is said as such', igBike.tags.some((t) => t.tag === '#ebikelife' && /on YouTube.*not counted on Instagram yet/.test(t.why)) && !igBike.tags.some((t) => t.tag === '#bike'), igBike.tags)
+check('a tag nobody counted is never called measured', pickHashtags({ platform: 'instagram', ...air }).tags.every((t) => t.source !== 'measured'))
+const noCount = pickHashtags({ platform: 'tiktok', text: bikeText, brand: 'Jasion EB7', found: ['#ebikesetup'] })
+check('a found tag nobody counted is not used on its own say', !noCount.tags.some((t) => t.tag === '#ebikesetup'), noCount.tags)
+
+check('YouTube is asked about the product, never a video title', suggestionSeeds(bikeText, 'Jasion EB7 Fat Tire Electric Bike for Adults').includes('fat tire') && !suggestionSeeds(vt, null).some((x) => /dont|buy|until/.test(x)), [suggestionSeeds(bikeText, 'Jasion EB7 Fat Tire Electric Bike for Adults'), suggestionSeeds(vt, null)])
+check('a search that reads as a tag becomes one, a sentence does not', JSON.stringify(tagsFromSearches(['fat tire ebike', 'electric bike for adults', 'fat tire ebike hitch rack', 'ebike 2026'])) === JSON.stringify(['#fattireebike']), tagsFromSearches(['fat tire ebike', 'electric bike for adults', 'fat tire ebike hitch rack', 'ebike 2026']))
+const cands = tagCandidates({ text: bikeText, brand: 'Jasion EB7 Fat Tire Electric Bike', writer: ['#fattireebikecommute', '#halloween'], searches: ['fat tire ebike'] })
+check('the forms people tag a product with are all counted', ['#jasion', '#electricbike', '#electricbikes', '#electricbikelife', '#electricbikereview', '#ebikelife', '#fattireebike'].every((t) => cands.includes(t)) && !cands.includes('#halloween'), cands)
+
+const rq = (data: unknown[] = []) => { const q: Record<string, unknown> = {}; for (const k of ['select', 'in', 'gte', 'eq', 'order']) q[k] = () => q; q.limit = () => Promise.resolve({ data }); q.upsert = (rows: unknown) => { saved.push(rows); return Promise.resolve({ error: null }) }; return q }
+const saved: unknown[] = []
+const fakeAdmin = { from: () => rq([{ platform: 'youtube', tag: '#ebikes', source: 'youtube', posts: 86000, seen_at: new Date().toISOString() }]) }
+const asked: string[] = []
+;(async () => {
+  const live = await researchTags(fakeAdmin, { text: bikeText, brand: 'Jasion EB7 Fat Tire Electric Bike' }, {
+    suggest: async () => ['fat tire ebike'],
+    read: async (t: string) => { asked.push(t); return t === '#ebikelife' ? { platform: 'youtube', tag: t, source: 'youtube', posts: 49000, label: 'on YouTube: 49K videos' } : null },
+  })
+  check('research counts on YouTube only what nobody counted this week, at most 16', !asked.includes('#ebikes') && asked.length > 0 && asked.length <= RESEARCH_MAX_READS, asked)
+  check('a tag YouTube did not answer for is never taken as zero', live.counts.every((c) => typeof c.posts === 'number') && live.read === 1, live.counts)
+  check('what was counted is kept for everyone, and Instagram is asked for', saved.length >= 2, saved.length)
+  check('the fresh count reaches the pick', splitCounts(live.counts, 'youtube').own.some((t) => t.tag === '#ebikelife' && t.posts === 49000))
+  const t0 = Date.now()
+  await researchTags(fakeAdmin, { text: bikeText }, { budgetMs: 600, suggest: async () => [], read: () => new Promise((r) => setTimeout(() => r(null), 5000)) })
+  check('research never holds a caption past its time', Date.now() - t0 < 2500, Date.now() - t0)
+
+  check('the size words: in range, crowded, another platform, nobody', sizeWords([{ platform: 'youtube', source: 'youtube', posts: 49000 }], 'youtube_short').tone === 'sweet' && sizeWords([{ platform: 'youtube', source: 'youtube', posts: 1e7 }], 'tiktok').tone === 'crowd' && /on YouTube/.test(sizeWords([{ platform: 'youtube', source: 'youtube', posts: 49000 }], 'instagram').text) && sizeWords([], 'instagram').text === 'not counted yet')
+
+  // Wiring.
+  const DATA2 = read('lib/hashtag-data.ts')
+  check('every caption is researched live unless a caller says not', /input\.live === false \? Promise\.resolve\(null\) : liveResearch\(input\)/.test(DATA2) && /found: \[\.\.\.\(input\.found \|\| \[\]\), \.\.\.\(research\?\.candidates \|\| \[\]\)\]/.test(DATA2))
+  check('Clip Factory researches once per video', /liveResearch\(\{ text: opts\.text, niches: opts\.niches \}\)/.test(DATA2))
+  const SHELL = read('components/layout/DashboardShellV2.tsx')
+  const READER = read('components/scout/InstagramTagReader.tsx')
+  check('Instagram counts are read in the background, quietly, only by SCOUT 1.53.6', /<InstagramTagReader \/>/.test(SHELL) && /\{ quiet: true \}/.test(READER) && /SCOUT_IG_QUIET_MIN_VERSION/.test(READER) && /requestHashtagAccess\(false\)/.test(READER) && !/requestHashtagAccess\(true\)/.test(READER))
+  const BG2 = read('extension/background.js')
+  const igQuiet = BG2.slice(BG2.indexOf('async function igOwnTab('), BG2.indexOf('async function hashtagInstagram('))
+  const igRead = BG2.slice(BG2.indexOf('async function hashtagInstagram('), BG2.indexOf('async function hashtagInstagram(') + 1800)
+  check('the quiet read never opens, reloads or closes a tab', igQuiet.length > 100 && !/openWorkTab|tabs\.create|tabs\.reload|windows\.create/.test(igQuiet) && /if \(quiet\) \{\s*tabId = await igOwnTab\(\)\s*if \(tabId == null\) return \{ ok: false, error: 'no-tab' \}/.test(igRead) && /if \(opened && tabId != null\)/.test(igRead))
+  check('the Instagram queue is read from what captions asked for', /from\('hashtag_wanted'\)/.test(read('app/api/hashtags/trends/route.ts')) && /create table if not exists public\.hashtag_wanted/.test(read('supabase/migrations/448_hashtag_wanted.sql')))
+  check('the sizes show beside the captions creators edit', ['components/TikTokDirectModal.tsx', 'components/InstagramDirectModal.tsx', 'components/clip-factory/PublishPanel.tsx'].every((f) => /<TagCounts text=\{/.test(read(f))))
+  check('the background read says how it went on the Live hashtag data card', /lastIgRead\(\)/.test(read('components/pulse/HashtagTrends.tsx')) && /'no-tab':/.test(read('components/pulse/HashtagTrends.tsx')))
+
+  if (fails.length) { console.error('hashtag-engine failed:\n - ' + fails.join('\n - ')); process.exit(1) }
+  console.log('✅ hashtag-engine: one pick for every platform (Instagram 5 with #ad, Threads 1, YouTube up to 15), every post researched and counted live, 10K to 200K first and no crowds, trends only when about the post, dead tags dropped, every post netted and tracked, SCOUT reads only')
+})()
+

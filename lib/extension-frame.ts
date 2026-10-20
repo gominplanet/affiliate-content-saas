@@ -1171,9 +1171,11 @@ export interface InstagramTagCountsResult {
 }
 
 /** SCOUT 1.49.0+: how many posts each tag has on Instagram, asked from the
- *  creator's own signed-in Instagram (up to 20 tags, unhurried). */
-export async function requestInstagramTagCounts(tags: string[]): Promise<InstagramTagCountsResult> {
-  const res = await sendToExtension<InstagramTagCountsResult>({ type: 'MVP_HASHTAG_INSTAGRAM', tags: tags.slice(0, 20) }, 120_000)
+ *  creator's own signed-in Instagram (up to 20 tags, unhurried). `quiet`
+ *  (SCOUT 1.53.6+): only through an Instagram tab the creator has open,
+ *  never opening one; 'no-tab' when there is none. */
+export async function requestInstagramTagCounts(tags: string[], opts: { quiet?: boolean } = {}): Promise<InstagramTagCountsResult> {
+  const res = await sendToExtension<InstagramTagCountsResult>({ type: 'MVP_HASHTAG_INSTAGRAM', tags: tags.slice(0, 20), quiet: !!opts.quiet }, 120_000)
   return res || { ok: false, error: 'SCOUT did not answer.' }
 }
 

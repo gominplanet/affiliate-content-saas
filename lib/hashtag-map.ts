@@ -159,7 +159,9 @@ const TAXONOMY: TagCategory[] = [
   // E-bikes before bikes: an e-bike's buyers search #ebike, not #mtb or #roadcycling.
   { key: 'ebike',
     match: ['ebike', 'ebikes', 'e-bike', 'e-bikes', 'e bike', 'e bikes', 'electric bike', 'electric bikes', 'electric bicycle', 'fat tire bike', 'pedal assist'],
-    broad: ['ebike', 'cycling'], mid: ['electricbike', 'ebikes'], niche: ['ebikelife', 'ebikecommute', 'ebikeadventures'] },
+    // Read on YouTube 2026-10-20: #ebikelife 49K videos, #ebikes 86K, #electricbicycle 48K,
+    // #electricbike 289K, #ebikeadventures 5K; #ebikecommute 409 (too few), #ebike 1M.
+    broad: ['ebike', 'cycling'], mid: ['electricbike', 'electricbicycle'], niche: ['ebikelife', 'ebikes', 'ebikeadventures'] },
   { key: 'cycling',
     match: ['bike', 'bicycle', 'cycling', 'mountain bike', 'road bike', 'bike helmet'],
     // "bike" inside "e-bike" is the e-bike's, not a pedal bike's.

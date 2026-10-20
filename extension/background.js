@@ -12479,7 +12479,7 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
   }
   if (msg.type === 'MVP_HASHTAG_INSTAGRAM') {
     const timeout = setTimeout(() => sendResponse({ ok: false, error: 'timeout' }), 110000)
-    hashtagOnce(() => hashtagInstagram({ tags: msg.tags }))
+    hashtagOnce(() => hashtagInstagram({ tags: msg.tags, quiet: !!msg.quiet }))
       .then((res) => { clearTimeout(timeout); sendResponse(res) })
       .catch((e) => { clearTimeout(timeout); sendResponse({ ok: false, error: e && e.message ? e.message : 'error' }) })
     return true // async
@@ -15970,23 +15970,44 @@ async function igTagCountsInPage(tags, gapMs) {
   return { ok: items.some((x) => x.posts != null), error: items.some((x) => x.posts != null) ? null : 'nothing-read', signedIn, items }
 }
 
-async function hashtagInstagram({ tags }) {
+/** 1.53.6: an Instagram tab the creator already has open, awake and loaded,
+ *  or null. Never opens one, never reloads one (a reload could lose what the
+ *  creator was doing there). */
+async function igOwnTab() {
+  let tabs = []
+  try { tabs = await chrome.tabs.query({ url: IG_ORIGINS }) } catch (e) {}
+  tabs = tabs.filter((t) => !t.discarded && t.status === 'complete')
+  if (!tabs.length) return null
+  tabs.sort((a, b) => (b.lastAccessed || 0) - (a.lastAccessed || 0))
+  return tabs[0].id
+}
+
+async function hashtagInstagram({ tags, quiet }) {
   if (!(await hasOrigins(IG_ORIGINS))) return { ok: false, error: 'no-access' }
   const list = Array.from(new Set((Array.isArray(tags) ? tags : []).map((t) => String(t || '').trim().replace(/^#/, '').toLowerCase()).filter((t) => /^[\p{L}\p{N}_]{2,60}$/u.test(t)))).slice(0, 20)
   if (!list.length) return { ok: false, error: 'no-tags' }
   const ka = startKeepAlive()
   let tabId = null
+  let opened = false
   try {
-    const tab = await openWorkTab('https://www.instagram.com/')
-    tabId = tab.id
-    await waitForTabLoad(tabId, 30000)
-    await _sleep(1500)
+    // QUIET (MVP's background read, 1.53.6): only through an Instagram tab
+    // the creator has open. Nothing opens, nothing shows; no tab, no read.
+    if (quiet) {
+      tabId = await igOwnTab()
+      if (tabId == null) return { ok: false, error: 'no-tab' }
+    } else {
+      const tab = await openWorkTab('https://www.instagram.com/')
+      tabId = tab.id
+      opened = true
+      await waitForTabLoad(tabId, 30000)
+      await _sleep(1500)
+    }
     const res = await trybeRun(igTagCountsInPage, [list, 1500], tabId)
     return res || { ok: false, error: 'no-answer' }
   } catch (e) {
     return { ok: false, error: e && e.message ? e.message : 'exception' }
   } finally {
-    if (tabId != null) { try { await chrome.tabs.remove(tabId) } catch (e) {} }
+    if (opened && tabId != null) { try { await chrome.tabs.remove(tabId) } catch (e) {} }
     stopKeepAlive(ka)
   }
 }

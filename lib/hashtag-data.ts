@@ -6,6 +6,10 @@
 // (hashtag_trends, migration 434: TikTok Creative Center read by SCOUT,
 // YouTube's hashtag pages, Instagram's tag pages read by SCOUT).
 //
+// AND RESEARCHED LIVE, FOR THIS POST (lib/hashtag-research): its possible
+// tags found from the product and counted on YouTube there and then, so the
+// engine can aim for 10K to 200K posts with real numbers, not guesses.
+//
 // BEST EFFORT, NEVER IN THE WAY: each source has a short time limit and a
 // failure is an empty list, so a caption is never held up or refused because
 // a trend read or the database was slow. The pick then rests on the category
@@ -15,6 +19,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { personalTagStats, pooledTagStats } from '@/lib/pulse-rank'
 import { detectNiche } from '@/lib/hashtag-map'
 import { pickHashtags, withTags, withoutTags, writerTags, type TagInput, type TagPick, type TagPlatform, type TrendTag } from '@/lib/hashtag-engine'
+import { researchTags, splitCounts, RESEARCH_BUDGET_MS, type Research } from '@/lib/hashtag-research'
 
 /** The platform Pulse and the trends are kept under. */
 export function pulsePlatform(p: TagPlatform): string {
@@ -43,16 +48,36 @@ export async function trendsFor(platform: TagPlatform, limit = 1000): Promise<Tr
   } catch { return [] }
 }
 
-/** Pick one post's hashtags with everything MVP knows. Never throws. */
-export async function hashtagsFor(input: TagInput & { userId?: string | null }): Promise<TagPick> {
+/** This post's tags found and counted live; null when research failed or
+ *  ran out of time (the pick then uses what MVP already knew). */
+export async function liveResearch(input: Pick<TagInput, 'text' | 'brand' | 'niches' | 'writer'>): Promise<Research | null> {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const admin = createAdminClient() as any
+    return await within(researchTags(admin, { text: input.text, brand: input.brand ?? null, niches: input.niches, writer: input.writer }), RESEARCH_BUDGET_MS + 1500, null)
+  } catch { return null }
+}
+
+/** Pick one post's hashtags with everything MVP knows, researched live for
+ *  this post unless `live` is false. Never throws. */
+export async function hashtagsFor(input: TagInput & { userId?: string | null; live?: boolean }): Promise<TagPick> {
   const platform = pulsePlatform(input.platform)
   const niche = detectNiche(`${input.text || ''} ${(input.niches || []).join(' ')}`)
-  const [yours, members, trends] = await Promise.all([
+  const [yours, members, trends, research] = await Promise.all([
     input.yours ?? (input.userId ? within(personalTagStats(input.userId, 2, platform), 2500, []) : Promise.resolve([])),
     input.members ?? within(pooledTagStats(niche, 5, platform), 2500, []),
     input.trends ?? within(trendsFor(input.platform), 2500, []),
+    input.live === false ? Promise.resolve(null) : liveResearch(input),
   ])
-  return pickHashtags({ ...input, yours, members, trends })
+  const { own, elsewhere } = splitCounts(research?.counts || [], platform)
+  return pickHashtags({ ...input, yours, members, trends: mergeTrends(trends, own), found: [...(input.found || []), ...(research?.candidates || [])], elsewhere: [...(input.elsewhere || []), ...elsewhere] })
+}
+
+/** Trends with this post's fresh counts on top (one row per tag and source). */
+function mergeTrends(base: TrendTag[], fresh: TrendTag[]): TrendTag[] {
+  const key = (t: TrendTag) => `${t.tag}|${t.source}`
+  const have = new Set(fresh.map(key))
+  return [...fresh, ...base.filter((t) => !have.has(key(t)))]
 }
 
 /** Just the tags, for a caller that only needs the line. */
@@ -64,14 +89,19 @@ export async function hashtagLine(input: TagInput & { userId?: string | null }):
  *  clips that go to TikTok, Reels and Shorts): the creator's Pulse and the
  *  niche's pooled results across all platforms, and the trends of every
  *  platform named, together. Never throws; a slow source is empty. */
-export async function tagData(opts: { platforms: TagPlatform[]; userId?: string | null; text: string; niches?: string[] }): Promise<Pick<TagInput, 'yours' | 'members' | 'trends'>> {
+export async function tagData(opts: { platforms: TagPlatform[]; userId?: string | null; text: string; niches?: string[] }): Promise<Pick<TagInput, 'yours' | 'members' | 'trends' | 'found' | 'elsewhere'>> {
   const niche = detectNiche(`${opts.text || ''} ${(opts.niches || []).join(' ')}`)
-  const [yours, members, ...trendLists] = await Promise.all([
+  const [yours, members, research, ...trendLists] = await Promise.all([
     opts.userId ? within(personalTagStats(opts.userId, 2, null), 2500, []) : Promise.resolve([]),
     within(pooledTagStats(niche, 5, null), 2500, []),
+    liveResearch({ text: opts.text, niches: opts.niches }),
     ...Array.from(new Set(opts.platforms)).map((p) => within(trendsFor(p), 2500, [] as TrendTag[])),
   ])
-  return { yours, members, trends: trendLists.flat() }
+  // Researched once for the whole video: each clip's pick uses these counts.
+  const mine = new Set(opts.platforms.map(pulsePlatform))
+  const counts = research?.counts || []
+  const own = counts.filter((r) => mine.has(r.platform)).map((r) => ({ tag: r.tag, source: r.source, rank: r.rank ?? null, posts: r.posts ?? null, views: r.views ?? null, label: r.label ?? null }))
+  return { yours, members, trends: mergeTrends(trendLists.flat(), own), found: research?.candidates || [], elsewhere: counts.filter((r) => !mine.has(r.platform)) }
 }
 
 /** A finished post with its hashtags PICKED BY THE ENGINE, from the research

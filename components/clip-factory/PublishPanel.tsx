@@ -6,6 +6,7 @@
 // always there, and for YouTube a title and a full tag set, all before posting.
 // The text box shows exactly what posts (lib/clip-description), and a choice
 // that would add nothing says why rather than looking switched on.
+import TagCounts from '@/components/social/TagCounts'
 import { useEffect, useMemo, useState } from 'react'
 import { Loader2, X } from 'lucide-react'
 import {
@@ -182,6 +183,7 @@ export default function PublishPanel(props: {
             ) : <span />}
             <span className={`text-[11.5px] ${tooLong ? 'text-[#ff3b30] font-semibold' : 'text-[#86868b]'}`}>{text.length}/{limit}{tooLong ? ': too long, the end (your disclosure) would be cut' : ''}</span>
           </div>
+          <TagCounts text={text} platform={platform === 'youtube' ? 'youtube_short' : platform} />
           {platform === 'youtube' && <p className="text-[11.5px] text-[#86868b]">YouTube also gets #Shorts at the end, so it files the clip as a Short.</p>}
         </div>
 

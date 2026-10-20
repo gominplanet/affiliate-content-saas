@@ -8,12 +8,12 @@
  *     store installs to "update" — isScoutOutdated survives only as a
  *     low-level helper, not a user-facing gate.
  */
-export const SCOUT_LATEST_VERSION = '1.53.5'
+export const SCOUT_LATEST_VERSION = '1.53.6'
 
 /** One-line "what's new". No longer shown in a nag (store installs auto-update);
  *  kept as a changelog note for whoever bumps the version. */
 export const SCOUT_WHATS_NEW =
-  'TRYBE: SCOUT opens TRYBE in a tab next to MVP when none is open and works through it, and sends each request the way TRYBE\'s own button does, so nothing pops up. Includes 1.53.1 to 1.53.4.'
+  'Hashtags: SCOUT counts Instagram tags quietly, only through an Instagram tab you already have open, so MVP picks tags with 10K to 200K posts. Nothing opens or shows.'
 
 /** Canonical download for the latest SCOUT build (public/, rebuilt from
  *  extension/ on every version bump). Used by the EPC banner + the top-bar
@@ -63,6 +63,10 @@ export const SCOUT_TRYBE_OWN_TAB_MIN_VERSION = '1.53.2'
 
 /** SCOUT opens TRYBE in a tab behind MVP's when none is open (MVP_TRYBE_TAB_OPEN). */
 export const SCOUT_TRYBE_TAB_OPEN_MIN_VERSION = '1.53.5'
+
+/** SCOUT reads Instagram tag counts quietly, only through an Instagram tab the
+ *  creator already has open, never opening one (MVP_HASHTAG_INSTAGRAM quiet). */
+export const SCOUT_IG_QUIET_MIN_VERSION = '1.53.6'
 
 export const SCOUT_STUDIO_MIN_VERSION = '1.20.0'
 

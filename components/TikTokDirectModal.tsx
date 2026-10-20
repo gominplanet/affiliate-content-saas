@@ -12,6 +12,7 @@
  * (an open-source scheduler) got their TikTok app rejected for using a
  * generic post composer with most of these controls missing.
  */
+import TagCounts from '@/components/social/TagCounts'
 import { useEffect, useRef, useState, useCallback } from 'react'
 import {
   Loader2, AlertCircle, CheckCircle, Send, ExternalLink, X,
@@ -656,6 +657,7 @@ export function TikTokDirectModal({
                   className="w-full text-sm px-3 py-2 rounded-md border border-gray-200 dark:border-white/10 bg-white dark:bg-[#2c2c2e] text-[#1d1d1f] dark:text-[#f5f5f7]"
                 />
                 <p className="text-[10px] text-[#86868b] mt-1">{caption.length} / 2200 · Hashtags + disclaimer included.</p>
+                <TagCounts text={caption} platform="tiktok" />
               </div>
 
               {/* Privacy — NO default */}

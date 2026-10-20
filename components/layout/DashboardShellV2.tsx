@@ -66,6 +66,7 @@ import UsageNudge from './UsageNudge'
 import AmazonTagNudge from './AmazonTagNudge'
 import ScoutRequired from './ScoutRequired'
 import ScoutQuietSync from '@/components/scout/ScoutQuietSync'
+import InstagramTagReader from '@/components/scout/InstagramTagReader'
 import { useTrybeAlerts } from './useTrybeAlerts'
 // TRYBE referral link (direct, so it never depends on the Passport short domain).
 import SiteSwitcherChip from './SiteSwitcherChip'
@@ -1376,6 +1377,8 @@ export default function DashboardShellV2({
         <ScoutRequired tier={String(tier)} />
         {/* Which SCOUT jobs run out of sight (lib/scout-quiet). Silent. */}
         <ScoutQuietSync isAdmin={isAdmin} />
+        {/* Instagram tag counts, read quietly through an open Instagram tab. Silent. */}
+        <InstagramTagReader />
 
         {/* Page content. Generous max-width so the new chrome doesn't
             crush wide content (e.g. the comparison table on /comparison

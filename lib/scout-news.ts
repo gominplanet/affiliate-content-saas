@@ -54,6 +54,13 @@ export type ScoutRelease = { version: string; date: string; notes: ScoutNote[] }
  *  manual: at most 110 characters), plain words, no dashes. */
 export const SCOUT_RELEASES: ScoutRelease[] = [
   {
+    version: '1.53.6',
+    date: '2026-10-20',
+    notes: [
+      { text: 'Hashtags: SCOUT counts Instagram tags through the Instagram tab you have open. Nothing opens.' },
+    ],
+  },
+  {
     version: '1.53.5',
     date: '2026-10-20',
     notes: [

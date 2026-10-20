@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Flame, Loader2, RefreshCw, Check, AlertTriangle } from 'lucide-react'
 import { requestHashtagAccess, requestInstagramTagCounts } from '@/lib/extension-frame'
+import { lastIgRead, type IgReadNote } from '@/components/scout/InstagramTagReader'
 
 /**
  * LIVE HASHTAG DATA (Labs). Where the hashtag engine's trend readings come
@@ -45,6 +46,9 @@ const IG_WHY: Record<string, string> = {
   'slow-down': 'Instagram asked SCOUT to slow down. What came back is saved; try the rest later.',
   'nothing-read': 'Instagram answered but gave no counts for these tags.',
   'no-tags': 'There are no tags to check yet.',
+  'no-tab': 'No Instagram tab was open in this Chrome, so SCOUT did not read. Keep instagram.com open in a tab and SCOUT counts tags through it, quietly.',
+  'not-saved': 'SCOUT read the counts but MVP could not save them.',
+  'no-answer': 'SCOUT did not answer.',
   busy: 'SCOUT is already reading hashtags. Try again in a minute.',
   timeout: 'SCOUT took too long. Nothing was saved; try again.',
 }
@@ -55,6 +59,8 @@ export default function HashtagTrends() {
   const [busy, setBusy] = useState<'tiktok' | 'instagram' | 'allow' | null>(null)
   const [said, setSaid] = useState<Say>(null)
   const autoTried = useRef(false)
+  const [bg, setBg] = useState<IgReadNote | null>(null)
+  useEffect(() => { setBg(lastIgRead()) }, [])
 
   const load = useCallback(async () => {
     try {
@@ -161,6 +167,15 @@ export default function HashtagTrends() {
         </div>
         {access !== 'granted' && (
           <p className="text-[12px] text-[#6e6e73] dark:text-[#a1a1a6]">{access === 'no-scout' ? 'Instagram counts need SCOUT in this Chrome.' : access === 'old' ? 'Instagram counts need SCOUT 1.49.0.' : access === 'checking' ? 'Checking SCOUT...' : 'Instagram shows tag counts only to a signed-in browser, so SCOUT reads them in yours. Chrome asks once. Reading only: nothing is posted, liked or followed.'}</p>
+        )}
+
+        {/* THE BACKGROUND READ (components/scout/InstagramTagReader), as it went. */}
+        {access === 'granted' && (
+          <p className="text-[12px]" style={{ color: bg?.error && bg.error !== 'no-tab' ? '#c93400' : '#6e6e73' }}>
+            {!bg ? 'In the background, SCOUT 1.53.6 counts the tags captions asked for, every few hours, through an Instagram tab you have open. It has not read in this Chrome yet.'
+              : bg.error ? `Background read ${ago(bg.at)}: ${bg.counted ? `${bg.counted} of ${bg.asked} counted. ` : ''}${IG_WHY[bg.error] || bg.error}`
+              : bg.asked ? `Background read ${ago(bg.at)}: Instagram counted ${bg.counted} of ${bg.asked} tags.` : `Background read ${ago(bg.at)}: no tags were waiting.`}
+          </p>
         )}
 
         {said && (
