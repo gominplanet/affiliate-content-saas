@@ -10,4 +10,7 @@
 -- Safe to run twice.
 alter table public.trybe_outreach_settings add column if not exists intro_video jsonb;
 alter table public.trybe_outreach_settings add column if not exists intro_script jsonb;
+-- Optional (Seb: "if they do not want to do this, they do not have to and
+-- can simply send the intro message like before"): true sends the message only.
+alter table public.trybe_outreach_settings add column if not exists intro_off boolean not null default false;
 notify pgrst, 'reload schema';

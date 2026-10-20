@@ -36,6 +36,7 @@ check('the clean-up jobs never take it (not burner-, clip- or source-)', /\^\(bu
 const CARD = read('components/labs/TrybeIntroVideo.tsx')
 check('the card says requests still go without it, until they do', /Not added to requests yet\. Requests still go with your message only\./.test(CARD))
 check('only admin sees it on Find brands', /\{isAdmin && <TrybeIntroVideo \/>\}/.test(read('components/labs/TrybeOutreach.tsx')))
+check('optional: off sends the message only, as before, and the card shrinks to one line', /No thanks, message only/.test(CARD) && /Intro video off\.<\/b> Requests go with your message only, as before\./.test(CARD) && /action === 'intro_toggle'/.test(ROUTE) && /add column if not exists intro_off boolean not null default false/.test(read('supabase/migrations/450_trybe_intro.sql')))
 check('migration 450, safe to run twice', existsSync('supabase/migrations/450_trybe_intro.sql') && /add column if not exists intro_video jsonb/.test(read('supabase/migrations/450_trybe_intro.sql')))
 
 if (fails.length) { console.error('trybe-intro failed:\n - ' + fails.join('\n - ')); process.exit(1) }

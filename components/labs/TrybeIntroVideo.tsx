@@ -28,6 +28,9 @@ export default function TrybeIntroVideo() {
   const [video, setVideo] = useState<IntroVideo | null>(null)
   const [script, setScript] = useState<Script | null>(null)
   const [migrated, setMigrated] = useState(true)
+  // OPTIONAL (Seb: "if they do not want to do this, they do not have to and
+  // can simply send the intro message like before"): off sends the message only.
+  const [off, setOff] = useState(false)
   const [name, setName] = useState('')
   const [years, setYears] = useState<string>('')
   const [writing, setWriting] = useState(false)
@@ -40,6 +43,7 @@ export default function TrybeIntroVideo() {
     api({ action: 'intro_get' }).then((d) => {
       setMigrated(d.migrated !== false)
       setVideo(d.video || null)
+      setOff(d.off === true)
       if (d.script?.lines) { setScript(d.script); setName(d.script.name || ''); setYears(d.script.years || '') }
     }).catch((e) => setError(e instanceof Error ? e.message : 'MVP did not answer.'))
   }, [])
@@ -76,6 +80,13 @@ export default function TrybeIntroVideo() {
     } finally { setUploading(null); if (file.current) file.current.value = '' }
   }, [])
 
+  const toggle = useCallback(async (next: boolean) => {
+    setError(null)
+    const was = off
+    setOff(next)
+    try { await api({ action: 'intro_toggle', off: next }) } catch (e) { setOff(was); setError(e instanceof Error ? e.message : 'MVP could not save that.') }
+  }, [off])
+
   const remove = useCallback(async () => {
     try { await api({ action: 'intro_remove' }); setVideo(null) } catch (e) { setError(e instanceof Error ? e.message : 'MVP could not remove it.') }
   }, [])
@@ -88,16 +99,26 @@ export default function TrybeIntroVideo() {
 
   const soft = { color: 'var(--text-3)' }
   const box = 'rounded-xl border px-4 py-3.5'
+  // Turned off: one quiet line, the way back in, and nothing else.
+  if (off) return (
+    <div className="rounded-xl border px-4 py-2.5 flex flex-wrap items-center gap-2 text-[13px]" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
+      <Video size={15} style={{ color: ROSE }} />
+      <span className="flex-1 min-w-0" style={soft}><b style={{ color: 'var(--text)' }}>Intro video off.</b> Requests go with your message only, as before.</span>
+      <button onClick={() => void toggle(false)} className="text-[12.5px] font-semibold underline" style={{ color: ROSE }}>Use an intro video</button>
+      {error && <span className="w-full text-[12px]" style={{ color: '#D70015' }}>{error}</span>}
+    </div>
+  )
   return (
     <section className="rounded-2xl border p-4 sm:p-5" style={{ borderColor: `${ROSE}40`, background: `linear-gradient(120deg, ${ROSE}0d 0%, transparent 55%), var(--surface)` }}>
       <div className="flex items-start gap-3">
         <span className="w-10 h-10 shrink-0 rounded-xl inline-flex items-center justify-center text-white" style={{ background: `linear-gradient(135deg, ${ROSE}, ${ROSE}cc)` }}><Video size={19} /></span>
         <div className="min-w-0 flex-1">
-          <p className="text-[16px] font-bold leading-tight">Your intro video for brands</p>
+          <p className="text-[16px] font-bold leading-tight">Your intro video for brands <span className="ml-1 text-[11px] font-semibold uppercase tracking-wide rounded-full px-2 py-0.5 align-middle" style={{ background: 'var(--surface-2)', color: 'var(--text-3)' }}>Optional</span></p>
           <p className="text-[13px] mt-0.5 max-w-3xl" style={soft}>
-            TRYBE lets you add a video when you ask to join a brand. A short hello, so the brand sees who is asking. MVP writes what to say; you film it once.
+            TRYBE lets you add a video when you ask to join a brand. A short hello, so the brand sees who is asking. MVP writes what to say; you film it once. Prefer not to? Requests go with your message only, as before.
           </p>
         </div>
+        <button onClick={() => void toggle(true)} className="shrink-0 text-[12.5px] font-semibold underline" style={soft}>No thanks, message only</button>
       </div>
 
       {!migrated && <p className="mt-3 text-[12.5px] inline-flex items-center gap-1.5" style={{ color: '#B45309' }}><AlertTriangle size={13} /> The intro video needs migration 450 in Supabase first.</p>}

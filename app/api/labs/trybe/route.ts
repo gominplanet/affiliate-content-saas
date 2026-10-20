@@ -546,7 +546,7 @@ export async function POST(request: Request) {
     const migrated = !sErr && (!srow || 'intro_video' in srow)
     const needs = 'The intro video needs migration 450 in Supabase first.'
     if (action === 'intro_get') {
-      return NextResponse.json({ ok: true, migrated, video: readIntroVideo(srow?.intro_video), script: srow?.intro_script ?? null })
+      return NextResponse.json({ ok: true, migrated, video: readIntroVideo(srow?.intro_video), script: srow?.intro_script ?? null, off: srow?.intro_off === true })
     }
     if (!migrated) return NextResponse.json({ error: needs }, { status: 500 })
     if (action === 'intro_script') {
@@ -596,6 +596,12 @@ export async function POST(request: Request) {
       // The intro it replaces is taken out of storage.
       if (before && before.path !== path) { try { await admin.storage.from(INTRO_BUCKET).remove([before.path]) } catch { /* left behind, harmless */ } }
       return NextResponse.json({ ok: true, video })
+    }
+    // OPTIONAL: off sends every request with the message only, as before.
+    if (action === 'intro_toggle') {
+      const { error } = await admin.from('trybe_outreach_settings').upsert({ user_id: ownerId, intro_off: body.off === true, updated_at: now })
+      if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+      return NextResponse.json({ ok: true, off: body.off === true })
     }
     if (action === 'intro_remove') {
       const before = readIntroVideo(srow?.intro_video)
