@@ -133,5 +133,14 @@ check('the plan route uses the winners and says when a plan is not kept', /winne
   check('the page says what the pay filter did, and an empty list says why', /does not say what .* of these brands pay, so they are listed after the ones that do/.test(U) && /as far as TRYBE&rsquo;s list says/.test(U) && !/Search a keyword or pick a niche to see the brands that match/.test(U))
 }
 
+// META ADS AND YOUR VIDEOS AS ADS on each brand (Seb, 2026-10-20: "see if
+// they're actually putting ads behind my video").
+{
+  const MB = read('components/labs/TrybeMyBrands.tsx')
+  check('each brand links to its Meta Ad Library, named as such', /href=\{adLibraryUrl\(b\.name\)\}/.test(MB) && />Meta Ad Library <ExternalLink/.test(MB))
+  check('each brand says from TRYBE whether your videos run as ads, and what was spent', /<AdsLine b=\{b\} ads=\{ads\.read\}/.test(MB) && /const \{ totals, videos \} = brandAdTotals\(ads\.videos, b\)/.test(MB) && /videos\.filter\(\(v\) => v\.live === true\)/.test(MB) && /useTrybeAds\(canRead, '30d'\)/.test(MB))
+  check('a read it could not do says so, never "none"', /TRYBE’s ad numbers were not read\./.test(MB) && /cannot say whether your videos run as ads/.test(MB))
+}
+
 if (failed) { console.error(`\n${failed} My brands check(s) failed`); process.exit(1) }
 console.log('\nALL PASS')

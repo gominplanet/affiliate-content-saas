@@ -14,12 +14,15 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
-import { Loader2, RotateCcw, Send, Copy, Check, AlertTriangle, Clock, Target, TrendingDown, ChevronDown, ChevronUp, MessageCircle } from 'lucide-react'
+import { Loader2, RotateCcw, Send, Copy, Check, AlertTriangle, Clock, Target, TrendingDown, ChevronDown, ChevronUp, MessageCircle, ExternalLink } from 'lucide-react'
 import { requestTrybeApi } from '@/lib/extension-frame'
 import { type Conversation } from '@/components/labs/TrybeInbox'
 import { sendInTrybeChat } from '@/components/labs/trybe-chat-send'
 import TrybeVideoIdeas from '@/components/labs/TrybeVideoIdeas'
 import TrybeBrandScripts from '@/components/labs/TrybeBrandScripts'
+import { useTrybeAds, type AdsRead } from '@/components/labs/useTrybeAds'
+import { brandAdTotals } from '@/lib/trybe-analytics'
+import { adLibraryUrl } from '@/lib/trybe-pick'
 import TrybeLink from '@/components/labs/TrybeLink'
 import { AmazonLine } from '@/components/labs/TrybeFinderControls'
 import { useTrybeAmazon } from '@/components/labs/useTrybeAmazon'
@@ -166,6 +169,9 @@ export default function TrybeMyBrands({ canRead, canSend, convos, me, myName, is
   // THE AMAZON MATCH for each brand you work with (Seb, 2026-10-14).
   const amzBrands = useMemo(() => judged.map((j) => ({ id: j.brand.id, name: j.brand.name })), [judged])
   const amz = useTrybeAmazon(amzBrands, [], amzBrands.length > 0)
+  // TRYBE's own numbers for each of your videos, the last 30 days: which run
+  // as ads, and what the brand spent on them (the AdsLine on each brand).
+  const ads = useTrybeAds(canRead, '30d')
 
   useEffect(() => {
     if (!readAt || loading || !filled.length || sentFor.current === readAt) return
@@ -331,9 +337,15 @@ export default function TrybeMyBrands({ canRead, canSend, convos, me, myName, is
                     </p>
                     <p className="text-[12px]" style={j.verdict === 'drop' ? { color: RED } : soft}>{j.why}</p>
                   </div>
-                  <TrybeLink brandId={b.id} name={b.name} scout={scoutOpens} />
+                  <span className="inline-flex items-center gap-3">
+                    <TrybeLink brandId={b.id} name={b.name} scout={scoutOpens} />
+                    {/* Their live ads on Meta (Seb, 2026-10-20: "I'd like to also
+                        see the meta ads link that we had previously under find brands"). */}
+                    <a href={adLibraryUrl(b.name)} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-[12px] font-semibold" style={{ color: PURPLE }}>Meta Ad Library <ExternalLink size={11} /></a>
+                  </span>
                 </div>
                 <AmazonLine amazon={amz.brand(b.id)} className="mt-1.5 sm:ml-12" />
+                <AdsLine b={b} ads={ads.read} loading={ads.loading} problem={ads.problem?.text ?? null} />
                 <dl className="mt-2 grid grid-cols-3 sm:grid-cols-6 gap-x-3 gap-y-1 text-[12px] tabular-nums">
                   <Num label="Earned" value={money(b.earnings)} />
                   <Num label="Sent" value={count(b.submitted)} />
@@ -366,6 +378,31 @@ export default function TrybeMyBrands({ canRead, canSend, convos, me, myName, is
         <TrybeBrandScripts brands={brands} isAdmin={isAdmin} />
       </>)}
     </div>
+  )
+}
+
+/** WHETHER THE BRAND PUT ADS BEHIND YOUR VIDEOS (Seb, 2026-10-20: "see if
+ *  they're actually putting ads behind my video"). TRYBE's own numbers for
+ *  each of your videos, the last 30 days: running as an ad now, what the
+ *  brand spent, impressions. Meta's Ad Library cannot be searched for one
+ *  video, so this is the exact answer for ads run through TRYBE; the link
+ *  beside it shows the brand's ads there. */
+function AdsLine({ b, ads, loading, problem }: { b: MyBrand; ads: AdsRead | null; loading: boolean; problem: string | null }) {
+  const soft = { color: 'var(--text-soft)' }
+  if (!ads) return <p className="mt-1.5 text-[12px]" style={soft}>{loading ? 'Reading which of your videos run as ads…' : `Ads: ${problem || 'TRYBE’s ad numbers were not read.'}`}</p>
+  if (ads.source !== 'full') return <p className="mt-1.5 text-[12px]" style={soft}>Ads: {problem || 'this SCOUT reads only what you earned, so MVP cannot say whether your videos run as ads.'}</p>
+  const { totals, videos } = brandAdTotals(ads.videos, b)
+  const live = videos.filter((v) => v.live === true)
+  const ran = (totals.spend ?? 0) > 0 || (totals.impressions ?? 0) > 0
+  const numbers = [totals.spend != null && totals.spend > 0 ? `${money(totals.spend)} spent` : '', totals.impressions ? `${totals.impressions.toLocaleString()} impressions` : '', totals.clicks ? `${totals.clicks.toLocaleString()} link clicks` : ''].filter(Boolean).join(', ')
+  const text = !videos.length ? `TRYBE shows none of your videos for ${b.name} running as an ad in the last 30 days.`
+    : live.length ? `${live.length} of your videos for ${b.name} ${live.length === 1 ? 'runs' : 'run'} as an ad now${numbers ? `: ${numbers} in the last 30 days` : ''}.`
+    : ran ? `Your videos for ${b.name} ran as ads in the last 30 days, none running now${numbers ? `: ${numbers}` : ''}.`
+    : `TRYBE lists ${videos.length} of your videos for ${b.name}, none running as an ad in the last 30 days.`
+  return (
+    <p className="mt-1.5 text-[12px] rounded-lg px-2.5 py-1.5" style={{ background: live.length || ran ? 'rgba(22,163,74,0.08)' : 'rgba(124,58,237,0.05)', color: live.length || ran ? GREEN : 'var(--text-soft)' }}>
+      <b>Your videos as ads (TRYBE):</b> {text}
+    </p>
   )
 }
 
