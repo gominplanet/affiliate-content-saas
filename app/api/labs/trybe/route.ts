@@ -19,6 +19,7 @@
 // The cap is enforced here, at claim time, not in the browser: a page that is
 // reloaded, or open twice, cannot send more than the cap allows.
 
+import { INTRO_SYSTEM, INTRO_MAX_BYTES, YEARS_CHOICES, introPrompt, parseIntro, readIntroVideo } from '@/lib/trybe-intro'
 import { sellsOf, type SellsRead } from '@/lib/trybe-sells'
 import { outreachNiche } from '@/lib/outreach-niche'
 import { pickScore, creatorProgramOf, readTopCreatives, tallyTop, META_ADS_FRESH_MS, readPriorities, weighScore, staticsOf, bucketDollars } from '@/lib/trybe-pick'
@@ -532,6 +533,79 @@ export async function POST(request: Request) {
   }
   const brandId = typeof body.brandId === 'string' ? body.brandId.slice(0, 80) : ''
   const now = new Date().toISOString()
+
+  // THE INTRO VIDEO FOR REQUESTS (lib/trybe-intro; Seb, 2026-10-20: "a
+  // personal intro submission based on what MVP wants to recommend"). MVP
+  // writes the words, the creator uploads the one video, MVP keeps it. Admin
+  // only while SCOUT cannot yet attach it to a request: a member never sees
+  // an upload that does nothing.
+  if (action.startsWith('intro_')) {
+    if (tier !== 'admin') return NextResponse.json({ error: 'The intro video is not open yet.' }, { status: 403 })
+    const INTRO_BUCKET = 'instagram-videos'
+    const { data: srow, error: sErr } = await admin.from('trybe_outreach_settings').select('*').eq('user_id', ownerId).maybeSingle()
+    const migrated = !sErr && (!srow || 'intro_video' in srow)
+    const needs = 'The intro video needs migration 450 in Supabase first.'
+    if (action === 'intro_get') {
+      return NextResponse.json({ ok: true, migrated, video: readIntroVideo(srow?.intro_video), script: srow?.intro_script ?? null })
+    }
+    if (!migrated) return NextResponse.json({ error: needs }, { status: 500 })
+    if (action === 'intro_script') {
+      const spend = await spendGate(userId, tier)
+      if (spend) return spend
+      const settings = await readSettings(admin, ownerId)
+      const name = String(body.name || '').trim().slice(0, 40)
+      const years = (YEARS_CHOICES as readonly string[]).includes(String(body.years)) ? String(body.years) : ''
+      const facts = await writerFacts(admin, ownerId)
+      try {
+        const msg = await createAnthropicClient().messages.create({
+          model: MODEL, max_tokens: 700, system: INTRO_SYSTEM,
+          messages: [{ role: 'user', content: introPrompt({ name, years, facts, coreMessage: settings.coreMessage, niches: [...settings.categories, ...settings.keywords] }) }],
+        })
+        try { const u = usageFromAnthropic(msg); recordUsage({ userId, tier, feature: 'trybe_intro_script', model: MODEL, input: u.input, output: u.output }) } catch { /* best-effort */ }
+        const script = parseIntro(scrubBanned((msg.content as Array<{ type: string; text?: string }>).map(b => b.type === 'text' ? b.text || '' : '').join('')))
+        if (!script) return NextResponse.json({ error: 'The intro came back without enough to say. Try again.' }, { status: 502 })
+        const saved = { ...script, name, years, at: now }
+        await admin.from('trybe_outreach_settings').upsert({ user_id: ownerId, intro_script: saved, updated_at: now })
+        return NextResponse.json({ ok: true, script: saved })
+      } catch (e) {
+        return NextResponse.json({ error: e instanceof Error ? `MVP could not write it: ${e.message}` : 'MVP could not write it.' }, { status: 502 })
+      }
+    }
+    if (action === 'intro_upload_url') {
+      const bytes = Number(body.bytes || 0)
+      if (!(bytes > 0) || bytes > INTRO_MAX_BYTES) return NextResponse.json({ error: `The intro must be a video under ${Math.round(INTRO_MAX_BYTES / 1048576)} MB.` }, { status: 400 })
+      const ext = /\.mov$/i.test(String(body.name || '')) ? 'mov' : 'mp4'
+      const path = `${ownerId}/trybe-intro-${crypto.randomUUID()}.${ext}`
+      const { data, error } = await admin.storage.from(INTRO_BUCKET).createSignedUploadUrl(path)
+      if (error || !data?.signedUrl) return NextResponse.json({ error: `MVP could not open an upload for it: ${error?.message || 'no address'}` }, { status: 500 })
+      return NextResponse.json({ ok: true, uploadUrl: data.signedUrl, path })
+    }
+    if (action === 'intro_saved') {
+      const path = String(body.path || '')
+      if (!new RegExp(`^${ownerId}/trybe-intro-[0-9a-f-]{36}\\.(mp4|mov)$`).test(path)) return NextResponse.json({ error: 'That is not the upload MVP opened.' }, { status: 400 })
+      // WHAT ARRIVED, asked of storage itself: an intro that is not there is said, never saved.
+      const [folder, file] = path.split('/')
+      const { data: listed } = await admin.storage.from(INTRO_BUCKET).list(folder, { search: file, limit: 1 })
+      const hit = (listed || []).find((f: { name: string }) => f.name === file) as { metadata?: { size?: number } } | undefined
+      if (!hit) return NextResponse.json({ error: 'The upload did not arrive in MVP storage, so nothing was saved. Try again.' }, { status: 422 })
+      const url = admin.storage.from(INTRO_BUCKET).getPublicUrl(path).data.publicUrl as string
+      const video = { url, path, name: String(body.name || 'intro.mp4').slice(0, 200), bytes: Number(hit.metadata?.size || 0) || null, uploadedAt: now }
+      const before = readIntroVideo(srow?.intro_video)
+      const { error } = await admin.from('trybe_outreach_settings').upsert({ user_id: ownerId, intro_video: video, updated_at: now })
+      if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+      // The intro it replaces is taken out of storage.
+      if (before && before.path !== path) { try { await admin.storage.from(INTRO_BUCKET).remove([before.path]) } catch { /* left behind, harmless */ } }
+      return NextResponse.json({ ok: true, video })
+    }
+    if (action === 'intro_remove') {
+      const before = readIntroVideo(srow?.intro_video)
+      const { error } = await admin.from('trybe_outreach_settings').upsert({ user_id: ownerId, intro_video: null, updated_at: now })
+      if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+      if (before) { try { await admin.storage.from(INTRO_BUCKET).remove([before.path]) } catch { /* left behind, harmless */ } }
+      return NextResponse.json({ ok: true })
+    }
+    return NextResponse.json({ error: 'Unknown action' }, { status: 400 })
+  }
 
   if (action === 'settings') {
     const coreMessage = typeof body.coreMessage === 'string' ? body.coreMessage.trim().slice(0, 2000) : ''

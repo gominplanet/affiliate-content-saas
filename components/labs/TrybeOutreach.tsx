@@ -49,6 +49,7 @@ import TrybeCreate from '@/components/labs/TrybeCreate'
 import TrybeStage from '@/components/labs/TrybeStage'
 import TrybeAds from '@/components/labs/TrybeAds'
 import TrybeRetainers from '@/components/labs/TrybeRetainers'
+import TrybeIntroVideo from '@/components/labs/TrybeIntroVideo'
 import TrybeSampleGuard from '@/components/labs/TrybeSampleGuard'
 import { readScript } from '@/lib/trybe-mybrands'
 import { FinderToolbar, FinderFilterNote, FinderPriorities, FinderPresets, BrandExtras, StarButton, PassButton, AmazonLine, PayChip, CrowdChip, SpendChip, SpendNote, NewChip, StaticsChip, SellsChip, VerdictChip, ReviewChip, PaidOutChip, TikTokShopChip, CompareButton, BrandMark, NO_FILTERS, filtersOn, type LiveAmazon, type LivePayEst } from '@/components/labs/TrybeFinderControls'
@@ -1581,6 +1582,8 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
       )}
 
       {tab === 'find' && !lockedTab && (<>
+        {/* The intro video for requests (lib/trybe-intro): admin only until SCOUT can attach it. */}
+        {isAdmin && <TrybeIntroVideo />}
         {/* Your stage: volume first, then double down on winners (Seb, 2026-10-14). */}
         <TrybeStage canRead={canMyBrands} onGo={go} />
         {/* 1. Core message: a short preview once written, the box while editing. */}
