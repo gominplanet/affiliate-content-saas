@@ -19,7 +19,7 @@
 // The cap is enforced here, at claim time, not in the browser: a page that is
 // reloaded, or open twice, cannot send more than the cap allows.
 
-import { INTRO_SYSTEM, INTRO_MAX_BYTES, YEARS_CHOICES, introPrompt, parseIntro, readIntroVideo } from '@/lib/trybe-intro'
+import { INTRO_MAX_BYTES, cleanInputs, introSystem, introPrompt, parseIntro, readIntroVideo, introSuggest } from '@/lib/trybe-intro'
 import { sellsOf, type SellsRead } from '@/lib/trybe-sells'
 import { outreachNiche } from '@/lib/outreach-niche'
 import { pickScore, creatorProgramOf, readTopCreatives, tallyTop, META_ADS_FRESH_MS, readPriorities, weighScore, staticsOf, bucketDollars } from '@/lib/trybe-pick'
@@ -546,25 +546,28 @@ export async function POST(request: Request) {
     const migrated = !sErr && (!srow || 'intro_video' in srow)
     const needs = 'The intro video needs migration 450 in Supabase first.'
     if (action === 'intro_get') {
-      return NextResponse.json({ ok: true, migrated, video: readIntroVideo(srow?.intro_video), script: srow?.intro_script ?? null, off: srow?.intro_off === true })
+      // What MVP already knows fills the form in: the profile, the niches.
+      const { data: bp } = await admin.from('brand_profiles').select('*').eq('user_id', ownerId).maybeSingle()
+      const settings = await readSettings(admin, ownerId)
+      return NextResponse.json({ ok: true, migrated, video: readIntroVideo(srow?.intro_video), script: srow?.intro_script ?? null, off: srow?.intro_off === true, suggest: introSuggest((bp || {}) as Record<string, unknown>, settings.categories) })
     }
     if (!migrated) return NextResponse.json({ error: needs }, { status: 500 })
     if (action === 'intro_script') {
       const spend = await spendGate(userId, tier)
       if (spend) return spend
       const settings = await readSettings(admin, ownerId)
-      const name = String(body.name || '').trim().slice(0, 40)
-      const years = (YEARS_CHOICES as readonly string[]).includes(String(body.years)) ? String(body.years) : ''
+      const inputs = cleanInputs(body.inputs)
       const facts = await writerFacts(admin, ownerId)
       try {
         const msg = await createAnthropicClient().messages.create({
-          model: MODEL, max_tokens: 700, system: INTRO_SYSTEM,
-          messages: [{ role: 'user', content: introPrompt({ name, years, facts, coreMessage: settings.coreMessage, niches: [...settings.categories, ...settings.keywords] }) }],
+          model: MODEL, max_tokens: 900, system: introSystem(inputs.seconds),
+          messages: [{ role: 'user', content: introPrompt(inputs, { facts, coreMessage: settings.coreMessage }) }],
         })
         try { const u = usageFromAnthropic(msg); recordUsage({ userId, tier, feature: 'trybe_intro_script', model: MODEL, input: u.input, output: u.output }) } catch { /* best-effort */ }
-        const script = parseIntro(scrubBanned((msg.content as Array<{ type: string; text?: string }>).map(b => b.type === 'text' ? b.text || '' : '').join('')))
-        if (!script) return NextResponse.json({ error: 'The intro came back without enough to say. Try again.' }, { status: 502 })
-        const saved = { ...script, name, years, at: now }
+        // Cleaned line by line in parseIntro, never as a whole answer.
+        const script = parseIntro((msg.content as Array<{ type: string; text?: string }>).map(b => b.type === 'text' ? b.text || '' : '').join(''), inputs.seconds)
+        if (!script) return NextResponse.json({ error: 'The writer answered, but MVP could not read an intro out of it. Press Write my intro again.' }, { status: 502 })
+        const saved = { ...script, inputs, at: now }
         await admin.from('trybe_outreach_settings').upsert({ user_id: ownerId, intro_script: saved, updated_at: now })
         return NextResponse.json({ ok: true, script: saved })
       } catch (e) {
