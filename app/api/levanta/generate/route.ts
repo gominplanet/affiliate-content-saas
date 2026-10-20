@@ -10,6 +10,8 @@
  *
  * Body: { product: { asin, title?, image?, price?, category?, brandName?, marketplace? }, draft?: boolean }
  */
+import { scheduledCaptions } from '@/lib/hashtag-data'
+import { postTags } from '@/lib/post-tags'
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
@@ -216,7 +218,7 @@ export async function POST(request: NextRequest) {
 
     // ── Publish to WordPress ─────────────────────────────────────────────────
     let tagIds: number[] = []
-    try { tagIds = await wpService.resolveTagIds((generated.tags || []).slice(0, 10)) } catch { /* non-fatal */ }
+    try { tagIds = await wpService.resolveTagIds(postTags({ tags: generated.tags, title: generated.title, content: generated.content, keyword: (generated as { seoKeyword?: string }).seoKeyword, max: 10 })) } catch { /* non-fatal */ }
     let categoryIds: number[] = []
     if (generated.category) {
       try { categoryIds = [await wpService.createCategory(generated.category)] } catch { /* non-fatal */ }
@@ -314,15 +316,18 @@ export async function POST(request: NextRequest) {
         const connected = await getConnectedPlatforms(supabase, user.id)
         const caption = `${title}\n\n${wpPost.link}`.slice(0, 900)
         const now = Date.now()
-        const rows = chosenSocials
+        const chosen = chosenSocials
           .filter((p): p is SchedulableSocial => AUTOPILOT_SOCIALS.includes(p as SchedulableSocial))
           .filter(pl => tierAllowsSocial(socTier, pl) && connected.has(pl))
+        // Each platform's hashtags picked by the engine (lib/hashtag-data).
+        const captions = await scheduledCaptions(caption, { title, userId: user.id }, chosen)
+        const rows = chosen
           .map(pl => ({
             user_id: user.id,
             blog_post_id: blogPostId,
             platform: pl,
             scheduled_at: new Date(now + Math.max(2, DEFAULT_SOCIAL_OFFSETS_MIN[pl] ?? 2) * 60_000).toISOString(),
-            body_text: caption,
+            body_text: captions[pl] ?? caption,
             status: 'pending' as const,
             kind: 'social' as const,
             parent_id: null,

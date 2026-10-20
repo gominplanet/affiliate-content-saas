@@ -22,6 +22,7 @@ import { getConnectedPlatforms } from '@/lib/channel-health'
 import { DEFAULT_SOCIAL_OFFSETS_MIN, type SchedulableSocial } from '@/lib/schedule-types'
 import { fetchWithTimeout } from '@/lib/fetch-timeout'
 import { tagIfTimeout } from '@/lib/job-timeout'
+import { scheduledCaptions } from '@/lib/hashtag-data'
 
 const AUTOPILOT_SOCIALS: SchedulableSocial[] = ['facebook', 'threads', 'twitter', 'linkedin', 'bluesky', 'telegram', 'pinterest']
 
@@ -116,6 +117,8 @@ async function cascadeAutopilotSocials(
   if (!eligible.length) return report
 
   const caption = `${title}${wpUrl ? `\n\n${wpUrl}` : ''}`.slice(0, 900)
+  // Each platform's hashtags picked by the engine (lib/hashtag-data).
+  const captions = await scheduledCaptions(caption, { title, userId: job.user_id }, eligible)
   const now = Date.now()
   const rows = eligible.map(p => ({
     user_id: job.user_id,
@@ -124,7 +127,7 @@ async function cascadeAutopilotSocials(
     // At least 2 min out so it fires after the blog is fully live; keep the
     // per-platform spacing so channels don't all post at once.
     scheduled_at: new Date(now + Math.max(2, DEFAULT_SOCIAL_OFFSETS_MIN[p] ?? 2) * 60_000).toISOString(),
-    body_text: caption,
+    body_text: captions[p] ?? caption,
     status: 'pending' as const,
     kind: 'social' as const,
     parent_id: null,

@@ -433,7 +433,9 @@ function compact(n: number): string {
   return n >= 1e9 ? `${(n / 1e9).toFixed(1).replace(/\.0$/, '')}B` : n >= 1e6 ? `${(n / 1e6).toFixed(1).replace(/\.0$/, '')}M` : n >= 1e3 ? `${Math.round(n / 1e3)}K` : String(n)
 }
 
-const TAG_TOKEN = /(?<![\w#\\])#([A-Za-z][A-Za-z0-9_]*)/g
+// A tag may start with digits when a letter follows ("#2026deals" is a tag,
+// and its year takes it out; "#1 pick" is not one).
+const TAG_TOKEN = /(?<![\w#\\])#((?:[A-Za-z]|\d+[A-Za-z])[A-Za-z0-9_]*)/g
 const isDisclosure = (body: string) => /^(ad|sponsored)$/i.test(body)
 
 /** The hashtags a writer put in a caption (not the disclosure). */

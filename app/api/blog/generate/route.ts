@@ -1,4 +1,5 @@
 import { checkNewPicture } from '@/lib/post-logo-sweep'
+import { postTags } from '@/lib/post-tags'
 import { shortSlug } from '@/lib/short-slug'
 import { ensureSponsoredRel, untaggedAffiliateLinks } from '@/lib/sponsored-rel'
 import { videosNotPublic, notPublicMessage } from '@/lib/video-public'
@@ -1882,7 +1883,9 @@ async function handleGenerate(request: Request) {
     // Cap at 6 tags (was 10): fewer thin auto-generated tag archives for Google
     // to crawl. Tags are noindexed by the plugin (v1.0.64+) anyway; keeping the
     // count modest also trims crawl waste at the source.
-    tagIds = await wpService.resolveTagIds(generated.tags.slice(0, 6))
+    // Checked against the post (lib/post-tags): its confirmed keyword and
+    // searches first, then the writer's tags that are about the post.
+    tagIds = await wpService.resolveTagIds(postTags({ tags: generated.tags, title: generated.title, content: generated.content, keyword: generated.seoKeyword, supporting: supportingKeywords, max: 6 }))
   } catch (err) {
   }
 

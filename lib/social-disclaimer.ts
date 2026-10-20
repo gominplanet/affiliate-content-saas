@@ -400,8 +400,10 @@ export function discloseSocialPost(
   else t = ensureAdTags(t, { markdownV2: md, firstLine: TAGS_ON_FIRST_LINE.has(platform), afterLinkLead: platform === 'facebook', onlyAd: platform === 'instagram' })
   // THE HASHTAG SAFETY NET (lib/hashtag-engine fitHashtags), on every post:
   // duplicates, spam and years out, and no more than the platform takes.
-  // Telegram is MarkdownV2 (its tags are escaped), so it is left as written.
+  // Telegram is MarkdownV2, where every # is written \#: the tags are read
+  // unescaped, netted, and every # escaped again (it had no net at all).
   if (!md) t = fitHashtags(t, DISCLOSURE_TAG_PLATFORM[platform])
+  else t = fitHashtags(t.replace(/\\#(?=\d*[A-Za-z])/g, '#'), DISCLOSURE_TAG_PLATFORM[platform]).replace(/(?<!\\)#(?=\d*[A-Za-z])/g, '\\#')
   const lim = DISCLOSURE_LIMITS[platform]
   if (lim.maxHashtags) t = capHashtags(t, lim.maxHashtags)
   if (lim.maxChars) t = fitBody(t, lim.maxChars)

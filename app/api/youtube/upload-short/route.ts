@@ -9,6 +9,8 @@
  *
  * Pro-only. videoUrl is a vertical render we host (burner output / stored Short).
  */
+import { youtubeTagsFor } from '@/lib/youtube-search-tags'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { getPublishContext } from '@/lib/agency-publish'
@@ -34,7 +36,7 @@ export async function POST(request: Request) {
   if ('error' in pub) return pub.error
   const { supabase, user } = pub
 
-  let body: { videoUrl?: string; title?: string; description?: string; tags?: string[]; privacyStatus?: 'public' | 'unlisted' | 'private'; channelId?: string; notifySubscribers?: boolean }
+  let body: { videoUrl?: string; title?: string; description?: string; tags?: string[]; researchTags?: boolean; privacyStatus?: 'public' | 'unlisted' | 'private'; channelId?: string; notifySubscribers?: boolean }
   try { body = await request.json() } catch { return NextResponse.json({ error: 'Bad request' }, { status: 400 }) }
   const videoUrl = (body.videoUrl || '').trim()
   if (!/^https:\/\//i.test(videoUrl)) return NextResponse.json({ error: 'A video URL is required.' }, { status: 400 })
@@ -76,7 +78,16 @@ export async function POST(request: Request) {
   // #Shorts in the description helps YouTube classify it as a Short.
   const description = `${(body.description || '').trim()}\n\n#Shorts`.trim().slice(0, 4900)
 
-  const tags = Array.isArray(body.tags) ? body.tags.map(t => String(t)).filter(Boolean).slice(0, 15) : []
+  let tags = Array.isArray(body.tags) ? body.tags.map(t => String(t)).filter(Boolean).slice(0, 15) : []
+  // TAGS FROM REAL YOUTUBE SEARCHES (lib/youtube-search-tags) for a caller
+  // that shows the creator no tags before it posts (Shorts Studio, Drop):
+  // what people type that is about this Short, then the given ones that are.
+  // A caller whose tags the creator saw and may have edited (Clip Factory)
+  // does not ask, so what was shown is what posts.
+  if (body.researchTags) {
+    const r = await youtubeTagsFor(createAdminClient(), { videoTitle: title, text: (body.description || '').slice(0, 3000), writer: tags })
+    if (r.tags.length) tags = r.tags.slice(0, 20)
+  }
 
   try {
     const yt = new YouTubeOAuthService(token)

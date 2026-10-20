@@ -149,8 +149,10 @@ async function shorts(job: SendJob, it: SendItem, d: PlaceDeps): Promise<SendOut
   const w = await writeUpFor(job, it, d.http)
   const description = (await describe('youtube', w.text, it, d.http)).slice(0, 4800)
   const title = (str(job.payload.title).trim() || firstLine(w.text) || baseName(it.file_name)).slice(0, 95)
+  // researchTags: the tags field from real YouTube searches about this Short
+  // (lib/youtube-search-tags); Drop used to send none.
   const r = await d.http('/api/youtube/upload-short', { method: 'POST', timeoutMs: 300_000, body: {
-    videoUrl: it.source_url, title, description, privacyStatus: 'public',
+    videoUrl: it.source_url, title, description, privacyStatus: 'public', researchTags: true,
   } })
   if (!r.ok) {
     if (r.json.quotaExceeded) return { state: 'needs_you', detail: 'YouTube’s daily upload allowance is used up. Press Try again tomorrow.', payload: w.payload }

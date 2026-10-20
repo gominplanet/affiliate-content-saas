@@ -17,6 +17,7 @@
  * Body: { asin, campaignName?, epc?, endsAt? }
  */
 
+import { postTags } from '@/lib/post-tags'
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { passportLinkForUser } from '@/lib/passport-links'
@@ -509,7 +510,7 @@ export async function POST(request: Request) {
 
     // ── 5. Publish to WordPress (wpService built + pre-flighted above) ───────
     let tagIds: number[] = []
-    try { tagIds = await wpService.resolveTagIds((generated.tags || []).slice(0, 10)) } catch { /* non-fatal */ }
+    try { tagIds = await wpService.resolveTagIds(postTags({ tags: generated.tags, title: generated.title, content: generated.content, keyword: (generated as { seoKeyword?: string }).seoKeyword, max: 10 })) } catch { /* non-fatal */ }
 
     // Category: match the AI's pick against the user's REAL categories
     // (brand niches + custom categories). Never fall back to niches[0]

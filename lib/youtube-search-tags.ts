@@ -33,9 +33,12 @@ export function youtubeSeeds(input: { videoTitle?: string | null; productTitle?:
 
 export interface TagResearch {
   tags: string[]
-  /** Tags that are real YouTube searches, and the writer's kept after them. */
+  /** Tags that are real YouTube searches, the writer's kept after them, and
+   *  what the product is (its kind, brand and model, the video's topic) when
+   *  YouTube did not answer. */
   fromSearches: number
   fromWriter: number
+  fromProduct?: number
   /** The writer's tags left out, as not about this video. */
   notAbout: string[]
   /** Searches asked, and how many YouTube answered (remembered ones count). */
@@ -84,4 +87,34 @@ export async function researchYouTubeTags(admin: any, input: { videoTitle?: stri
   const vocab = contentVocab([input.videoTitle, input.productTitle, input.productName, input.text].filter(Boolean).join('\n'))
   const picked = pickYouTubeTags(got.map((g) => g.phrases), input.writer || [], vocab)
   return { ...picked, asked: seeds.length, answered: got.filter((g) => g.answered).length }
+}
+
+/** EVERY YOUTUBE TAGS FIELD GOES THROUGH HERE (Seb, 2026-10-20: "anything
+ *  that MVP creates as far as tagging and hashtags ... runs through this kind
+ *  of engine ... I don't want to hear from users that the hashtags are
+ *  poor"). Real searches when YouTube answers in time; when it does not, the
+ *  writer's tags that are about the video, then what the product is, and
+ *  never a tag that is not about the video. Never throws. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function youtubeTagsFor(admin: any, input: Parameters<typeof researchYouTubeTags>[1], timeoutMs = 5000): Promise<TagResearch & { searched: boolean }> {
+  const r = await Promise.race([
+    researchYouTubeTags(admin, input).catch(() => null),
+    new Promise<null>((res) => setTimeout(() => res(null), timeoutMs)),
+  ])
+  if (r && r.fromSearches > 0) return { ...r, searched: true }
+  return { ...offlineYouTubeTags(input), asked: r?.asked ?? 0, answered: r?.answered ?? 0, searched: false }
+}
+
+/** With no searches: the writer's tags about the video, then the product's
+ *  kind, brand and model and the video's topic. Pure. */
+export function offlineYouTubeTags(input: Parameters<typeof researchYouTubeTags>[1]): Omit<TagResearch, 'asked' | 'answered'> {
+  const vocab = contentVocab([input.videoTitle, input.productTitle, input.productName, input.text].filter(Boolean).join('\n'))
+  const picked = pickYouTubeTags([], input.writer || [], vocab)
+  let fromProduct = 0
+  let total = picked.tags.reduce((n, t) => n + t.length + 1, 0)
+  for (const seed of youtubeSeeds(input)) {
+    if (picked.tags.includes(seed) || picked.tags.length >= YT_TAGS_MAX || total + seed.length + 1 > YT_TAGS_MAX_CHARS || !matchesContent(seed, vocab)) continue
+    picked.tags.push(seed); total += seed.length + 1; fromProduct++
+  }
+  return { ...picked, fromProduct }
 }

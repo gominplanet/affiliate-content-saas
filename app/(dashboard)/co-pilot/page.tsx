@@ -240,7 +240,7 @@ interface GeneratedMetadata {
   tags: string[]
   /** Where the tags came from (lib/youtube-search-tags): real YouTube
    *  searches first, then the writer's that are about the video. */
-  tagsResearch?: { fromSearches: number; fromWriter: number; notAbout: string[]; asked: number; answered: number; usedWriterUnchecked: boolean } | null
+  tagsResearch?: { fromSearches: number; fromWriter: number; fromProduct?: number; notAbout: string[]; asked: number; answered: number; searched: boolean } | null
   pinnedComment: string
   title_alternatives: string[]
   /** Set when MVP could not confirm which store a link in the pinned comment
@@ -3126,7 +3126,7 @@ function VideoStudioCardImpl({ video, userTier, playlists, playlistsNote = null,
                 <div className="flex flex-wrap gap-1.5">
                   {generated.tags.map((tag, i) => {
                     // Tags from real YouTube searches lead the list (lib/youtube-search-tags).
-                    const searched = !!generated.tagsResearch && !generated.tagsResearch.usedWriterUnchecked && i < generated.tagsResearch.fromSearches
+                    const searched = !!generated.tagsResearch?.searched && i < generated.tagsResearch.fromSearches
                     return (
                       <span key={i} title={searched ? 'People type this into YouTube\'s search box' : undefined}
                         className={`text-[10px] px-2 py-0.5 rounded-full ${searched ? 'bg-[#34c759]/12 text-[#1f7a35] dark:text-[#5fd47a]' : 'bg-gray-100 dark:bg-white/10 text-[#6e6e73] dark:text-[#ebebf0]'}`}>
@@ -3136,8 +3136,8 @@ function VideoStudioCardImpl({ video, userTier, playlists, playlistsNote = null,
                   })}
                 </div>
                 {generated.tagsResearch && (
-                  generated.tagsResearch.usedWriterUnchecked
-                    ? <p className="mt-1.5 text-[10.5px] text-[#b25000]">YouTube&rsquo;s search box did not answer, so these are the writer&rsquo;s tags, not checked against real searches.</p>
+                  !generated.tagsResearch.searched
+                    ? <p className="mt-1.5 text-[10.5px] text-[#b25000]">YouTube&rsquo;s search box did not answer in time, so these are the writer&rsquo;s tags that are about this video and what the product is, not yet checked against real searches.</p>
                     : <p className="mt-1.5 text-[10.5px] text-[#86868b]">
                         {generated.tagsResearch.fromSearches} from real YouTube searches (green){generated.tagsResearch.fromWriter ? `, ${generated.tagsResearch.fromWriter} written for this video` : ''}.
                         {generated.tagsResearch.notAbout.length ? ` Left out as not about this video: ${generated.tagsResearch.notAbout.slice(0, 4).join(', ')}${generated.tagsResearch.notAbout.length > 4 ? ` and ${generated.tagsResearch.notAbout.length - 4} more` : ''}.` : ''}

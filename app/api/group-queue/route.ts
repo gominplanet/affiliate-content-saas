@@ -21,6 +21,7 @@
 //     link style, the disclosure, the words, and #ad #sponsored. Says when the
 //     link fell back to a plain one.
 
+import { researchedTags } from '@/lib/hashtag-data'
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
@@ -191,7 +192,10 @@ export async function POST(req: NextRequest) {
       try {
         const msg = await anthropic.messages.create({ model: MODEL, max_tokens: 260, messages: [{ role: 'user', content: writePrompt(it) }] })
         recordAnthropicUsage(msg, { userId: g.userId, tier: g.tier, feature: 'group_queue_post', model: MODEL })
-        const text = scrubBanned(((msg.content[0] as { type: string; text: string }).text || '').trim()).slice(0, 700)
+        const written = scrubBanned(((msg.content[0] as { type: string; text: string }).text || '').trim()).slice(0, 700)
+        // THE HASHTAG ENGINE picks the Group post's tags (lib/hashtag-data);
+        // the creator sees them in the queue and can change them.
+        const text = written ? (await researchedTags(written, { platform: 'facebook_group', about: it.title, brand: it.title, userId: g.userId })).text : ''
         if (text) captions[it.key] = text
         else failed.push(it.key)
       } catch { failed.push(it.key) }

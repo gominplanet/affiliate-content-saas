@@ -304,6 +304,18 @@ export function ShortsStudioModal({
       [clip.caption, (clip.hashtags || []).join(' ')].filter(Boolean).join('\n\n').trim(),
     )
 
+  // The caption with its hashtags picked for TikTok or Instagram (the clip's
+  // were picked for the Short): /api/hashtags/pick, the caption as it is when
+  // the pick does not answer.
+  const pickedCaption = async (clip: ShortRow, platform: 'tiktok' | 'instagram'): Promise<string> => {
+    const base = captionFor(clip)
+    try {
+      const r = await fetch('/api/hashtags/pick', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ platform, text: base, about: clip.hook }) })
+      const j = await r.json().catch(() => ({})) as { text?: string }
+      return typeof j.text === 'string' && j.text.trim() ? j.text : base
+    } catch { return base }
+  }
+
   // Record a successful cross-post so the platform's pill flips to "posted"
   // and stays that way across reloads. Best-effort: the post already happened.
   const markPosted = useCallback(async (shortId: string, platform: 'tiktok' | 'instagram' | 'youtube') => {
@@ -326,7 +338,8 @@ export function ShortsStudioModal({
       const res = await fetch('/api/youtube/upload-short', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ videoUrl: clip.renderedUrl, title: buildYouTubeShortTitle(clip.hook, clip.hashtags), description: captionFor(clip), tags: buildYouTubeTags(clip.hashtags, clip.hook) }),
+        // researchTags: MVP builds the tags from real YouTube searches about this Short (lib/youtube-search-tags).
+        body: JSON.stringify({ videoUrl: clip.renderedUrl, title: buildYouTubeShortTitle(clip.hook, clip.hashtags), description: captionFor(clip), tags: buildYouTubeTags(clip.hashtags, clip.hook), researchTags: true }),
       })
       const data = await res.json().catch(() => ({ error: `The server did not answer (HTTP ${res.status}). Try again in a moment.` }))
       if (!res.ok) {
@@ -649,7 +662,7 @@ export function ShortsStudioModal({
                             icon={<Music2 size={12} />}
                             posted={!!clip.postedTiktok}
                             postedAt={clip.postedTiktok}
-                            onClick={() => setTtPost({ id: clip.id, url: clip.renderedUrl!, caption: captionFor(clip) })}
+                            onClick={async () => setTtPost({ id: clip.id, url: clip.renderedUrl!, caption: await pickedCaption(clip, 'tiktok') })}
                           />
                           <PostPill
                             label="Instagram"
@@ -657,7 +670,7 @@ export function ShortsStudioModal({
                             icon={<Instagram size={12} />}
                             posted={!!clip.postedInstagram}
                             postedAt={clip.postedInstagram}
-                            onClick={() => setIgPost({ id: clip.id, url: clip.renderedUrl!, caption: captionFor(clip) })}
+                            onClick={async () => setIgPost({ id: clip.id, url: clip.renderedUrl!, caption: await pickedCaption(clip, 'instagram') })}
                           />
                           {/* YouTube Shorts publishing — admin-only until Google
                               verifies the upload scope and we flip the flag on. */}

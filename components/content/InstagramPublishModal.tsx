@@ -720,11 +720,11 @@ export function InstagramPublishModal({
             <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">2. What to publish</p>
             <div className="grid grid-cols-3 gap-2">
               {(videoKind === 'horizontal' ? ([
-                { val: 'image' as const, label: 'Feed post', hint: 'Image + SEO caption + 20 hashtags. No clickable link (IG limitation).', disabled: alreadyReeled && !alreadyStoried },
+                { val: 'image' as const, label: 'Feed post', hint: 'Image, SEO caption and 4 hashtags picked for Instagram, plus #ad. No clickable link (IG limitation).', disabled: alreadyReeled && !alreadyStoried },
                 { val: 'story' as const, label: 'Story only', hint: 'Image + link sticker (you add the sticker manually after).', disabled: alreadyStoried && !alreadyReeled },
                 { val: 'both' as const, label: 'Both', hint: 'Feed post for reach + Story for affiliate clicks. Recommended.', disabled: alreadyReeled && alreadyStoried },
               ]) : ([
-                { val: 'reel' as const, label: 'Reel only', hint: 'Max SEO caption + 20 hashtags. No clickable link (IG limitation).', disabled: alreadyReeled && !alreadyStoried },
+                { val: 'reel' as const, label: 'Reel only', hint: 'Full SEO caption and 4 hashtags picked for Instagram, plus #ad. No clickable link (IG limitation).', disabled: alreadyReeled && !alreadyStoried },
                 { val: 'story' as const, label: 'Story only', hint: 'Video + link sticker (you add the sticker manually after).', disabled: alreadyStoried && !alreadyReeled },
                 { val: 'both' as const, label: 'Both', hint: 'Reel for reach + Story for affiliate clicks. Recommended.', disabled: alreadyReeled && alreadyStoried },
               ])).map(opt => (

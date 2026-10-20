@@ -19,6 +19,8 @@ import {
 } from '@/lib/integration-secrets'
 import { resolveSocialAccount } from '@/lib/social-accounts'
 import { capSocialText, SOCIAL_LIMITS } from '@/lib/social-cap'
+import { pickForPlatforms } from '@/lib/hashtag-data'
+import { withTags, type TagPlatform } from '@/lib/hashtag-engine'
 import { createTweet, refreshAccessToken as refreshTwitter } from '@/services/twitter'
 import { resolveXMedia, rememberXScopes } from '@/lib/x-media'
 import { tierAllowsSocial, type Tier } from '@/lib/tier'
@@ -74,6 +76,9 @@ interface PublishOpts {
   retailerLabel?: string
   /** What a Facebook post waiting for the Group is called in the queue. */
   queueSource?: QueueSource
+  /** The engine picks each platform's hashtags. False when the creator wrote
+   *  or edited the caption: what they wrote is what posts (safety net only). */
+  pickTags?: boolean
 }
 
 /** Compose the final text for a platform: the affiliate link leads (a shopper
@@ -88,12 +93,26 @@ function composeText(base: string, platform: QuickPostPlatform, link: string, di
   return capSocialText(base, limit, `\n\n${disclaimer}`, `🛒 Grab it on ${retailer} 👉 ${link}\n\n`)
 }
 
+/** The engine's platform for each deal platform. */
+const TAG_PLATFORM: Record<QuickPostPlatform, TagPlatform> = { twitter: 'x', facebook: 'facebook', threads: 'threads', linkedin: 'linkedin', telegram: 'telegram', bluesky: 'bluesky' }
+
 export async function publishDealToSocials(opts: PublishOpts): Promise<PlatformResult[]> {
-  const { supabase, userId, deal, baseCaption, disclaimer } = opts
+  const { supabase, userId, deal, disclaimer } = opts
   const retailer = opts.retailerLabel || 'Amazon'
   const platforms = opts.platforms.filter((p) => QUICK_POST_PLATFORMS.includes(p))
   const results: PlatformResult[] = []
   if (!platforms.length) return results
+  // THE HASHTAG ENGINE picks each platform's tags (lib/hashtag-data
+  // pickForPlatforms, Seb 2026-10-20: "anything that MVP creates as far as
+  // tagging and hashtags ... runs through this kind of engine"): researched
+  // live once for the deal, then each platform by its own rule and counts.
+  // The writer's one hashtag is a suggestion. A pick that failed leaves that
+  // platform's caption as written, and the safety net still runs when it is sent.
+  const picks = opts.pickTags === false ? {} : await pickForPlatforms({ text: opts.baseCaption, about: deal.title, brand: deal.title, userId }, platforms.map((p) => TAG_PLATFORM[p]))
+  const captionFor = (p: QuickPostPlatform): string => {
+    const pick = picks[TAG_PLATFORM[p]]
+    return pick ? withTags(opts.baseCaption, pick.tags.map((t) => t.tag)) : opts.baseCaption
+  }
   // The affiliate link for a platform: its own Geniuslink (per-platform group)
   // when we built one, else the shared tagged fallback.
   const linkFor = (p: QuickPostPlatform) => opts.links?.[p] || opts.link
@@ -158,7 +177,7 @@ export async function publishDealToSocials(opts: PublishOpts): Promise<PlatformR
         // most (lib/x-retry). A deal is one post per product per UTC day.
         const t = await postToXWithOneRetry({
           supabase, userId, key: xKey,
-          tweet: () => createTweet(token!, composeText(baseCaption, 'twitter', link, disclaimer, retailer), xMedia.mediaIds),
+          tweet: () => createTweet(token!, composeText(captionFor('twitter'), 'twitter', link, disclaimer, retailer), xMedia.mediaIds),
         })
         // The reservation already counted this post (no recordXPost).
         // ok:true AND a note: the post went out, and it went out without the
@@ -181,7 +200,7 @@ export async function publishDealToSocials(opts: PublishOpts): Promise<PlatformR
           },
         })
         if (!acct) throw new Error('Facebook Page is not connected.')
-        const caption = composeText(baseCaption, 'facebook', link, disclaimer, retailer)
+        const caption = composeText(captionFor('facebook'), 'facebook', link, disclaimer, retailer)
         // GROUP FIRST (lib/facebook-queue): with a Group saved, the post waits
         // in the creator's Facebook queue instead of going on the Page with
         // the link. Not posted, and said so.
@@ -214,7 +233,7 @@ export async function publishDealToSocials(opts: PublishOpts): Promise<PlatformR
           },
         })
         if (!acct) throw new Error('Threads is not connected.')
-        const r = await new ThreadsService(acct.accessToken, acct.externalId).createPost(composeText(baseCaption, 'threads', link, disclaimer, retailer), img || undefined)
+        const r = await new ThreadsService(acct.accessToken, acct.externalId).createPost(composeText(captionFor('threads'), 'threads', link, disclaimer, retailer), img || undefined)
         return { platform, ok: true, url: r.permalink }
 
       } else if (platform === 'linkedin') {
@@ -222,7 +241,7 @@ export async function publishDealToSocials(opts: PublishOpts): Promise<PlatformR
         const person = ig.linkedin_person_id as string | undefined
         if (!token || !person) throw new Error('LinkedIn is not connected.')
         const li = createLinkedInService(token, person)
-        const text = composeText(baseCaption, 'linkedin', link, disclaimer, retailer)
+        const text = composeText(captionFor('linkedin'), 'linkedin', link, disclaimer, retailer)
         if (img) await li.createImagePost({ text, imageUrl: img, title: deal.title })
         else await li.createPost({ text, articleUrl: link, articleTitle: deal.title, articleDescription: deal.title })
         return { platform, ok: true }
@@ -234,7 +253,7 @@ export async function publishDealToSocials(opts: PublishOpts): Promise<PlatformR
         // MarkdownV2: escape the body + disclosure; the link rides in a link span
         // (dp + geni.us URLs contain no ')' so the destination is safe unescaped).
         // Link leads so a shopper can buy without reading.
-        const body = escapeMarkdownV2(capSocialText(baseCaption, 700))
+        const body = escapeMarkdownV2(capSocialText(captionFor('telegram'), 700))
         const caption = `🛒 [Grab it on ${retailer}](${link})\n\n${body}\n\n${escapeMarkdownV2(disclaimer)}`
         if (img) await sendPhoto(token, channel, img, caption)
         else await sendMessage(token, channel, caption)
@@ -245,7 +264,7 @@ export async function publishDealToSocials(opts: PublishOpts): Promise<PlatformR
         const appPw = ig.bluesky_app_password as string | undefined
         if (!handle || !appPw) throw new Error('Bluesky is not connected.')
         const session = await blueskySession(handle, appPw)
-        const text = composeText(baseCaption, 'bluesky', link, disclaimer, retailer)
+        const text = composeText(captionFor('bluesky'), 'bluesky', link, disclaimer, retailer)
         await blueskyPost(session, {
           text, linkUrl: link, linkText: link,
           embed: { url: link, title: deal.title, description: '', imageUrl: img || undefined },

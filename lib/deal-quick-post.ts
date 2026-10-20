@@ -7,6 +7,7 @@
 // the post. Extracted so scheduling reuses the exact same publish path instead
 // of a divergent copy.
 
+import { researchedTags } from '@/lib/hashtag-data'
 import { recordProductPostLinks } from '@/lib/product-post-links'
 import { createAnthropicClient } from '@/lib/anthropic'
 import { recordAnthropicUsage } from '@/lib/ai-usage'
@@ -290,6 +291,8 @@ Return ONLY the caption text.` }],
     postImageForIg = postImage
 
     const textResults: PlatformResult[] = await publishDealToSocials({
+      // The engine picks the hashtags unless the creator wrote the caption.
+      pickTags: !(input.caption || '').trim(),
       supabase: db, userId,
       deal: { asin, title: deal.title as string, imageUrl: postImage },
       // Passport on → each platform's own MVP-<CHANNEL> geo link; off → the
@@ -357,7 +360,8 @@ Return ONLY the caption text.` }],
         // rather than let the publisher throw an opaque Meta error.
         imageUrl: (postImageForIg || dealImage) as string,
         asin, productTitle: deal.title as string,
-        caption: baseCaption || undefined,
+        // The engine picks Instagram's tags for a caption MVP wrote; the creator's own goes as written.
+        caption: baseCaption ? ((input.caption || '').trim() ? baseCaption : (await researchedTags(baseCaption, { platform: 'instagram', about: deal.title as string, brand: deal.title as string, userId })).text) : undefined,
         postType: 'feed',
         // THE SAME DESTINATION AS EVERY OTHER CHANNEL IN THIS POST. Without it a
         // showcase deal put an Amazon tile on Link in Bio, so the "Link in bio"

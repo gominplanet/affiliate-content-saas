@@ -118,6 +118,8 @@ Return ONLY the caption text.` }],
   })) || imageUrl || null
 
   const results = await publishDealToSocials({
+    // The engine picks the hashtags unless the creator wrote the caption.
+    pickTags: !(input.caption || '').trim(),
     supabase: db, userId,
     deal: { asin: itemId, title: name, imageUrl: postImage },
     link, links: built.links, baseCaption: cap, disclaimer, platforms,

@@ -9,7 +9,9 @@
 // disclosure (lib/reel-caption resolveClipLinks). For YouTube it also writes a
 // Short's title and a full tag set from the product and the clip, as a regular
 // upload would have; when the writer cannot run, the clip's own title and tags
-// are used and `youtube.note` says so.
+// are used and `youtube.note` says so. THE TAGS GO THROUGH REAL YOUTUBE
+// SEARCHES (lib/youtube-search-tags), as every YouTube tags field does: what
+// people type that is about this clip first, then the writer's that are.
 
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
@@ -22,6 +24,10 @@ import type { ClipPlatform } from '@/lib/clip-description'
 import { normalizeTier } from '@/lib/tier'
 import { scrubTitle } from '@/lib/scrub'
 import { hasVideoTools } from '@/lib/amazon-plan'
+import { youtubeTagsFor, type TagResearch } from '@/lib/youtube-search-tags'
+import { hashtagsFor } from '@/lib/hashtag-data'
+import type { TagPlatform } from '@/lib/hashtag-engine'
+import { createAdminClient } from '@/lib/supabase/admin'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -65,7 +71,7 @@ export async function POST(req: Request) {
     sourceVideoId: body.sourceVideoId, product: body.product, productName: body.productName, channel: platform,
   })
 
-  let youtube: { title: string; tags: string[]; note: string | null } | null = null
+  let youtube: { title: string; tags: string[]; note: string | null; tagsResearch?: TagResearch & { searched: boolean } } | null = null
   if (platform === 'youtube') {
     const hook = String(body.title || '').trim() || 'New Short'
     const hashtags = Array.isArray(body.hashtags) ? body.hashtags.map(String) : []
@@ -105,7 +111,28 @@ Reply with strict JSON only: {"title": "...", "tags": ["...", "..."]}`,
     } catch (e) {
       youtube = { ...fallback, note: `The title and tags writer did not run (${(e instanceof Error ? e.message : String(e)).slice(0, 120)}), so the clip’s own title and tags are used. Edit them below.` }
     }
+    const research = await youtubeTagsFor(createAdminClient(), {
+      videoTitle: links.videoTitle || hook, productName: String(body.productName || '') || null,
+      text: `${hook}\n${String(body.writeUp || '').slice(0, 1500)}\n${hashtags.join(' ')}`, writer: youtube.tags,
+    })
+    if (research.tags.length) youtube = { ...youtube, tags: research.tags, tagsResearch: research }
+    if (!research.searched) youtube = { ...youtube, note: [youtube.note, 'YouTube’s search box did not answer in time, so the tags are the ones about this clip, not yet checked against real searches.'].filter(Boolean).join(' ') }
   }
 
-  return NextResponse.json({ ok: true, platform, ...links, youtube })
+  // THIS PLATFORM'S HASHTAGS, picked by the engine for it (Seb, 2026-10-20:
+  // "anything that MVP creates as far as tagging and hashtags ... runs through
+  // this kind of engine"): researched live, by its own rule and counts. The
+  // clip's tags (picked once for the Short) are suggestions. Null on failure,
+  // and the panel keeps the clip's.
+  const tagPlatform: TagPlatform = platform === 'youtube' ? 'youtube_short' : platform
+  const clipTags = Array.isArray(body.hashtags) ? body.hashtags.map((t) => `#${String(t).replace(/^#+/, '')}`) : []
+  const hashtags = await hashtagsFor({
+    platform: tagPlatform,
+    text: [String(body.productName || ''), String(body.title || ''), String(body.writeUp || '').slice(0, 1500), links.videoTitle || ''].filter(Boolean).join('\n'),
+    brand: String(body.productName || '') || null,
+    writer: clipTags,
+    userId: user.id,
+  }).then((p) => p.tags.map((t) => t.tag.replace(/^#/, ''))).catch(() => null)
+
+  return NextResponse.json({ ok: true, platform, ...links, youtube, hashtags })
 }

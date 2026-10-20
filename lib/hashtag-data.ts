@@ -120,3 +120,46 @@ export async function researchedTags(text: string, input: { platform: TagPlatfor
     return { text, pick: null }
   }
 }
+
+/** ONE POST, SEVERAL PLATFORMS (a deal sent to X, Facebook, Threads and
+ *  more at once): researched live once, then picked for each platform by its
+ *  own rule and counts. The text's own hashtags are the writer's suggestions.
+ *  Never throws: a platform whose pick failed gets no entry, and its post goes
+ *  as written through the safety net. */
+export async function pickForPlatforms(input: { text: string; about?: string | null; brand?: string | null; niches?: string[]; userId?: string | null }, platforms: TagPlatform[]): Promise<Partial<Record<TagPlatform, TagPick>>> {
+  const out: Partial<Record<TagPlatform, TagPick>> = {}
+  const text = `${input.about || ''}\n${withoutTags(input.text)}`
+  const writer = writerTags(input.text)
+  const research = await liveResearch({ text, brand: input.brand ?? null, niches: input.niches, writer })
+  const niche = detectNiche(`${text} ${(input.niches || []).join(' ')}`)
+  await Promise.all(Array.from(new Set(platforms)).map(async (p) => {
+    try {
+      const pp = pulsePlatform(p)
+      const [yours, members, trends] = await Promise.all([
+        input.userId ? within(personalTagStats(input.userId, 2, pp), 2500, []) : Promise.resolve([]),
+        within(pooledTagStats(niche, 5, pp), 2500, []),
+        within(trendsFor(p), 2500, [] as TrendTag[]),
+      ])
+      const { own, elsewhere } = splitCounts(research?.counts || [], pp)
+      out[p] = pickHashtags({ platform: p, text, brand: input.brand ?? null, niches: input.niches, writer, yours, members, trends: mergeTrends(trends, own), found: research?.candidates || [], elsewhere })
+    } catch { /* this platform's post goes as written, through the safety net */ }
+  }))
+  return out
+}
+
+/** A scheduled post's text per platform with the engine's tags on its last
+ *  line (Auto-pilot and the Levanta social push used to send title and link
+ *  only). Facebook takes none on a plain link post, so it keeps the text as
+ *  it is; so does a platform whose pick failed. */
+export async function scheduledCaptions(caption: string, input: { title: string; userId?: string | null }, platforms: string[]): Promise<Record<string, string>> {
+  const map: Record<string, TagPlatform> = { twitter: 'x', threads: 'threads', linkedin: 'linkedin', bluesky: 'bluesky', telegram: 'telegram', pinterest: 'pinterest' }
+  const wanted = platforms.filter((p) => map[p])
+  const out: Record<string, string> = {}
+  for (const p of platforms) out[p] = caption
+  if (!wanted.length) return out
+  try {
+    const picks = await pickForPlatforms({ text: caption, about: input.title, brand: input.title, userId: input.userId }, wanted.map((p) => map[p]))
+    for (const p of wanted) { const pick = picks[map[p]]; if (pick?.tags.length) out[p] = withTags(caption, pick.tags.map((t) => t.tag)) }
+  } catch { /* the posts go as written */ }
+  return out
+}

@@ -9,6 +9,7 @@
  *
  * Body: { ltkUrl, productName, description?, imageUrl?, draft? }
  */
+import { postTags } from '@/lib/post-tags'
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
@@ -148,7 +149,7 @@ export async function POST(request: NextRequest) {
 
     // ── Publish to WordPress ─────────────────────────────────────────────────
     let tagIds: number[] = []
-    try { tagIds = await wpService.resolveTagIds((generated.tags || []).slice(0, 10)) } catch { /* non-fatal */ }
+    try { tagIds = await wpService.resolveTagIds(postTags({ tags: generated.tags, title: generated.title, content: generated.content, keyword: (generated as { seoKeyword?: string }).seoKeyword, max: 10 })) } catch { /* non-fatal */ }
     let categoryIds: number[] = []
     if (generated.category) {
       try { categoryIds = [await wpService.createCategory(generated.category)] } catch { /* non-fatal */ }

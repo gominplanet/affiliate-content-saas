@@ -20,6 +20,7 @@
 // and this being pressed, and a comment saying "on sale right now" would then
 // sit on the video saying something untrue.
 
+import { researchedTags } from '@/lib/hashtag-data'
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
@@ -204,7 +205,9 @@ Return ONLY JSON: {"short":{"hook":"...","script":"...","onScreen":["..."]},"com
     const community = `${strip(j.community ?? '')}\n\n${videoUrl ? `Watch my review: ${videoUrl}\n` : ''}${priceLine}\n${disclosure}`
     // THE SOCIAL POST, twice: with the link for copying, and without it for
     // the quick-post sheet, which adds each platform's own link (and #ad).
-    const socialRaw = tidy(j.social ?? '')
+    // THE HASHTAG ENGINE picks its tag (lib/hashtag-data): the writer's are
+    // suggestions. X and Threads take one, so it is picked for X.
+    const socialRaw = (await researchedTags(tidy(j.social ?? ''), { platform: 'x', about: productTitle, brand: productTitle, userId: user.id, maxChars: 250 })).text
     return NextResponse.json({
       ok: true,
       asin, title: productTitle, link,

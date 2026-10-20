@@ -89,9 +89,9 @@ globalThis.fetch = (async (input: string | URL) => {
 
   // ── Wiring ────────────────────────────────────────────────────────────────
   const META = read('app/api/youtube/generate-metadata/route.ts')
-  check('YouTube metadata builds its tags from real searches and says how', /researchYouTubeTags\(createAdminClient\(\)/.test(META) && /tagsResearch,/.test(META) && /usedWriterUnchecked: true/.test(META))
+  check('YouTube metadata builds its tags from real searches and says how', /youtubeTagsFor\(createAdminClient\(\)/.test(META) && /tagsResearch,/.test(META) && /seoData\.tags = tagsResearch\.tags/.test(META))
   const COPILOT = read('app/(dashboard)/co-pilot/page.tsx')
-  check('Co-Pilot marks the searched tags and says when YouTube did not answer', /from real YouTube searches \(green\)/.test(COPILOT) && /YouTube&rsquo;s search box did not answer/.test(COPILOT))
+  check('Co-Pilot marks the searched tags and says when YouTube did not answer', /from real YouTube searches \(green\)/.test(COPILOT) && /YouTube&rsquo;s search box did not answer in time/.test(COPILOT))
   const BLOG = read('app/api/blog/generate/route.ts')
   check('every blog post is researched, a video alone too, kept only when a box confirms it', /if \(!targetKeyword && !asinOverride\) \{/.test(BLOG) && /research\?\.primary && research\.confirmedBy\.length/.test(BLOG) && /keywordResearch: keywordResearch \? \{ \.\.\.keywordResearch, used: generated\.seoKeyword \|\| null \} : null/.test(BLOG))
   check('the writer is told where the keyword came from', /targetKeywordFrom: keywordResearch\?\.from \?\? null/.test(BLOG) && /confirmed by Google\\'s or Amazon\\'s search box: a phrase people actually type/.test(read('services/claude/index.ts')))

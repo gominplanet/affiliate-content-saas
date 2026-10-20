@@ -24,6 +24,9 @@ export type PublishKit = {
   linkHub: string | null
   disclosure: string
   youtube: { title: string; tags: string[]; note: string | null } | null
+  /** This platform's hashtags, picked by the engine for it (lib/hashtag-data):
+   *  the clip's are suggestions. Missing when the pick failed. */
+  hashtags?: string[] | null
 }
 
 export type PublishChoice = { text: string; title?: string; tags?: string[] }
@@ -68,7 +71,10 @@ export default function PublishPanel(props: {
 }) {
   const { platform, kit } = props
   const rules = CLIP_PLATFORM_RULES[platform]
-  const missing = useMemo(() => (kit ? unavailableReasons(kit, props.hashtags) : {}), [kit, props.hashtags])
+  // Each platform's own pick (TikTok, Instagram and Facebook used to reuse the
+  // one made for the Short); the clip's tags when the pick did not come back.
+  const hashtags = useMemo(() => (kit?.hashtags?.length ? kit.hashtags : props.hashtags), [kit, props.hashtags])
+  const missing = useMemo(() => (kit ? unavailableReasons(kit, hashtags) : {}), [kit, hashtags])
   const [include, setInclude] = useState<ClipInclude>(rules.defaults)
   const [text, setText] = useState('')
   const [edited, setEdited] = useState(false)
@@ -85,8 +91,8 @@ export default function PublishPanel(props: {
   const composed = useMemo(() => kit ? composeClipDescription({
     platform, writeUp: props.writeUp, include,
     productLink: kit.productLink, amazon: kit.amazon, videoUrl: kit.videoUrl, blogUrl: kit.blogUrl,
-    linkHub: kit.linkHub, hashtags: props.hashtags, disclosure: kit.disclosure,
-  }) : '', [kit, platform, props.writeUp, include, props.hashtags])
+    linkHub: kit.linkHub, hashtags, disclosure: kit.disclosure,
+  }) : '', [kit, platform, props.writeUp, include, hashtags])
   // The choices rebuild the text until the creator types in it; after that a
   // choice rebuilds it only when they ask, so their edits are never lost.
   useEffect(() => { if (!edited) setText(composed) }, [composed, edited])
