@@ -8,12 +8,12 @@
  *     store installs to "update" — isScoutOutdated survives only as a
  *     low-level helper, not a user-facing gate.
  */
-export const SCOUT_LATEST_VERSION = '1.53.4'
+export const SCOUT_LATEST_VERSION = '1.53.5'
 
 /** One-line "what's new". No longer shown in a nag (store installs auto-update);
  *  kept as a changelog note for whoever bumps the version. */
 export const SCOUT_WHATS_NEW =
-  'TRYBE: everything goes through the TRYBE tab you leave open, and each request is sent the way TRYBE\'s own button sends it, with the brand\'s program, so SCOUT opens no window. Includes 1.53.3, 1.53.2 and 1.53.1.'
+  'TRYBE: SCOUT opens TRYBE in a tab next to MVP when none is open and works through it, and sends each request the way TRYBE\'s own button does, so nothing pops up. Includes 1.53.1 to 1.53.4.'
 
 /** Canonical download for the latest SCOUT build (public/, rebuilt from
  *  extension/ on every version bump). Used by the EPC banner + the top-bar
@@ -60,6 +60,9 @@ export const SCOUT_CC_NEW_MIN_VERSION = '1.53.0'
 /** SCOUT works on TRYBE only through the creator's own open TRYBE tab, and
  *  sends requests the way TRYBE's own button does (lib/trybe-tab). */
 export const SCOUT_TRYBE_OWN_TAB_MIN_VERSION = '1.53.2'
+
+/** SCOUT opens TRYBE in a tab behind MVP's when none is open (MVP_TRYBE_TAB_OPEN). */
+export const SCOUT_TRYBE_TAB_OPEN_MIN_VERSION = '1.53.5'
 
 export const SCOUT_STUDIO_MIN_VERSION = '1.20.0'
 

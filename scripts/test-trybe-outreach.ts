@@ -348,12 +348,28 @@ check('an old-style or missing program is none', programOf({ programId: 'legacy:
 check('the send link carries the program when there is one', sendUrl('b-123456', null, 'prog-aaaaaa') === 'https://jointrybe.com/creator/discover?brand=b-123456&program=prog-aaaaaa' && sendUrl('b-123456', null) === 'https://jointrybe.com/creator/discover?brand=b-123456')
 check('the claim hands SCOUT the program from MVP\'s copy of TRYBE\'s list', /const programId = programOf\(\(dir as \{ raw\?: unknown \} \| null\)\?\.raw \?\? null\)/.test(ROUTE) && /url: sendUrl\(row\.brand_id, row\.brand_url, programId\)/.test(ROUTE))
 
+// TRYBE OPEN FIRST (Seb, 2026-10-20: "As soon as I open the tribe feature,
+// nothing happens ... we need to have a very visible button before anything
+// happens, maybe even a pop-up"). SCOUT 1.53.5 opens TRYBE behind MVP's tab.
+{
+  const GATE = readFileSync('components/labs/TrybeTabGate.tsx', 'utf8')
+  const open = BG.slice(BG.indexOf("if (msg.type === 'MVP_TRYBE_TAB_OPEN')"), BG.indexOf("if (msg.type === 'MVP_TRYBE_TAB')"))
+  check('SCOUT opens TRYBE in a tab next to MVP\'s, behind it, or uses the one open', /const have = await trybeOwnTab\(\)/.test(open) && /chrome\.tabs\.create\(\{ url: TRYBE_DISCOVER, active: !!msg\.focus, \.\.\.\(from && from\.windowId != null \? \{ windowId: from\.windowId, index: from\.index \+ 1 \}/.test(open) && /autoDiscardable: false/.test(open))
+  check('it comes to the front only when the creator pressed for it', /if \(msg\.focus\) \{/.test(open) && !/focused: true/.test(open.replace(/if \(msg\.focus\) \{[\s\S]*?\n        \}/, '')))
+  check('the TRYBE page opens it once a visit when none is open', /if \(preview \|\| !tabInBackground \|\| trybeTab !== 'closed' \|\| autoOpened\.current\) return/.test(UI) && /requestTrybeTabOpen\(false\)/.test(UI))
+  check('until TRYBE is open a card at the top says so, and a pop-up once a visit', /<TrybeTabGate state=\{trybeTab\} inBackground=\{tabInBackground\} onCheck=\{lookTab\} \/>/.test(UI) && UI.indexOf('<TrybeTabGate ') < UI.indexOf('YOUR WEEK, in one line') && /role="dialog"/.test(GATE) && /sessionStorage\.getItem\(SEEN_KEY\)/.test(GATE))
+  check('it looks again every few seconds and goes away once TRYBE is open', /window\.setInterval\(onCheck, 5000\)/.test(GATE) && /if \(!needed\) return null/.test(GATE))
+  check('signed out says so and takes them to the TRYBE tab', /Sign in to TRYBE to start/.test(GATE) && /Go to the TRYBE tab/.test(GATE) && /requestTrybeTabOpen\(signedOut\)/.test(GATE))
+  check('an older SCOUT gets the plain link', /if \(!inBackground\) \{ window\.open\(TRYBE_OPEN_URL, '_blank', 'noopener'\); return \}/.test(GATE))
+  check('no dashes in the gate\'s words', !/[–—]| - /.test(GATE.split('\n').filter((l) => !l.trim().startsWith('//')).join(' ')))
+}
+
 // MVP'S TRYBE PAGE says when no TRYBE tab is open, with the button that
 // opens one, and blocks Send all until it is.
 {
   const TAB = readFileSync('lib/trybe-tab.ts', 'utf8')
   check('the TRYBE page shows TRYBE open in this Chrome, with Open TRYBE', /title: 'TRYBE open in this Chrome'/.test(UI) && /href=\{TRYBE_OPEN_URL\}[^>]*>Open TRYBE/.test(UI) && /requestTrybeTab\(\)/.test(UI))
-  check('it is looked at again on coming back and every half minute', /window\.addEventListener\('focus', look\)/.test(UI) && /window\.setInterval\(look, 30_000\)/.test(UI))
+  check('it is looked at again on coming back and every half minute', /window\.addEventListener\('focus', lookTab\)/.test(UI) && /window\.setInterval\(lookTab, 30_000\)/.test(UI))
   check('Send all waits for an open, signed-in TRYBE tab', /ownTab && trybeTab === 'closed' \? 'Open TRYBE first/.test(UI) && /ownTab && trybeTab === 'signed-out'/.test(UI))
   check('no TRYBE tab is said in words wherever SCOUT reports it', /\[TRYBE_NOT_OPEN\]: TRYBE_NOT_OPEN_WORDS/.test(UI) && (readFileSync('lib/extension-frame.ts', 'utf8').match(/error: trybeTabError\(res\.error\)/g) || []).length === 3 && /leave that tab open/.test(TAB))
   check('no dashes in what the creator reads', !/[–—]| - /.test(TAB.split('\n').filter(l => /'|`/.test(l) && !l.trim().startsWith('//')).join(' ')))

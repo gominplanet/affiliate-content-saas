@@ -1120,6 +1120,14 @@ export async function requestTrybeTab(): Promise<TrybeTabState> {
   return !res.open ? 'closed' : res.signedIn === false ? 'signed-out' : 'open'
 }
 
+/** SCOUT 1.53.5+: open TRYBE in a tab next to MVP's, behind it, when none is
+ *  open; with `focus`, bring the TRYBE tab to the front (to sign in there).
+ *  Resolves, never throws. */
+export async function requestTrybeTabOpen(focus = false): Promise<{ open: boolean; opened?: boolean; error?: string }> {
+  const res = await sendToExtension<{ open?: boolean; opened?: boolean; error?: string }>({ type: 'MVP_TRYBE_TAB_OPEN', focus }, 15_000)
+  return res ? { open: !!res.open, opened: !!res.opened, error: res.error } : { open: false, error: 'SCOUT did not answer.' }
+}
+
 /** TRYBE outreach (Labs). Is SCOUT allowed on TRYBE; ask: show Chrome's
  *  Allow window now when it is not. Resolves, never throws. */
 export async function requestTrybeAccess(ask: boolean): Promise<{ state: 'granted' | 'not-granted' | 'no-scout' | 'old'; version?: string | null }> {

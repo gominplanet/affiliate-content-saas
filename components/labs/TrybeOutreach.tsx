@@ -23,15 +23,16 @@ import { toast } from 'sonner'
 import { Loader2, Lock, Search, Sparkles, Send, Square, ExternalLink, Check, AlertTriangle, Globe, Star, Handshake, RotateCcw, X, Trash2, Tag,
   Dumbbell, Shirt, House, UtensilsCrossed, Baby, PawPrint, Gem, Cpu, Tent, Plane, BookOpen, Church, Palette, SprayCan, Moon, Pill, HeartPulse,
   Scissors, Droplet, Coffee, Leaf, Wand2, MessageCircle, Pencil, ChevronUp, Bell, Lightbulb, CalendarDays, Inbox, ArrowRight, Clapperboard, UploadCloud, BarChart3, type LucideIcon } from 'lucide-react'
-import { requestTrybeTab, requestTrybeApi, requestTrybeAccess, requestTrybeScan, requestTrybeSend, requestTrybeHarvest, requestTrybeRun, requestTrybeRunStatus, requestTrybeRunStop, type TrybeScanPass, type TrybeRun } from '@/lib/extension-frame'
+import { requestTrybeTab, requestTrybeTabOpen, requestTrybeApi, requestTrybeAccess, requestTrybeScan, requestTrybeSend, requestTrybeHarvest, requestTrybeRun, requestTrybeRunStatus, requestTrybeRunStop, type TrybeScanPass, type TrybeRun } from '@/lib/extension-frame'
 import { readMetaAds, metaAdsWords } from '@/components/labs/metaAdsRead'
+import TrybeTabGate from '@/components/labs/TrybeTabGate'
 import { TRYBE_OPEN_URL, TRYBE_NOT_OPEN, TRYBE_NOT_OPEN_WORDS, trybeTabWords, type TrybeTabState } from '@/lib/trybe-tab'
 import { nextGapMs, prefsKey, CATEGORY_SUGGESTIONS, DAILY_FIND, SCAN_READ, SHORT_RUN_UNDER, SHORT_GAP_MS, MAX_DAILY_CAP } from '@/lib/trybe-outreach'
 import TrybeInbox, { fetchTrybeInbox, lastIsMine, type Conversation } from '@/components/labs/TrybeInbox'
 import { reportTrybeInbox } from '@/lib/trybe-alerts'
 import { readDiscoveryPage, requestState, acceptRate, type BrandFlags, type RequestState } from '@/lib/trybe-invites'
 import TrybeLink from '@/components/labs/TrybeLink'
-import { SCOUT_TRYBE_OWN_TAB_MIN_VERSION, SCOUT_TRYBE_FIND_MIN_VERSION, SCOUT_TRYBE_HARVEST_MIN_VERSION, SCOUT_TRYBE_BACKGROUND_SEND_MIN_VERSION, SCOUT_TRYBE_RUNNER_MIN_VERSION, SCOUT_TRYBE_HIDDEN_SEND_MIN_VERSION, SCOUT_TRYBE_INBOX_MIN_VERSION, SCOUT_TRYBE_OPEN_BRAND_MIN_VERSION, SCOUT_TRYBE_PLAYBOOK_MIN_VERSION, SCOUT_TRYBE_MYBRANDS_MIN_VERSION, SCOUT_STORE_LISTING_URL, scoutAtLeast } from '@/lib/scout-version'
+import { SCOUT_TRYBE_OWN_TAB_MIN_VERSION, SCOUT_TRYBE_TAB_OPEN_MIN_VERSION, SCOUT_TRYBE_FIND_MIN_VERSION, SCOUT_TRYBE_HARVEST_MIN_VERSION, SCOUT_TRYBE_BACKGROUND_SEND_MIN_VERSION, SCOUT_TRYBE_RUNNER_MIN_VERSION, SCOUT_TRYBE_HIDDEN_SEND_MIN_VERSION, SCOUT_TRYBE_INBOX_MIN_VERSION, SCOUT_TRYBE_OPEN_BRAND_MIN_VERSION, SCOUT_TRYBE_PLAYBOOK_MIN_VERSION, SCOUT_TRYBE_MYBRANDS_MIN_VERSION, SCOUT_STORE_LISTING_URL, scoutAtLeast } from '@/lib/scout-version'
 import { META_ADS_FRESH_MS, TOP100_FRESH_MS, type PickReason } from '@/lib/trybe-pick'
 import { type AfterState } from '@/lib/trybe-playbook'
 import TrybeAfterAccept, { type AfterBrand } from '@/components/labs/TrybeAfterAccept'
@@ -498,15 +499,25 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
   // while it is not open, so closing it shows here instead of as failed sends.
   const ownTab = access === 'granted' && scoutAtLeast(scoutVersion, SCOUT_TRYBE_OWN_TAB_MIN_VERSION)
   const [trybeTab, setTrybeTab] = useState<TrybeTabState | 'checking'>('checking')
+  const lookTab = useCallback(() => { void requestTrybeTab().then(setTrybeTab) }, [])
   useEffect(() => {
     if (preview || !ownTab) return
-    let gone = false
-    const look = () => { void requestTrybeTab().then((t) => { if (!gone) setTrybeTab(t) }) }
-    look()
-    window.addEventListener('focus', look)
-    const every = window.setInterval(look, 30_000)
-    return () => { gone = true; window.removeEventListener('focus', look); window.clearInterval(every) }
-  }, [preview, ownTab])
+    lookTab()
+    window.addEventListener('focus', lookTab)
+    const every = window.setInterval(lookTab, 30_000)
+    return () => { window.removeEventListener('focus', lookTab); window.clearInterval(every) }
+  }, [preview, ownTab, lookTab])
+  // OPENED FOR THE CREATOR (SCOUT 1.53.5; Seb, 2026-10-20: "if users just use
+  // MVP without doing anything else on their computer, MVP can't talk to
+  // tribe"). No TRYBE tab: SCOUT opens one next to this one, behind it, once a
+  // visit. Signed out there, the card at the top says so and takes them to it.
+  const tabInBackground = ownTab && scoutAtLeast(scoutVersion, SCOUT_TRYBE_TAB_OPEN_MIN_VERSION)
+  const autoOpened = useRef(false)
+  useEffect(() => {
+    if (preview || !tabInBackground || trybeTab !== 'closed' || autoOpened.current) return
+    autoOpened.current = true
+    void requestTrybeTabOpen(false).then((r) => { if (r.open) window.setTimeout(lookTab, 3000) })
+  }, [preview, tabInBackground, trybeTab, lookTab])
   const canInbox = !preview && access === 'granted' && scoutAtLeast(scoutVersion, SCOUT_TRYBE_INBOX_MIN_VERSION)
   const scoutOpens = access === 'granted' && scoutAtLeast(scoutVersion, SCOUT_TRYBE_OPEN_BRAND_MIN_VERSION)
   // 1.46.0: My brands, and each brand's best videos next to its video ideas.
@@ -1328,6 +1339,9 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
           <a href="/billing" className="inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-[13px] font-semibold" style={{ background: PURPLE, color: '#fff' }}>See Pro <ArrowRight size={13} /></a>
         </section>
       )}
+
+      {/* TRYBE OPEN FIRST: everything below goes through the creator's TRYBE tab. */}
+      {!preview && ownTab && <TrybeTabGate state={trybeTab} inBackground={tabInBackground} onCheck={lookTab} />}
 
       {/* YOUR WEEK, in one line: each part opens its tab. */}
       {!preview && (() => {

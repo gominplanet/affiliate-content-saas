@@ -12424,6 +12424,31 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
     })().then(sendResponse).catch(() => sendResponse({ granted: false }))
     return true // async
   }
+  if (msg.type === 'MVP_TRYBE_TAB_OPEN') {
+    // 1.53.5 (Seb, 2026-10-20: "if users just use MVP without doing anything
+    // else on their computer, MVP can't talk to tribe"). TRYBE, opened in a
+    // tab next to MVP's, behind it: the one tab everything on TRYBE goes
+    // through (trybeOwnTab). One already open is used, or brought to the
+    // front when the creator pressed for it (to sign in there).
+    (async () => {
+      if (!(await hasTrybeAccess())) return { open: false, error: 'no-access' }
+      const have = await trybeOwnTab()
+      if (have != null) {
+        if (msg.focus) {
+          try {
+            const t = await chrome.tabs.update(have, { active: true })
+            if (t && t.windowId != null) await chrome.windows.update(t.windowId, { focused: true })
+          } catch (e) {}
+        }
+        return { open: true, opened: false }
+      }
+      const from = sender && sender.tab ? sender.tab : null
+      const t = await chrome.tabs.create({ url: TRYBE_DISCOVER, active: !!msg.focus, ...(from && from.windowId != null ? { windowId: from.windowId, index: from.index + 1 } : {}) })
+      try { await chrome.tabs.update(t.id, { autoDiscardable: false }) } catch (e) {}
+      return { open: true, opened: true }
+    })().then(sendResponse).catch((e) => sendResponse({ open: false, error: e && e.message ? e.message : 'error' }))
+    return true // async
+  }
   if (msg.type === 'MVP_TRYBE_TAB') {
     // 1.53.2: is a TRYBE tab open in this Chrome for SCOUT to work through,
     // and is it signed in. Nothing is opened.
