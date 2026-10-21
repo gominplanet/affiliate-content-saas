@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next'
 import { Inter, Geist_Mono, Plus_Jakarta_Sans } from 'next/font/google'
 import Script from 'next/script'
+import PixelRouteViews from '@/components/analytics/PixelRouteViews'
 import { Analytics } from '@vercel/analytics/next'
 import { ThemeProvider } from 'next-themes'
 import './globals.css'
@@ -105,6 +106,14 @@ fbq('track', 'PageView');
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img height="1" width="1" style={{ display: 'none' }} alt="" src="https://www.facebook.com/tr?id=301488807119194&ev=PageView&noscript=1" />
             </noscript>
+            {/* THE SCRIPT ABOVE FIRES ONCE PER HARD LOAD, so every page a
+                visitor read after the first one was invisible and its events
+                were filed at the URL they arrived on. Over the five days to
+                2026-10-21 the dataset held exactly one URL for everything it
+                had. This counts marketing-page navigation; lib/pixel-routes
+                says which pages and why the dashboard's 89 routes are not
+                among them. */}
+            <PixelRouteViews />
           </>
         )}
         {/* Default theme flipped to 'dark' for the V2 dashboard chrome
