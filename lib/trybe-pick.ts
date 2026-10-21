@@ -361,6 +361,15 @@ export function metaOwnOf(cards: Array<{ text?: unknown }>, name: string): { sam
   return { sample, own }
 }
 
+/** THE BRAND BEFORE'S PAGE (Seb, 2026-10-21: SkyMD read 680 ads while its
+ *  Ad Library link shows none). SCOUT reads the brands of a batch one after
+ *  another in one tab; a count word for word the same as the brand read just
+ *  before it (not none, not Meta's most) may be that brand's page still on
+ *  screen, so it is not saved and the brand is counted again later. Pure. */
+export function sameAsBefore(prevText: string | null | undefined, text: string | null | undefined, count: number | null): boolean {
+  return !!prevText && !!text && prevText.trim() === text.trim() && typeof count === 'number' && count > 0 && count < META_ADS_CAP
+}
+
 export type MetaTrust = 'own' | 'unchecked' | 'capped' | 'mixed'
 /** Whether a Meta count is the brand's: checked and its own ('own'), not
  *  checked yet ('unchecked', used as before), at Meta's most ('capped'), or

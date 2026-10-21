@@ -1613,11 +1613,12 @@ export async function POST(request: Request) {
       google: shown.filter(x => x.r.google_checked_at).length,
       popularityReady: COLS.includes('web_rank'),
     }
-    // Never counted first, then counted a week ago or more, then counted but
-    // never checked as the brand's own (counts from before migration 453).
-    // Star brands over all of TRYBE sends them all, for Count all and the
-    // daily refresh.
-    const todoRank = (r: Record<string, any>) => !r.meta_ads_checked_at ? 0 : Date.now() - Date.parse(r.meta_ads_checked_at) > META_ADS_FRESH_MS ? 1 : COLS.includes('meta_ads_sample') && r.meta_ads_sample == null && (r.meta_ads ?? 0) > 0 ? 2 : -1 // eslint-disable-line @typescript-eslint/no-explicit-any
+    // Counted but never checked as the brand's own first (counts from before
+    // migration 453: they are on screen already, and SkyMD's 680 against
+    // none on Meta, Seb 2026-10-21, says some are wrong), then never counted,
+    // then counted a week ago or more. Star brands over all of TRYBE sends
+    // them all, for Count all and the daily refresh.
+    const todoRank = (r: Record<string, any>) => r.meta_ads_checked_at && COLS.includes('meta_ads_sample') && r.meta_ads_sample == null && (r.meta_ads ?? 0) > 0 ? 0 : !r.meta_ads_checked_at ? 1 : Date.now() - Date.parse(r.meta_ads_checked_at) > META_ADS_FRESH_MS ? 2 : -1 // eslint-disable-line @typescript-eslint/no-explicit-any
     const metaTodo = sort === 'adsPerCreator'
       ? shown.filter(x => todoRank(x.r) >= 0)
         .sort((a, b) => todoRank(a.r) - todoRank(b.r) || stars(b) - stars(a) || (b.r.top100_hits ?? 0) - (a.r.top100_hits ?? 0) || (a.r.total_creators ?? Infinity) - (b.r.total_creators ?? Infinity))

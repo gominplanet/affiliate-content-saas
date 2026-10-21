@@ -12,7 +12,7 @@
 import { readFileSync, existsSync } from 'node:fs'
 import { siteDomain, readRanks, webRankWords, googleSeed, brandSearches, googleWords, adsPerCreator, adsPerCreatorWords, adsPerReview, adsPerReviewWords } from '../lib/brand-popularity'
 import { filterCheck, readFilters, ratingOf, spendingOf, type FilterRow } from '../lib/trybe-finder'
-import { metaOwnOf, metaTrustOf, metaUsable, metaTrustWords } from '../lib/trybe-pick'
+import { metaOwnOf, metaTrustOf, metaUsable, metaTrustWords, sameAsBefore } from '../lib/trybe-pick'
 import { BROWSE_SORTS } from '../lib/trybe-outreach'
 
 const fails: string[] = []
@@ -78,7 +78,9 @@ check('in words, with the name and what was seen', /\u201cRest\u201d/.test(metaT
   const R = read('app/api/labs/trybe/route.ts'), M = read('components/labs/metaAdsRead.ts')
   check('every count is checked against the ads on the page, and kept (migration 453)', /requestMetaAdsCounts\(batch, true\)/.test(M) && /metaOwnOf\(x\.cards as Array<\{ text\?: unknown \}>, x\.name\)/.test(M) && /update\(\{ meta_ads_own: own, meta_ads_sample: sample \}\)/.test(R) && /opts\.cards && Array\.isArray\(x\.cards\) \? \{ cards: x\.cards \}/.test(M))
   check('a count that is not the brand\'s ranks after real counts, gets no ratio, and is said', /if \(!trusted\(x\.r\)\) return \[1, 0\]/.test(R) && /ads_per_review: metaFresh\(r\) && trusted\(r\)/.test(R) && /metaAds: [^\n]*\? metaUsable\(r\) : null/.test(R) && /Counts that include other advertisers&rsquo; ads/.test(read('components/labs/TrybeStarBrands.tsx')))
-  check('old counts never checked are counted again, after the never counted', /r\.meta_ads_sample == null && \(r\.meta_ads \?\? 0\) > 0 \? 2 : -1/.test(R) && /todoRank\(a\.r\) - todoRank\(b\.r\)/.test(R))
+  check('old counts never checked are counted again first, then the never counted', /r\.meta_ads_sample == null && \(r\.meta_ads \?\? 0\) > 0 \? 0 : !r\.meta_ads_checked_at \? 1/.test(R) && /todoRank\(a\.r\) - todoRank\(b\.r\)/.test(R))
+  // Seb, 2026-10-21: SkyMD read 680 ads, its Ad Library link shows none.
+  check('a count word for word the same as the brand read just before it is not saved, and is said', sameAsBefore('~680 results', '~680 results', 680) && !sameAsBefore('~680 results', '~690 results', 690) && !sameAsBefore('No ads match', 'No ads match', 0) && !sameAsBefore('~50,000 results', '~50,000 results', 50000) && !sameAsBefore(null, '~680 results', 680) && /const doubled = sameAsBefore\(prevText, x\.text, count\)/.test(M) && /if \(doubled\) run\.doubled\+\+/.test(M) && /counted again next time/.test(M))
 }
 
 // ── Count all, and the team's daily refresh (Seb, 2026-10-21) ────────────────

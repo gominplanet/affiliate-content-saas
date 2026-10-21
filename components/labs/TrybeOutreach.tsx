@@ -1278,7 +1278,7 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
       // it asks again, until none are left or Stop. A brand Meta would not
       // show a count for is tried once a run, so the run always ends.
       step('meta', 'running', 'Finding the brands to count...')
-      const total: MetaAdsRun = { total: 0, read: 0, noCount: 0, couldNot: 0, late: 0, notEnglish: '', stopped: '', cardsAsked: true, cardsSent: false, galleryAds: 0, cardsMissed: 0, capped: 0, mixed: 0 }
+      const total: MetaAdsRun = { total: 0, read: 0, noCount: 0, couldNot: 0, late: 0, notEnglish: '', stopped: '', cardsAsked: true, cardsSent: false, galleryAds: 0, cardsMissed: 0, capped: 0, mixed: 0, doubled: 0 }
       const tried = new Set<string>()
       let left: number | null = null
       for (;;) {
@@ -1298,7 +1298,7 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
           },
         })
         total.total += run.total
-        for (const k of ['read', 'noCount', 'couldNot', 'late', 'galleryAds', 'cardsMissed', 'capped', 'mixed'] as const) total[k] += run[k]
+        for (const k of ['read', 'noCount', 'couldNot', 'late', 'galleryAds', 'cardsMissed', 'capped', 'mixed', 'doubled'] as const) total[k] += run[k]
         total.cardsSent = total.cardsSent || run.cardsSent
         if (run.notEnglish) { total.notEnglish = run.notEnglish; break }
         if (run.stopped) { total.stopped = /left the page/i.test(run.stopped) ? run.stopped : 'Stopped. Press Daily refresh to carry on: it picks up the brands not counted yet.'; break }

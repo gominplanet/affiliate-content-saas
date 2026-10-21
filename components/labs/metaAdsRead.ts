@@ -8,7 +8,7 @@
 // too, for the gallery every member sees (app/api/labs/trybe 'meta_ads').
 
 import { requestMetaAdsCounts } from '@/lib/extension-frame'
-import { readAdLibraryCount, metaOwnOf, metaTrustOf } from '@/lib/trybe-pick'
+import { readAdLibraryCount, metaOwnOf, metaTrustOf, sameAsBefore } from '@/lib/trybe-pick'
 
 export interface MetaAdsRun {
   total: number
@@ -26,6 +26,8 @@ export interface MetaAdsRun {
   /** Counts that are not the brand's: at Meta's most, or mostly other advertisers' ads. */
   capped: number
   mixed: number
+  /** The same count as the brand read just before it: not saved, counted again later. */
+  doubled: number
 }
 
 async function save(results: Array<{ brandId: string; name: string; count: number; cards?: unknown; own?: number; sample?: number }>): Promise<{ galleryAds: number; cardsMissed: number }> {
@@ -36,7 +38,7 @@ async function save(results: Array<{ brandId: string; name: string; count: numbe
 }
 
 export async function readMetaAds(brands: Array<{ brandId: string; name: string }>, opts: { cards?: boolean; onProgress?: (done: number, total: number) => void; gone?: () => boolean; stop?: () => boolean } = {}): Promise<MetaAdsRun> {
-  const run: MetaAdsRun = { total: brands.length, read: 0, noCount: 0, couldNot: 0, late: 0, notEnglish: '', stopped: '', cardsAsked: !!opts.cards, cardsSent: false, galleryAds: 0, cardsMissed: 0, capped: 0, mixed: 0 }
+  const run: MetaAdsRun = { total: brands.length, read: 0, noCount: 0, couldNot: 0, late: 0, notEnglish: '', stopped: '', cardsAsked: !!opts.cards, cardsSent: false, galleryAds: 0, cardsMissed: 0, capped: 0, mixed: 0, doubled: 0 }
   for (let i = 0; i < brands.length; i += 8) {
     if (opts.gone?.()) { run.stopped = 'You left the page.'; break }
     if (opts.stop?.()) { run.stopped = 'Stopped. Press again to carry on where it stopped.'; break }
@@ -52,11 +54,15 @@ export async function readMetaAds(brands: Array<{ brandId: string; name: string 
       break
     }
     const ok: Array<{ brandId: string; name: string; count: number; cards?: unknown; own?: number; sample?: number }> = []
+    let prevText: string | null = null
     for (const x of r.results || []) {
       if (Array.isArray(x.cards)) run.cardsSent = true
       const count = x.text ? readAdLibraryCount(x.text) : null
       const check = Array.isArray(x.cards) ? metaOwnOf(x.cards as Array<{ text?: unknown }>, x.name) : null
-      if (count != null) {
+      const doubled = sameAsBefore(prevText, x.text, count)
+      prevText = x.text ?? null
+      if (doubled) run.doubled++
+      else if (count != null) {
         const t = metaTrustOf({ count, own: check?.own, sample: check?.sample })
         if (t === 'capped') run.capped++
         else if (t === 'mixed') run.mixed++
@@ -81,11 +87,11 @@ export async function readMetaAds(brands: Array<{ brandId: string; name: string 
  *  read. A stop, a page left or a SCOUT that cannot go on ends it; what was
  *  counted is kept. */
 export async function readMetaAdsAll(brands: Array<{ brandId: string; name: string }>, opts: { cards?: boolean; onProgress?: (done: number, total: number) => void; gone?: () => boolean; stop?: () => boolean; onChunk?: () => Promise<void> | void } = {}): Promise<MetaAdsRun> {
-  const all: MetaAdsRun = { total: brands.length, read: 0, noCount: 0, couldNot: 0, late: 0, notEnglish: '', stopped: '', cardsAsked: !!opts.cards, cardsSent: false, galleryAds: 0, cardsMissed: 0, capped: 0, mixed: 0 }
+  const all: MetaAdsRun = { total: brands.length, read: 0, noCount: 0, couldNot: 0, late: 0, notEnglish: '', stopped: '', cardsAsked: !!opts.cards, cardsSent: false, galleryAds: 0, cardsMissed: 0, capped: 0, mixed: 0, doubled: 0 }
   const CHUNK = 40
   for (let i = 0; i < brands.length; i += CHUNK) {
     const r = await readMetaAds(brands.slice(i, i + CHUNK), { cards: opts.cards, gone: opts.gone, stop: opts.stop, onProgress: (done) => opts.onProgress?.(Math.min(brands.length, i + done), brands.length) })
-    for (const k of ['read', 'noCount', 'couldNot', 'late', 'galleryAds', 'cardsMissed', 'capped', 'mixed'] as const) all[k] += r[k]
+    for (const k of ['read', 'noCount', 'couldNot', 'late', 'galleryAds', 'cardsMissed', 'capped', 'mixed', 'doubled'] as const) all[k] += r[k]
     all.cardsSent = all.cardsSent || r.cardsSent
     all.notEnglish = all.notEnglish || r.notEnglish
     if (r.stopped || r.notEnglish) { all.stopped = r.stopped; break }
@@ -101,6 +107,7 @@ export function metaAdsWords(run: MetaAdsRun, scoutVersion?: string | null): { t
   if (run.couldNot) parts.push(`SCOUT could not open Meta's page for ${run.couldNot}.`)
   if (run.late) parts.push(`SCOUT ran out of time before ${run.late}; press again to read ${run.late === 1 ? 'it' : 'them'}.`)
   if (run.notEnglish) parts.push(`Facebook is not in English in this Chrome (${run.notEnglish}), so the counts cannot be read. Switch Facebook to English and press again.`)
+  if (run.doubled) parts.push(`${run.doubled} came back with exactly the count of the brand read just before ${run.doubled === 1 ? 'it' : 'them'}, which may be that brand\u2019s page, so ${run.doubled === 1 ? 'it was' : 'they were'} not saved and ${run.doubled === 1 ? 'is' : 'are'} counted again next time.`)
   if (run.capped || run.mixed) parts.push(`${run.capped + run.mixed} of them ${run.capped + run.mixed === 1 ? 'has' : 'have'} a common-word name, so Meta counts other advertisers\u2019 ads too: ${run.capped + run.mixed === 1 ? 'it is' : 'they are'} marked and listed after the rest.`)
   if (run.cardsAsked && run.read) {
     if (!run.cardsSent) parts.push(`Your SCOUT${scoutVersion ? ` (${scoutVersion})` : ''} only reads the counts: SCOUT 1.51.0 also copies the ads themselves into What's working.`)
