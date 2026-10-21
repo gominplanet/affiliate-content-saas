@@ -15,7 +15,7 @@ import Link from 'next/link'
 import NextImage from 'next/image'
 import {
   Wand2, LayoutTemplate, Handshake, MessageSquare, PackageSearch, Radar,
-  Send, UserSquare, Zap, Check, ArrowRight, ShoppingBag, ShieldCheck, Lock, Mail,
+  Send, UserSquare, Zap, Check, ArrowRight, ShoppingBag, ShieldCheck, Mail,
   Upload, Youtube, Pin, Radio, Scissors,
 } from 'lucide-react'
 import { SALES_PAUSED, SALES_PAUSED_MESSAGE } from '@/lib/sales-paused'
@@ -23,13 +23,12 @@ import { CheckoutButton } from '../pricing/CheckoutButton'
 import { TIERS, SELLABLE_TIERS, type Tier } from '@/lib/tier'
 import { TrackCompare } from '@/components/pricing/TrackPicker'
 import MetaTrack from '@/components/analytics/MetaTrack'
-import { freeTrialHighlights, freeTrialExclusions } from '@/lib/free-trial'
 import {
   AMAZON_COPILOT_RUNS_PER_MONTH, AMAZON_LIVE_SHOWS_PER_MONTH,
   AMAZON_FIND_MOMENTS_PER_MONTH, AMAZON_CLIPS_PER_MONTH, AMAZON_YOUTUBE_CHANNELS,
 } from '@/lib/amazon-plan'
 import { MAX_ITEMS as BULK_UPLOAD_MAX_VIDEOS } from '@/lib/launch-batch'
-import { FREE_TRIAL } from '@/lib/free-trial'
+import { TRIAL_DAYS, TRIAL_SHORT, trialSentence, TRIAL_ALLOWANCE_NOTE } from '@/lib/trial'
 import { GUARANTEE_SHORT } from '@/lib/guarantee'
 
 export const metadata: Metadata = {
@@ -59,11 +58,6 @@ const AMZ = TIERS.amazon
 // mistake the comment above describes, in the one field where being wrong
 // costs money rather than goodwill.
 const AMZ_SAVING = AMZ.regularPrice - AMZ.price
-
-// Same rule for the free plan: the numbers come from lib/free-trial.ts, which is
-// also what the server enforces and what /pricing renders.
-const FREE_THUMBS = TIERS.trial.thumbnailsPerMonth
-const FREE_DESIGNS = TIERS.trial.socialDesignsPerMonth
 
 const FEATURES: { icon: React.ReactNode; title: string; tag: string; desc: string }[] = [
   { icon: <Wand2 size={20} />, title: 'One-click video-review thumbnails', tag: `${AMZ.thumbnailsPerMonth} / month`, desc: 'Drop in any Amazon product and get an incredible video-review thumbnail in one click, the scroll-stopping cover that makes shoppers hit play on your storefront review. The same Art Director engine our top video creators use.' },
@@ -158,18 +152,21 @@ export default function AmazonInfluencerPage() {
                 button is right beside it for anyone who is already sold.
                 nextPath drops them in the thumbnail generator rather than a
                 generic dashboard, which is where that intent gets spent. */}
-            {/* salesPaused is false on the free button on purpose: SALES_PAUSED
-                stops PAID checkout, and pausing free signups along with it would
-                close the door on the traffic the ads are already paying for. */}
-            <div className="w-full sm:w-64">
-              <CheckoutButton tier="trial" highlight={true} salesPaused={false} ctaLabel="Start free, no card" intent="amazon" />
-            </div>
-            <div className="w-full sm:w-64">
-              <CheckoutButton tier="amazon" highlight={false} salesPaused={SALES_PAUSED} ctaLabel="Get Amazon Influencer" />
+            {/* ONE DOOR, AND IT IS FREE FOR A WEEK (2026-10-21). There were
+                two buttons here: a free one, and the paid one beside it. The
+                free one sent people to the free TIER, whose window has been
+                zero days since 2026-10-18, so it opened an account with
+                nothing in it and the page's own promise of thumbnails and
+                designs was not kept. The free week now lives on the paid plan
+                itself (lib/trial): the card is taken, nothing is charged for
+                {' '}{TRIAL_DAYS} days, and everything is unlocked meanwhile.
+                That is one button, and it tells the truth. */}
+            <div className="w-full sm:w-72">
+              <CheckoutButton tier="amazon" highlight={true} salesPaused={SALES_PAUSED} ctaLabel={`Start free for ${TRIAL_DAYS} days`} />
             </div>
           </div>
           <p className="mt-4 text-sm text-[#86868b] dark:text-[#8e8e93]">
-            {FREE_TRIAL.trialDays}-day free trial: {FREE_THUMBS} thumbnails, {FREE_DESIGNS} designs and your own face on them, yours to download.
+            {TRIAL_SHORT}, everything unlocked, nothing charged.
             Then <span className="text-lg font-bold text-[#1d1d1f] dark:text-[#f5f5f7]">${AMZ.price}</span>/mo{' '}
             {AMZ_SAVING > 0 && <><span className="line-through">${AMZ.regularPrice}</span> from January 1 · save ${AMZ_SAVING} a month for as long as you stay</>}
           </p>
@@ -237,41 +234,25 @@ export default function AmazonInfluencerPage() {
           </div>
         </div>
 
-        {/* Try it free — what the trial is, and just as plainly what it is not.
-            A trial that hides its walls until somebody hits one produces a
-            support ticket instead of an upgrade, so the exclusions sit in the
-            same box as the inclusions rather than in a footnote. */}
+        {/* Try it free — what the week is, and just as plainly where its one
+            wall is. A trial that hides its walls until somebody hits one
+            produces a support ticket instead of an upgrade, so the allowance
+            note sits in the same box as the promise rather than in a footnote.
+            It used to list what the free tier LOCKED, which was most of the
+            product. Nothing is locked now, so what is worth saying is the
+            allowance and the day the card is charged. */}
         <div className="mt-12 max-w-3xl mx-auto rounded-2xl border border-gray-200 dark:border-white/10 p-6 bg-white dark:bg-[#1c1c1e]">
-          <h3 className="text-xl font-bold tracking-tight">Try the whole loop free first</h3>
+          <h3 className="text-xl font-bold tracking-tight">Try the whole loop free for {TRIAL_DAYS} days</h3>
           <p className="mt-2 text-[14px] leading-relaxed text-[#6e6e73] dark:text-[#ebebf0]">
-            No card. No website. No YouTube channel. Add your Amazon Associates tag, paste a product
+            No website. No YouTube channel. Add your Amazon Associates tag, paste a product
             link, and download a finished design with your face on it. That is the whole product in
-            about two minutes.
+            about two minutes, and you have a week of it before anything is charged.
           </p>
-          <div className="mt-5 grid grid-cols-1 sm:grid-cols-2 gap-5">
-            <div>
-              <p className="text-[11px] font-bold uppercase tracking-[0.12em] mb-2" style={{ color: ACCENT }}>Free includes</p>
-              <ul className="space-y-1.5">
-                {freeTrialHighlights().map((f) => (
-                  <li key={f} className="flex items-start gap-2 text-[13px] leading-relaxed text-[#6e6e73] dark:text-[#ebebf0]">
-                    <Check size={14} className="mt-0.5 flex-shrink-0" style={{ color: ACCENT }} />{f}
-                  </li>
-                ))}
-              </ul>
-            </div>
-            <div>
-              <p className="text-[11px] font-bold uppercase tracking-[0.12em] mb-2 text-[#86868b] dark:text-[#8e8e93]">Needs the ${AMZ.price} plan</p>
-              <ul className="space-y-1.5">
-                {freeTrialExclusions().map((f) => (
-                  <li key={f} className="flex items-start gap-2 text-[13px] leading-relaxed text-[#86868b] dark:text-[#8e8e93]">
-                    <Lock size={13} className="mt-0.5 flex-shrink-0" />{f}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          </div>
-          <div className="mt-6 w-full sm:w-72">
-            <CheckoutButton tier="trial" highlight={true} salesPaused={false} ctaLabel="Start free, no card" intent="amazon" />
+          <p className="mt-3 text-[13px] leading-relaxed text-[#86868b] dark:text-[#8e8e93]">
+            {trialSentence()} {TRIAL_ALLOWANCE_NOTE}
+          </p>
+          <div className="mt-5 w-full sm:w-72">
+            <CheckoutButton tier="amazon" highlight={true} salesPaused={SALES_PAUSED} ctaLabel={`Start free for ${TRIAL_DAYS} days`} />
           </div>
         </div>
 
@@ -327,19 +308,16 @@ export default function AmazonInfluencerPage() {
       <section className="max-w-3xl mx-auto px-4 sm:px-6 py-16 text-center">
         <h2 className="text-3xl font-bold tracking-tight">From storefront to scroll-stopping, without the studio.</h2>
         <p className="mt-3 text-[15px] text-[#6e6e73] dark:text-[#ebebf0]">
-          Start with a {FREE_TRIAL.trialDays}-day free trial, no card. Then ${AMZ.price}/mo, locked for life. Cancel anytime.
+          Free for {TRIAL_DAYS} days, then ${AMZ.price}/mo, locked for life. Cancel any time before day {TRIAL_DAYS + 1} and you pay nothing.
         </p>
         <ul className="mt-6 flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-[13px] text-[#6e6e73] dark:text-[#ebebf0]">
-          {['No website needed', 'No card to start', 'Priority support', GUARANTEE_SHORT].map((f) => (
+          {['No website needed', TRIAL_SHORT, 'Priority support', GUARANTEE_SHORT].map((f) => (
             <li key={f} className="flex items-center gap-1.5"><Check size={14} style={{ color: ACCENT }} />{f}</li>
           ))}
         </ul>
-        <div className="mt-8 flex flex-col sm:flex-row items-center justify-center gap-4">
-          <div className="w-full sm:w-64">
-            <CheckoutButton tier="trial" highlight={true} salesPaused={false} ctaLabel="Start free, no card" intent="amazon" />
-          </div>
-          <div className="w-full sm:w-64">
-            <CheckoutButton tier="amazon" highlight={false} salesPaused={SALES_PAUSED} ctaLabel="Get Amazon Influencer" />
+        <div className="mt-8 flex items-center justify-center">
+          <div className="w-full sm:w-72">
+            <CheckoutButton tier="amazon" highlight={true} salesPaused={SALES_PAUSED} ctaLabel={`Start free for ${TRIAL_DAYS} days`} />
           </div>
         </div>
       </section>

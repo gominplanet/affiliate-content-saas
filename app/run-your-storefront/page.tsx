@@ -45,6 +45,7 @@ import {
 } from '@/lib/amazon-plan'
 import { MAX_ITEMS as BULK_UPLOAD_MAX_VIDEOS } from '@/lib/launch-batch'
 import { GUARANTEE_DAYS, GUARANTEE_LABEL, GUARANTEE_SHORT } from '@/lib/guarantee'
+import { TRIAL_DAYS, TRIAL_SHORT, TRIAL_ALLOWANCE_NOTE } from '@/lib/trial'
 import { AD_PAGE_LIGHT } from '@/lib/ad-page-theme'
 import AdPricingTable from '@/components/landing/AdPricingTable'
 import { SALES_PAUSED } from '@/lib/sales-paused'
@@ -58,7 +59,12 @@ export const metadata: Metadata = {
 }
 
 const CTA_HREF = '/signup?tier=amazon'
-const CTA_LABEL = 'Start free, no card'
+// THE LABEL NOW MATCHES THE DESTINATION (2026-10-21). CTA_HREF has always
+// been the paid Amazon signup, which asks for a card. The label said "no
+// card", so the button lied about the screen behind it. The free week on the
+// paid plan (lib/trial) is what makes one honest sentence possible: a card is
+// taken, and nothing is charged until the eighth day.
+const CTA_LABEL = `Start free for ${TRIAL_DAYS} days`
 
 function Cta({ size = 'lg' }: { size?: 'lg' | 'md' }) {
   return (
@@ -77,7 +83,7 @@ function Cta({ size = 'lg' }: { size?: 'lg' | 'md' }) {
 function CtaSubtext({ dark = false }: { dark?: boolean }) {
   return (
     <p className={`mt-3 text-[13px] ${dark ? 'text-white/55' : 'text-black/50'}`}>
-      No card to start · {TIERS.trial.thumbnailsPerMonth} thumbnails free · {GUARANTEE_LABEL}
+      {TRIAL_SHORT}, everything unlocked · charged on day {TRIAL_DAYS + 1} · {GUARANTEE_LABEL}
     </p>
   )
 }
@@ -177,7 +183,7 @@ const FAQ: { q: string; a: string }[] = [
   },
   {
     q: 'What if it does not work for me?',
-    a: `Start free with no card and make ${TIERS.trial.thumbnailsPerMonth} thumbnails before you decide anything. If you subscribe and it is not for you, there is a ${GUARANTEE_LABEL}.`,
+    a: `The first ${TRIAL_DAYS} days are free and everything is unlocked, so you can make the thumbnails, post them and see what they do before anything is charged. ${TRIAL_ALLOWANCE_NOTE} Cancel before day ${TRIAL_DAYS + 1} and you pay nothing; if you are charged and it is still not for you, there is a ${GUARANTEE_LABEL}.`,
   },
 ]
 
@@ -312,7 +318,7 @@ export default function RunYourStorefrontPage() {
               What it costs, and what you get
             </h2>
             <p className="mt-4 text-[16px] leading-relaxed" style={{ color: 'rgba(0,0,0,0.62)' }}>
-              Start free with no card if you want to see it work first. If you already know you want it, skip the trial.
+              The first {TRIAL_DAYS} days are free, with everything unlocked. Your card is charged on day {TRIAL_DAYS + 1} unless you cancel.
             </p>
           </div>
           <AdPricingTable focus="amazon" freeHref={CTA_HREF} />
@@ -353,10 +359,10 @@ export default function RunYourStorefrontPage() {
       <section className="px-6 lg:px-8 py-16" style={{ background: 'linear-gradient(160deg, #16091E 0%, #2A0E3A 55%, #3A0E22 100%)' }}>
         <div className="max-w-2xl mx-auto text-center text-white">
           <h2 className="text-[30px] sm:text-[42px] font-extrabold tracking-[-0.03em] leading-[1.05]" style={{ color: '#FFFFFF' }}>
-            Make {TIERS.trial.thumbnailsPerMonth} thumbnails before you decide anything.
+            Run the whole thing for a week before you pay anything.
           </h2>
           <p className="mt-5 text-[16px] leading-relaxed text-white/75">
-            Start free with no card. Upload one product photo and see what comes back. If it is not better than what you are making now, you have lost nothing.
+            Upload one product photo and see what comes back. {TRIAL_SHORT}, everything unlocked, charged on day {TRIAL_DAYS + 1} unless you cancel. If it is not better than what you are making now, you have lost nothing.
           </p>
           <div className="mt-8 flex flex-col items-center">
             <Cta />

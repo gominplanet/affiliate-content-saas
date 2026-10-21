@@ -23,6 +23,7 @@ import { TIERS } from '@/lib/tier'
 import { MAX_ITEMS as BULK_UPLOAD_MAX_VIDEOS } from '@/lib/launch-batch'
 import { SHORTS_MONTHLY_CAP } from '@/lib/usage-cap'
 import { GUARANTEE_LABEL, GUARANTEE_SHORT, GUARANTEE_SENTENCE } from '@/lib/guarantee'
+import { TRIAL_SHORT, trialLabel, trialSentence } from '@/lib/trial'
 import { TESTIMONIALS } from '@/lib/testimonials'
 import { previewOpenToPro, type PreviewFeature } from '@/lib/labs-preview'
 import {
@@ -510,11 +511,14 @@ function PricingSection() {
             className="text-[16px] sm:text-[17px] leading-relaxed max-w-2xl mx-auto"
             style={{ color: 'var(--text-soft)' }}
           >
-            Every feature opens the day you join. {GUARANTEE_SENTENCE} Cancel anytime, and your WordPress site stays yours forever.
+            Every feature opens the day you join, and the first week is free. {trialSentence()} Cancel anytime, and your WordPress site stays yours forever.
           </p>
           {/* Risk reversal + honest urgency. Each renders only when set in the
               sales-page config, so nothing unverified ships. */}
           <div className="mt-5 flex items-center justify-center gap-x-5 gap-y-2 flex-wrap">
+            <span className="inline-flex items-center gap-1.5 text-[13px] font-semibold" style={{ color: '#059669' }}>
+              <ShieldCheck size={15} /> {trialLabel()}
+            </span>
             {GUARANTEE && (
               <span className="inline-flex items-center gap-1.5 text-[13px] font-semibold" style={{ color: '#059669' }}>
                 <ShieldCheck size={15} /> {GUARANTEE}
@@ -523,8 +527,13 @@ function PricingSection() {
           </div>
         </div>
 
-        {/* The free trial banner that sat here is gone (2026-10-18): there is
-            no trial. The refund promise above replaces it. */}
+        {/* SEVEN FREE DAYS ARE BACK, DIFFERENTLY (2026-10-21). The banner that
+            sat here sold the old free TIER: a separate, smaller product with
+            half the features switched off, and since 2026-10-18 a zero-day
+            window, so it handed people an account with nothing to spend. What
+            is sold now is the whole of Pro for a week, on a card, charged on
+            day 8 (lib/trial). That needs no banner of its own: it belongs on
+            the Pro card and under the button, which is where it now is. */}
 
         {/* THE COLUMN COUNT FOLLOWS THE PLANS, and the row narrows with it.
             This was lg:grid-cols-3 from when three plans were sold. The array
@@ -558,6 +567,9 @@ function PricingSection() {
         <div className="mt-8 flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-[12px]" style={{ color: 'var(--text-soft)' }}>
           <span className="inline-flex items-center gap-1.5">
             <Check size={12} className="text-[#10B981]" /> Cancel anytime
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <Check size={12} className="text-[#10B981]" /> {trialLabel()}
           </span>
           <span className="inline-flex items-center gap-1.5">
             <Check size={12} className="text-[#10B981]" /> {GUARANTEE_LABEL}
@@ -1238,7 +1250,7 @@ function FinalCTASection() {
           className="text-[17px] sm:text-[18px] leading-relaxed max-w-2xl mx-auto mb-8"
           style={{ color: 'var(--text-soft)' }}
         >
-          Pro is ${TIERS.pro.price} a month with every feature open from day one. {GUARANTEE_SENTENCE}
+          Every feature of Pro is open from day one, and the first week is free. {trialSentence()}
         </p>
 
         {/* Twin CTAs — primary action + lower-friction demo link. */}
@@ -1251,7 +1263,7 @@ function FinalCTASection() {
               boxShadow: '0 8px 28px rgba(124,58,237,0.40)',
             }}
           >
-            Start Pro
+            Start your free week
             <ArrowRight size={16} />
           </a>
           <a
@@ -1270,6 +1282,9 @@ function FinalCTASection() {
 
         {/* Trust strip — matches pricing section's strip for consistency. */}
         <div className="flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-[12px]" style={{ color: 'var(--text-soft)' }}>
+          <span className="inline-flex items-center gap-1.5">
+            <Check size={12} className="text-[#10B981]" /> {TRIAL_SHORT}
+          </span>
           <span className="inline-flex items-center gap-1.5">
             <Check size={12} className="text-[#10B981]" /> {GUARANTEE_LABEL}
           </span>
@@ -1475,7 +1490,7 @@ function Hero() {
                 href="/signup?tier=pro"
                 className="px-5 py-3 rounded-xl bg-[#7C3AED] hover:bg-[#6D28D9] text-[14px] font-semibold text-white inline-flex items-center gap-2 transition-colors shadow-[0_4px_16px_rgba(124,58,237,0.3)]"
               >
-                Start Pro, ${TIERS.pro.price} a month
+                Start free, then ${TIERS.pro.price} a month
                 <ArrowRight size={14} />
               </a>
               {/* Secondary CTA — the full public product tour (/tour). No video;

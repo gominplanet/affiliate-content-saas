@@ -15,6 +15,7 @@ import PriceLockCountdown from '@/components/landing/PriceLockCountdown'
 import { newPricesLive } from '@/lib/price-schedule'
 import type { Metadata } from 'next'
 import { GUARANTEE_LABEL, GUARANTEE_SENTENCE } from '@/lib/guarantee'
+import { TRIAL_SHORT, trialLabel, trialSentence, TRIAL_ALLOWANCE_NOTE } from '@/lib/trial'
 import { CheckCircle, Zap } from 'lucide-react'
 import { SALES_PAUSED, SALES_PAUSED_MESSAGE } from '@/lib/sales-paused'
 import NextImage from 'next/image'
@@ -29,7 +30,7 @@ import { SHORTS_MONTHLY_CAP } from '@/lib/usage-cap'
 // printed it twice in the tab and in search results.
 export const metadata: Metadata = {
   title: 'Pricing',
-  description: `One plan, Pro: every feature MVP has, from the day you join. ${GUARANTEE_LABEL}.`,
+  description: `One plan, Pro: every feature MVP has, from the day you join. ${trialLabel()}.`,
 }
 
 type Plan = {
@@ -128,7 +129,7 @@ const plans: PlanExt[] = [
     price: TIERS.pro.price,
     regularPrice: TIERS.pro.regularPrice,
     limit: `${TIERS.pro.postsPerMonth} reviews / month`,
-    description: `Everything MVP does, open the day you join: your blog, your YouTube uploads, your Amazon storefront and every social network, all in your voice. ${GUARANTEE_SENTENCE}`,
+    description: `Everything MVP does, open the day you join: your blog, your YouTube uploads, your Amazon storefront and every social network, all in your voice. ${trialSentence()}`,
     features: [
       `${TIERS.pro.pinsPerMonth} ready-to-post pins & ${TIERS.pro.igPostsPerMonth} Instagram designs / month (posted to Facebook too), ${TIERS.pro.thumbnailsPerMonth} Art Director thumbnails / month at high quality, Creator Connections brand deals`,
       'Amazon Product Research across the whole catalogue, live Deal Radar, and your Levanta and PartnerBoost campaigns',
@@ -193,7 +194,7 @@ export default async function PricingPage({
       <MetaTrack event="ViewContent" params={{ content_name: 'Pricing', content_category: 'pricing' }} />
       <div className="text-center mb-12 max-w-3xl">
         <p className="text-xs font-semibold text-[#7C3AED] uppercase tracking-widest mb-3">
-          One plan · every feature · {GUARANTEE_LABEL}
+          One plan · every feature · {trialLabel()}
         </p>
         <h1 className="text-4xl sm:text-5xl font-bold text-[#1d1d1f] dark:text-[#f5f5f7] mb-4 tracking-tight leading-[1.05]">
           One plan.<br className="hidden sm:block" />{' '}
@@ -201,8 +202,8 @@ export default async function PricingPage({
         </h1>
         <p className="text-lg text-[#6e6e73] dark:text-[#ebebf0] leading-relaxed">
           Pro opens every feature the day you join: the research, the thumbnails and designs, your
-          YouTube uploads and Amazon storefront, your blog, and posting to every network. No trial
-          with half the product switched off. {GUARANTEE_SENTENCE}
+          YouTube uploads and Amazon storefront, your blog, and posting to every network. The first
+          week is free, and it is the whole product, not a cut-down version of it. {trialSentence()}
         </p>
         <p className="mt-3 text-sm font-semibold text-[#34c759]">
           🔒 Early access pricing, locked in for as long as you stay subscribed.
@@ -519,7 +520,15 @@ export default async function PricingPage({
         </p>
       </div>
       <p className="mt-6 text-sm text-[#86868b] dark:text-[#8e8e93]">
-        {GUARANTEE_LABEL}. Cancel anytime. No contracts. Billed through Stripe.
+        {TRIAL_SHORT}, then billed monthly. {GUARANTEE_LABEL}. Cancel anytime. No contracts. Billed through Stripe.
+      </p>
+      {/* THE CAP A FREE WEEK HITS, SAID BEFORE IT IS HIT. intro-allowance holds
+          the first 7 days to a quarter of each monthly allowance, which is the
+          free week exactly. Somebody who runs into that on day three without
+          having read this concludes the product is broken, not that they are
+          on a trial. */}
+      <p className="mt-2 text-sm text-[#86868b] dark:text-[#8e8e93] max-w-xl">
+        {TRIAL_ALLOWANCE_NOTE}
       </p>
     </div>
   )

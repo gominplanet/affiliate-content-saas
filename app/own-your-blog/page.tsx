@@ -43,6 +43,7 @@ import {
 import { TESTIMONIALS } from '@/lib/testimonials'
 import { TIERS } from '@/lib/tier'
 import { GUARANTEE_DAYS, GUARANTEE_LABEL, GUARANTEE_SHORT } from '@/lib/guarantee'
+import { TRIAL_DAYS, TRIAL_SHORT } from '@/lib/trial'
 import { AD_PAGE_LIGHT } from '@/lib/ad-page-theme'
 import AdPricingTable from '@/components/landing/AdPricingTable'
 import { SALES_PAUSED } from '@/lib/sales-paused'
@@ -82,7 +83,7 @@ function Cta({ size = 'lg' }: { size?: 'lg' | 'md' }) {
 function CtaSubtext() {
   return (
     <p className="mt-3 text-[13px]" style={{ color: 'rgba(0,0,0,0.5)' }}>
-      Every feature from day one · {GUARANTEE_LABEL} · Cancel anytime
+      {TRIAL_SHORT}, every feature from day one · {GUARANTEE_LABEL} · Cancel anytime
     </p>
   )
 }
@@ -343,12 +344,12 @@ export default function OwnYourBlogPage() {
             Try it on the videos you have already filmed.
           </h2>
           <p className="mt-5 text-[16px] leading-relaxed text-white/75">
-            Start Pro, connect a channel, pick a video, and read what it writes. If it is not for you, ask within {GUARANTEE_DAYS} days and you get every cent back, no questions asked.
+            Start Pro, connect a channel, pick a video, and read what it writes. The first {TRIAL_DAYS} days are free, so you can do all of that before anything is charged. If you are charged and it is still not for you, ask within {GUARANTEE_DAYS} days and you get every cent back, no questions asked.
           </p>
           <div className="mt-8 flex flex-col items-center">
             <Cta />
             <p className="mt-3 text-[13px] text-white/55">
-              Every feature from day one · {GUARANTEE_LABEL} · Cancel anytime
+              {TRIAL_SHORT}, every feature from day one · {GUARANTEE_LABEL} · Cancel anytime
             </p>
           </div>
           <div className="mt-9 grid sm:grid-cols-3 gap-3 text-left">

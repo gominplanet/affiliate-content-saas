@@ -361,24 +361,44 @@ const check = (name: string, cond: boolean, detail?: string) => {
 
   // ── the page the ads actually land on ─────────────────────────────────────
   //
-  // /amazon-influencer is the ad destination. A free tier the sales page never
-  // mentions does not exist as far as the traffic is concerned.
+  // /amazon-influencer is the ad destination, and until 2026-10-21 it sold the
+  // free TIER there with four "Start free, no card" buttons. Three things were
+  // wrong with that at once, and each of them cost money:
+  //
+  //   1. The tier's window has been ZERO DAYS since NO_TRIAL_FROM, so the
+  //      account those buttons opened had nothing in it to spend.
+  //   2. CheckoutButton's tier="trial" branch pushes to /signup, where
+  //      SignupForm defaults any unrecognised tier to 'pro'. So the button
+  //      that said "no card" landed on a screen reading "Continue to payment".
+  //   3. The page listed freeTrialHighlights() beside it: a specific count of
+  //      thumbnails, designs and headshots that nobody was going to get.
+  //
+  // The free week now lives on the PAID plan (lib/trial): the card is taken at
+  // checkout, nothing is charged for TRIAL_DAYS, and everything is unlocked
+  // meanwhile. So the free-tier door on this page is gone, and these checks
+  // guard its absence rather than its presence.
   const SALES = readFileSync('app/amazon-influencer/page.tsx', 'utf8')
-  check('the Amazon sales page offers the free trial',
-    /tier="trial"/.test(SALES),
-    'the ad destination sent everyone straight to a $79 checkout with no way to try it')
-  // The signup has to KNOW they came for the Amazon product, or it drops them
-  // in the main funnel whose first required step is "Connect YouTube". This was
-  // a nextPath prop at first, which put ?next= on the signup URL that the signup
-  // form never read. scripts/test-signup-intent.ts owns the full journey.
-  check('the free signup carries the Amazon intent',
-    /intent="amazon"/.test(SALES),
+  check('the Amazon sales page no longer sells the dead free tier',
+    !/tier="trial"/.test(SALES),
+    'that button opened an account with a zero-day window and landed on a payment screen')
+  check('and it does not promise an account with no card',
+    !/no card|No card/.test(SALES),
+    'the next screen asks for one, so the page cannot say otherwise')
+  check('it does not list the free tier allowances either',
+    !/freeTrialHighlights\(\)/.test(SALES) && !/freeTrialExclusions\(\)/.test(SALES),
+    'a count of free thumbnails nobody receives is the most specific kind of false promise')
+  check('the free week is what it offers instead',
+    /from '@\/lib\/trial'/.test(SALES) && /TRIAL_DAYS/.test(SALES),
+    'the offer has to come from lib/trial so the page and Stripe cannot disagree on its length')
+  // The signup still has to KNOW they came for the Amazon product, or it drops
+  // them in the main funnel whose first required step is "Connect YouTube".
+  // intent="amazon" was how the free button carried that; the paid button
+  // carries it in the tier instead, which SignupForm reads as the Amazon path
+  // (`parseOnboardingPath(sp.get('for')) ?? (t === 'amazon' ? 'amazon' : null)`).
+  // scripts/test-signup-intent.ts owns the full journey.
+  check('the Amazon intent survives on the paid button',
+    /tier="amazon"/.test(SALES),
     'without it they land in the YouTube funnel, which is where this traffic dies')
-  check('the sales page lists the same free plan',
-    /freeTrialHighlights\(\)/.test(SALES) && /freeTrialExclusions\(\)/.test(SALES))
-  check('a paused paid checkout does not close free signup',
-    /tier="trial"[^>]*salesPaused=\{false\}/.test(SALES),
-    'SALES_PAUSED stops selling, not signing up')
 
   // The allowances on that page must be READ from the plan, never typed. Typed,
   // they went stale and oversold it: 300 pins advertised against a 150 cap, 50

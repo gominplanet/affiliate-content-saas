@@ -117,16 +117,20 @@ const noImports = (src: string) => src
   check('the old product-first headline is gone',
     !/Everything an Amazon<br \/>affiliate needs/.test(PAGE),
     'it was a claim about us, addressed to people who have never heard of us')
-  // There is no trial to start without a card any more (Seb, 2026-10-18), so
-  // the hero answers the same objection with the refund instead.
+  // THE FREE WEEK IS BACK, SO THE HERO SELLS IT (Seb, 2026-10-21). Between
+  // 2026-10-18 and then there was no trial, and this asserted the hero said so
+  // by saying nothing about one. Now the first 7 days are free on Pro itself
+  // (lib/trial), which is the strongest thing a cold click can be told, so the
+  // hero has to say it and the refund stays behind it.
   check('the hero states the refund',
     /GUARANTEE_SHORT/.test(hero) && /\{GUARANTEE\}/.test(hero),
-    'the single biggest objection on a cold click, now that there is no free way in')
-  check('and no longer promises a start with no card',
-    !/No card to start|Start free/i.test(hero),
-    'there is no free start; a promise of one is a bait and switch')
-  check('the hero button starts Pro and names its price',
-    /href="\/signup\?tier=pro"/.test(hero) && /Start Pro, \$\{TIERS\.pro\.price\} a month/.test(hero))
+    'the backstop for anyone who forgets to cancel and is charged on day 8')
+  check('the hero never promises an account with no card',
+    !/No card to start|no card/i.test(hero),
+    'the free tier has a zero-day window and /signup asks for a card; promising otherwise is a bait and switch')
+  check('the hero button leads with the free week, then the price',
+    /href="\/signup\?tier=pro"/.test(hero) && /Start free, then \$\{TIERS\.pro\.price\} a month/.test(hero),
+    'a price with no mention of the week reads as "pay now", which is not what the button does')
 }
 
 // ── the transformation section exists and is honest ─────────────────────────

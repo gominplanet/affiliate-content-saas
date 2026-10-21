@@ -50,12 +50,28 @@ MVP sells exactly ONE plan: **Pro at $199/month** ($1,999/year). From
 January 1, 2027 new members pay $299/month ($2,990/year); anyone who joined
 before keeps their price for as long as they stay subscribed.
 
-There is no free trial for new signups (since 2026-10-18): every new member
-starts on Pro with a **7-day refund, no questions asked, one refund per
-creator**, and their first 7 days run at a quarter of each monthly allowance.
-There is no free plan, and no Amazon, Creator or Studio plan to quote. Those
-tier names still exist in `lib/tier.ts` for legacy accounts; never present
-them as plans in reports, comparisons, copy or answers.
+Every new member gets a **7-day free trial of Pro** (Seb, 2026-10-21). The
+card is taken at checkout, Stripe charges nothing for 7 days, and the first
+$199 lands on day 8 unless they cancel. The length lives in `lib/trial.ts`
+(`TRIAL_DAYS`), which sends `trial_period_days` on the Checkout session and so
+overrides anything configured on the Stripe Price. One trial per account:
+`trialEligible` refuses anyone who has ever had a Stripe customer record or a
+recorded `subscribed_at`, so churn-and-return is not a second free week.
+
+Behind the trial the **7-day refund, no questions asked, one refund per
+creator** (`lib/guarantee.ts`) still stands, counted from the first payment,
+so somebody who forgets to cancel is not trapped. Lead with the trial and keep
+the refund as the backstop; both are true at once.
+
+Their first 7 days run at a quarter of each monthly allowance
+(`lib/intro-allowance.ts`), which now lands exactly on the free week.
+
+There is no free plan. Never promise a free account with no card: the free
+`trial` tier in `lib/tier.ts` has had a zero-day window since 2026-10-18, so
+"start free, no card" hands somebody an account with nothing to spend. There
+is no Amazon, Creator or Studio plan to quote either. Those tier names still
+exist in `lib/tier.ts` for legacy accounts; never present them as plans in
+reports, comparisons, copy or answers.
 
 ## Writing style
 

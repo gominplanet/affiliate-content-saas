@@ -108,19 +108,30 @@ const split = strip(SPLIT)
   }
 }
 
-// ── there is no free trial, and the pages say so ───────────────────────────
+// ── the free week is offered, and the dead free tier is not ────────────────
 //
-// Pro only, no trial for new signups, a 7-day refund instead (2026-10-18). A
-// page that still offers a trial nobody can get is the fastest way to a
-// support ticket, and the refund is read from lib/guarantee, never typed.
+// THIS BLOCK USED TO ASSERT THE OPPOSITE. From 2026-10-18 there was no trial
+// at all, so it required both pages to be silent about one. From 2026-10-21
+// there is a real one: 7 free days on Pro itself, card taken at checkout,
+// charged on day 8 (lib/trial).
+//
+// What has not changed is WHICH free thing is forbidden. The free TIER is
+// still dead, its window still zero days, and "no card" is still a promise
+// the next screen breaks, because SignupForm sends every unrecognised tier to
+// Pro checkout. So the rule is: offer the week, read its length from
+// lib/trial, and never offer a free account.
 {
   for (const [name, src] of [['landing', landing], ['pricing', pricing]] as const) {
-    check(`${name} offers no free trial`, !/free trial|no card|Start free|5 free|free posts/i.test(src),
-      'there is no trial for new signups; every new member starts on Pro')
+    check(`${name} does not promise an account with no card`, !/no card|5 free|free posts/i.test(src),
+      'the free tier has a zero-day window and the next screen asks for a card')
+    check(`${name} offers the free week`, /from '@\/lib\/trial'/.test(src) && /trial(Label|Sentence)\(\)|TRIAL_SHORT|TRIAL_DAYS/.test(src),
+      'a page that sells $199 up front is the conversion problem the trial exists to fix')
+    check(`${name} does not type the trial length`, !/\b7[- ]day free trial\b|\bseven days free\b/i.test(src),
+      'typed, it goes stale the way every price on this page did; TRIAL_DAYS is the one source')
     check(`${name} reads the refund from lib/guarantee`, /GUARANTEE_(LABEL|SENTENCE|SHORT)/.test(src),
-      'a typed "7-day" goes stale the way every price on this page did')
+      'the refund is the backstop behind the week and still has to be stated')
     check(`${name} does not claim there is no time limit`, !/no time limit/i.test(src),
-      'nothing on these pages should promise an open-ended free period')
+      'the week ends on day 8; nothing may promise an open-ended free period')
   }
   const FAQ = strip(readFileSync('components/landing/islands.tsx', 'utf8'))
   check('nor does the FAQ', !/no time limit/i.test(FAQ),

@@ -21,6 +21,7 @@ import { TIERS } from '@/lib/tier'
 import { MAX_ITEMS as BULK_UPLOAD_MAX_VIDEOS } from '@/lib/launch-batch'
 import { PRICES_BEFORE, NEW_MEMBER_PRICES, newPricesLive } from '@/lib/price-schedule'
 import { GUARANTEE_DAYS, GUARANTEE_LABEL } from '@/lib/guarantee'
+import { TRIAL_DAYS } from '@/lib/trial'
 
 const serif = Newsreader({ subsets: ['latin'], style: ['normal', 'italic'], weight: ['400', '500', '600'], display: 'swap', variable: '--font-letter' })
 
@@ -244,7 +245,7 @@ export default function PartnerLetter() {
               {later
                 ? <>One plan, {TIERS.pro.label}, at ${proNow} a month.</>
                 : <>One plan, {TIERS.pro.label}. It goes up to ${NEW_MEMBER_PRICES.pro.month} a month on January 1. Anyone who joins before that keeps ${proNow} for as long as they stay subscribed, so there is a real reason to move now.</>}
-              {' '}Every member pays from the first day and gets the whole product, and if it is not for them, there is a {GUARANTEE_LABEL}.
+              {' '}Every member gets the whole product, free for the first {TRIAL_DAYS} days, and the card is only charged on day {TRIAL_DAYS + 1}. If it is not for them after that, there is a {GUARANTEE_LABEL}.
             </p>
           </div>
         </article>

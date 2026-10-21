@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { trialPeriodDays } from '@/lib/trial'
 import { createServerClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { couponToApply } from '@/lib/coupon-guard'
@@ -130,7 +131,7 @@ export async function POST(request: NextRequest) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: ig } = await (supabase as any)
     .from('integrations')
-    .select('stripe_customer_id')
+    .select('stripe_customer_id,subscribed_at')
     .eq('user_id', user.id)
     .maybeSingle()
   const customerId: string | null = ig?.stripe_customer_id ?? null
@@ -348,6 +349,11 @@ export async function POST(request: NextRequest) {
     }
   }
 
+  const trialDays = trialPeriodDays({
+    stripeCustomerId: customerId,
+    subscribedAt: (ig?.subscribed_at as string | null) ?? null,
+  })
+
   const session = await stripe.checkout.sessions.create({
     mode: 'subscription',
     payment_method_types: ['card'],
@@ -363,7 +369,19 @@ export async function POST(request: NextRequest) {
     // a first purchase. Stamping the subscription lets the webhook upsert by
     // user_id directly, so the upgrade applies even if checkout.session.completed
     // is delayed or not subscribed in the dashboard.
-    subscription_data: { metadata: { user_id: user.id, tier } },
+    // SEVEN DAYS FREE, THEN THE CARD IS CHARGED (lib/trial). Sent explicitly
+    // rather than relying on a trial configured on the Stripe Price, which is
+    // invisible to this repo: the session value overrides the price's default,
+    // so the length is whatever lib/trial says and a test can hold it.
+    //
+    // ONCE PER CUSTOMER. trialPeriodDays returns undefined for anybody who has
+    // ever had a Stripe customer record or a recorded subscription start, so
+    // churning and coming back does not buy another free week. An absent field
+    // is how Stripe is told to charge now; 0 is not.
+    subscription_data: {
+      metadata: { user_id: user.id, tier },
+      ...(trialDays ? { trial_period_days: trialDays } : {}),
+    },
     // Rewardful double-sided incentives vs manual promo codes —
     // Stripe makes these mutually exclusive on a Checkout session
     // (passing both 422s the request). So if Rewardful sent us a

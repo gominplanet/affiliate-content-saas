@@ -22,13 +22,20 @@
 // Terms carry it now, and the window lives here so a page cannot advertise
 // one length while the terms promise another.
 
-// SEVEN DAYS, NO QUESTIONS, ONCE PER CREATOR (Seb, 2026-10-18). The free
-// trial is gone: every new member starts on Pro and gets the whole product
-// on day one. What replaces the trial is a short refund window, short on
-// purpose: with no trial a 30-day refund would be a free month of AI, and the
-// first week runs at a quarter of each allowance (lib/intro-allowance) for the
-// same reason. One refund per creator, matched on the card, the YouTube
-// channel, the Amazon ID and the email, so it cannot be taken twice.
+// SEVEN DAYS, NO QUESTIONS, ONCE PER CREATOR (Seb, 2026-10-18). A short
+// refund window, short on purpose: a 30-day refund would be a free month of
+// AI, and the first week runs at a quarter of each allowance
+// (lib/intro-allowance) for the same reason. One refund per creator, matched
+// on the card, the YouTube channel, the Amazon ID and the email, so it cannot
+// be taken twice.
+//
+// THIS IS NOW THE BACKSTOP, NOT THE OFFER (2026-10-21). lib/trial gives every
+// new member 7 free days before the first charge, so the refund is no longer
+// what a visitor is asked to weigh. Sales copy leads with the free week; this
+// sits behind it for the member who forgets to cancel and is charged on day 8.
+// Both stay true, because the window below counts from the FIRST PAYMENT,
+// which under a trial is day 8 rather than day 1. Nothing here needed to
+// change for that, and nothing here should be deleted in the trial's name.
 
 /** How long after the first payment a refund can be requested. */
 export const GUARANTEE_DAYS = 7
