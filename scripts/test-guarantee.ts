@@ -32,7 +32,27 @@ const live = (src: string) => src
 const body = (src: string) => live(src).split('\n').filter((l) => !/^\s*import\b/.test(l)).join('\n')
 
 const TERMS = body(read('app/terms/page.tsx'))
-const SELLING = ['app/own-your-blog/page.tsx', 'app/run-your-storefront/page.tsx', 'app/page.tsx', 'app/pricing/page.tsx']
+/** Every page that sells a plan to someone who has not bought one.
+ *
+ *  THE LIST IS THE GUARD. The three rules below were right on 2026-10-19 and
+ *  the two ad landing pages were simply not in this array, so neither was
+ *  checked, and both went on selling the free TIER for two more days: four
+ *  "Start free, no card" buttons on /amazon-influencer, three on /join/amazon,
+ *  and freeTrialHighlights() beside them naming a count of free thumbnails and
+ *  designs nobody receives. That tier's window has been zero days since
+ *  NO_TRIAL_FROM (lib/free-trial), and CheckoutButton's tier="trial" branch
+ *  pushes to /signup, where SignupForm defaults an unrecognised tier to 'pro'.
+ *  So a button reading "no card" opened a payment screen.
+ *
+ *  A page added to the site belongs here the day it is added. */
+const SELLING = [
+  'app/own-your-blog/page.tsx',
+  'app/run-your-storefront/page.tsx',
+  'app/page.tsx',
+  'app/pricing/page.tsx',
+  'app/amazon-influencer/page.tsx',
+  'app/join/amazon/page.tsx',
+]
 
 // ── the constants say it ────────────────────────────────────────────────────
 check('the free week is a real number of days', Number.isInteger(FREE_WEEK_DAYS) && FREE_WEEK_DAYS === 7, `got ${FREE_WEEK_DAYS}`)
@@ -59,6 +79,12 @@ for (const f of SELLING) {
   check(`${f} reads the free week from lib/guarantee`, /from '@\/lib\/guarantee'/.test(src) && /FREE_WEEK_(LABEL|SHORT|SENTENCE|DAYS)/.test(body(src)))
   check(`${f} promises no refund or money back`, !/money.back|\brefund\b|no questions asked/i.test(body(src)), f)
   check(`${f} never says no card is needed`, !/No card to start|no card/i.test(body(src)))
+  // THE DEAD FREE TIER IS NOT A DOOR. tier="trial" skips checkout entirely,
+  // which is how the promise and the payment screen came apart; and the
+  // account it opens has a zero-day window, so there is nothing behind it
+  // either way.
+  check(`${f} does not route anyone to the free tier`, !/tier="trial"/.test(body(src)), f)
+  check(`${f} does not list the free tier's allowances`, !/freeTrial(Highlights|Exclusions)\(\)/.test(body(src)), f)
 }
 
 // ── checkout makes it true ──────────────────────────────────────────────────

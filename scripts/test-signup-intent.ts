@@ -178,7 +178,20 @@ const check = (name: string, cond: boolean, detail?: string) => {
     'promising a branded review site to an Amazon influencer describes a product they cannot use')
 
   // 3. Both doors are signposted.
-  check('the sales page buttons carry the intent', /intent="amazon"/.test(SALES))
+  // THE INTENT NOW RIDES ON THE TIER (2026-10-21). intent="amazon" was a prop
+  // on CheckoutButton's tier="trial" branch, which skips checkout and pushes to
+  // signupHrefFor(intent). That branch is gone from the sales page: it sold the
+  // free tier, whose window has been zero days since NO_TRIAL_FROM, and it
+  // landed on a payment screen anyway. The paid button carries the same intent
+  // in its tier, which SignupForm reads as `t === 'amazon' ? 'amazon' : null`
+  // two checks above, so the journey is unchanged; only the door it comes
+  // through is. intent itself stays on CheckoutButton for the free doors that
+  // are still live, which the props check below still guards.
+  check('the sales page sends them down the Amazon path', /tier="amazon"/.test(SALES),
+    'without it they land in the YouTube funnel, which is where this traffic dies')
+  check('and no longer opens the dead free tier',
+    !/tier="trial"/.test(SALES.replace(/\{?\/\*[\s\S]*?\*\/\}?/g, '')),
+    'that button promised a free account and showed a checkout')
   check('the button spells signup URLs in one place', /signupHrefFor\(intent \?\? 'creator'\)/.test(BTN))
   // Scoped to the props, not the file: the note explaining why nextPath is gone
   // names it, and a whole-file search would match that and fail forever.
@@ -241,9 +254,18 @@ const check = (name: string, cond: boolean, detail?: string) => {
   check('the signup form reads that prefill', /sp\.get\('email'\)/.test(FORM2))
   check('and shape-checks it rather than trusting it',
     /\[\^\\s@\]\+@/.test(FORM2), 'it lands in a controlled input, but it arrives from a URL')
-  check('the landing states the free allowance from the plan',
-    /FREE_TRIAL\.thumbnails/.test(JOIN) && /TIERS\.amazon\.price/.test(JOIN),
+  // WHAT THE LANDING PROMISES, read from the one place that sets it. This used
+  // to require the free TIER's thumbnail count and the Amazon price, which
+  // described an account /signup does not create: it defaults an unrecognised
+  // tier to Pro, so a page saying "no card" four times led to a payment screen.
+  // The offer is the free week now, and both its length and the price it names
+  // come from lib/guarantee and lib/tier rather than being typed beside it.
+  check('the landing states the free week from lib/guarantee',
+    /from '@\/lib\/guarantee'/.test(JOIN) && /freeWeekUnderButton\(TIERS\.pro\.price\)/.test(JOIN),
     'a second hand-typed copy of the offer is a second thing that goes stale')
+  check('and does not promise an account with no card',
+    !/no card/i.test(JOIN.replace(/\{?\/\*[\s\S]*?\*\/\}?/g, '')),
+    'the screen the email field pushes to asks for one')
 
   // This used to assert the registration fired from /onboarding, browser and
   // server, sharing one event id. That was the shape of the bug rather than the
