@@ -10,7 +10,7 @@
 // over 8 days, with ten Google suggestions starting with its name. Pure
 // pieces are run; the wiring is read.
 import { readFileSync, existsSync } from 'node:fs'
-import { siteDomain, readRanks, webRankWords, googleSeed, brandSearches, googleWords, adsPerCreator, adsPerCreatorWords } from '../lib/brand-popularity'
+import { siteDomain, readRanks, webRankWords, googleSeed, brandSearches, googleWords, adsPerCreator, adsPerCreatorWords, adsPerReview, adsPerReviewWords } from '../lib/brand-popularity'
 import { filterCheck, readFilters, ratingOf, type FilterRow } from '../lib/trybe-finder'
 import { BROWSE_SORTS } from '../lib/trybe-outreach'
 
@@ -48,6 +48,8 @@ check('none, and not read, differ', googleWords({ checked: true, searches: 0 })?
 // ── Ads per creator ──────────────────────────────────────────────────────────
 check('Meta ads for each creator, no creators counting as one', adsPerCreator(2100, 30) === 70 && adsPerCreator(5, 3) === 1.7 && adsPerCreator(12, 0) === 12 && adsPerCreator(0, 4) === 0)
 check('a count not read is not a ratio of zero', adsPerCreator(null, 5) === null && adsPerCreator(40, null) === null)
+check('Meta ads per review: a brand with no reviews has no ratio, never one over zero reviews', adsPerReview(2100, 37) === 57 && adsPerReview(30, 10) === 3 && adsPerReview(40, 0) === null && adsPerReview(40, null) === null && adsPerReview(null, 10) === null)
+check('per review in words says reviews are a floor, not a creator count', /57 Meta ads per review/.test(adsPerReviewWords(2100, 37).short) && /at least that many worked with it/.test(adsPerReviewWords(2100, 37).long))
 check('in words, with both numbers', /70 Meta ads per creator/.test(adsPerCreatorWords(2100, 30).short) && /2,100 Meta ads running now and 30 creators/.test(adsPerCreatorWords(2100, 30).long) && /no creators yet/.test(adsPerCreatorWords(12, 0).long))
 
 // ── TRYBE rating 4.5 stars or more (Seb's "over 90") ─────────────────────────
@@ -63,7 +65,7 @@ check('new collections keep it in the rating column', /rating: num\(pick\(raw, \
 
 // ── Wiring ───────────────────────────────────────────────────────────────────
 const ROUTE = read('app/api/labs/trybe/route.ts')
-check('the list can be ranked by ads per creator, an uncounted brand after', (BROWSE_SORTS as readonly string[]).includes('adsPerCreator') && /sort === 'adsPerCreator' \? perCreator\(b\) - perCreator\(a\)/.test(ROUTE) && /if \(!metaFresh\(x\.r\)\) return -1/.test(ROUTE))
+check('the list can be ranked by ads per creator, an uncounted brand after', (BROWSE_SORTS as readonly string[]).includes('adsPerCreator') && /sort === 'adsPerCreator' \? adsOrder\(a, b\)/.test(ROUTE) && /if \(!metaFresh\(x\.r\)\) return \[0, 0\]/.test(ROUTE) && /return ratio != null \? \[2, ratio\] : \[1, x\.r\.meta_ads as number\]/.test(ROUTE))
 check('the server says how much of the list was read, over every brand matched', /readCounts = \{[\s\S]{0,700}?total: shown\.length,\s*meta: shown\.filter\(x => metaFresh\(x\.r\)\)\.length/.test(ROUTE) && /const metaTodo = sort === 'adsPerCreator'/.test(ROUTE) && /rating: ratingOf\(x\.r\)\?\.stars \?\? null \}, filters\)/.test(ROUTE))
 check('the popularity columns never break the list before migration 452', /COLS = BASE_COLS \+ PICK_COLS\n/.test(ROUTE))
 const CRON = read('app/api/cron/trybe-directory/route.ts')
@@ -75,7 +77,8 @@ check('Find brands has the same sort, and counts the next brands for it', /\{ id
 const STARS = read('components/labs/TrybeStarBrands.tsx')
 check('the page asks for 4.5 stars or more, ranked by ads per creator', /useState<number \| null>\(4\.5\)/.test(STARS) && /sort: 'adsPerCreator'/.test(STARS) && /filters: \{ \.\.\.NO_FILTERS, minRating, maxCreators \}/.test(STARS) && /4\.5 of 5 stars is 90%/.test(STARS))
 // Seb's check, 2026-10-21: TRYBE's list gave no creator count for any of 7,378 brands.
-check('with no creator counts it ranks by Meta ads alone and says so, never calling a counted brand not counted', /if \(!creatorsKnown\) return x\.r\.meta_ads as number/.test(ROUTE) && /rankedBy: creatorsKnown \? 'perCreator' as const : 'metaAds' as const/.test(ROUTE) && /ranks by Meta ads running alone/.test(STARS) && /const known = !!b\.meta_fresh/.test(STARS) && /meta_fresh: !!metaFresh\(r\)/.test(ROUTE))
+// Seb, 2026-10-21: "ok do meta ads per review".
+check('with no creator counts it ranks by Meta ads per review and says why, never calling a counted brand not counted', /: adsPerReview\(r\.meta_ads, ratingOf\(r\)\?\.reviews \?\? null\)/.test(ROUTE) && /rankedBy: creatorsKnown \? 'perCreator' as const : 'perReview' as const/.test(ROUTE) && /Ranked by Meta ads per creator review/.test(STARS) && /Meta ads per review<\/span>/.test(STARS) && /const known = !!b\.meta_fresh/.test(STARS) && /meta_fresh: !!metaFresh\(r\)/.test(ROUTE) && /label: 'Most ads per review'/.test(UI))
 check('every rated brand is in the starting set when the rating filter is on', /not\('raw->>reviewRating', 'is', null\)/.test(ROUTE))
 check('it says how many were counted before the list, and marks the uncounted ones', /Meta ads counted for \{c\.meta\.toLocaleString\(\)\} of \{c\.total\.toLocaleString\(\)\}/.test(STARS) && /Meta ads not counted yet/.test(STARS) && /Count Meta ads for the next/.test(STARS))
 // Seb's check, 2026-10-21: none of 7,378 brands had TRYBE's score in MVP's copy.
@@ -97,4 +100,4 @@ const words = (src: string) => (src.split('\n').filter((l) => !l.trim().startsWi
 check('no dashes in what the creator reads', !/[–—]| - /.test(words(read('lib/brand-popularity.ts'))) && !/[–—]| - /.test(words(STARS)))
 
 if (fails.length) { console.error('brand-popularity failed:\n - ' + fails.join('\n - ')); process.exit(1) }
-console.log('✅ brand-popularity: Star brands ranks brands rated 4.5 stars+ by Meta ads per creator (Meta ads alone while TRYBE gives no creator counts), says how much was counted, and shows each website\'s rank and Google searches, never a rank as visits or a miss as zero')
+console.log('✅ brand-popularity: Star brands ranks brands rated 4.5 stars+ by Meta ads per creator (per creator review while TRYBE gives no creator counts), says how much was counted, and shows each website\'s rank and Google searches, never a rank as visits or a miss as zero')

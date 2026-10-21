@@ -14,7 +14,7 @@ import { reviewWords } from '@/lib/trybe-mybrands'
 import { FILTER_WORDS, CROWD_WORDS, type FilterId, type FinderFilters, type DirStats, type CrowdRead, type SpendRead } from '@/lib/trybe-finder'
 import type { PayBasis } from '@/lib/trybe-pay'
 import { SELLS, SELLS_WORDS, type SellsRead } from '@/lib/trybe-sells'
-import { webRankWords, googleWords, adsPerCreatorWords, type Said } from '@/lib/brand-popularity'
+import { webRankWords, googleWords, adsPerCreatorWords, adsPerReviewWords, type Said } from '@/lib/brand-popularity'
 
 const PURPLE = '#7C3AED'
 const GREEN = '#16A34A'
@@ -539,6 +539,8 @@ export interface LivePopularity {
   web_domain?: string | null; web_rank?: number | null; web_rank_was?: number | null; web_rank_days?: number | null; web_rank_checked_at?: string | null
   google_searches?: number | null; google_phrases?: string[] | null; google_checked_at?: string | null
   meta_ads?: number | null; total_creators?: number | null; ads_per_creator?: number | null
+  /** Meta ads per creator review on TRYBE, while TRYBE gives no creator counts. */
+  ads_per_review?: number | null; review_count?: number | null
 }
 const SAID_STYLE = {
   good: { background: 'rgba(22,163,74,0.10)', color: GREEN },
@@ -568,7 +570,9 @@ export function RatingChip({ stars, reviews }: { stars: number | null | undefine
  *  each with why on hover. A signal not read shows nothing; the list says
  *  how many were read (Star brands). */
 export function PopularityChips({ b, perCreator = false }: { b: LivePopularity; perCreator?: boolean }) {
-  const ads = perCreator && b.ads_per_creator != null && typeof b.meta_ads === 'number' && typeof b.total_creators === 'number' ? adsPerCreatorWords(b.meta_ads, b.total_creators) : null
+  const ads = !perCreator || typeof b.meta_ads !== 'number' ? null
+    : b.ads_per_creator != null && typeof b.total_creators === 'number' ? adsPerCreatorWords(b.meta_ads, b.total_creators)
+      : b.ads_per_review != null && typeof b.review_count === 'number' ? adsPerReviewWords(b.meta_ads, b.review_count) : null
   const web = b.website ? webRankWords({ checked: !!b.web_rank_checked_at, domain: b.web_domain ?? null, rank: b.web_rank ?? null, was: b.web_rank_was, days: b.web_rank_days }) : null
   const google = googleWords({ checked: !!b.google_checked_at, searches: b.google_searches ?? null, phrases: b.google_phrases })
   if (!ads && !web && !google) return null

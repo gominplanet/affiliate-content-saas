@@ -142,7 +142,7 @@ interface LiveBrand {
   /** How known it is (lib/brand-popularity, migration 452), and Meta ads per creator. */
   web_domain?: string | null; web_rank?: number | null; web_rank_was?: number | null; web_rank_days?: number | null; web_rank_checked_at?: string | null
   google_searches?: number | null; google_phrases?: string[] | null; google_checked_at?: string | null
-  ads_per_creator?: number | null; meta_fresh?: boolean
+  ads_per_creator?: number | null; ads_per_review?: number | null; meta_fresh?: boolean
   /** TRYBE's rating: creators' stars of 5, and how many reviews. */
   review_rating?: number | null; review_count?: number | null
 }
@@ -164,7 +164,7 @@ const SORTS: Array<{ id: LiveSort; label: string; says: string }> = [
   { id: 'creators', label: 'Fewest creators', says: 'Fewest creators first: less competition for each brand.' },
   { id: 'fit', label: 'Best fit', says: 'Highest AI fit score for this search first. Brands not scored for it come after, then the ones the AI said do not fit it.' },
   { id: 'newest', label: 'Newest', says: 'Newest on TRYBE first, by when MVP first saw each brand.' },
-  { id: 'adsPerCreator', label: 'Most ads per creator', says: 'Most Meta ads running for each creator it has first: a big ad budget shared by few creators. With no creator counts from TRYBE, most Meta ads first. Brands MVP has not counted Meta ads for come after, best rated first. Star brands runs this over all of TRYBE.' },
+  { id: 'adsPerCreator', label: 'Most ads per creator', says: 'Most Meta ads running for each creator it has first: a big ad budget shared by few creators. While TRYBE gives no creator counts, for each creator review instead. Brands MVP has not counted Meta ads for come after, best rated first. Star brands runs this over all of TRYBE.' },
 ]
 const PAYS: Array<{ id: LivePay; label: string }> = [
   { id: 'any', label: 'Any pay' },
@@ -512,7 +512,7 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
   // filters change, no SCOUT and no website fetched.
   const [live, setLive] = useState<{ brands: LiveBrand[]; matched: number; capped: boolean; hiddenMine?: number; payUnknown?: number; payOther?: number
     hiddenBy?: Partial<Record<FilterId, number>>; blankBy?: Partial<Record<FilterId, number>>; unknownBy?: Partial<Record<FilterId, number>>; amazonNotes?: string[]; amazonVideos?: number; rawKeys?: string[]; prioritiesSaved?: boolean; starsSaved?: boolean; crowdDays?: number | null; spendKnown?: { recent: number; lifetime: number; none: number } | null
-    readCounts?: { total: number; meta: number; web: number; google: number; popularityReady: boolean; creators?: number; rankedBy?: 'perCreator' | 'metaAds' }; metaTodo?: Array<{ brand_id: string; name: string }>
+    readCounts?: { total: number; meta: number; web: number; google: number; popularityReady: boolean; creators?: number; rankedBy?: 'perCreator' | 'perReview' }; metaTodo?: Array<{ brand_id: string; name: string }>
     /** Any brand looked at has a creator count (TRYBE's list gave none, Seb's check 2026-10-21). */
     creatorsKnown?: boolean; mix?: { small: number; mid: number; big: number; unknown: number; says: string | null } | null } | null>(null)
   // FINDER (Seb, 2026-10-14, after Rob's Oink Blue video: "build all 4"):
@@ -1795,7 +1795,7 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
               return (
                 <>
                   <FinderToolbar filters={filters} onFilters={setFilters} name={nameQ} onName={setNameQ}
-                    sort={sortBy} sorts={SORTS.filter(s => !preview || s.id !== 'fit').map(s => s.id === 'creators' && live?.creatorsKnown === false ? { ...s, label: 'Fewest creators (no counts yet)' } : s)} onSort={v => setSortBy(v as LiveSort)}
+                    sort={sortBy} sorts={SORTS.filter(s => !preview || s.id !== 'fit').map(s => live?.creatorsKnown !== false ? s : s.id === 'creators' ? { ...s, label: 'Fewest creators (no counts yet)' } : s.id === 'adsPerCreator' ? { ...s, label: 'Most ads per review' } : s)} onSort={v => setSortBy(v as LiveSort)}
                     noCreators={live?.creatorsKnown === false}
                     pay={payType} pays={PAYS.map(p => ({ ...p, label: p.id === 'any' ? 'Any' : p.label, says: PAY_SAYS[p.id] }))} onPay={v => setPayType(v as LivePay)}
                     panelExtra={sortBy === 'picks' ? undefined : priorityBox} />
@@ -1860,7 +1860,7 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
             {sortBy === 'adsPerCreator' && live?.readCounts && (
               <p className="text-[12px] mb-3" style={{ color: live.readCounts.meta < live.readCounts.total ? AMBER : GREEN }}>
                 Meta ads counted for {live.readCounts.meta.toLocaleString()} of the {live.readCounts.total.toLocaleString()} brands matched{live.readCounts.meta < live.readCounts.total ? '; the rest are listed after, best rated first.' : '.'}
-                {live.readCounts.rankedBy === 'metaAds' && ' TRYBE\u2019s list gives no creator counts, so this ranks by Meta ads running alone.'}
+                {live.readCounts.rankedBy === 'perReview' && ' TRYBE\u2019s list gives no creator counts, so this ranks by Meta ads per creator review, the closest it gives.'}
                 {canPlaybook && (live.metaTodo?.length ?? 0) > 0 && (
                   <>{' '}<button onClick={() => void checkMetaAds()} disabled={metaRun != null} className="inline-flex items-center gap-1 font-semibold underline disabled:opacity-50" style={{ color: PURPLE }}>
                     {metaRun != null ? <><Loader2 size={11} className="animate-spin" /> Reading Meta&rsquo;s Ad Library: {metaRun.done} of {metaRun.total} done</> : `Count Meta ads for the next ${Math.min(25, live.metaTodo?.length ?? 0)}`}

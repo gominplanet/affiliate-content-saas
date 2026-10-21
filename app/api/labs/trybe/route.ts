@@ -23,7 +23,7 @@ import { INTRO_MAX_BYTES, cleanInputs, introSystem, introPrompt, parseIntro, rea
 import { sellsOf, type SellsRead } from '@/lib/trybe-sells'
 import { outreachNiche } from '@/lib/outreach-niche'
 import { pickScore, creatorProgramOf, readTopCreatives, tallyTop, META_ADS_FRESH_MS, readPriorities, weighScore, staticsOf, bucketDollars } from '@/lib/trybe-pick'
-import { adsPerCreator } from '@/lib/brand-popularity'
+import { adsPerCreator, adsPerReview } from '@/lib/brand-popularity'
 import { ratingOf, readDirStats, rawKeys, amazonOf, nameVariants, readFilters, filterCheck, spendingOf, productOnAmazon, filmedProducts, mergeSnapshot, pickBaseline, crowdOf, creatorSpendOf, snapshotKey, isNewBrand, mixPick, mixOf, SNAPSHOT_KEEP_DAYS, type AmazonOf, type AmazonFilmed, type AmazonVideoProduct, type CcCampaign, type FilterId, type Snapshot } from '@/lib/trybe-finder'
 import { payLines, payReadOf, estimatePay } from '@/lib/trybe-pay'
 import { readTopWords, firstHook, keepHooks, readHooksBody, hooksBlock, type TopHook } from '@/lib/trybe-hooks'
@@ -1520,14 +1520,21 @@ export async function POST(request: Request) {
     // with no count comes after, by TRYBE score, never as if it had none.
     const metaFresh = (r: Record<string, any>) => typeof r.meta_ads === 'number' && r.meta_ads_checked_at && Date.now() - Date.parse(r.meta_ads_checked_at) < 4 * META_ADS_FRESH_MS // eslint-disable-line @typescript-eslint/no-explicit-any
     // NO CREATOR COUNTS AT ALL (Seb's check, 2026-10-21: TRYBE's list gave
-    // none of 7,378): the order is Meta ads running alone, and the page says
-    // so. With some counts, a brand without one comes after those with one.
+    // none of 7,378), so PER REVIEW (Seb: "ok do meta ads per review"): Meta
+    // ads for each creator review on TRYBE, the closest it gives (at least
+    // that many creators worked with the brand). Creator counts, once there
+    // are any, take over. Three groups: a ratio; counted with no ratio (no
+    // reviews), by Meta ads; not counted, after.
     const creatorsKnown = rows.some(r => typeof r.total_creators === 'number')
-    const perCreator = (x: typeof ranked[number]) => {
-      if (!metaFresh(x.r)) return -1
-      if (!creatorsKnown) return x.r.meta_ads as number
-      return adsPerCreator(x.r.meta_ads, typeof x.r.total_creators === 'number' ? x.r.total_creators : null) ?? -0.5
+    const ratioOf = (r: Record<string, any>): number | null => !metaFresh(r) ? null // eslint-disable-line @typescript-eslint/no-explicit-any
+      : creatorsKnown ? adsPerCreator(r.meta_ads, typeof r.total_creators === 'number' ? r.total_creators : null)
+        : adsPerReview(r.meta_ads, ratingOf(r)?.reviews ?? null)
+    const adsRank = (x: typeof ranked[number]): [number, number] => {
+      if (!metaFresh(x.r)) return [0, 0]
+      const ratio = ratioOf(x.r)
+      return ratio != null ? [2, ratio] : [1, x.r.meta_ads as number]
     }
+    const adsOrder = (a: typeof ranked[number], b: typeof ranked[number]) => { const ga = adsRank(a), gb = adsRank(b); return gb[0] - ga[0] || gb[1] - ga[1] }
     const stars = (x: typeof ranked[number]) => ratingOf(x.r)?.stars ?? 0
     ranked.sort((a, b) => knownFirst(a, b) || payKnownFirst(a, b) ||
       (sort === 'pay' ? payOrder(b) - payOrder(a) || byMatch(a, b)
@@ -1537,7 +1544,7 @@ export async function POST(request: Request) {
           : sort === 'fit' ? fit(b.r.brand_id) - fit(a.r.brand_id) || byMatch(a, b)
             : sort === 'picks' ? weighed(b) - weighed(a) || byMatch(a, b)
             : sort === 'newest' ? time(b.r.first_seen_at) - time(a.r.first_seen_at) || byMatch(a, b)
-            : sort === 'adsPerCreator' ? perCreator(b) - perCreator(a) || stars(b) - stars(a) || (b.r.top100_hits ?? 0) - (a.r.top100_hits ?? 0) || creators(a.r.total_creators) - creators(b.r.total_creators) || byMatch(a, b)
+            : sort === 'adsPerCreator' ? adsOrder(a, b) || stars(b) - stars(a) || (b.r.top100_hits ?? 0) - (a.r.top100_hits ?? 0) || creators(a.r.total_creators) - creators(b.r.total_creators) || byMatch(a, b)
               : byMatch(a, b)))
     // Passed on (skipped) leaves the list too, like Oink's Pass, until undone.
     const DONE = ['drafted', 'sending', 'sent', 'already', 'failed', 'removed', 'skipped']
@@ -1556,7 +1563,7 @@ export async function POST(request: Request) {
       ratingKnown: rows.filter(r => ratingOf(r) != null).length,
       looked: rows.length,
       creators: shown.filter(x => typeof x.r.total_creators === 'number').length,
-      rankedBy: creatorsKnown ? 'perCreator' as const : 'metaAds' as const,
+      rankedBy: creatorsKnown ? 'perCreator' as const : 'perReview' as const,
       total: shown.length,
       meta: shown.filter(x => metaFresh(x.r)).length,
       web: shown.filter(x => x.r.web_rank_checked_at).length,
@@ -1633,6 +1640,7 @@ export async function POST(request: Request) {
           web_domain: r.web_domain ?? null, web_rank: r.web_rank ?? null, web_rank_was: r.web_rank_was ?? null, web_rank_days: r.web_rank_days ?? null, web_rank_checked_at: r.web_rank_checked_at ?? null,
           google_searches: r.google_searches ?? null, google_phrases: r.google_phrases ?? [], google_checked_at: r.google_checked_at ?? null,
           ads_per_creator: metaFresh(r) ? adsPerCreator(r.meta_ads, typeof r.total_creators === 'number' ? r.total_creators : null) : null,
+          ads_per_review: metaFresh(r) ? adsPerReview(r.meta_ads, ratingOf(r)?.reviews ?? null) : null,
           meta_fresh: !!metaFresh(r),
           // TRYBE's rating: stars of 5 from creators' reviews, and how many.
           review_rating: ratingOf(r)?.stars ?? null, review_count: ratingOf(r)?.reviews ?? null,

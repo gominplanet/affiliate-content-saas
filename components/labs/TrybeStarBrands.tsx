@@ -47,7 +47,7 @@ interface StarBrand extends LivePopularity {
   review_rating?: number | null; review_count?: number | null
   starred?: boolean; is_new?: boolean
 }
-interface ReadCounts { ratingKnown?: number; looked?: number; creators?: number; rankedBy?: 'perCreator' | 'metaAds'; total: number; meta: number; web: number; google: number; popularityReady: boolean }
+interface ReadCounts { ratingKnown?: number; looked?: number; creators?: number; rankedBy?: 'perCreator' | 'perReview'; total: number; meta: number; web: number; google: number; popularityReady: boolean }
 interface Answer { brands: StarBrand[]; matched: number; hiddenMine: number; readCounts?: ReadCounts; metaTodo?: Array<{ brand_id: string; name: string }>; blankBy?: Record<string, number>; hiddenBy?: Record<string, number> }
 
 async function api(body: Record<string, unknown>) {
@@ -132,7 +132,7 @@ export default function TrybeStarBrands({ canCount, cards, scoutVersion, hasCore
   const todo = data?.metaTodo?.length ?? 0
   const brands = data?.brands || []
   const counted = brands.filter((b) => b.meta_fresh)
-  const byAds = c?.rankedBy === 'metaAds'
+  const perReview = c?.rankedBy === 'perReview'
   const pickedIds = brands.filter((b) => picked.has(b.brand_id)).map((b) => b.brand_id)
   const numberBox = (label: string, after: string, value: number | null, set: (n: number | null) => void, placeholder: string, max?: number, step?: number) => (
     <label className="inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[13px] focus-within:ring-2" style={{ borderColor: 'var(--border-2)', ['--tw-ring-color' as string]: COLOR } as React.CSSProperties}>
@@ -148,7 +148,7 @@ export default function TrybeStarBrands({ canCount, cards, scoutVersion, hasCore
     <section className="space-y-4">
       <div className="rounded-2xl border p-4 sm:p-5 space-y-3" style={{ borderColor: `${COLOR}40`, background: `linear-gradient(120deg, ${COLOR}10 0%, transparent 65%), var(--surface)` }}>
         <p className="text-[14px] leading-relaxed max-w-[70ch]" style={{ color: 'var(--text-2)' }}>
-          The next big opportunity on TRYBE: brands creators rate highly, ranked by how many Meta ads they run for each creator they have. A big ad budget shared by few creators means more of it can go to you. Each brand also shows how its website ranks among the world&rsquo;s websites, and whether people search Google for it.
+          The next big opportunity on TRYBE: brands creators rate highly, ranked by how many Meta ads they run for each creator who has worked with them. A big ad budget shared by few creators means more of it can go to you. Each brand also shows how its website ranks among the world&rsquo;s websites, and whether people search Google for it.
         </p>
         <div className="flex flex-wrap items-center gap-2">
           {numberBox('TRYBE rating', '\u2605 or more', minRating, setMinRating, 'any', 5, 0.1)}
@@ -179,7 +179,7 @@ export default function TrybeStarBrands({ canCount, cards, scoutVersion, hasCore
           <p style={{ color: c.meta < c.total ? AMBER : GREEN }}>
             Meta ads counted for {c.meta.toLocaleString()} of {c.total.toLocaleString()}.{c.meta < c.total ? ' The ones not counted yet are listed after the rest, best rated first.' : ' Every brand on this list is ranked on its own count.'}
           </p>
-          {byAds && <p style={{ color: AMBER }}>TRYBE&rsquo;s brand list does not say how many creators each brand has, so for now this ranks by Meta ads running alone. Ads per creator comes back once MVP has creator counts.</p>}
+          {perReview && <p style={soft}>Ranked by Meta ads per creator review. TRYBE does not say how many creators a brand has; its reviews are the closest it gives, since at least that many creators worked with it. Ads per creator takes over once MVP has creator counts.</p>}
           {c.popularityReady
             ? <p style={soft}>Website rank read for {c.web.toLocaleString()}, Google searches for {c.google.toLocaleString()}. MVP reads both in the background for all of TRYBE, about 240 brands an hour.</p>
             : cards && <p style={{ color: AMBER }}>Website rank and Google searches need migration 452 in Supabase (team only sees this).</p>}
@@ -213,6 +213,7 @@ export default function TrybeStarBrands({ canCount, cards, scoutVersion, hasCore
           <ol className="space-y-2">
             {brands.map((b, i) => {
               const ratio = b.ads_per_creator
+              const perRev = b.ads_per_review ?? null
               const known = !!b.meta_fresh
               const first = i === 0 || !!brands[i - 1].meta_fresh !== known
               return (
@@ -234,10 +235,14 @@ export default function TrybeStarBrands({ canCount, cards, scoutVersion, hasCore
                           ? <span className="text-[12.5px] font-semibold" style={soft}>Meta ads not counted yet</span>
                           : ratio != null
                             ? <><span className="text-[20px] font-extrabold tabular-nums" style={{ color: ratio >= 5 ? GREEN : 'var(--text)' }}>{ratio.toLocaleString('en-US')}</span><span className="text-[12.5px]" style={{ color: 'var(--text-2)' }}>Meta ads per creator</span></>
-                            : <><span className="text-[20px] font-extrabold tabular-nums" style={{ color: (b.meta_ads ?? 0) >= 50 ? GREEN : 'var(--text)' }}>{(b.meta_ads ?? 0).toLocaleString('en-US')}</span><span className="text-[12.5px]" style={{ color: 'var(--text-2)' }}>Meta ad{b.meta_ads === 1 ? '' : 's'} running now</span></>}
+                            : perRev != null
+                              ? <><span className="text-[20px] font-extrabold tabular-nums" style={{ color: perRev >= 5 ? GREEN : 'var(--text)' }}>{perRev.toLocaleString('en-US')}</span><span className="text-[12.5px]" style={{ color: 'var(--text-2)' }}>Meta ads per review</span></>
+                              : <><span className="text-[20px] font-extrabold tabular-nums" style={{ color: (b.meta_ads ?? 0) >= 50 ? GREEN : 'var(--text)' }}>{(b.meta_ads ?? 0).toLocaleString('en-US')}</span><span className="text-[12.5px]" style={{ color: 'var(--text-2)' }}>Meta ad{b.meta_ads === 1 ? '' : 's'} running now, no reviews yet</span></>}
                         <span className="text-[12.5px] inline-flex items-center gap-1" style={soft}>
-                          {known && ratio != null ? `${(b.meta_ads ?? 0).toLocaleString('en-US')} ads running \u00b7 ` : ''}
-                          <Users size={11} />{b.total_creators != null ? `${b.total_creators.toLocaleString('en-US')} creator${b.total_creators === 1 ? '' : 's'}` : 'creators not given by TRYBE'}
+                          {known && (ratio != null || perRev != null) ? `${(b.meta_ads ?? 0).toLocaleString('en-US')} ads running \u00b7 ` : ''}
+                          {b.total_creators != null
+                            ? <><Users size={11} />{b.total_creators.toLocaleString('en-US')} creator{b.total_creators === 1 ? '' : 's'}</>
+                            : b.review_count != null ? `${b.review_count.toLocaleString('en-US')} creator review${b.review_count === 1 ? '' : 's'}` : ''}
                         </span>
                       </span>
                       <span className="flex flex-wrap items-center gap-1.5">

@@ -17,7 +17,11 @@
 //     "gent golfers reddit"); a brand nobody looks up gets none with its name.
 //     Up to ten, so it says people search for it, not how many.
 // And ADS PER CREATOR: the Meta ads running for each creator it has, the
-// special search's order (a big ad budget shared by few creators).
+// special search's order (a big ad budget shared by few creators). TRYBE's
+// list gives no creator counts (Seb's check, 2026-10-21), so until it does,
+// ADS PER REVIEW: Meta ads for each creator review on TRYBE (Seb: "ok do
+// meta ads per review"). A review count says at least that many creators
+// worked with the brand, so it is a floor, and MVP says so.
 //
 // A read that did not happen is "not read", never zero. A website that is a
 // page on someone else's site (Amazon, Etsy, a link page, a social profile)
@@ -150,6 +154,23 @@ export function adsPerCreator(metaAds: number | null | undefined, creators: numb
   if (typeof metaAds !== 'number' || !Number.isFinite(metaAds) || typeof creators !== 'number' || !Number.isFinite(creators)) return null
   const r = metaAds / Math.max(1, creators)
   return r >= 10 ? Math.round(r) : Math.round(r * 10) / 10
+}
+
+/** Meta ads running for each creator review on TRYBE, or null when either is
+ *  not known or it has no reviews. Pure. */
+export function adsPerReview(metaAds: number | null | undefined, reviews: number | null | undefined): number | null {
+  if (typeof reviews !== 'number' || !Number.isFinite(reviews) || reviews < 1) return null
+  return adsPerCreator(metaAds, reviews)
+}
+
+/** Ads per review in words. Pure. */
+export function adsPerReviewWords(metaAds: number, reviews: number): Said {
+  const r = adsPerReview(metaAds, reviews) ?? 0
+  return {
+    short: `${r.toLocaleString('en-US')} Meta ad${r === 1 ? '' : 's'} per review`,
+    long: `${metaAds.toLocaleString('en-US')} Meta ads running now and ${reviews.toLocaleString('en-US')} creator review${reviews === 1 ? '' : 's'} on TRYBE. TRYBE does not say how many creators a brand has; its reviews say at least that many worked with it.`,
+    tone: r >= 5 ? 'good' : r >= 1 ? 'info' : 'bad',
+  }
 }
 
 /** Ads per creator in words. Pure. */
