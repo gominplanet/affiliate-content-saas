@@ -19,7 +19,7 @@
 // The cap is enforced here, at claim time, not in the browser: a page that is
 // reloaded, or open twice, cannot send more than the cap allows.
 
-import { INTRO_MAX_BYTES, cleanInputs, introSystem, introPrompt, parseIntro, readIntroVideo, introSuggest } from '@/lib/trybe-intro'
+import { INTRO_MAX_BYTES, cleanInputs, introSystem, introPrompt, parseIntro, readIntroVideo, introSuggest, introSample, isTrybeSampleUrl } from '@/lib/trybe-intro'
 import { sellsOf, type SellsRead } from '@/lib/trybe-sells'
 import { outreachNiche } from '@/lib/outreach-niche'
 import { pickScore, creatorProgramOf, readTopCreatives, tallyTop, META_ADS_FRESH_MS, readPriorities, weighScore, staticsOf, bucketDollars } from '@/lib/trybe-pick'
@@ -592,12 +592,27 @@ export async function POST(request: Request) {
       const hit = (listed || []).find((f: { name: string }) => f.name === file) as { metadata?: { size?: number } } | undefined
       if (!hit) return NextResponse.json({ error: 'The upload did not arrive in MVP storage, so nothing was saved. Try again.' }, { status: 422 })
       const url = admin.storage.from(INTRO_BUCKET).getPublicUrl(path).data.publicUrl as string
-      const video = { url, path, name: String(body.name || 'intro.mp4').slice(0, 200), bytes: Number(hit.metadata?.size || 0) || null, uploadedAt: now }
+      // A new file is not on TRYBE yet: its copy there is made again (trybeUrl cleared).
+      const video = { url, path, name: String(body.name || 'intro.mp4').slice(0, 200), bytes: Number(hit.metadata?.size || 0) || null, uploadedAt: now, trybeUrl: null, trybeAt: null }
       const before = readIntroVideo(srow?.intro_video)
       const { error } = await admin.from('trybe_outreach_settings').upsert({ user_id: ownerId, intro_video: video, updated_at: now })
       if (error) return NextResponse.json({ error: error.message }, { status: 500 })
       // The intro it replaces is taken out of storage.
       if (before && before.path !== path) { try { await admin.storage.from(INTRO_BUCKET).remove([before.path]) } catch { /* left behind, harmless */ } }
+      return NextResponse.json({ ok: true, video })
+    }
+    // ON TRYBE: the page put the intro in the creator's TRYBE portfolio through
+    // SCOUT; the link is kept only when it is TRYBE's own and the file is there.
+    if (action === 'intro_trybe_saved') {
+      const before = readIntroVideo(srow?.intro_video)
+      if (!before) return NextResponse.json({ error: 'There is no intro video in MVP to match it to.' }, { status: 400 })
+      const link = String(body.url || '')
+      if (!isTrybeSampleUrl(link)) return NextResponse.json({ error: 'That is not a TRYBE portfolio link, so it was not saved.' }, { status: 400 })
+      const head = await fetch(link, { method: 'HEAD', signal: AbortSignal.timeout(15_000) }).catch(() => null)
+      if (!head?.ok) return NextResponse.json({ error: `TRYBE does not show the video at its link yet (${head?.status || 'no answer'}), so it was not saved. Try again.` }, { status: 422 })
+      const video = { ...before, trybeUrl: link, trybeAt: now }
+      const { error } = await admin.from('trybe_outreach_settings').upsert({ user_id: ownerId, intro_video: video, updated_at: now })
+      if (error) return NextResponse.json({ error: error.message }, { status: 500 })
       return NextResponse.json({ ok: true, video })
     }
     // OPTIONAL: off sends every request with the message only, as before.
@@ -2385,7 +2400,11 @@ export async function POST(request: Request) {
     // refusal comes back in TRYBE's words.
     const { data: dir } = await admin.from('trybe_directory').select('raw').eq('brand_id', row.brand_id).maybeSingle()
     const programId = programOf((dir as { raw?: unknown } | null)?.raw ?? null)
-    return NextResponse.json({ ok: true, usedToday: used + 1, dailyCap: settings.dailyCap, nextFreeAt: used + 1 >= settings.dailyCap ? await nextFree(admin, ownerId, settings.dailyCap) : null, name: row.name, message: row.draft, url: sendUrl(row.brand_id, row.brand_url, programId) })
+    // THE INTRO VIDEO (lib/trybe-intro): its TRYBE link, unless turned off or
+    // not on TRYBE yet. SCOUT 1.53.7 sends it with the request; older ones do not.
+    const { data: introRow } = await admin.from('trybe_outreach_settings').select('*').eq('user_id', ownerId).maybeSingle()
+    const sample = introSample(readIntroVideo(introRow?.intro_video), introRow?.intro_off === true)
+    return NextResponse.json({ ok: true, usedToday: used + 1, dailyCap: settings.dailyCap, nextFreeAt: used + 1 >= settings.dailyCap ? await nextFree(admin, ownerId, settings.dailyCap) : null, name: row.name, message: row.draft, url: sendUrl(row.brand_id, row.brand_url, programId), sample })
   }
 
   if (action === 'result') {
@@ -2404,6 +2423,8 @@ export async function POST(request: Request) {
     // NOT SAVED IS SAID: the row was no longer being sent (settled in another
     // tab), so this result was not written and the page must not show it.
     if (!(hit || []).length) return NextResponse.json({ error: 'This send was settled elsewhere, so its result was not saved. Reload to see where it stands.' }, { status: 409 })
+    // Whether it went with the intro video, as SCOUT saw it (migration 451; before it, not kept).
+    if (outcome === 'sent') { try { await admin.from('trybe_brands').update({ sent_with_intro: body.withVideo === true }).eq('user_id', ownerId).eq('brand_id', brandId) } catch { /* before migration 451 */ } }
     return NextResponse.json({ ok: true })
   }
 

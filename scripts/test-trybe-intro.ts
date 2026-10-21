@@ -6,7 +6,7 @@
 // kept only when it arrived; and until SCOUT can attach it, the card says
 // requests still go without it, and only admin sees it.
 import { readFileSync, existsSync } from 'node:fs'
-import { introPrompt, introSystem, parseIntro, readIntroVideo, cleanInputs, introSuggest, WORDS_FOR, INTRO_TIPS } from '../lib/trybe-intro'
+import { introPrompt, introSystem, parseIntro, readIntroVideo, cleanInputs, introSuggest, introSample, isTrybeSampleUrl, WORDS_FOR, INTRO_TIPS } from '../lib/trybe-intro'
 
 const fails: string[] = []
 const check = (name: string, ok: boolean | undefined, detail?: unknown) => { if (!ok) fails.push(`${name}${detail !== undefined ? `: ${JSON.stringify(detail)}` : ''}`) }
@@ -47,10 +47,20 @@ check('the clean-up jobs never take it (not burner-, clip- or source-)', /\^\(bu
 const CARD = read('components/labs/TrybeIntroVideo.tsx')
 check('the card has every option: name, years, proud of, niches, socials with links, email, sound, length', ['Your name, or names', 'Making videos for', 'What you are proud of', 'Your niches', 'Where your videos do well', 'Sign off with my email', 'Sound', 'Length'].every((w) => CARD.includes(w)))
 check('the route reads the options and fills the form from the profile', /const inputs = cleanInputs\(body\.inputs\)/.test(ROUTE) && /suggest: introSuggest\(/.test(ROUTE) && /parseIntro\(\(msg\.content/.test(ROUTE))
-check('the card says requests still go without it, until they do', /Not added to requests yet\. Requests still go with your message only\./.test(CARD))
+// ── With every request (Seb, 2026-10-21, read from TRYBE's own Request to Join) ──
+check('the card says where it stands: none, in MVP only, SCOUT too old, or on every request', /No intro yet\. Requests go with your message only\./.test(CARD) && /Saved in MVP, not on TRYBE yet, so requests still go with your message only\./.test(CARD) && /which sends requests without it\. Update SCOUT/.test(CARD) && /On TRYBE\. Every request SCOUT sends now carries it/.test(CARD))
+check('it goes on TRYBE the way TRYBE does it: an address, the file, the link', /requestTrybeApi\('POST', TRYBE_PORTFOLIO_PATH, \{ fileName: v\.name, fileType: type, fileSize: size, uploadType: 'portfolio_video' \}\)/.test(CARD) && /requestTrybePutFile\(\{ fileUrl: v\.url, uploadUrl: d\.uploadUrl/.test(CARD) && /action: 'intro_trybe_saved', url: d\.publicUrl/.test(CARD))
+check('only TRYBE\'s own portfolio link is kept, and only when TRYBE shows the file', isTrybeSampleUrl('https://cdn.jointrybe.com/creators/0415b21f-a43a-4c87-8630-d27fa2c1bc6b/portfolio/1792585888166_72009169199dff1e.mp4') && !isTrybeSampleUrl('https://evil.com/creators/x/portfolio/a.mp4') && !isTrybeSampleUrl('https://cdn.jointrybe.com/brands/x/a.mp4') && /if \(!head\?\.ok\) return NextResponse\.json\(\{ error: `TRYBE does not show the video at its link yet/.test(ROUTE))
+check('a new file is put on TRYBE again', /trybeUrl: null, trybeAt: null/.test(ROUTE))
+const v = readIntroVideo({ url: 'https://x.supabase.co/a.mov', path: 'u/trybe-intro-1.mov', name: 'intro.mov', trybeUrl: 'https://cdn.jointrybe.com/creators/abcdef12/portfolio/1_2.mov' })
+check('a request carries it unless turned off or not on TRYBE', introSample(v, false)?.mimeType === 'video/quicktime' && introSample(v, true) === null && introSample(readIntroVideo({ url: 'https://x.co/a.mp4', path: 'p' }), false) === null)
+check('MVP hands it to every send, and keeps whether it went', /sample \}\)$/m.test(ROUTE.split('\n').find((l) => l.includes("url: sendUrl(row.brand_id, row.brand_url, programId), sample })")) || '') && /sent_with_intro: body\.withVideo === true/.test(ROUTE) && /add column if not exists sent_with_intro boolean/.test(read('supabase/migrations/451_trybe_sent_with_intro.sql')))
+const BG = read('extension/background.js')
+check('SCOUT 1.53.7 sends it as TRYBE\'s button does, only a TRYBE cdn link', /sampleCreativeUrl: u, sampleCreativeMimeType: t/.test(BG) && /cdn\\\.jointrybe\\\.com\\\/creators/.test(BG) && /trybeSend\(\{ url: d\.url, name: d\.name, message: d\.message, sample: d\.sample \}\)/.test(BG) && /withVideo: !!res\.withVideo/.test(BG) && /\/\^\\\/backend\\\/api\\\/creator\\\/profile\\\/portfolio\\\/upload-url\$\//.test(BG))
+check('the run log says when a request went with the video', /Sent with your intro video\./.test(BG) && /Sent with your intro video\. /.test(read('components/labs/TrybeOutreach.tsx')))
 check('only admin sees it on Find brands', /\{isAdmin && <TrybeIntroVideo \/>\}/.test(read('components/labs/TrybeOutreach.tsx')))
 check('optional: off sends the message only, as before, and the card shrinks to one line', /No thanks, message only/.test(CARD) && /Intro video off\.<\/b> Requests go with your message only, as before\./.test(CARD) && /action === 'intro_toggle'/.test(ROUTE) && /add column if not exists intro_off boolean not null default false/.test(read('supabase/migrations/450_trybe_intro.sql')))
 check('migration 450, safe to run twice', existsSync('supabase/migrations/450_trybe_intro.sql') && /add column if not exists intro_video jsonb/.test(read('supabase/migrations/450_trybe_intro.sql')))
 
 if (fails.length) { console.error('trybe-intro failed:\n - ' + fails.join('\n - ')); process.exit(1) }
-console.log('✅ trybe-intro: a personal intro MVP writes (no money, no brand names), kept only when it arrived, said as not sent yet, admin only until SCOUT attaches it')
+console.log('✅ trybe-intro: a personal intro MVP writes (no money, no brand names), put on TRYBE once as TRYBE does it, carried by every request SCOUT 1.53.7 sends, and each one saying whether it went')

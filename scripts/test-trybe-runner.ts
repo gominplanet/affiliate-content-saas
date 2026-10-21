@@ -32,7 +32,7 @@ check('SCOUT paces sends with MVP\'s numbers', new RegExp(`shortUnder: ${OUT.SHO
 // TRYBE's own request from the TRYBE tab the creator left open. No window, no
 // tab, nothing brought forward.
 check('a send opens nothing and brings nothing forward', !/openWorkTab|tabs\.create|windows\.(create|update)|showWorkTab|forward\(\)/.test(SENDER) && /trybeApi\(\{ method: 'POST', path: TRYBE_JOIN_PATH/.test(SENDER))
-check('the runner sends with no MVP tab to bring back', /trybeSend\(\{ url: d\.url, name: d\.name, message: d\.message \}\)/.test(RUNNER))
+check('the runner sends with no MVP tab to bring back (1.53.7: with the intro video MVP gave)', /trybeSend\(\{ url: d\.url, name: d\.name, message: d\.message, sample: d\.sample \}\)/.test(RUNNER))
 
 type Store = Record<string, unknown>
 async function sim(opts: {

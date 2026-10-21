@@ -170,8 +170,8 @@ const BEFORE_SEND = API.slice(0, API.indexOf('1.52.0 SEND TO TRYBE'))
 const UPLOADS = API.slice(API.indexOf('1.52.0 SEND TO TRYBE'))
 check('SCOUT\'s TRYBE bridge reads, posts a message or marks read, and nothing else',
   API.includes('1.52.0 SEND TO TRYBE') && (BEFORE_SEND.match(/method: '([A-Z]+)'/g) || []).every(m => /'(GET|POST)'/.test(m)) && (BEFORE_SEND.match(/method: 'POST'/g) || []).length === 1 && BEFORE_SEND.includes('(messages|read)$/'))
-check('the only other writes are the creator\'s own video submissions (Send to TRYBE) and Request to join',
-  UPLOADS.split('\n').filter(l => /method: '(POST|DELETE)'/.test(l)).every(l => /\\\/backend\\\/api\\\/creator\\\/submissions\\\//.test(l) || l.includes("re: /^\\/backend\\/api\\/discovery\\/creators\\/me\\/requests$/"))
+check('the only other writes are the creator\'s own video submissions (Send to TRYBE), the intro video\'s upload address (1.53.7) and Request to join',
+  UPLOADS.split('\n').filter(l => /method: '(POST|DELETE)'/.test(l)).every(l => /\\\/backend\\\/api\\\/creator\\\/submissions\\\//.test(l) || l.includes("re: /^\\/backend\\/api\\/discovery\\/creators\\/me\\/requests$/") || l.includes("re: /^\\/backend\\/api\\/creator\\/profile\\/portfolio\\/upload-url$/"))
   && UPLOADS.split('\n').filter(l => /method: 'POST'/.test(l) && l.includes('discovery')).length === 1)
 // 1.53.2: Request to join is SCOUT's own send only. MVP's page cannot make it.
 check('a request to a brand is never one MVP\'s page asks SCOUT for', /if \(String\(msg\.method \|\| ''\)\.toUpperCase\(\) !== 'GET' && TRYBE_SEND_ONLY\.test\(String\(msg\.path \|\| ''\)\)\) \{ clearTimeout\(timeout\); sendResponse\(\{ ok: false, error: 'not-allowed' \}\)/.test(BG)

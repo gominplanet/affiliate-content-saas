@@ -1298,16 +1298,17 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
         setCurrent(b.brand_id)
         patch(b.brand_id, { status: 'sending', send_started_at: new Date().toISOString(), error: null })
         say(b.name, ownTab ? 'SCOUT is sending it through your TRYBE tab.' : 'SCOUT is opening TRYBE to send it.', 'info')
-        const res = await requestTrybeSend(c.url, c.name, c.message)
+        // With the intro video's TRYBE link when MVP gave one (SCOUT 1.53.7 sends it).
+        const res = await requestTrybeSend(c.url, c.name, c.message, c.sample ?? null)
         // What TRYBE listed instead, when SCOUT could not find the brand (1.47.1).
         const seen = Array.isArray(res.seen) && res.seen.length ? `; TRYBE listed: ${res.seen.slice(0, 5).join(', ')}` : ''
         const err = res.error ? `${res.error}${res.steps?.length ? ` (got to: ${res.steps.slice(-3).join(', ')}${seen})` : ''}` : null
-        const recorded = await api({ action: 'result', brandId: b.brand_id, outcome: res.outcome, error: err }).then(() => true).catch(() => false)
+        const recorded = await api({ action: 'result', brandId: b.brand_id, outcome: res.outcome, error: err, withVideo: res.withVideo === true }).then(() => true).catch(() => false)
         patch(b.brand_id, {
           status: res.outcome === 'sent' ? 'sent' : res.outcome === 'already' ? 'already' : res.outcome === 'failed' ? 'failed' : 'sending',
           error: res.outcome === 'sent' || res.outcome === 'already' ? null : (err || 'Not confirmed'),
         })
-        if (res.outcome === 'sent') say(b.name, ownTab ? (res.steps?.includes('in your sent requests') ? 'Sent. It is in your TRYBE sent requests.' : 'Sent. TRYBE accepted it.') : 'Sent. TRYBE closed the request box.', 'ok')
+        if (res.outcome === 'sent') say(b.name, `${res.withVideo ? 'Sent with your intro video. ' : ''}${ownTab ? (res.steps?.includes('in your sent requests') ? (res.withVideo ? 'It is in your TRYBE sent requests.' : 'Sent. It is in your TRYBE sent requests.') : (res.withVideo ? 'TRYBE accepted it.' : 'Sent. TRYBE accepted it.')) : 'Sent. TRYBE closed the request box.'}`, 'ok')
         else if (res.outcome === 'already') say(b.name, 'TRYBE already shows a request to this brand.', 'warn')
         else if (res.outcome === 'failed') say(b.name, `Not sent: ${sendWords(err) || 'SCOUT could not send it'}.`, 'bad')
         else say(b.name, `Not confirmed: ${sendWords(err) || 'TRYBE did not show the box closing'}. Check TRYBE's Pending Requests.`, 'warn')

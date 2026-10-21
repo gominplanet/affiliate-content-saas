@@ -12,7 +12,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { Video, Loader2, Sparkles, Copy, Check, Trash2, UploadCloud, AlertTriangle } from 'lucide-react'
-import { INTRO_TIPS, INTRO_MAX_BYTES, INTRO_SECONDS, YEARS_CHOICES, SOCIALS, TONES, LENGTHS, type IntroLine, type IntroVideo, type IntroInputs, type SocialId, type IntroTone } from '@/lib/trybe-intro'
+import { INTRO_TIPS, INTRO_MAX_BYTES, INTRO_SECONDS, YEARS_CHOICES, SOCIALS, TONES, LENGTHS, TRYBE_PORTFOLIO_PATH, introMime, type IntroLine, type IntroVideo, type IntroInputs, type SocialId, type IntroTone } from '@/lib/trybe-intro'
+import { getScoutStatus, requestTrybeApi, requestTrybePutFile } from '@/lib/extension-frame'
+import { SCOUT_TRYBE_INTRO_MIN_VERSION, scoutAtLeast } from '@/lib/scout-version'
+import { TRYBE_NOT_OPEN, TRYBE_NOT_OPEN_WORDS } from '@/lib/trybe-tab'
 
 const ROSE = '#E11D48'
 type Script = { lines: IntroLine[]; words: number; inputs?: Partial<IntroInputs>; at?: string }
@@ -45,7 +48,38 @@ export default function TrybeIntroVideo() {
   const [uploading, setUploading] = useState<number | null>(null)
   const [copied, setCopied] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // ON TRYBE (SCOUT 1.53.7): the intro in the creator's TRYBE portfolio, the
+  // link every request carries. The SCOUT in this Chrome decides whether it can.
+  const [scout, setScout] = useState<{ installed: boolean; version: string | null } | null>(null)
+  const [onTrybeBusy, setOnTrybeBusy] = useState(false)
+  const scoutReady = !!scout?.installed && scoutAtLeast(scout.version, SCOUT_TRYBE_INTRO_MIN_VERSION)
   const file = useRef<HTMLInputElement>(null)
+  useEffect(() => { getScoutStatus().then(setScout).catch(() => setScout({ installed: false, version: null })) }, [])
+
+  /** The intro into the creator's TRYBE portfolio, the way TRYBE's own Upload
+   *  Preview does: an address from TRYBE, the file copied there by SCOUT from
+   *  MVP's storage, the link kept only when TRYBE shows the file at it. */
+  const putOnTrybe = useCallback(async (v: IntroVideo) => {
+    setOnTrybeBusy(true); setError(null)
+    try {
+      let size = v.bytes
+      if (!size) { const h = await fetch(v.url, { method: 'HEAD' }).catch(() => null); size = Number(h?.headers.get('content-length') || 0) || null }
+      if (!size) throw new Error('MVP could not tell the size of the file')
+      const type = introMime(v.name)
+      const u = await requestTrybeApi('POST', TRYBE_PORTFOLIO_PATH, { fileName: v.name, fileType: type, fileSize: size, uploadType: 'portfolio_video' })
+      const j = (u.json && typeof u.json === 'object' ? u.json : {}) as { data?: { uploadUrl?: string; publicUrl?: string }; uploadUrl?: string; publicUrl?: string }
+      const d = j.data || j
+      if (u.error === TRYBE_NOT_OPEN) throw new Error(TRYBE_NOT_OPEN_WORDS)
+      if (!u.ok || !d.uploadUrl || !d.publicUrl) throw new Error(`TRYBE gave no upload address (${u.status || u.error || 'no answer'})`)
+      const put = await requestTrybePutFile({ fileUrl: v.url, uploadUrl: d.uploadUrl, contentType: type })
+      if (!put.ok) throw new Error(`the file did not reach TRYBE (${put.error || put.status || 'no answer'})`)
+      const saved = await api({ action: 'intro_trybe_saved', url: d.publicUrl })
+      setVideo(saved.video)
+      toast.success('Your intro is on TRYBE')
+    } catch (e) {
+      setError(`Your intro is saved in MVP, but not on TRYBE yet: ${e instanceof Error ? e.message : 'no answer'}. Requests go with your message only until it is.`)
+    } finally { setOnTrybeBusy(false) }
+  }, [])
 
   useEffect(() => {
     api({ action: 'intro_get' }).then((d) => {
@@ -97,10 +131,13 @@ export default function TrybeIntroVideo() {
       const d = await api({ action: 'intro_saved', path: u.path, name: f.name })
       setVideo(d.video)
       toast.success('Intro video saved in MVP')
+      // Straight on to TRYBE when this Chrome's SCOUT can do it.
+      const st = await getScoutStatus().catch(() => null)
+      if (st?.installed && scoutAtLeast(st.version, SCOUT_TRYBE_INTRO_MIN_VERSION) && d.video) void putOnTrybe(d.video)
     } catch (e) {
       setError(`The intro did not upload: ${e instanceof Error ? e.message : 'no answer'}. Nothing was saved.`)
     } finally { setUploading(null); if (file.current) file.current.value = '' }
-  }, [])
+  }, [putOnTrybe])
 
   const toggle = useCallback(async (next: boolean) => {
     setError(null)
@@ -253,10 +290,23 @@ export default function TrybeIntroVideo() {
           )}
           {uploading !== null && video && <p className="mt-2 text-[12px] inline-flex items-center gap-1" style={soft}><Loader2 size={12} className="animate-spin" /> Uploading the new one: {uploading}%</p>}
           <input ref={file} type="file" accept="video/mp4,video/quicktime,video/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) void upload(f) }} />
-          {/* What it does yet, said plainly (failure looks different from success). */}
-          <p className="mt-3 text-[12px] rounded-lg px-2.5 py-2" style={{ background: 'rgba(180,83,9,0.08)', color: '#B45309' }}>
-            Not added to requests yet. Requests still go with your message only. MVP adds this video to each one as soon as SCOUT can.
-          </p>
+          {/* WHERE IT STANDS, said plainly (failure looks different from success). */}
+          {(() => {
+            const amber = { background: 'rgba(180,83,9,0.08)', color: '#B45309' }
+            const green = { background: 'rgba(22,163,74,0.10)', color: '#15803D' }
+            if (!video) return <p className="mt-3 text-[12px] rounded-lg px-2.5 py-2" style={amber}>No intro yet. Requests go with your message only.</p>
+            if (onTrybeBusy) return <p className="mt-3 text-[12px] rounded-lg px-2.5 py-2 inline-flex items-center gap-1.5" style={amber}><Loader2 size={12} className="animate-spin" /> Putting your intro on TRYBE through SCOUT...</p>
+            if (!video.trybeUrl) return (
+              <div className="mt-3 text-[12px] rounded-lg px-2.5 py-2 space-y-1.5" style={amber}>
+                <p>Saved in MVP, not on TRYBE yet, so requests still go with your message only.</p>
+                {scoutReady
+                  ? <button onClick={() => void putOnTrybe(video)} className="rounded-lg px-2.5 py-1 text-[12px] font-semibold text-white" style={{ background: ROSE }}>Put it on TRYBE</button>
+                  : <p>This needs SCOUT {SCOUT_TRYBE_INTRO_MIN_VERSION}{scout?.version ? ` (this Chrome has ${scout.version})` : ''}: open chrome://extensions, turn on Developer mode and press Update.</p>}
+              </div>
+            )
+            if (!scoutReady) return <p className="mt-3 text-[12px] rounded-lg px-2.5 py-2" style={amber}>On TRYBE, but this Chrome has SCOUT {scout?.version || 'not installed'}, which sends requests without it. Update SCOUT to {SCOUT_TRYBE_INTRO_MIN_VERSION}.</p>
+            return <p className="mt-3 text-[12px] rounded-lg px-2.5 py-2 inline-flex items-center gap-1.5" style={green}><Check size={12} /> On TRYBE. Every request SCOUT sends now carries it, and each one says so in the run log.</p>
+          })()}
         </div>
       </div>
     </section>

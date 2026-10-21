@@ -1259,12 +1259,15 @@ export interface TrybeSendResult {
   outcome: 'sent' | 'already' | 'failed' | 'unconfirmed'; error?: string | null; steps?: string[]
   /** SCOUT 1.47.1+: the brands TRYBE listed when this one was not among them. */
   seen?: string[]
+  /** SCOUT 1.53.7+: true when the request went with the intro video. */
+  withVideo?: boolean
 }
 
 /** SCOUT presses Request to Join for one brand with this message. A missing
  *  answer is 'unconfirmed', never 'failed': SCOUT may have pressed Send. */
-export async function requestTrybeSend(url: string, name: string, message: string): Promise<TrybeSendResult> {
-  const res = await sendToExtension<TrybeSendResult>({ type: 'MVP_TRYBE_SEND', url, name, message }, 160_000)
+export async function requestTrybeSend(url: string, name: string, message: string, sample?: { url: string; mimeType: string } | null): Promise<TrybeSendResult> {
+  // sample (SCOUT 1.53.7+): the intro video's TRYBE link, sent with the request.
+  const res = await sendToExtension<TrybeSendResult>({ type: 'MVP_TRYBE_SEND', url, name, message, sample: sample || null }, 160_000)
   return res && res.outcome ? res : { outcome: 'unconfirmed', error: 'SCOUT did not answer.' }
 }
 

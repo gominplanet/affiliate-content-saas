@@ -161,14 +161,38 @@ export function parseIntro(raw: string, seconds: (typeof LENGTHS)[number] = 30):
   return lines.length >= 2 ? { lines, words } : null
 }
 
-/** The intro the creator uploaded, as MVP keeps it. */
-export interface IntroVideo { url: string; path: string; name: string; bytes: number | null; uploadedAt: string }
+/** The intro the creator uploaded, as MVP keeps it, and its copy in their
+ *  TRYBE portfolio (the link every request carries) once it is there. */
+export interface IntroVideo { url: string; path: string; name: string; bytes: number | null; uploadedAt: string; trybeUrl: string | null; trybeAt: string | null }
+
+/** TRYBE's own link for a portfolio video (cdn.jointrybe.com), the only kind
+ *  a request carries (SCOUT checks the same). Read from TRYBE's Request to
+ *  Join, 2026-10-21: POST /backend/api/creator/profile/portfolio/upload-url
+ *  { fileName, fileType, fileSize, uploadType: 'portfolio_video' } gives
+ *  { uploadUrl, publicUrl }; the file is PUT to uploadUrl; the request sends
+ *  { brandId, programId, message, sampleCreativeUrl, sampleCreativeMimeType }. */
+export const TRYBE_PORTFOLIO_PATH = '/backend/api/creator/profile/portfolio/upload-url'
+const TRYBE_CDN = /^https:\/\/cdn\.jointrybe\.com\/creators\/[A-Za-z0-9-]{6,80}\/portfolio\/[\w.-]{3,160}$/
+export function isTrybeSampleUrl(u: unknown): u is string { return typeof u === 'string' && TRYBE_CDN.test(u) }
+
+/** The type TRYBE is told, from the file's name. Pure. */
+export function introMime(name: string): 'video/mp4' | 'video/quicktime' { return /\.mov$/i.test(name || '') ? 'video/quicktime' : 'video/mp4' }
 
 /** A stored intro read back, or null. Pure. */
 export function readIntroVideo(v: unknown): IntroVideo | null {
   const o = v && typeof v === 'object' ? v as Record<string, unknown> : null
   if (!o || typeof o.url !== 'string' || !/^https:\/\//.test(o.url) || typeof o.path !== 'string') return null
-  return { url: o.url, path: o.path, name: typeof o.name === 'string' ? o.name.slice(0, 200) : 'intro.mp4', bytes: typeof o.bytes === 'number' ? o.bytes : null, uploadedAt: typeof o.uploadedAt === 'string' ? o.uploadedAt : '' }
+  return {
+    url: o.url, path: o.path, name: typeof o.name === 'string' ? o.name.slice(0, 200) : 'intro.mp4', bytes: typeof o.bytes === 'number' ? o.bytes : null, uploadedAt: typeof o.uploadedAt === 'string' ? o.uploadedAt : '',
+    trybeUrl: isTrybeSampleUrl(o.trybeUrl) ? o.trybeUrl : null, trybeAt: typeof o.trybeAt === 'string' ? o.trybeAt : null,
+  }
+}
+
+/** What a request carries: the intro on TRYBE, unless the creator turned it
+ *  off or it is not on TRYBE yet (then the message goes alone). Pure. */
+export function introSample(video: IntroVideo | null, off: boolean): { url: string; mimeType: string } | null {
+  if (off || !video?.trybeUrl) return null
+  return { url: video.trybeUrl, mimeType: introMime(video.name) }
 }
 
 /** What MVP already knows, to fill the form in: the creator's profile. Pure. */

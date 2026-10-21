@@ -12575,7 +12575,7 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
   if (msg.type === 'MVP_TRYBE_SEND') {
     // Past the press, a late answer is 'unconfirmed', never 'failed'.
     const timeout = setTimeout(() => sendResponse({ outcome: 'unconfirmed', error: 'SCOUT took too long to hear back from TRYBE.' }), 150000)
-    trybeSend({ url: msg.url, name: msg.name, message: msg.message })
+    trybeSend({ url: msg.url, name: msg.name, message: msg.message, sample: msg.sample })
       .then((res) => { clearTimeout(timeout); sendResponse(res) })
       .catch((e) => { clearTimeout(timeout); sendResponse({ outcome: 'failed', error: e && e.message ? e.message : 'error' }) })
     return true // async
@@ -15105,6 +15105,13 @@ const TRYBE_API_ALLOW = [
   // { brandId, message }. Sent by trybeSend only, on MVP's daily limit and
   // pacing; MVP's page cannot send it through MVP_TRYBE_API (TRYBE_SEND_ONLY).
   { method: 'POST', re: /^\/backend\/api\/discovery\/creators\/me\/requests$/ },
+  // 1.53.7 THE INTRO VIDEO (Seb, 2026-10-21: "have that one single intro
+  // video be uploaded ... and then MVP uses that video on all of the
+  // requests"). The address TRYBE's own Request to Join asks for to put a
+  // preview video in the creator's portfolio ({ fileName, fileType, fileSize,
+  // uploadType: 'portfolio_video' } -> { uploadUrl, publicUrl }); the file goes
+  // by MVP_TRYBE_PUT_FILE, and each request then carries its cdn link.
+  { method: 'POST', re: /^\/backend\/api\/creator\/profile\/portfolio\/upload-url$/ },
 ]
 /** Requests only SCOUT's own send makes, never one asked for by a page. */
 const TRYBE_SEND_ONLY = /^\/backend\/api\/discovery\/creators\/me\/requests$/
@@ -15600,7 +15607,17 @@ function trybeSaid(r) {
   return String(typeof w === 'string' ? w : JSON.stringify(w)).replace(/\s+/g, ' ').trim().slice(0, 160)
 }
 
-async function trybeSend({ url, name, message }) {
+/** 1.53.7: the creator's intro video in their TRYBE portfolio, as a request
+ *  carries it, or null. Only a link on TRYBE's own cdn, in a creator's
+ *  portfolio, is ever sent. */
+function trybeSampleOf(sample) {
+  const u = sample && typeof sample.url === 'string' ? sample.url : ''
+  if (!/^https:\/\/cdn\.jointrybe\.com\/creators\/[A-Za-z0-9-]{6,80}\/portfolio\/[\w.-]{3,160}$/.test(u)) return null
+  const t = sample && typeof sample.mimeType === 'string' && /^video\/(mp4|quicktime)$/.test(sample.mimeType) ? sample.mimeType : 'video/mp4'
+  return { sampleCreativeUrl: u, sampleCreativeMimeType: t }
+}
+
+async function trybeSend({ url, name, message, sample }) {
   if (!(await hasTrybeAccess())) return { outcome: 'failed', error: 'no-access' }
   const safe = trybeSafeUrl(url)
   if (!safe) return { outcome: 'failed', error: 'bad-url' }
@@ -15622,13 +15639,17 @@ async function trybeSend({ url, name, message }) {
     const program = listed ? { id: listed, name: "the one in TRYBE's brand list" } : details.ok ? trybeProgramOf(details.json) : null
     const steps = [program ? `program: ${program.name}` : details.ok ? 'no program listed' : `programs not read (${details.status || details.error || 'no answer'})`]
     asked = true
-    const r = await trybeApi({ method: 'POST', path: TRYBE_JOIN_PATH, body: program ? { brandId, programId: program.id, message: String(message) } : { brandId, message: String(message) } })
+    // With the intro video when MVP gave one (1.53.7), as TRYBE's own button sends it.
+    const video = trybeSampleOf(sample)
+    const body = Object.assign(program ? { brandId, programId: program.id, message: String(message) } : { brandId, message: String(message) }, video || {})
+    if (video) steps.push('with your intro video')
+    const r = await trybeApi({ method: 'POST', path: TRYBE_JOIN_PATH, body })
     const said = trybeSaid(r)
     steps.push('asked TRYBE')
     if (r.ok) {
       await _sleep(1500)
       const after = await trybeApi({ method: 'GET', path: TRYBE_SENT_PATH })
-      return { outcome: 'sent', steps: steps.concat(after.ok && trybeSentHas(after.json, brandId) ? 'in your sent requests' : 'accepted by TRYBE') }
+      return { outcome: 'sent', withVideo: !!video, steps: steps.concat(after.ok && trybeSentHas(after.json, brandId) ? 'in your sent requests' : 'accepted by TRYBE') }
     }
     if (r.status === 409) return { outcome: 'already', steps: steps.concat(`already asked${said ? ` (${said})` : ''}`) }
     if (r.status === 401) return { outcome: 'failed', error: 'not-signed-in', steps }
@@ -15638,7 +15659,7 @@ async function trybeSend({ url, name, message }) {
     // No clear answer: looked for, never sent again.
     await _sleep(2500)
     const after = await trybeApi({ method: 'GET', path: TRYBE_SENT_PATH })
-    if (after.ok && trybeSentHas(after.json, brandId)) return { outcome: 'sent', steps: steps.concat('in your sent requests') }
+    if (after.ok && trybeSentHas(after.json, brandId)) return { outcome: 'sent', withVideo: !!video, steps: steps.concat('in your sent requests') }
     return { outcome: 'unconfirmed', error: `TRYBE did not answer clearly (${r.status || r.error || 'no answer'}${said ? `: ${said}` : ''}), so SCOUT cannot tell whether it was sent.`, steps }
   } catch (e) {
     const why = e && e.message ? e.message : 'exception'
@@ -15750,16 +15771,16 @@ async function trybeRunTick() {
     st.current = { id, name: d.name || id }; st.busyAt = Date.now(); st.usedToday = d.usedToday
     trybeRunSay(st, st.current.name, 'SCOUT is sending it through your TRYBE tab.', 'info')
     await trybeRunSave(st)
-    const res = await trybeSend({ url: d.url, name: d.name, message: d.message })
+    const res = await trybeSend({ url: d.url, name: d.name, message: d.message, sample: d.sample })
     const seen = Array.isArray(res.seen) && res.seen.length ? `; TRYBE listed: ${res.seen.slice(0, 5).join(', ')}` : ''
     // The last few steps (1.50.1): "not brought forward" alone hid whether
     // SCOUT had searched at all.
     const err = res.error ? `${res.error}${res.steps && res.steps.length ? ` (got to: ${res.steps.slice(-3).join(', ')}${seen})` : ''}` : null
-    const rec = await trybeRunApi(st.origin, { action: 'result', brandId: id, outcome: res.outcome, error: err })
+    const rec = await trybeRunApi(st.origin, { action: 'result', brandId: id, outcome: res.outcome, error: err, withVideo: !!res.withVideo })
     // Read again: a Stop pressed during the send is kept.
     st = (await trybeRunState()) || st
     const who = st.current ? st.current.name : id
-    if (res.outcome === 'sent') trybeRunSay(st, who, (res.steps || []).includes('in your sent requests') ? 'Sent. It is in your TRYBE sent requests.' : 'Sent. TRYBE accepted it.', 'ok')
+    if (res.outcome === 'sent') trybeRunSay(st, who, `${res.withVideo ? 'Sent with your intro video.' : 'Sent.'} ${(res.steps || []).includes('in your sent requests') ? 'It is in your TRYBE sent requests.' : 'TRYBE accepted it.'}`, 'ok')
     else if (res.outcome === 'already') trybeRunSay(st, who, 'TRYBE already shows a request to this brand.', 'warn')
     else if (res.outcome === 'failed') trybeRunSay(st, who, `Not sent: ${err || 'SCOUT could not send it'}.`, 'bad')
     else trybeRunSay(st, who, `Not confirmed: ${err || 'TRYBE did not show the box closing'}. Check TRYBE’s Pending Requests.`, 'warn')

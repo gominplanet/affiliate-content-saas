@@ -8,12 +8,12 @@
  *     store installs to "update" — isScoutOutdated survives only as a
  *     low-level helper, not a user-facing gate.
  */
-export const SCOUT_LATEST_VERSION = '1.53.6'
+export const SCOUT_LATEST_VERSION = '1.53.7'
 
 /** One-line "what's new". No longer shown in a nag (store installs auto-update);
  *  kept as a changelog note for whoever bumps the version. */
 export const SCOUT_WHATS_NEW =
-  'Hashtags: SCOUT counts Instagram tags quietly, only through an Instagram tab you already have open, so MVP picks tags with 10K to 200K posts. Nothing opens or shows.'
+  'TRYBE: SCOUT puts your intro video in your TRYBE portfolio once and adds it to every request to join a brand, the way TRYBE\'s own Upload Preview does. Includes 1.53.6 (quiet Instagram tag counts).'
 
 /** Canonical download for the latest SCOUT build (public/, rebuilt from
  *  extension/ on every version bump). Used by the EPC banner + the top-bar
@@ -67,6 +67,10 @@ export const SCOUT_TRYBE_TAB_OPEN_MIN_VERSION = '1.53.5'
 /** SCOUT reads Instagram tag counts quietly, only through an Instagram tab the
  *  creator already has open, never opening one (MVP_HASHTAG_INSTAGRAM quiet). */
 export const SCOUT_IG_QUIET_MIN_VERSION = '1.53.6'
+
+/** SCOUT puts the intro video in the creator's TRYBE portfolio and sends it
+ *  with each Request to Join (sampleCreativeUrl; lib/trybe-intro). */
+export const SCOUT_TRYBE_INTRO_MIN_VERSION = '1.53.7'
 
 export const SCOUT_STUDIO_MIN_VERSION = '1.20.0'
 
