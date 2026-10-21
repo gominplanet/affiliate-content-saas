@@ -23,6 +23,7 @@ import { INTRO_MAX_BYTES, cleanInputs, introSystem, introPrompt, parseIntro, rea
 import { sellsOf, type SellsRead } from '@/lib/trybe-sells'
 import { outreachNiche } from '@/lib/outreach-niche'
 import { pickScore, creatorProgramOf, readTopCreatives, tallyTop, META_ADS_FRESH_MS, readPriorities, weighScore, staticsOf, bucketDollars } from '@/lib/trybe-pick'
+import { adsPerCreator } from '@/lib/brand-popularity'
 import { readDirStats, rawKeys, amazonOf, nameVariants, readFilters, filterCheck, spendingOf, productOnAmazon, filmedProducts, mergeSnapshot, pickBaseline, crowdOf, creatorSpendOf, snapshotKey, isNewBrand, mixPick, mixOf, SNAPSHOT_KEEP_DAYS, type AmazonOf, type AmazonFilmed, type AmazonVideoProduct, type CcCampaign, type FilterId, type Snapshot } from '@/lib/trybe-finder'
 import { payLines, payReadOf, estimatePay } from '@/lib/trybe-pay'
 import { readTopWords, firstHook, keepHooks, readHooksBody, hooksBlock, type TopHook } from '@/lib/trybe-hooks'
@@ -1253,10 +1254,17 @@ export async function POST(request: Request) {
     // The pick signals (migration 425): asked for, and left out when the
     // database does not have them yet, so the list never breaks on them.
     const PICK_COLS = ', tiktok_handle, tiktok_shop, socials_checked_at, meta_ads, meta_ads_checked_at, top100_hits, top100_best_rank, top100_checked_at, earnings_bucket'
-    let COLS = BASE_COLS + PICK_COLS
+    // How known each brand is (migration 452, lib/brand-popularity): its
+    // website's rank and Google's suggestions, left out the same way.
+    const POP_COLS = ', web_domain, web_rank, web_rank_was, web_rank_days, web_rank_checked_at, google_searches, google_phrases, google_checked_at'
+    let COLS = BASE_COLS + PICK_COLS + POP_COLS
     {
       const probe = await admin.from('trybe_directory').select(COLS).limit(1)
-      if (probe.error && /does not exist|schema cache/i.test(probe.error.message)) COLS = BASE_COLS
+      if (probe.error && /does not exist|schema cache/i.test(probe.error.message)) {
+        COLS = BASE_COLS + PICK_COLS
+        const again = await admin.from('trybe_directory').select(COLS).limit(1)
+        if (again.error && /does not exist|schema cache/i.test(again.error.message)) COLS = BASE_COLS
+      }
     }
     const sort: BrowseSort = (BROWSE_SORTS as readonly string[]).includes(String(body.sort)) ? body.sort as BrowseSort : 'match'
     const payType: PayType = (PAY_TYPES as readonly string[]).includes(String(body.payType)) ? body.payType as PayType : 'any'
@@ -1265,7 +1273,7 @@ export async function POST(request: Request) {
     // Best bets and Fewest creators rank a wider pool: the search keeps its
     // best keyword matches first, and small brands with few creators (the
     // best bets) would never reach the list from 400.
-    const pool = sort === 'picks' || sort === 'creators' || sort === 'spend' || sort === 'payouts' ? 1200 : 400
+    const pool = sort === 'picks' || sort === 'creators' || sort === 'spend' || sort === 'payouts' || sort === 'adsPerCreator' || readFilters(body.filters).minScore ? 1200 : 400
     // FINDER (Seb, 2026-10-14, after Rob's Oink Blue video): the creator's
     // priorities, stars and filters. Priorities sent by the page win, so a
     // change ranks at once; else the saved ones.
@@ -1417,7 +1425,8 @@ export async function POST(request: Request) {
     const matched = matchedAll.filter(x => {
       const c = filterCheck({ perVideo: estBy.get(x.r.brand_id)?.dollars ?? null, creators: typeof x.r.total_creators === 'number' ? x.r.total_creators : null, stats: statsBy.get(x.r.brand_id)!, earningsBucket: x.r.earnings_bucket ?? null, amazon: amazonBy.get(x.r.brand_id) ?? null, starred: starredIds.has(x.r.brand_id), crowd: crowdBy.get(x.r.brand_id)?.level ?? null,
         spending: spendingOf(x.r), isNew: newBy.get(x.r.brand_id), reviewDays: results.review.get(x.r.brand_id)?.reviewDays ?? null, sells: sellsBy.get(x.r.brand_id) ?? null, spend: spendBy.get(x.r.brand_id)?.dollars ?? null,
-        tiktokShop: tiktokShopOf(x.r), tierUp: tierLog ? !!tierLog.get(x.r.brand_id)?.up : null }, filters)
+        tiktokShop: tiktokShopOf(x.r), tierUp: tierLog ? !!tierLog.get(x.r.brand_id)?.up : null,
+        score: typeof x.r.trybe_score === 'number' ? x.r.trybe_score : null }, filters)
       for (const f of c.failed) hiddenBy[f] = (hiddenBy[f] ?? 0) + 1
       for (const f of c.blank) blankBy[f] = (blankBy[f] ?? 0) + 1
       if (!c.pass) return false
@@ -1472,6 +1481,11 @@ export async function POST(request: Request) {
     // Highest total payouts: TRYBE's own payout tier, then most creators
     // (TrybeDaily's "Payouts, then creators"). No tier: after the rest.
     const payoutOrder = (x: typeof ranked[number]) => bucketDollars(x.r.earnings_bucket) ?? statsBy.get(x.r.brand_id)?.paidOut ?? -1
+    // MOST META ADS PER CREATOR (Seb, 2026-10-21, the special search): Meta
+    // ads counted in the last four weeks, for each creator it has. A brand
+    // with no count comes after, by TRYBE score, never as if it had none.
+    const metaFresh = (r: Record<string, any>) => typeof r.meta_ads === 'number' && r.meta_ads_checked_at && Date.now() - Date.parse(r.meta_ads_checked_at) < 4 * META_ADS_FRESH_MS // eslint-disable-line @typescript-eslint/no-explicit-any
+    const perCreator = (x: typeof ranked[number]) => (metaFresh(x.r) ? adsPerCreator(x.r.meta_ads, typeof x.r.total_creators === 'number' ? x.r.total_creators : null) : null) ?? -1
     ranked.sort((a, b) => knownFirst(a, b) || payKnownFirst(a, b) ||
       (sort === 'pay' ? payOrder(b) - payOrder(a) || byMatch(a, b)
         : sort === 'spend' ? spendOrder(b) - spendOrder(a) || byMatch(a, b)
@@ -1480,6 +1494,7 @@ export async function POST(request: Request) {
           : sort === 'fit' ? fit(b.r.brand_id) - fit(a.r.brand_id) || byMatch(a, b)
             : sort === 'picks' ? weighed(b) - weighed(a) || byMatch(a, b)
             : sort === 'newest' ? time(b.r.first_seen_at) - time(a.r.first_seen_at) || byMatch(a, b)
+            : sort === 'adsPerCreator' ? perCreator(b) - perCreator(a) || (b.r.trybe_score ?? 0) - (a.r.trybe_score ?? 0) || byMatch(a, b)
               : byMatch(a, b)))
     // Passed on (skipped) leaves the list too, like Oink's Pass, until undone.
     const DONE = ['drafted', 'sending', 'sent', 'already', 'failed', 'removed', 'skipped']
@@ -1487,9 +1502,25 @@ export async function POST(request: Request) {
     const hiddenMine = body.includeMine === true ? 0 : ranked.filter(x => isDone(x.r.brand_id)).length
     const shown = body.includeMine === true ? ranked : ranked.filter(x => !isDone(x.r.brand_id))
     const top = shown.slice(0, want)
+    // HOW MUCH OF THE LIST IS READ (Star brands): Meta ads, website rank and
+    // Google, counted over every brand matched, not only the ones shown, so
+    // a list ranked on a few counts never looks complete. And the brands with
+    // no fresh Meta count, in list order, for SCOUT to count next.
+    const readCounts = {
+      total: shown.length,
+      meta: shown.filter(x => metaFresh(x.r)).length,
+      web: shown.filter(x => x.r.web_rank_checked_at).length,
+      google: shown.filter(x => x.r.google_checked_at).length,
+      popularityReady: COLS.includes('web_rank'),
+    }
+    const metaTodo = sort === 'adsPerCreator'
+      ? shown.filter(x => !x.r.meta_ads_checked_at || Date.now() - Date.parse(x.r.meta_ads_checked_at) > META_ADS_FRESH_MS)
+        .sort((a, b) => (b.r.trybe_score ?? 0) - (a.r.trybe_score ?? 0)).slice(0, 120).map(x => ({ brand_id: x.r.brand_id, name: x.r.name }))
+      : undefined
     return NextResponse.json({
       ok: true,
       matched: shown.length,
+      readCounts, ...(metaTodo ? { metaTodo } : {}),
       hiddenMine,
       payUnknown,
       payOther,
@@ -1544,6 +1575,10 @@ export async function POST(request: Request) {
           tier_up: (() => { const t = tierLog?.get(r.brand_id); return t?.up ? { before: t.before, after: t.after, at: t.at } : null })(),
           tiktok_shop: tiktokShopOf(r),
           top100_hits: topRead ? (r.top100_hits ?? 0) : null, top100_best_rank: r.top100_best_rank ?? null,
+          // How known it is (migration 452): null with no checked_at is not read.
+          web_domain: r.web_domain ?? null, web_rank: r.web_rank ?? null, web_rank_was: r.web_rank_was ?? null, web_rank_days: r.web_rank_days ?? null, web_rank_checked_at: r.web_rank_checked_at ?? null,
+          google_searches: r.google_searches ?? null, google_phrases: r.google_phrases ?? [], google_checked_at: r.google_checked_at ?? null,
+          ads_per_creator: metaFresh(r) ? adsPerCreator(r.meta_ads, typeof r.total_creators === 'number' ? r.total_creators : null) : null,
         }
       }),
     })

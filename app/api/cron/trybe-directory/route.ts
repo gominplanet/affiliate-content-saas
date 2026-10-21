@@ -9,6 +9,14 @@
 // Shopify's public product list. Highest TRYBE score first. A site that could
 // not be read is stamped with why and not asked again for a month.
 //
+// HOW KNOWN EACH BRAND IS (migration 452, lib/brand-popularity; Seb,
+// 2026-10-21): its website's rank among the world's websites (the Tranco
+// list, one question a second) and what Google suggests after its name. Read
+// first each run for about 45 seconds, highest TRYBE score first, about 240
+// brands an hour, again after two weeks. A source that did not answer leaves
+// the brand not read, and after two misses in a row it is not asked again
+// that run.
+//
 // Auth: Vercel cron carries `Authorization: Bearer ${CRON_SECRET}`.
 
 import { NextResponse } from 'next/server'
@@ -17,6 +25,8 @@ import { researchBrandSite, normalizeSite, type SiteResearch } from '@/lib/trybe
 import { siteSocials } from '@/lib/trybe-pick'
 import { safeFetch } from '@/lib/ssrf-guard'
 import { siteSearchText } from '@/lib/trybe-directory'
+import { siteDomain, fetchWebRank, googleSeed, brandSearches, POPULARITY_FRESH_MS } from '@/lib/brand-popularity'
+import { suggest } from '@/lib/search-suggest'
 
 export const runtime = 'nodejs'
 export const maxDuration = 120
@@ -32,6 +42,72 @@ const SOCIALS_PER_RUN = 80
 const RETRY_FAILED_MS = 30 * 86_400_000
 /** Stop starting new reads this close to the time limit. */
 const BUDGET_MS = 95_000
+/** The popularity reads' share of each run, and brands asked per source. */
+const POP_BUDGET_MS = 45_000
+const POP_PER_RUN = 40
+/** Tranco answers one question a second. */
+const TRANCO_GAP_MS = 1_100
+const GOOGLE_GAP_MS = 600
+const wait = (ms: number) => new Promise((r) => setTimeout(r, ms))
+
+type PopRow = { brand_id: string; name: string; website: string | null }
+interface PopRun { web: { read: number; notRanked: number; shared: number; missed: number }; google: { read: number; missed: number }; missing?: boolean }
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function popularityPass(sb: any, started: number): Promise<PopRun> {
+  const run: PopRun = { web: { read: 0, notRanked: 0, shared: 0, missed: 0 }, google: { read: 0, missed: 0 } }
+  const until = started + POP_BUDGET_MS
+  const stale = new Date(Date.now() - POPULARITY_FRESH_MS).toISOString()
+  // Never read first (highest TRYBE score first), then the oldest reads.
+  const todo = async (col: 'web_rank_checked_at' | 'google_checked_at'): Promise<PopRow[] | null> => {
+    const { data, error } = await sb.from('trybe_directory').select('brand_id, name, website').is(col, null)
+      .order('trybe_score', { ascending: false, nullsFirst: false }).limit(POP_PER_RUN)
+    if (error) { if (/does not exist|schema cache/i.test(error.message)) run.missing = true; return null }
+    let rows = (data || []) as PopRow[]
+    if (rows.length < POP_PER_RUN) {
+      const { data: old } = await sb.from('trybe_directory').select('brand_id, name, website').lt(col, stale)
+        .order(col, { ascending: true }).limit(POP_PER_RUN - rows.length)
+      rows = rows.concat((old || []) as PopRow[])
+    }
+    return rows
+  }
+  const [webRows, googleRows] = await Promise.all([todo('web_rank_checked_at'), todo('google_checked_at')])
+
+  const web = async () => {
+    let missedInRow = 0
+    for (const r of webRows || []) {
+      if (Date.now() > until || missedInRow >= 2) break
+      const domain = siteDomain(r.website)
+      const stamp = { web_rank_checked_at: new Date().toISOString() }
+      // No website of its own (none, or a page on Amazon, Etsy, a link page):
+      // stamped with no domain, without asking.
+      if (!domain) { await sb.from('trybe_directory').update({ ...stamp, web_domain: null, web_rank: null, web_rank_was: null, web_rank_days: null }).eq('brand_id', r.brand_id); run.web.shared++; continue }
+      const rank = await fetchWebRank(domain)
+      if (!rank) { run.web.missed++; missedInRow++; await wait(TRANCO_GAP_MS); continue }
+      missedInRow = 0
+      await sb.from('trybe_directory').update({ ...stamp, web_domain: domain, web_rank: rank.rank, web_rank_was: rank.was, web_rank_days: rank.days }).eq('brand_id', r.brand_id)
+      if (rank.rank == null) run.web.notRanked++; else run.web.read++
+      await wait(TRANCO_GAP_MS)
+    }
+  }
+  const google = async () => {
+    let missedInRow = 0
+    for (const r of googleRows || []) {
+      if (Date.now() > until || missedInRow >= 2) break
+      const seed = googleSeed(r.name)
+      if (seed.length < 3) { await sb.from('trybe_directory').update({ google_checked_at: new Date().toISOString(), google_searches: null, google_phrases: [] }).eq('brand_id', r.brand_id); continue }
+      const s = await suggest('google', seed, sb)
+      if (!s.answered) { run.google.missed++; missedInRow++; await wait(GOOGLE_GAP_MS); continue }
+      missedInRow = 0
+      const found = brandSearches(r.name, s.phrases)
+      await sb.from('trybe_directory').update({ google_checked_at: new Date().toISOString(), google_searches: found.length, google_phrases: found }).eq('brand_id', r.brand_id)
+      run.google.read++
+      if (!s.remembered) await wait(GOOGLE_GAP_MS)
+    }
+  }
+  await Promise.all([web(), google()])
+  return run
+}
 
 export async function GET(request: Request) {
   const secret = process.env.CRON_SECRET
@@ -41,6 +117,8 @@ export async function GET(request: Request) {
   const started = Date.now()
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const sb = createAdminClient() as any
+  // Before migration 452 this reads nothing and says so in its answer.
+  const popularity = await popularityPass(sb, started).catch((e) => ({ error: e instanceof Error ? e.message : 'error' }))
   const { data: fresh, error } = await sb.from('trybe_directory')
     .select('brand_id, website')
     .is('site_fetched_at', null).not('website', 'is', null)
@@ -119,5 +197,5 @@ export async function GET(request: Request) {
       }))
     }
   }
-  return NextResponse.json({ ok: true, asked: rows.length, read, failed, socials, ms: Date.now() - started })
+  return NextResponse.json({ ok: true, asked: rows.length, read, failed, socials, popularity, ms: Date.now() - started })
 }

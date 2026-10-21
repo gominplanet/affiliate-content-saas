@@ -22,8 +22,9 @@ const P = read('components/labs/TrybeOutreach.tsx')
 const keys = (C.match(/export const NO_FILTERS: FinderFilters = \{([^}]*)\}/)?.[1] || '').split(',').map((x) => x.split(':')[0].trim()).filter(Boolean)
 const toggles = C.slice(C.indexOf('export const TOGGLE_WORDS'), C.indexOf('export const NUMBER_WORDS'))
 const numbers = C.slice(C.indexOf('export const NUMBER_WORDS'), C.indexOf('export const panelFiltersOn'))
-// 15 since 2026-10-17: On TikTok Shop and Payout tier went up.
-check('the finder still has all its filters', keys.length === 15, keys)
+// 15 since 2026-10-17: On TikTok Shop and Payout tier went up. 16 since
+// 2026-10-21: TRYBE score or more (Star brands).
+check('the finder still has all its filters', keys.length === 16, keys)
 const missing = keys.filter((k) => k !== 'sells' && !new RegExp(`\\b${k}:`).test(toggles) && !new RegExp(`\\b${k}:`).test(numbers))
 check('every filter has words for its chip', missing.length === 0, missing)
 const noControl = keys.filter((k) => k !== 'sells' && !new RegExp(`(toggle|numberBox)\\('${k}'`).test(C))

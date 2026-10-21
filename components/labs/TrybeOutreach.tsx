@@ -22,10 +22,11 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties }
 import { toast } from 'sonner'
 import { Loader2, Lock, Search, Sparkles, Send, Square, ExternalLink, Check, AlertTriangle, Globe, Star, Handshake, RotateCcw, X, Trash2, Tag,
   Dumbbell, Shirt, House, UtensilsCrossed, Baby, PawPrint, Gem, Cpu, Tent, Plane, BookOpen, Church, Palette, SprayCan, Moon, Pill, HeartPulse,
-  Scissors, Droplet, Coffee, Leaf, Wand2, MessageCircle, Pencil, ChevronUp, Bell, Lightbulb, CalendarDays, Inbox, ArrowRight, Clapperboard, UploadCloud, BarChart3, type LucideIcon } from 'lucide-react'
+  Scissors, Droplet, Coffee, Leaf, Wand2, MessageCircle, Pencil, ChevronUp, Bell, Lightbulb, CalendarDays, Inbox, ArrowRight, Clapperboard, UploadCloud, BarChart3, Rocket, type LucideIcon } from 'lucide-react'
 import { requestTrybeTab, requestTrybeTabOpen, requestTrybeApi, requestTrybeAccess, requestTrybeScan, requestTrybeSend, requestTrybeHarvest, requestTrybeRun, requestTrybeRunStatus, requestTrybeRunStop, type TrybeScanPass, type TrybeRun } from '@/lib/extension-frame'
 import { readMetaAds, metaAdsWords } from '@/components/labs/metaAdsRead'
 import TrybeTabGate from '@/components/labs/TrybeTabGate'
+import TrybeStarBrands from '@/components/labs/TrybeStarBrands'
 import { TRYBE_OPEN_URL, TRYBE_NOT_OPEN, TRYBE_NOT_OPEN_WORDS, trybeTabWords, type TrybeTabState } from '@/lib/trybe-tab'
 import { nextGapMs, prefsKey, CATEGORY_SUGGESTIONS, DAILY_FIND, SCAN_READ, SHORT_RUN_UNDER, SHORT_GAP_MS, MAX_DAILY_CAP } from '@/lib/trybe-outreach'
 import TrybeInbox, { fetchTrybeInbox, lastIsMine, type Conversation } from '@/components/labs/TrybeInbox'
@@ -52,7 +53,7 @@ import TrybeRetainers from '@/components/labs/TrybeRetainers'
 import TrybeIntroVideo from '@/components/labs/TrybeIntroVideo'
 import TrybeSampleGuard from '@/components/labs/TrybeSampleGuard'
 import { readScript } from '@/lib/trybe-mybrands'
-import { FinderToolbar, FinderFilterNote, FinderPriorities, FinderPresets, BrandExtras, StarButton, PassButton, AmazonLine, PayChip, CrowdChip, SpendChip, SpendNote, NewChip, StaticsChip, SellsChip, VerdictChip, ReviewChip, PaidOutChip, TikTokShopChip, CompareButton, BrandMark, NO_FILTERS, filtersOn, type LiveAmazon, type LivePayEst } from '@/components/labs/TrybeFinderControls'
+import { FinderToolbar, FinderFilterNote, FinderPriorities, FinderPresets, PopularityChips, BrandExtras, StarButton, PassButton, AmazonLine, PayChip, CrowdChip, SpendChip, SpendNote, NewChip, StaticsChip, SellsChip, VerdictChip, ReviewChip, PaidOutChip, TikTokShopChip, CompareButton, BrandMark, NO_FILTERS, filtersOn, type LiveAmazon, type LivePayEst } from '@/components/labs/TrybeFinderControls'
 import TrybeCompare from '@/components/labs/TrybeCompare'
 import { COMPARE_MAX } from '@/lib/trybe-compare'
 import { useTrybeAmazon } from '@/components/labs/useTrybeAmazon'
@@ -110,7 +111,7 @@ type Access = 'checking' | 'granted' | 'not-granted' | 'no-scout' | 'old'
 interface Directory { brands: number; listed?: number | null; firstCountAt?: string | null; joinedSinceFirst?: number | null; joinedStillListed?: number | null; withWebsite: number; websitesRead: number; lastCollectedAt: string | null; lastPartial?: { at: string; pages: number | null; totalPages: number | null } | null; categories: string[]; top100?: { at?: string; entries?: number; brands?: number; matched?: number } | null }
 /** The whole list is collected again after this long. */
 const RECOLLECT_MS = 20 * 3600_000
-export type Tab = 'create' | 'upload' | 'find' | 'queue' | 'sent' | 'inbox' | 'analytics' | 'brands' | 'week' | 'changes' | 'working'
+export type Tab = 'create' | 'upload' | 'find' | 'stars' | 'queue' | 'sent' | 'inbox' | 'analytics' | 'brands' | 'week' | 'changes' | 'working'
 /** One brand from MVP's copy of TRYBE, as the live list shows it. */
 interface LiveBrand {
   brand_id: string; name: string; website: string | null; categories: string[]; about: string | null
@@ -138,6 +139,10 @@ interface LiveBrand {
   tiktok_shop?: boolean | null
   top100_hits?: number | null
   top100_best_rank?: number | null
+  /** How known it is (lib/brand-popularity, migration 452), and Meta ads per creator. */
+  web_domain?: string | null; web_rank?: number | null; web_rank_was?: number | null; web_rank_days?: number | null; web_rank_checked_at?: string | null
+  google_searches?: number | null; google_phrases?: string[] | null; google_checked_at?: string | null
+  ads_per_creator?: number | null
 }
 const REQUESTS_KEY = 'mvp.trybe.requests'
 interface RequestsRead { at: number; complete: boolean; pages: number; flags: Record<string, BrandFlags>; invites: BrandFlags[] }
@@ -146,7 +151,7 @@ const REQUEST_WORDS: Record<RequestState, { label: string; color: string; bg: st
   pending: { label: 'Pending', color: AMBER, bg: 'rgba(180,83,9,0.10)' },
   declined: { label: 'Declined or expired', color: RED, bg: 'rgba(220,38,38,0.10)' },
 }
-type LiveSort = 'match' | 'picks' | 'pay' | 'spend' | 'payouts' | 'creators' | 'fit' | 'newest'
+type LiveSort = 'match' | 'picks' | 'pay' | 'spend' | 'payouts' | 'creators' | 'fit' | 'newest' | 'adsPerCreator'
 type LivePay = 'any' | 'flat' | 'percent' | 'both' | 'adspend' | 'guaranteed'
 const SORTS: Array<{ id: LiveSort; label: string; says: string }> = [
   { id: 'match', label: 'Best match', says: 'Best matches first.' },
@@ -157,6 +162,7 @@ const SORTS: Array<{ id: LiveSort; label: string; says: string }> = [
   { id: 'creators', label: 'Fewest creators', says: 'Fewest creators first: less competition for each brand.' },
   { id: 'fit', label: 'Best fit', says: 'Highest AI fit score for this search first. Brands not scored for it come after, then the ones the AI said do not fit it.' },
   { id: 'newest', label: 'Newest', says: 'Newest on TRYBE first, by when MVP first saw each brand.' },
+  { id: 'adsPerCreator', label: 'Most ads per creator', says: 'Most Meta ads running for each creator it has first: a big ad budget shared by few creators. Brands MVP has not counted Meta ads for come after, by TRYBE score. Star brands runs this over all of TRYBE.' },
 ]
 const PAYS: Array<{ id: LivePay; label: string }> = [
   { id: 'any', label: 'Any pay' },
@@ -323,6 +329,9 @@ const TABS: Array<{ id: Tab; label: string; icon: LucideIcon; group: TabGroup; s
   { id: 'week', label: 'This week', icon: CalendarDays, group: 'create', says: 'Your samples, ticked as they arrive, and your next 7 days planned from them.' },
   { id: 'working', label: 'What\u2019s working', icon: Lightbulb, group: 'create', says: 'Check your own hook, then see how the videos in TRYBE\u2019s Top 100 open, with examples to watch.' },
   { id: 'find', label: 'Find brands', icon: Search, group: 'brands', says: 'Brands that fit your channel, and a first message to each, in your words.' },
+  // STAR BRANDS (Seb, 2026-10-21: "a fourth button that basically has a new
+  // page ... find the next big opportunity, MVP's star brand of the week").
+  { id: 'stars', label: 'Star brands', icon: Rocket, group: 'brands', says: 'The next big opportunity: top rated TRYBE brands with the most Meta ads for each creator, and how known each one is.' },
   { id: 'queue', label: 'Ready to send', icon: Send, group: 'brands', says: 'Messages written and waiting. SCOUT sends them slowly, under your daily limit.' },
   { id: 'sent', label: 'Sent', icon: Check, group: 'brands', says: 'Who you asked, who answered, and what to do next with each brand.' },
   { id: 'inbox', label: 'Inbox', icon: Inbox, group: 'brands', says: 'Your TRYBE chats, each with a suggested reply.' },
@@ -337,7 +346,7 @@ const TABS: Array<{ id: Tab; label: string; icon: LucideIcon; group: TabGroup; s
 /** THE MENU AS TILES (Seb, 2026-10-20: "a lot more modern looking, a lot
  *  simpler, and a lot easier to see that there are actual buttons that you
  *  could press ... If we need to combine a couple of them, we can do that").
- *  Nine buttons in the three groups, each its own colour and icon, what it is
+ *  Ten buttons in the three groups, each its own colour and icon, what it is
  *  for in a line, and its count. Ready to send and Sent are one, Outreach;
  *  Analytics and My brands are one, Earnings: a switch inside moves between
  *  the two, and each keeps its own page. */
@@ -348,6 +357,7 @@ const TILES: Tile[] = [
   { id: 'week', label: 'This week', icon: CalendarDays, group: 'create', color: '#EA580C', line: 'Your samples and a 7 day plan', tabs: ['week'] },
   { id: 'working', label: 'What\u2019s working', icon: Lightbulb, group: 'create', color: '#D97706', line: 'Your hook next to the Top 100', tabs: ['working'] },
   { id: 'find', label: 'Find brands', icon: Search, group: 'brands', color: '#7C3AED', line: 'Brands that fit, first message written', tabs: ['find'] },
+  { id: 'stars', label: 'Star brands', icon: Rocket, group: 'brands', color: '#C026D3', line: 'Big ad budgets, few creators', tabs: ['stars'] },
   { id: 'outreach', label: 'Outreach', icon: Send, group: 'brands', color: '#4F46E5', line: 'Ready to send and sent, in one place', tabs: ['queue', 'sent'] },
   { id: 'inbox', label: 'Inbox', icon: Inbox, group: 'brands', color: '#9333EA', line: 'Brand chats, a reply suggested', tabs: ['inbox'] },
   { id: 'earnings', label: 'Earnings', icon: BarChart3, group: 'track', color: '#059669', line: 'Pay, approvals and ads, by brand', tabs: ['analytics', 'brands'] },
@@ -361,7 +371,7 @@ export function TrybeMenu({ tab, lockedTab, preview, queue, history, unread, cha
 }) {
   return (
     <>
-    {/* THE MENU: nine buttons in the three groups (TILES), every one in sight,
+    {/* THE MENU: ten buttons in the three groups (TILES), every one in sight,
         never a sideways scroll (Seb, 2026-10-13/14/20). Each is a card you
         can see is pressable: its colour, its icon, what it is for, its
         count, and an arrow that moves on hover. On a phone the groups stack
@@ -499,7 +509,8 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
   // THE LIVE LIST (Seb, 2026-10-07): MVP's copy of TRYBE searched as the
   // filters change, no SCOUT and no website fetched.
   const [live, setLive] = useState<{ brands: LiveBrand[]; matched: number; capped: boolean; hiddenMine?: number; payUnknown?: number; payOther?: number
-    hiddenBy?: Partial<Record<FilterId, number>>; blankBy?: Partial<Record<FilterId, number>>; unknownBy?: Partial<Record<FilterId, number>>; amazonNotes?: string[]; amazonVideos?: number; rawKeys?: string[]; prioritiesSaved?: boolean; starsSaved?: boolean; crowdDays?: number | null; spendKnown?: { recent: number; lifetime: number; none: number } | null; mix?: { small: number; mid: number; big: number; unknown: number; says: string | null } | null } | null>(null)
+    hiddenBy?: Partial<Record<FilterId, number>>; blankBy?: Partial<Record<FilterId, number>>; unknownBy?: Partial<Record<FilterId, number>>; amazonNotes?: string[]; amazonVideos?: number; rawKeys?: string[]; prioritiesSaved?: boolean; starsSaved?: boolean; crowdDays?: number | null; spendKnown?: { recent: number; lifetime: number; none: number } | null
+    readCounts?: { total: number; meta: number; web: number; google: number; popularityReady: boolean }; metaTodo?: Array<{ brand_id: string; name: string }>; mix?: { small: number; mid: number; big: number; unknown: number; says: string | null } | null } | null>(null)
   // FINDER (Seb, 2026-10-14, after Rob's Oink Blue video: "build all 4"):
   // filters, a brand's name, and the creator's priorities for Best bets.
   const [filters, setFilters] = useState<FinderFilters>(NO_FILTERS)
@@ -1173,7 +1184,11 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
    *  inside SCOUT's time limit and progress shows as it goes. */
   async function checkMetaAds() {
     const shown = live?.brands || []
-    const todo = shown.filter(b => !b.meta_ads_checked_at || Date.now() - Date.parse(b.meta_ads_checked_at) > META_ADS_FRESH_MS).slice(0, 25)
+    // By ads per creator the brands with no count sink below the ones shown,
+    // so the server names them (metaTodo), in TRYBE score order.
+    const todo = sortBy === 'adsPerCreator' && live?.metaTodo
+      ? live.metaTodo.slice(0, 25).map(t => ({ brand_id: t.brand_id, name: t.name }))
+      : shown.filter(b => !b.meta_ads_checked_at || Date.now() - Date.parse(b.meta_ads_checked_at) > META_ADS_FRESH_MS).slice(0, 25)
     if (!todo.length) { setSignalNote({ tone: 'ok', text: 'Every brand shown already has a Meta ad count from this week.' }); return }
     setMetaRun({ done: 0, total: todo.length }); setSignalNote(null)
     try {
@@ -1580,6 +1595,10 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
 
       {tab === 'upload' && <TrybeUpload />}
 
+      {tab === 'stars' && !lockedTab && (
+        <TrybeStarBrands canCount={canPlaybook} cards={isAdmin} scoutVersion={scoutVersion} hasCore={!!core.trim()} onWrite={(ids) => draftPicked(ids)} />
+      )}
+
 
       {tab === 'working' && <TrybeHookCheck />}
       {tab === 'working' && (
@@ -1821,6 +1840,18 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
               )
             })()}
             {/* Best fit with no scores would look like best match: say so. */}
+            {/* MOST ADS PER CREATOR: how many of the list have a Meta count, and the next to count. */}
+            {sortBy === 'adsPerCreator' && live?.readCounts && (
+              <p className="text-[12px] mb-3" style={{ color: live.readCounts.meta < live.readCounts.total ? AMBER : GREEN }}>
+                Meta ads counted for {live.readCounts.meta.toLocaleString()} of the {live.readCounts.total.toLocaleString()} brands matched{live.readCounts.meta < live.readCounts.total ? '; the rest are listed after, by TRYBE score.' : '.'}
+                {canPlaybook && (live.metaTodo?.length ?? 0) > 0 && (
+                  <>{' '}<button onClick={() => void checkMetaAds()} disabled={metaRun != null} className="inline-flex items-center gap-1 font-semibold underline disabled:opacity-50" style={{ color: PURPLE }}>
+                    {metaRun != null ? <><Loader2 size={11} className="animate-spin" /> Reading Meta&rsquo;s Ad Library: {metaRun.done} of {metaRun.total} done</> : `Count Meta ads for the next ${Math.min(25, live.metaTodo?.length ?? 0)}`}
+                  </button></>
+                )}
+                {signalNote && <span className="block mt-1" style={{ color: signalNote.tone === 'ok' ? GREEN : signalNote.tone === 'warn' ? AMBER : RED }}>{signalNote.text}</span>}
+              </p>
+            )}
             {sortBy === 'fit' && live && live.brands.length > 0 && !live.brands.some(b => b.fit_score != null) && (
               <p className="text-[12px] mb-3 rounded-lg px-2.5 py-1.5" style={{ background: 'rgba(180,83,9,0.10)', color: AMBER }}>None of these brands has a fit score yet, so they are in best match order. Fit scores come from the daily find, which runs once a day when this page opens with a saved niche.</p>
             )}
@@ -1899,6 +1930,7 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
                         <SpendChip spend={b.spend} />
                         {b.stats?.paidOut == null && <PaidOutChip bucket={b.earnings_bucket} up={b.tier_up} />}
                         <TikTokShopChip on={b.tiktok_shop} />
+                        <PopularityChips b={b} perCreator={sortBy === 'adsPerCreator'} />
                         <ReviewChip review={b.review} />
                         <StaticsChip on={b.statics} />
                         <SellsChip sells={b.sells} />

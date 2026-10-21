@@ -8,12 +8,13 @@
 // asks and shows, and says how many brands a filter hid or could not check.
 
 import { useState } from 'react'
-import { Star, Search, X, ExternalLink, Copy, Check, SlidersHorizontal, PlayCircle, ShoppingBag, Ban, RotateCcw, DollarSign, Users, Sparkles, Clock, ChevronDown, TrendingUp, ArrowLeftRight, Image as ImageIcon } from 'lucide-react'
+import { Star, Search, X, ExternalLink, Copy, Check, SlidersHorizontal, PlayCircle, ShoppingBag, Ban, RotateCcw, DollarSign, Users, Sparkles, Clock, ChevronDown, TrendingUp, ArrowLeftRight, Globe, Megaphone, Image as ImageIcon } from 'lucide-react'
 import { GRID_FACTORS, FORMATS, DEFAULT_PRIORITIES, verdictOf, VERDICT_WORDS, type Factor, type Priorities, type Weight } from '@/lib/trybe-pick'
 import { reviewWords } from '@/lib/trybe-mybrands'
 import { FILTER_WORDS, CROWD_WORDS, type FilterId, type FinderFilters, type DirStats, type CrowdRead, type SpendRead } from '@/lib/trybe-finder'
 import type { PayBasis } from '@/lib/trybe-pay'
 import { SELLS, SELLS_WORDS, type SellsRead } from '@/lib/trybe-sells'
+import { webRankWords, googleWords, adsPerCreatorWords, type Said } from '@/lib/brand-popularity'
 
 const PURPLE = '#7C3AED'
 const GREEN = '#16A34A'
@@ -31,8 +32,8 @@ export interface LiveAmazon {
 }
 export interface FilmedLive { asin: string; title: string | null; url: string; videos: string[] }
 
-export const NO_FILTERS: FinderFilters = { minPerVideo: null, maxCreators: null, maxVideos: null, paidCreators: false, samples: false, onAmazon: false, starred: false, openOnly: false, spending: false, newOnly: false, fastReview: false, sells: null, minSpend: null, tiktokShop: false, tierUp: false }
-export const filtersOn = (f: FinderFilters) => !!(f.minPerVideo || f.maxCreators || f.maxVideos || f.paidCreators || f.samples || f.onAmazon || f.starred || f.openOnly || f.spending || f.newOnly || f.fastReview || f.sells || f.minSpend || f.tiktokShop || f.tierUp)
+export const NO_FILTERS: FinderFilters = { minPerVideo: null, maxCreators: null, maxVideos: null, paidCreators: false, samples: false, onAmazon: false, starred: false, openOnly: false, spending: false, newOnly: false, fastReview: false, sells: null, minSpend: null, tiktokShop: false, tierUp: false, minScore: null }
+export const filtersOn = (f: FinderFilters) => !!(f.minPerVideo || f.maxCreators || f.maxVideos || f.paidCreators || f.samples || f.onAmazon || f.starred || f.openOnly || f.spending || f.newOnly || f.fastReview || f.sells || f.minSpend || f.tiktokShop || f.tierUp || f.minScore)
 
 const WEIGHTS: Array<{ w: Weight; label: string }> = [{ w: 0, label: 'Skip' }, { w: 1, label: 'Normal' }, { w: 2, label: 'A lot' }]
 
@@ -54,7 +55,7 @@ function Picker({ label, value, options, onChange, changed }: { label: string; v
 }
 
 type ToggleKey = 'paidCreators' | 'samples' | 'onAmazon' | 'starred' | 'openOnly' | 'spending' | 'newOnly' | 'fastReview' | 'tiktokShop' | 'tierUp'
-type NumberKey = 'minPerVideo' | 'maxCreators' | 'maxVideos' | 'minSpend'
+type NumberKey = 'minPerVideo' | 'maxCreators' | 'maxVideos' | 'minSpend' | 'minScore'
 export const TOGGLE_WORDS: Record<ToggleKey, string> = {
   starred: 'Starred', onAmazon: 'On Amazon', openOnly: 'Open only', newOnly: 'New', spending: 'Spending on ads',
   fastReview: 'Decides fast', paidCreators: 'Has paid creators', samples: 'Sends samples',
@@ -65,6 +66,7 @@ export const NUMBER_WORDS: Record<NumberKey, (n: number) => string> = {
   minSpend: (n) => `Pays creators $${n.toLocaleString()}+ a month`,
   maxCreators: (n) => `Up to ${n.toLocaleString()} creators`,
   maxVideos: (n) => `Up to ${n.toLocaleString()} videos approved`,
+  minScore: (n) => `TRYBE score ${n}+`,
 }
 /** How many of the panel's filters are on (sort, pay and sells have their own dropdowns). */
 export const panelFiltersOn = (f: FinderFilters) =>
@@ -163,6 +165,7 @@ export function FinderToolbar({ filters, onFilters, name, onName, sort, sorts, o
               {numberBox('maxVideos', 'Up to', 'videos approved', 'Few videos approved so far: room for you.')}
             </>)}
             {group('The brand', <>
+              {numberBox('minScore', 'TRYBE score', 'or more', 'TRYBE\u2019s own score for the brand, as shown on TRYBE. A brand TRYBE gives no score is left out.')}
               {toggle('spending', undefined, 'Meta ads running now, or videos in TRYBE\u2019s Top 100.')}
               {toggle('fastReview', <Clock size={12} />, 'Decides videos in 5 days or less, from MVP members\u2019 results. Brands without enough members\u2019 results are listed after.')}
               {toggle('samples')}
@@ -210,6 +213,10 @@ export function FinderFilterNote({ hiddenBy, blankBy, unknownBy }: { hiddenBy?: 
     if (f === 'minSpend' && blank > 0) {
       const low = n - blank
       return [low > 0 ? `${low.toLocaleString()} paying creators less` : null, `${blank.toLocaleString()} MVP cannot estimate yet (no pay figure, or no count of its videos in the last 30 days)`].filter(Boolean).join(' and ')
+    }
+    if (f === 'minScore' && blank > 0) {
+      const low = n - blank
+      return [low > 0 ? `${low.toLocaleString()} with a lower TRYBE score` : null, `${blank.toLocaleString()} TRYBE gives no score`].filter(Boolean).join(' and ')
     }
     if (f === 'sells' && blank > 0) {
       const other = n - blank
@@ -521,6 +528,43 @@ export function CrowdChip({ crowd, windowDays }: { crowd: CrowdRead | null | und
     <span className="text-[10.5px] font-extrabold tracking-wider rounded-md px-2 py-0.5 cursor-help inline-flex items-center gap-1" style={CROWD_STYLE[crowd.level]} title={`${crowd.why}${note}`}>
       <Users size={10} />{CROWD_WORDS[crowd.level]}<span className="sr-only">: {crowd.why}</span>
     </span>
+  )
+}
+
+/** How known a brand is (lib/brand-popularity, migration 452). */
+export interface LivePopularity {
+  website?: string | null
+  web_domain?: string | null; web_rank?: number | null; web_rank_was?: number | null; web_rank_days?: number | null; web_rank_checked_at?: string | null
+  google_searches?: number | null; google_phrases?: string[] | null; google_checked_at?: string | null
+  meta_ads?: number | null; total_creators?: number | null; ads_per_creator?: number | null
+}
+const SAID_STYLE = {
+  good: { background: 'rgba(22,163,74,0.10)', color: GREEN },
+  info: { background: 'var(--surface-2)', color: 'var(--text-2)' },
+  bad: { background: 'rgba(220,38,38,0.08)', color: '#B91C1C' },
+} as const
+function SaidChip({ said, icon }: { said: Said; icon: React.ReactNode }) {
+  return (
+    <span className="text-[11px] font-semibold rounded-md px-2 py-0.5 cursor-help inline-flex items-center gap-1" style={SAID_STYLE[said.tone]} title={said.long}>
+      {icon}{said.short}<span className="sr-only">: {said.long}</span>
+    </span>
+  )
+}
+
+/** Ads per creator (when asked), the website's rank and Google's searches,
+ *  each with why on hover. A signal not read shows nothing; the list says
+ *  how many were read (Star brands). */
+export function PopularityChips({ b, perCreator = false }: { b: LivePopularity; perCreator?: boolean }) {
+  const ads = perCreator && b.ads_per_creator != null && typeof b.meta_ads === 'number' && typeof b.total_creators === 'number' ? adsPerCreatorWords(b.meta_ads, b.total_creators) : null
+  const web = b.website ? webRankWords({ checked: !!b.web_rank_checked_at, domain: b.web_domain ?? null, rank: b.web_rank ?? null, was: b.web_rank_was, days: b.web_rank_days }) : null
+  const google = googleWords({ checked: !!b.google_checked_at, searches: b.google_searches ?? null, phrases: b.google_phrases })
+  if (!ads && !web && !google) return null
+  return (
+    <>
+      {ads && <SaidChip said={ads} icon={<Megaphone size={11} />} />}
+      {web && <SaidChip said={web} icon={<Globe size={11} />} />}
+      {google && <SaidChip said={google} icon={<Search size={11} />} />}
+    </>
   )
 }
 

@@ -406,6 +406,9 @@ export interface FinderFilters {
   tiktokShop?: boolean
   /** TRYBE's payout tier for it went up in the last 30 days (MVP's changes log). */
   tierUp?: boolean
+  /** TRYBE's own score for it, at least this (Seb, 2026-10-21: "only have
+   *  brands that have a Tribe rating of over 90"). */
+  minScore?: number | null
 }
 /** Is this brand spending on ads: true, false, or null when MVP cannot say.
  *
@@ -437,6 +440,7 @@ export function readFilters(v: unknown): FinderFilters {
     openOnly: o.openOnly === true, spending: o.spending === true, newOnly: o.newOnly === true, fastReview: o.fastReview === true,
     sells: readSells(o.sells), minSpend: pos(o.minSpend),
     tiktokShop: o.tiktokShop === true, tierUp: o.tierUp === true,
+    minScore: (() => { const n = pos(o.minScore); return n == null ? null : Math.min(100, n) })(),
   }
 }
 
@@ -460,8 +464,10 @@ export interface FilterRow {
   tiktokShop?: boolean | null
   /** Its payout tier went up lately; null when the changes log could not be read. */
   tierUp?: boolean | null
+  /** TRYBE's own score for it; null when TRYBE gave none. */
+  score?: number | null
 }
-export type FilterId = 'minPerVideo' | 'maxCreators' | 'maxVideos' | 'paidCreators' | 'samples' | 'onAmazon' | 'starred' | 'openOnly' | 'spending' | 'newOnly' | 'fastReview' | 'sells' | 'minSpend' | 'tiktokShop' | 'tierUp'
+export type FilterId = 'minPerVideo' | 'maxCreators' | 'maxVideos' | 'paidCreators' | 'samples' | 'onAmazon' | 'starred' | 'openOnly' | 'spending' | 'newOnly' | 'fastReview' | 'sells' | 'minSpend' | 'tiktokShop' | 'tierUp' | 'minScore'
 
 /** Where a brand stands with each filter that is on: passes, fails, or not
  *  known (TRYBE did not say). Pure.
@@ -496,6 +502,9 @@ export function filterCheck(r: FilterRow, f: FinderFilters): { pass: boolean; un
   // ON TIKTOK SHOP: a website not checked yet is not known, listed after.
   if (f.tiktokShop) judge('tiktokShop', r.tiktokShop ?? null)
   if (f.tierUp) judge('tierUp', r.tierUp ?? null)
+  // A TRYBE SCORE MINIMUM NEEDS A SCORE, like a pay minimum: a brand TRYBE
+  // gave no score is left out and counted, never listed as if it passed.
+  if (f.minScore) { if (r.score == null) { failed.push('minScore'); blank.push('minScore') } else judge('minScore', r.score >= f.minScore) }
   return { pass: !failed.length, unknown, failed, blank }
 }
 
@@ -503,7 +512,7 @@ export const FILTER_WORDS: Record<FilterId, string> = {
   minPerVideo: 'pay per video', maxCreators: 'creator count', maxVideos: 'videos approved',
   paidCreators: 'what it has paid creators', samples: 'samples', onAmazon: 'Amazon', starred: 'stars',
   openOnly: 'how crowded', spending: 'ad spend', newOnly: 'new on TRYBE', fastReview: 'how fast it decides', sells: 'what it sells', minSpend: 'what it pays creators a month',
-  tiktokShop: 'TikTok Shop', tierUp: 'payout tier',
+  tiktokShop: 'TikTok Shop', tierUp: 'payout tier', minScore: 'TRYBE score',
 }
 
 // ── 4. YOUR STAGE: VOLUME FIRST, THEN DOUBLE DOWN ──────────────────────────
