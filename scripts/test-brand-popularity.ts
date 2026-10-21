@@ -11,7 +11,7 @@
 // pieces are run; the wiring is read.
 import { readFileSync, existsSync } from 'node:fs'
 import { siteDomain, readRanks, webRankWords, googleSeed, brandSearches, googleWords, adsPerCreator, adsPerCreatorWords } from '../lib/brand-popularity'
-import { filterCheck, readFilters, type FilterRow } from '../lib/trybe-finder'
+import { filterCheck, readFilters, ratingOf, type FilterRow } from '../lib/trybe-finder'
 import { BROWSE_SORTS } from '../lib/trybe-outreach'
 
 const fails: string[] = []
@@ -50,17 +50,21 @@ check('Meta ads for each creator, no creators counting as one', adsPerCreator(21
 check('a count not read is not a ratio of zero', adsPerCreator(null, 5) === null && adsPerCreator(40, null) === null)
 check('in words, with both numbers', /70 Meta ads per creator/.test(adsPerCreatorWords(2100, 30).short) && /2,100 Meta ads running now and 30 creators/.test(adsPerCreatorWords(2100, 30).long) && /no creators yet/.test(adsPerCreatorWords(12, 0).long))
 
-// ── TRYBE score 90 or more ──────────────────────────────────────────────────
-const row = (score: number | null): FilterRow => ({ perVideo: null, creators: 10, stats: {} as FilterRow['stats'], earningsBucket: null, amazon: null, starred: false, score })
-const f = readFilters({ minScore: 90 })
-check('the TRYBE score filter is read, and kept to 100', f.minScore === 90 && readFilters({ minScore: 250 }).minScore === 100 && readFilters({}).minScore === null)
-check('90 or more passes, under fails', filterCheck(row(92), f).pass && !filterCheck(row(85), f).pass)
-check('a brand TRYBE gives no score is left out and counted, never listed as passing', (() => { const c = filterCheck(row(null), f); return !c.pass && c.blank.includes('minScore') })())
+// ── TRYBE rating 4.5 stars or more (Seb's "over 90") ─────────────────────────
+// Seb's check, 2026-10-21: TRYBE's list has no score out of 100. Its rating is
+// reviewRating, creators' stars of 5 (3.1 to 4.9), with reviewCount, on 604 brands.
+const row = (rating: number | null): FilterRow => ({ perVideo: null, creators: 10, stats: {} as FilterRow['stats'], earningsBucket: null, amazon: null, starred: false, rating })
+const f = readFilters({ minRating: 4.5 })
+check('the rating filter is read in stars, kept to 5', f.minRating === 4.5 && readFilters({ minRating: 9 }).minRating === 5 && readFilters({}).minRating === null)
+check('4.5 stars or more passes, under fails', filterCheck(row(4.8), f).pass && filterCheck(row(4.5), f).pass && !filterCheck(row(4.4), f).pass)
+check('a brand with no reviews yet is left out and counted, never listed as passing', (() => { const c = filterCheck(row(null), f); return !c.pass && c.blank.includes('minRating') })())
+check('TRYBE\'s own reviewRating and reviewCount are read from what MVP keeps', JSON.stringify(ratingOf({ rating: null, raw: { reviewRating: 4.8, reviewCount: 37 } })) === JSON.stringify({ stars: 4.8, reviews: 37 }) && ratingOf({ raw: { reviewRatingLabel: '4.2' } })?.stars === 4.2 && ratingOf({ raw: {} }) === null && ratingOf({ raw: { reviewRating: 48 } }) === null)
+check('new collections keep it in the rating column', /rating: num\(pick\(raw, \['reviewRating', 'rating'/.test(read('lib/trybe-directory.ts')))
 
 // ── Wiring ───────────────────────────────────────────────────────────────────
 const ROUTE = read('app/api/labs/trybe/route.ts')
-check('the list can be ranked by ads per creator, an uncounted brand after', (BROWSE_SORTS as readonly string[]).includes('adsPerCreator') && /sort === 'adsPerCreator' \? perCreator\(b\) - perCreator\(a\)/.test(ROUTE) && /\?\? -1\n/.test(ROUTE.slice(ROUTE.indexOf('const perCreator'), ROUTE.indexOf('const perCreator') + 400)))
-check('the server says how much of the list was read, over every brand matched', /readCounts = \{[\s\S]{0,400}?total: shown\.length,\s*meta: shown\.filter\(x => metaFresh\(x\.r\)\)\.length/.test(ROUTE) && /const metaTodo = sort === 'adsPerCreator'/.test(ROUTE) && /score: typeof x\.r\.trybe_score === 'number'/.test(ROUTE))
+check('the list can be ranked by ads per creator, an uncounted brand after', (BROWSE_SORTS as readonly string[]).includes('adsPerCreator') && /sort === 'adsPerCreator' \? perCreator\(b\) - perCreator\(a\)/.test(ROUTE) && /if \(!metaFresh\(x\.r\)\) return -1/.test(ROUTE))
+check('the server says how much of the list was read, over every brand matched', /readCounts = \{[\s\S]{0,700}?total: shown\.length,\s*meta: shown\.filter\(x => metaFresh\(x\.r\)\)\.length/.test(ROUTE) && /const metaTodo = sort === 'adsPerCreator'/.test(ROUTE) && /rating: ratingOf\(x\.r\)\?\.stars \?\? null \}, filters\)/.test(ROUTE))
 check('the popularity columns never break the list before migration 452', /COLS = BASE_COLS \+ PICK_COLS\n/.test(ROUTE))
 const CRON = read('app/api/cron/trybe-directory/route.ts')
 check('read in the background: Tranco one question a second, Google, highest TRYBE score first', /const TRANCO_GAP_MS = 1_100/.test(CRON) && /await fetchWebRank\(domain\)/.test(CRON) && /await suggest\('google', seed, sb\)/.test(CRON) && /order\('trybe_score', \{ ascending: false, nullsFirst: false \}\)\.limit\(POP_PER_RUN\)/.test(CRON))
@@ -69,15 +73,18 @@ const UI = read('components/labs/TrybeOutreach.tsx')
 check('Star brands is a fourth button under Get brands, with its own page', /\{ id: 'stars', label: 'Star brands', icon: Rocket, group: 'brands', color: '#C026D3'/.test(UI) && /\{ id: 'stars', label: 'Star brands', icon: Rocket, group: 'brands', says:/.test(UI) && /tab === 'stars' && !lockedTab && \(\s*<TrybeStarBrands/.test(UI))
 check('Find brands has the same sort, and counts the next brands for it', /\{ id: 'adsPerCreator', label: 'Most ads per creator'/.test(UI) && /sortBy === 'adsPerCreator' && live\?\.metaTodo/.test(UI) && /<PopularityChips b=\{b\} perCreator=\{sortBy === 'adsPerCreator'\} \/>/.test(UI))
 const STARS = read('components/labs/TrybeStarBrands.tsx')
-check('the page asks for TRYBE score 90 or more, ranked by ads per creator', /useState<number \| null>\(90\)/.test(STARS) && /sort: 'adsPerCreator'/.test(STARS) && /filters: \{ \.\.\.NO_FILTERS, minScore, maxCreators \}/.test(STARS))
+check('the page asks for 4.5 stars or more, ranked by ads per creator', /useState<number \| null>\(4\.5\)/.test(STARS) && /sort: 'adsPerCreator'/.test(STARS) && /filters: \{ \.\.\.NO_FILTERS, minRating, maxCreators \}/.test(STARS) && /4\.5 of 5 stars is 90%/.test(STARS))
+// Seb's check, 2026-10-21: TRYBE's list gave no creator count for any of 7,378 brands.
+check('with no creator counts it ranks by Meta ads alone and says so, never calling a counted brand not counted', /if \(!creatorsKnown\) return x\.r\.meta_ads as number/.test(ROUTE) && /rankedBy: creatorsKnown \? 'perCreator' as const : 'metaAds' as const/.test(ROUTE) && /ranks by Meta ads running alone/.test(STARS) && /const known = !!b\.meta_fresh/.test(STARS) && /meta_fresh: !!metaFresh\(r\)/.test(ROUTE))
+check('every rated brand is in the starting set when the rating filter is on', /not\('raw->>reviewRating', 'is', null\)/.test(ROUTE))
 check('it says how many were counted before the list, and marks the uncounted ones', /Meta ads counted for \{c\.meta\.toLocaleString\(\)\} of \{c\.total\.toLocaleString\(\)\}/.test(STARS) && /Meta ads not counted yet/.test(STARS) && /Count Meta ads for the next/.test(STARS))
 // Seb's check, 2026-10-21: none of 7,378 brands had TRYBE's score in MVP's copy.
 check('with no keyword, Star brands starts from every counted brand, then the likeliest to count next, never 1,000 in no order', /const starPool = !direct && !words\.length && sort === 'adsPerCreator'/.test(ROUTE) && /gte\('meta_ads_checked_at', fresh\)/.test(ROUTE) && /order\('top100_hits', \{ ascending: false, nullsFirst: false \}\)/.test(ROUTE) && /direct \|\| starPool \? \{ data: null, error: null \}/.test(ROUTE))
-check('no TRYBE score anywhere takes the score filter off and says why, never "no brand matches"', /scoreKnown: rows\.filter\(r => typeof r\.trybe_score === 'number'\)\.length/.test(ROUTE) && /a\.readCounts\.scoreKnown === 0/.test(STARS) && /setMinScore\(null\)/.test(STARS) && /TRYBE&rsquo;s score is not in MVP&rsquo;s copy of TRYBE yet/.test(STARS))
+check('no rating anywhere takes the rating filter off and says why, never "no brand matches"', /ratingKnown: rows\.filter\(r => ratingOf\(r\) != null\)\.length/.test(ROUTE) && /a\.readCounts\.ratingKnown === 0/.test(STARS) && /setMinRating\(null\)/.test(STARS) && /TRYBE&rsquo;s rating is not in MVP&rsquo;s copy of TRYBE/.test(STARS))
 check('migration 452 is there and safe to run twice', existsSync('supabase/migrations/452_trybe_brand_popularity.sql') && (() => { const m = read('supabase/migrations/452_trybe_brand_popularity.sql'); return (m.match(/add column if not exists/g) || []).length === 8 && !/drop |alter column/i.test(m) })())
 // The words themselves: quoted strings and JSX text, never the code around them.
 const words = (src: string) => (src.split('\n').filter((l) => !l.trim().startsWith('//') && !l.trim().startsWith('*')).join('\n').match(/'[^'\n]*'|`[^`\n]*`|>[^<>{}\n]+</g) || []).join(' ')
 check('no dashes in what the creator reads', !/[–—]| - /.test(words(read('lib/brand-popularity.ts'))) && !/[–—]| - /.test(words(STARS)))
 
 if (fails.length) { console.error('brand-popularity failed:\n - ' + fails.join('\n - ')); process.exit(1) }
-console.log('✅ brand-popularity: Star brands ranks TRYBE score 90+ by Meta ads per creator, says how much was counted, and shows each website\'s rank and Google searches, never a rank as visits or a miss as zero')
+console.log('✅ brand-popularity: Star brands ranks brands rated 4.5 stars+ by Meta ads per creator (Meta ads alone while TRYBE gives no creator counts), says how much was counted, and shows each website\'s rank and Google searches, never a rank as visits or a miss as zero')

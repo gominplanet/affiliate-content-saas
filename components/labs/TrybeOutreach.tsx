@@ -53,7 +53,7 @@ import TrybeRetainers from '@/components/labs/TrybeRetainers'
 import TrybeIntroVideo from '@/components/labs/TrybeIntroVideo'
 import TrybeSampleGuard from '@/components/labs/TrybeSampleGuard'
 import { readScript } from '@/lib/trybe-mybrands'
-import { FinderToolbar, FinderFilterNote, FinderPriorities, FinderPresets, PopularityChips, BrandExtras, StarButton, PassButton, AmazonLine, PayChip, CrowdChip, SpendChip, SpendNote, NewChip, StaticsChip, SellsChip, VerdictChip, ReviewChip, PaidOutChip, TikTokShopChip, CompareButton, BrandMark, NO_FILTERS, filtersOn, type LiveAmazon, type LivePayEst } from '@/components/labs/TrybeFinderControls'
+import { FinderToolbar, FinderFilterNote, FinderPriorities, FinderPresets, PopularityChips, RatingChip, BrandExtras, StarButton, PassButton, AmazonLine, PayChip, CrowdChip, SpendChip, SpendNote, NewChip, StaticsChip, SellsChip, VerdictChip, ReviewChip, PaidOutChip, TikTokShopChip, CompareButton, BrandMark, NO_FILTERS, filtersOn, type LiveAmazon, type LivePayEst } from '@/components/labs/TrybeFinderControls'
 import TrybeCompare from '@/components/labs/TrybeCompare'
 import { COMPARE_MAX } from '@/lib/trybe-compare'
 import { useTrybeAmazon } from '@/components/labs/useTrybeAmazon'
@@ -142,7 +142,9 @@ interface LiveBrand {
   /** How known it is (lib/brand-popularity, migration 452), and Meta ads per creator. */
   web_domain?: string | null; web_rank?: number | null; web_rank_was?: number | null; web_rank_days?: number | null; web_rank_checked_at?: string | null
   google_searches?: number | null; google_phrases?: string[] | null; google_checked_at?: string | null
-  ads_per_creator?: number | null
+  ads_per_creator?: number | null; meta_fresh?: boolean
+  /** TRYBE's rating: creators' stars of 5, and how many reviews. */
+  review_rating?: number | null; review_count?: number | null
 }
 const REQUESTS_KEY = 'mvp.trybe.requests'
 interface RequestsRead { at: number; complete: boolean; pages: number; flags: Record<string, BrandFlags>; invites: BrandFlags[] }
@@ -162,7 +164,7 @@ const SORTS: Array<{ id: LiveSort; label: string; says: string }> = [
   { id: 'creators', label: 'Fewest creators', says: 'Fewest creators first: less competition for each brand.' },
   { id: 'fit', label: 'Best fit', says: 'Highest AI fit score for this search first. Brands not scored for it come after, then the ones the AI said do not fit it.' },
   { id: 'newest', label: 'Newest', says: 'Newest on TRYBE first, by when MVP first saw each brand.' },
-  { id: 'adsPerCreator', label: 'Most ads per creator', says: 'Most Meta ads running for each creator it has first: a big ad budget shared by few creators. Brands MVP has not counted Meta ads for come after, by TRYBE score. Star brands runs this over all of TRYBE.' },
+  { id: 'adsPerCreator', label: 'Most ads per creator', says: 'Most Meta ads running for each creator it has first: a big ad budget shared by few creators. With no creator counts from TRYBE, most Meta ads first. Brands MVP has not counted Meta ads for come after, best rated first. Star brands runs this over all of TRYBE.' },
 ]
 const PAYS: Array<{ id: LivePay; label: string }> = [
   { id: 'any', label: 'Any pay' },
@@ -510,7 +512,7 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
   // filters change, no SCOUT and no website fetched.
   const [live, setLive] = useState<{ brands: LiveBrand[]; matched: number; capped: boolean; hiddenMine?: number; payUnknown?: number; payOther?: number
     hiddenBy?: Partial<Record<FilterId, number>>; blankBy?: Partial<Record<FilterId, number>>; unknownBy?: Partial<Record<FilterId, number>>; amazonNotes?: string[]; amazonVideos?: number; rawKeys?: string[]; prioritiesSaved?: boolean; starsSaved?: boolean; crowdDays?: number | null; spendKnown?: { recent: number; lifetime: number; none: number } | null
-    readCounts?: { total: number; meta: number; web: number; google: number; popularityReady: boolean }; metaTodo?: Array<{ brand_id: string; name: string }>; mix?: { small: number; mid: number; big: number; unknown: number; says: string | null } | null } | null>(null)
+    readCounts?: { total: number; meta: number; web: number; google: number; popularityReady: boolean; creators?: number; rankedBy?: 'perCreator' | 'metaAds' }; metaTodo?: Array<{ brand_id: string; name: string }>; mix?: { small: number; mid: number; big: number; unknown: number; says: string | null } | null } | null>(null)
   // FINDER (Seb, 2026-10-14, after Rob's Oink Blue video: "build all 4"):
   // filters, a brand's name, and the creator's priorities for Best bets.
   const [filters, setFilters] = useState<FinderFilters>(NO_FILTERS)
@@ -1843,7 +1845,8 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
             {/* MOST ADS PER CREATOR: how many of the list have a Meta count, and the next to count. */}
             {sortBy === 'adsPerCreator' && live?.readCounts && (
               <p className="text-[12px] mb-3" style={{ color: live.readCounts.meta < live.readCounts.total ? AMBER : GREEN }}>
-                Meta ads counted for {live.readCounts.meta.toLocaleString()} of the {live.readCounts.total.toLocaleString()} brands matched{live.readCounts.meta < live.readCounts.total ? '; the rest are listed after, by TRYBE score.' : '.'}
+                Meta ads counted for {live.readCounts.meta.toLocaleString()} of the {live.readCounts.total.toLocaleString()} brands matched{live.readCounts.meta < live.readCounts.total ? '; the rest are listed after, best rated first.' : '.'}
+                {live.readCounts.rankedBy === 'metaAds' && ' TRYBE\u2019s list gives no creator counts, so this ranks by Meta ads running alone.'}
                 {canPlaybook && (live.metaTodo?.length ?? 0) > 0 && (
                   <>{' '}<button onClick={() => void checkMetaAds()} disabled={metaRun != null} className="inline-flex items-center gap-1 font-semibold underline disabled:opacity-50" style={{ color: PURPLE }}>
                     {metaRun != null ? <><Loader2 size={11} className="animate-spin" /> Reading Meta&rsquo;s Ad Library: {metaRun.done} of {metaRun.total} done</> : `Count Meta ads for the next ${Math.min(25, live.metaTodo?.length ?? 0)}`}
@@ -1930,6 +1933,7 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
                         <SpendChip spend={b.spend} />
                         {b.stats?.paidOut == null && <PaidOutChip bucket={b.earnings_bucket} up={b.tier_up} />}
                         <TikTokShopChip on={b.tiktok_shop} />
+                        <RatingChip stars={b.review_rating} reviews={b.review_count} />
                         <PopularityChips b={b} perCreator={sortBy === 'adsPerCreator'} />
                         <ReviewChip review={b.review} />
                         <StaticsChip on={b.statics} />

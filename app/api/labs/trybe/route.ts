@@ -24,7 +24,7 @@ import { sellsOf, type SellsRead } from '@/lib/trybe-sells'
 import { outreachNiche } from '@/lib/outreach-niche'
 import { pickScore, creatorProgramOf, readTopCreatives, tallyTop, META_ADS_FRESH_MS, readPriorities, weighScore, staticsOf, bucketDollars } from '@/lib/trybe-pick'
 import { adsPerCreator } from '@/lib/brand-popularity'
-import { readDirStats, rawKeys, amazonOf, nameVariants, readFilters, filterCheck, spendingOf, productOnAmazon, filmedProducts, mergeSnapshot, pickBaseline, crowdOf, creatorSpendOf, snapshotKey, isNewBrand, mixPick, mixOf, SNAPSHOT_KEEP_DAYS, type AmazonOf, type AmazonFilmed, type AmazonVideoProduct, type CcCampaign, type FilterId, type Snapshot } from '@/lib/trybe-finder'
+import { ratingOf, readDirStats, rawKeys, amazonOf, nameVariants, readFilters, filterCheck, spendingOf, productOnAmazon, filmedProducts, mergeSnapshot, pickBaseline, crowdOf, creatorSpendOf, snapshotKey, isNewBrand, mixPick, mixOf, SNAPSHOT_KEEP_DAYS, type AmazonOf, type AmazonFilmed, type AmazonVideoProduct, type CcCampaign, type FilterId, type Snapshot } from '@/lib/trybe-finder'
 import { payLines, payReadOf, estimatePay } from '@/lib/trybe-pay'
 import { readTopWords, firstHook, keepHooks, readHooksBody, hooksBlock, type TopHook } from '@/lib/trybe-hooks'
 import { readRetainers } from '@/lib/trybe-retainer'
@@ -1273,7 +1273,7 @@ export async function POST(request: Request) {
     // Best bets and Fewest creators rank a wider pool: the search keeps its
     // best keyword matches first, and small brands with few creators (the
     // best bets) would never reach the list from 400.
-    const pool = sort === 'picks' || sort === 'creators' || sort === 'spend' || sort === 'payouts' || sort === 'adsPerCreator' || readFilters(body.filters).minScore ? 1200 : 400
+    const pool = sort === 'picks' || sort === 'creators' || sort === 'spend' || sort === 'payouts' || sort === 'adsPerCreator' || readFilters(body.filters).minRating ? 1200 : 400
     // FINDER (Seb, 2026-10-14, after Rob's Oink Blue video): the creator's
     // priorities, stars and filters. Priorities sent by the page win, so a
     // change ranks at once; else the saved ones.
@@ -1314,7 +1314,18 @@ export async function POST(request: Request) {
       let b = await next(true)
       if (b.error && /does not exist|schema cache/i.test(b.error.message)) b = await next(false)
       if (b.error) return NextResponse.json({ error: b.error.message }, { status: 500 })
-      rows = [...((a || []) as Array<Record<string, any>>), ...((b.data || []) as Array<Record<string, any>>)] // eslint-disable-line @typescript-eslint/no-explicit-any
+      // Every brand creators rated on TRYBE (its reviewRating, about 600), so
+      // a rating filter ranks all of them, not the few in the two reads above.
+      let rated: Array<Record<string, any>> = [] // eslint-disable-line @typescript-eslint/no-explicit-any
+      if (filters.minRating) {
+        let q = admin.from('trybe_directory').select(COLS).not('raw->>reviewRating', 'is', null)
+        if (since) q = q.gte('last_seen_at', since)
+        const { data: c, error: e3 } = await q.limit(1500)
+        if (e3) return NextResponse.json({ error: e3.message }, { status: 500 })
+        rated = (c || []) as Array<Record<string, any>> // eslint-disable-line @typescript-eslint/no-explicit-any
+      }
+      const seen = new Set<string>()
+      rows = [...((a || []) as Array<Record<string, any>>), ...rated, ...((b.data || []) as Array<Record<string, any>>)].filter(r => !seen.has(r.brand_id) && !!seen.add(r.brand_id)) // eslint-disable-line @typescript-eslint/no-explicit-any
     } else if (direct) {
       let q = admin.from('trybe_directory').select(COLS)
       if (filters.starred) q = q.in('brand_id', Array.from(starredIds).slice(0, 500))
@@ -1449,7 +1460,7 @@ export async function POST(request: Request) {
       const c = filterCheck({ perVideo: estBy.get(x.r.brand_id)?.dollars ?? null, creators: typeof x.r.total_creators === 'number' ? x.r.total_creators : null, stats: statsBy.get(x.r.brand_id)!, earningsBucket: x.r.earnings_bucket ?? null, amazon: amazonBy.get(x.r.brand_id) ?? null, starred: starredIds.has(x.r.brand_id), crowd: crowdBy.get(x.r.brand_id)?.level ?? null,
         spending: spendingOf(x.r), isNew: newBy.get(x.r.brand_id), reviewDays: results.review.get(x.r.brand_id)?.reviewDays ?? null, sells: sellsBy.get(x.r.brand_id) ?? null, spend: spendBy.get(x.r.brand_id)?.dollars ?? null,
         tiktokShop: tiktokShopOf(x.r), tierUp: tierLog ? !!tierLog.get(x.r.brand_id)?.up : null,
-        score: typeof x.r.trybe_score === 'number' ? x.r.trybe_score : null }, filters)
+        rating: ratingOf(x.r)?.stars ?? null }, filters)
       for (const f of c.failed) hiddenBy[f] = (hiddenBy[f] ?? 0) + 1
       for (const f of c.blank) blankBy[f] = (blankBy[f] ?? 0) + 1
       if (!c.pass) return false
@@ -1508,7 +1519,16 @@ export async function POST(request: Request) {
     // ads counted in the last four weeks, for each creator it has. A brand
     // with no count comes after, by TRYBE score, never as if it had none.
     const metaFresh = (r: Record<string, any>) => typeof r.meta_ads === 'number' && r.meta_ads_checked_at && Date.now() - Date.parse(r.meta_ads_checked_at) < 4 * META_ADS_FRESH_MS // eslint-disable-line @typescript-eslint/no-explicit-any
-    const perCreator = (x: typeof ranked[number]) => (metaFresh(x.r) ? adsPerCreator(x.r.meta_ads, typeof x.r.total_creators === 'number' ? x.r.total_creators : null) : null) ?? -1
+    // NO CREATOR COUNTS AT ALL (Seb's check, 2026-10-21: TRYBE's list gave
+    // none of 7,378): the order is Meta ads running alone, and the page says
+    // so. With some counts, a brand without one comes after those with one.
+    const creatorsKnown = rows.some(r => typeof r.total_creators === 'number')
+    const perCreator = (x: typeof ranked[number]) => {
+      if (!metaFresh(x.r)) return -1
+      if (!creatorsKnown) return x.r.meta_ads as number
+      return adsPerCreator(x.r.meta_ads, typeof x.r.total_creators === 'number' ? x.r.total_creators : null) ?? -0.5
+    }
+    const stars = (x: typeof ranked[number]) => ratingOf(x.r)?.stars ?? 0
     ranked.sort((a, b) => knownFirst(a, b) || payKnownFirst(a, b) ||
       (sort === 'pay' ? payOrder(b) - payOrder(a) || byMatch(a, b)
         : sort === 'spend' ? spendOrder(b) - spendOrder(a) || byMatch(a, b)
@@ -1517,7 +1537,7 @@ export async function POST(request: Request) {
           : sort === 'fit' ? fit(b.r.brand_id) - fit(a.r.brand_id) || byMatch(a, b)
             : sort === 'picks' ? weighed(b) - weighed(a) || byMatch(a, b)
             : sort === 'newest' ? time(b.r.first_seen_at) - time(a.r.first_seen_at) || byMatch(a, b)
-            : sort === 'adsPerCreator' ? perCreator(b) - perCreator(a) || (b.r.trybe_score ?? 0) - (a.r.trybe_score ?? 0) || (b.r.top100_hits ?? 0) - (a.r.top100_hits ?? 0) || creators(a.r.total_creators) - creators(b.r.total_creators) || byMatch(a, b)
+            : sort === 'adsPerCreator' ? perCreator(b) - perCreator(a) || stars(b) - stars(a) || (b.r.top100_hits ?? 0) - (a.r.top100_hits ?? 0) || creators(a.r.total_creators) - creators(b.r.total_creators) || byMatch(a, b)
               : byMatch(a, b)))
     // Passed on (skipped) leaves the list too, like Oink's Pass, until undone.
     const DONE = ['drafted', 'sending', 'sent', 'already', 'failed', 'removed', 'skipped']
@@ -1530,10 +1550,13 @@ export async function POST(request: Request) {
     // a list ranked on a few counts never looks complete. And the brands with
     // no fresh Meta count, in list order, for SCOUT to count next.
     const readCounts = {
-      // Brands MVP has TRYBE's score for, of all it looked at: 0 means the
-      // score filter can only empty the list, and the page says so.
-      scoreKnown: rows.filter(r => typeof r.trybe_score === 'number').length,
+      // Brands rated on TRYBE, of all it looked at: 0 means the rating filter
+      // can only empty the list, and the page says so. Creator counts, and
+      // what the order is by when there are none.
+      ratingKnown: rows.filter(r => ratingOf(r) != null).length,
       looked: rows.length,
+      creators: shown.filter(x => typeof x.r.total_creators === 'number').length,
+      rankedBy: creatorsKnown ? 'perCreator' as const : 'metaAds' as const,
       total: shown.length,
       meta: shown.filter(x => metaFresh(x.r)).length,
       web: shown.filter(x => x.r.web_rank_checked_at).length,
@@ -1542,7 +1565,7 @@ export async function POST(request: Request) {
     }
     const metaTodo = sort === 'adsPerCreator'
       ? shown.filter(x => !x.r.meta_ads_checked_at || Date.now() - Date.parse(x.r.meta_ads_checked_at) > META_ADS_FRESH_MS)
-        .sort((a, b) => (b.r.trybe_score ?? 0) - (a.r.trybe_score ?? 0) || (b.r.top100_hits ?? 0) - (a.r.top100_hits ?? 0) || (a.r.total_creators ?? Infinity) - (b.r.total_creators ?? Infinity))
+        .sort((a, b) => stars(b) - stars(a) || (b.r.top100_hits ?? 0) - (a.r.top100_hits ?? 0) || (a.r.total_creators ?? Infinity) - (b.r.total_creators ?? Infinity))
         .slice(0, 120).map(x => ({ brand_id: x.r.brand_id, name: x.r.name }))
       : undefined
     return NextResponse.json({
@@ -1607,6 +1630,9 @@ export async function POST(request: Request) {
           web_domain: r.web_domain ?? null, web_rank: r.web_rank ?? null, web_rank_was: r.web_rank_was ?? null, web_rank_days: r.web_rank_days ?? null, web_rank_checked_at: r.web_rank_checked_at ?? null,
           google_searches: r.google_searches ?? null, google_phrases: r.google_phrases ?? [], google_checked_at: r.google_checked_at ?? null,
           ads_per_creator: metaFresh(r) ? adsPerCreator(r.meta_ads, typeof r.total_creators === 'number' ? r.total_creators : null) : null,
+          meta_fresh: !!metaFresh(r),
+          // TRYBE's rating: stars of 5 from creators' reviews, and how many.
+          review_rating: ratingOf(r)?.stars ?? null, review_count: ratingOf(r)?.reviews ?? null,
         }
       }),
     })

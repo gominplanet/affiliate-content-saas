@@ -32,8 +32,8 @@ export interface LiveAmazon {
 }
 export interface FilmedLive { asin: string; title: string | null; url: string; videos: string[] }
 
-export const NO_FILTERS: FinderFilters = { minPerVideo: null, maxCreators: null, maxVideos: null, paidCreators: false, samples: false, onAmazon: false, starred: false, openOnly: false, spending: false, newOnly: false, fastReview: false, sells: null, minSpend: null, tiktokShop: false, tierUp: false, minScore: null }
-export const filtersOn = (f: FinderFilters) => !!(f.minPerVideo || f.maxCreators || f.maxVideos || f.paidCreators || f.samples || f.onAmazon || f.starred || f.openOnly || f.spending || f.newOnly || f.fastReview || f.sells || f.minSpend || f.tiktokShop || f.tierUp || f.minScore)
+export const NO_FILTERS: FinderFilters = { minPerVideo: null, maxCreators: null, maxVideos: null, paidCreators: false, samples: false, onAmazon: false, starred: false, openOnly: false, spending: false, newOnly: false, fastReview: false, sells: null, minSpend: null, tiktokShop: false, tierUp: false, minRating: null }
+export const filtersOn = (f: FinderFilters) => !!(f.minPerVideo || f.maxCreators || f.maxVideos || f.paidCreators || f.samples || f.onAmazon || f.starred || f.openOnly || f.spending || f.newOnly || f.fastReview || f.sells || f.minSpend || f.tiktokShop || f.tierUp || f.minRating)
 
 const WEIGHTS: Array<{ w: Weight; label: string }> = [{ w: 0, label: 'Skip' }, { w: 1, label: 'Normal' }, { w: 2, label: 'A lot' }]
 
@@ -55,7 +55,7 @@ function Picker({ label, value, options, onChange, changed }: { label: string; v
 }
 
 type ToggleKey = 'paidCreators' | 'samples' | 'onAmazon' | 'starred' | 'openOnly' | 'spending' | 'newOnly' | 'fastReview' | 'tiktokShop' | 'tierUp'
-type NumberKey = 'minPerVideo' | 'maxCreators' | 'maxVideos' | 'minSpend' | 'minScore'
+type NumberKey = 'minPerVideo' | 'maxCreators' | 'maxVideos' | 'minSpend' | 'minRating'
 export const TOGGLE_WORDS: Record<ToggleKey, string> = {
   starred: 'Starred', onAmazon: 'On Amazon', openOnly: 'Open only', newOnly: 'New', spending: 'Spending on ads',
   fastReview: 'Decides fast', paidCreators: 'Has paid creators', samples: 'Sends samples',
@@ -66,7 +66,7 @@ export const NUMBER_WORDS: Record<NumberKey, (n: number) => string> = {
   minSpend: (n) => `Pays creators $${n.toLocaleString()}+ a month`,
   maxCreators: (n) => `Up to ${n.toLocaleString()} creators`,
   maxVideos: (n) => `Up to ${n.toLocaleString()} videos approved`,
-  minScore: (n) => `TRYBE score ${n}+`,
+  minRating: (n) => `TRYBE rating ${n}\u2605+`,
 }
 /** How many of the panel's filters are on (sort, pay and sells have their own dropdowns). */
 export const panelFiltersOn = (f: FinderFilters) =>
@@ -100,10 +100,10 @@ export function FinderToolbar({ filters, onFilters, name, onName, sort, sorts, o
       {icon}{TOGGLE_WORDS[k]}
     </button>
   )
-  const numberBox = (k: NumberKey, before: string, after: string, title: string) => (
+  const numberBox = (k: NumberKey, before: string, after: string, title: string, step?: number) => (
     <label key={k} className={`${chip} cursor-text focus-within:ring-2 focus-within:ring-[#7C3AED]/40 ${filters[k] ? ON_TEXT : ''}`} style={filters[k] ? { borderColor: PURPLE } : { borderColor: 'var(--border-2)' }} title={title}>
       {before}
-      <input type="number" inputMode="numeric" min={1} value={filters[k] ?? ''} placeholder="any"
+      <input type="number" inputMode={step ? 'decimal' : 'numeric'} min={step ?? 1} step={step ?? 1} value={filters[k] ?? ''} placeholder="any"
         onChange={(e) => { const n = Number(e.target.value); onFilters({ ...filters, [k]: e.target.value && Number.isFinite(n) && n > 0 ? n : null }) }}
         className="w-14 bg-transparent outline-none text-center tabular-nums font-semibold" style={{ color: 'inherit' }} aria-label={`${before} ${after}`} />
       {after}
@@ -165,7 +165,7 @@ export function FinderToolbar({ filters, onFilters, name, onName, sort, sorts, o
               {numberBox('maxVideos', 'Up to', 'videos approved', 'Few videos approved so far: room for you.')}
             </>)}
             {group('The brand', <>
-              {numberBox('minScore', 'TRYBE score', 'or more', 'TRYBE\u2019s own score for the brand, as shown on TRYBE. A brand TRYBE gives no score is left out.')}
+              {numberBox('minRating', 'TRYBE rating', '\u2605 or more', 'Creators\u2019 rating of the brand on TRYBE, out of 5 stars: 4.5 is 90%. A brand with no reviews yet is left out.', 0.1)}
               {toggle('spending', undefined, 'Meta ads running now, or videos in TRYBE\u2019s Top 100.')}
               {toggle('fastReview', <Clock size={12} />, 'Decides videos in 5 days or less, from MVP members\u2019 results. Brands without enough members\u2019 results are listed after.')}
               {toggle('samples')}
@@ -214,9 +214,9 @@ export function FinderFilterNote({ hiddenBy, blankBy, unknownBy }: { hiddenBy?: 
       const low = n - blank
       return [low > 0 ? `${low.toLocaleString()} paying creators less` : null, `${blank.toLocaleString()} MVP cannot estimate yet (no pay figure, or no count of its videos in the last 30 days)`].filter(Boolean).join(' and ')
     }
-    if (f === 'minScore' && blank > 0) {
+    if (f === 'minRating' && blank > 0) {
       const low = n - blank
-      return [low > 0 ? `${low.toLocaleString()} with a lower TRYBE score` : null, `${blank.toLocaleString()} TRYBE gives no score`].filter(Boolean).join(' and ')
+      return [low > 0 ? `${low.toLocaleString()} rated lower` : null, `${blank.toLocaleString()} with no creator reviews on TRYBE yet`].filter(Boolean).join(' and ')
     }
     if (f === 'sells' && blank > 0) {
       const other = n - blank
@@ -547,6 +547,17 @@ function SaidChip({ said, icon }: { said: Said; icon: React.ReactNode }) {
   return (
     <span className="text-[11px] font-semibold rounded-md px-2 py-0.5 cursor-help inline-flex items-center gap-1" style={SAID_STYLE[said.tone]} title={said.long}>
       {icon}{said.short}<span className="sr-only">: {said.long}</span>
+    </span>
+  )
+}
+
+/** TRYBE's rating: creators' stars of 5, and from how many reviews. */
+export function RatingChip({ stars, reviews }: { stars: number | null | undefined; reviews?: number | null }) {
+  if (stars == null) return null
+  const says = `Creators\u2019 rating of this brand on TRYBE: ${stars} of 5 stars${reviews ? `, from ${reviews.toLocaleString()} review${reviews === 1 ? '' : 's'}` : ''}.`
+  return (
+    <span className="text-[11px] font-semibold rounded-md px-2 py-0.5 inline-flex items-center gap-0.5 cursor-help" style={stars >= 4.5 ? { background: 'rgba(202,138,4,0.14)', color: '#A16207' } : { background: 'var(--surface-2)', color: 'var(--text-2)' }} title={says}>
+      <Star size={10} />{stars.toFixed(1)}{reviews ? <span className="font-normal">&nbsp;&middot; {reviews.toLocaleString()} review{reviews === 1 ? '' : 's'}</span> : null}<span className="sr-only">: {says}</span>
     </span>
   )
 }

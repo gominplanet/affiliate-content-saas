@@ -111,7 +111,8 @@ export function readDirectoryItem(raw: unknown): DirectoryBrand | null {
     payText: typeof payRaw === 'string' ? text(payRaw, 120) : payNum != null ? `$${payNum}` : null,
     trybeScore: num(pick(raw, ['trybeScore', 'trybe_score', 'score'])),
     totalCreators: num(pick(raw, ['totalCreators', 'total_creators', 'creatorsCount', 'creatorCount', 'creators_count'])),
-    rating: num(pick(raw, ['rating', 'averageRating', 'avgRating'])),
+    // TRYBE's own name for it is reviewRating (stars of 5, Seb's check 2026-10-21).
+    rating: num(pick(raw, ['reviewRating', 'rating', 'averageRating', 'avgRating'])),
     earningsBucket: text(pick(raw, ['creatorEarningsBucket', 'creator_earnings_bucket', 'earningsBucket', 'creatorEarnings', 'creator_earnings']), 60),
     raw: raw as Record<string, unknown>,
   }
