@@ -1246,7 +1246,10 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
       setFinding(null)
       const d0 = await load()
       step('list', ok && !notes.some((n) => /could not|refused|not allowed|ran out/i.test(n)) ? 'done' : ok ? 'warn' : 'failed',
-        [ok && d0?.directory?.listed != null ? `${Number(d0.directory.listed).toLocaleString()} brands on TRYBE now.` : ok ? 'Collected.' : 'Not collected.', ...notes].join(' '))
+        // Two counts that differ on purpose (Seb's first run, 2026-10-21: 6,920
+        // and 6,864): TRYBE's Discover list leaves out the brands you joined,
+        // and MVP's count of brands on TRYBE keeps them.
+        [ok && d0?.directory?.listed != null ? `${Number(d0.directory.listed).toLocaleString()} brands on TRYBE now, counting the ones you joined (TRYBE\u2019s Discover list leaves those out).` : ok ? 'Collected.' : 'Not collected.', ...notes].join(' '))
       if (dailyStop.current) { step('top100', 'skipped', 'Stopped.'); step('meta', 'skipped', 'Stopped.'); return }
       // 2. TRYBE's Top 100: who is spending.
       step('top100', 'running', 'Reading TRYBE\u2019s Top 100...')
