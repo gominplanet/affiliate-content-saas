@@ -22,7 +22,7 @@
 import { INTRO_MAX_BYTES, cleanInputs, introSystem, introPrompt, parseIntro, readIntroVideo, introSuggest, introSample, isTrybeSampleUrl } from '@/lib/trybe-intro'
 import { sellsOf, type SellsRead } from '@/lib/trybe-sells'
 import { outreachNiche } from '@/lib/outreach-niche'
-import { pickScore, creatorProgramOf, readTopCreatives, tallyTop, META_ADS_FRESH_MS, readPriorities, weighScore, staticsOf, bucketDollars } from '@/lib/trybe-pick'
+import { pickScore, creatorProgramOf, readTopCreatives, tallyTop, META_ADS_FRESH_MS, readPriorities, weighScore, staticsOf, bucketDollars, metaTrustOf, metaUsable } from '@/lib/trybe-pick'
 import { adsPerCreator, adsPerReview } from '@/lib/brand-popularity'
 import { ratingOf, readDirStats, rawKeys, amazonOf, nameVariants, readFilters, filterCheck, spendingOf, productOnAmazon, filmedProducts, mergeSnapshot, pickBaseline, crowdOf, creatorSpendOf, snapshotKey, isNewBrand, mixPick, mixOf, SNAPSHOT_KEEP_DAYS, type AmazonOf, type AmazonFilmed, type AmazonVideoProduct, type CcCampaign, type FilterId, type Snapshot } from '@/lib/trybe-finder'
 import { payLines, payReadOf, estimatePay } from '@/lib/trybe-pay'
@@ -1055,11 +1055,29 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: true, hooks: hooks?.hooks.slice(0, 20) ?? [], at: hooks?.at ?? null })
   }
 
+  // THE DAILY REFRESH'S LOG (Seb, 2026-10-21): the MVP team's last run, each
+  // step and how it went, kept so the next visit says when it last ran.
+  if (action === 'daily_refresh') {
+    if (tier !== 'admin') return NextResponse.json({ error: 'The daily refresh is for the MVP team.' }, { status: 403 })
+    const KEY = 'daily_refresh'
+    const log = body.log && typeof body.log === 'object' ? body.log as { at?: unknown; steps?: unknown } : null
+    if (log) {
+      const steps = (Array.isArray(log.steps) ? log.steps : []).slice(0, 6).map((x) => {
+        const o = (x && typeof x === 'object' ? x : {}) as Record<string, unknown>
+        return { id: String(o.id || '').slice(0, 20), label: String(o.label || '').slice(0, 60), state: String(o.state || '').slice(0, 12), text: String(o.text || '').slice(0, 600) }
+      })
+      const { error: e } = await admin.from('trybe_directory_meta').upsert({ key: KEY, value: { at: now, by: ownerId, steps }, updated_at: now })
+      if (e) return NextResponse.json({ error: e.message }, { status: 500 })
+    }
+    const { data: row } = await admin.from('trybe_directory_meta').select('value').eq('key', KEY).maybeSingle()
+    return NextResponse.json({ ok: true, last: row?.value ?? null })
+  }
+
   if (action === 'meta_ads') {
     // How many active Meta ads mention each brand, as SCOUT read Meta's Ad
     // Library in the creator's own Chrome. Shared; a count kept less than six
     // days is not replaced, so one member cannot rewrite every brand's count.
-    const list = (Array.isArray(body.results) ? body.results : []).slice(0, 40) as Array<{ brandId?: unknown; count?: unknown; name?: unknown; cards?: unknown }>
+    const list = (Array.isArray(body.results) ? body.results : []).slice(0, 40) as Array<{ brandId?: unknown; count?: unknown; name?: unknown; cards?: unknown; own?: unknown; sample?: unknown }>
     let saved = 0
     for (const x of list) {
       const id = typeof x.brandId === 'string' ? x.brandId.slice(0, 80) : ''
@@ -1074,6 +1092,12 @@ export async function POST(request: Request) {
       if (upErr) return NextResponse.json({ error: /does not exist|schema cache/i.test(upErr.message) ? setupWords(tier, 'Meta ad counts need migration 425 in Supabase first.') : upErr.message }, { status: 500 })
       if ((up || []).length) {
         saved++
+        // IS IT THE BRAND'S (migration 453, lib/trybe-pick metaOwnOf): how
+        // many of the ads SCOUT saw its own page runs. Saved on its own, so a
+        // database without the columns never costs the count.
+        const whole = (v: unknown) => typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= 500 ? Math.round(v) : null
+        const sample = whole(x.sample), own = whole(x.own)
+        if (sample != null && own != null && own <= sample) await admin.from('trybe_directory').update({ meta_ads_own: own, meta_ads_sample: sample }).eq('brand_id', id)
         // Only against a count read before: a first read is not "more ads".
         const was = before?.meta_ads_checked_at ? (before.meta_ads as number | null) : undefined
         if (was !== undefined && adsChange(was, n)) await logChanges(admin, [{ brand_id: id, kind: 'ads', before: String(was ?? 0), after: String(n) }])
@@ -1257,14 +1281,12 @@ export async function POST(request: Request) {
     // How known each brand is (migration 452, lib/brand-popularity): its
     // website's rank and Google's suggestions, left out the same way.
     const POP_COLS = ', web_domain, web_rank, web_rank_was, web_rank_days, web_rank_checked_at, google_searches, google_phrases, google_checked_at'
-    let COLS = BASE_COLS + PICK_COLS + POP_COLS
-    {
-      const probe = await admin.from('trybe_directory').select(COLS).limit(1)
-      if (probe.error && /does not exist|schema cache/i.test(probe.error.message)) {
-        COLS = BASE_COLS + PICK_COLS
-        const again = await admin.from('trybe_directory').select(COLS).limit(1)
-        if (again.error && /does not exist|schema cache/i.test(again.error.message)) COLS = BASE_COLS
-      }
+    // Whether each Meta count is the brand's own (migration 453).
+    const OWN_COLS = ', meta_ads_own, meta_ads_sample'
+    let COLS = BASE_COLS
+    for (const cols of [BASE_COLS + PICK_COLS + POP_COLS + OWN_COLS, BASE_COLS + PICK_COLS + POP_COLS, BASE_COLS + PICK_COLS]) {
+      const probe = await admin.from('trybe_directory').select(cols).limit(1)
+      if (!probe.error || !/does not exist|schema cache/i.test(probe.error.message)) { COLS = cols; break }
     }
     const sort: BrowseSort = (BROWSE_SORTS as readonly string[]).includes(String(body.sort)) ? body.sort as BrowseSort : 'match'
     const payType: PayType = (PAY_TYPES as readonly string[]).includes(String(body.payType)) ? body.payType as PayType : 'any'
@@ -1424,7 +1446,8 @@ export async function POST(request: Request) {
     const topRead = rows.some(r => r.top100_checked_at)
     const pickOf = (r: Record<string, any>) => pickScore({ // eslint-disable-line @typescript-eslint/no-explicit-any
       totalCreators: typeof r.total_creators === 'number' ? r.total_creators : null,
-      metaAds: typeof r.meta_ads === 'number' && r.meta_ads_checked_at && Date.now() - Date.parse(r.meta_ads_checked_at) < 4 * META_ADS_FRESH_MS ? r.meta_ads : null,
+      // A count that is not the brand's (a common-word name) is not read.
+      metaAds: typeof r.meta_ads === 'number' && r.meta_ads_checked_at && Date.now() - Date.parse(r.meta_ads_checked_at) < 4 * META_ADS_FRESH_MS ? metaUsable(r) : null,
       top100Hits: topRead ? (r.top100_hits ?? 0) : null,
       top100BestRank: r.top100_best_rank ?? null,
       tiktokShop: tiktokShopOf(r),
@@ -1526,13 +1549,20 @@ export async function POST(request: Request) {
     // are any, take over. Three groups: a ratio; counted with no ratio (no
     // reviews), by Meta ads; not counted, after.
     const creatorsKnown = rows.some(r => typeof r.total_creators === 'number')
-    const ratioOf = (r: Record<string, any>): number | null => !metaFresh(r) ? null // eslint-disable-line @typescript-eslint/no-explicit-any
+    // Is each count the brand's own (lib/trybe-pick metaTrustOf): one at
+    // Meta's most, or mostly other advertisers' ads, gets no ratio.
+    const trustOf = (r: Record<string, any>) => metaTrustOf({ count: r.meta_ads, own: r.meta_ads_own ?? null, sample: r.meta_ads_sample ?? null }) // eslint-disable-line @typescript-eslint/no-explicit-any
+    const trusted = (r: Record<string, any>) => { const t = trustOf(r); return t === 'own' || t === 'unchecked' } // eslint-disable-line @typescript-eslint/no-explicit-any
+    const ratioOf = (r: Record<string, any>): number | null => !metaFresh(r) || !trusted(r) ? null // eslint-disable-line @typescript-eslint/no-explicit-any
       : creatorsKnown ? adsPerCreator(r.meta_ads, typeof r.total_creators === 'number' ? r.total_creators : null)
         : adsPerReview(r.meta_ads, ratingOf(r)?.reviews ?? null)
+    // Four groups: a ratio; counted and the brand's, no ratio (no reviews),
+    // by Meta ads; counted but not the brand's; not counted.
     const adsRank = (x: typeof ranked[number]): [number, number] => {
       if (!metaFresh(x.r)) return [0, 0]
+      if (!trusted(x.r)) return [1, 0]
       const ratio = ratioOf(x.r)
-      return ratio != null ? [2, ratio] : [1, x.r.meta_ads as number]
+      return ratio != null ? [3, ratio] : [2, x.r.meta_ads as number]
     }
     const adsOrder = (a: typeof ranked[number], b: typeof ranked[number]) => { const ga = adsRank(a), gb = adsRank(b); return gb[0] - ga[0] || gb[1] - ga[1] }
     const stars = (x: typeof ranked[number]) => ratingOf(x.r)?.stars ?? 0
@@ -1566,14 +1596,20 @@ export async function POST(request: Request) {
       rankedBy: creatorsKnown ? 'perCreator' as const : 'perReview' as const,
       total: shown.length,
       meta: shown.filter(x => metaFresh(x.r)).length,
+      notOwn: shown.filter(x => metaFresh(x.r) && !trusted(x.r)).length,
       web: shown.filter(x => x.r.web_rank_checked_at).length,
       google: shown.filter(x => x.r.google_checked_at).length,
       popularityReady: COLS.includes('web_rank'),
     }
+    // Never counted first, then counted a week ago or more, then counted but
+    // never checked as the brand's own (counts from before migration 453).
+    // Star brands over all of TRYBE sends them all, for Count all and the
+    // daily refresh.
+    const todoRank = (r: Record<string, any>) => !r.meta_ads_checked_at ? 0 : Date.now() - Date.parse(r.meta_ads_checked_at) > META_ADS_FRESH_MS ? 1 : COLS.includes('meta_ads_sample') && r.meta_ads_sample == null && (r.meta_ads ?? 0) > 0 ? 2 : -1 // eslint-disable-line @typescript-eslint/no-explicit-any
     const metaTodo = sort === 'adsPerCreator'
-      ? shown.filter(x => !x.r.meta_ads_checked_at || Date.now() - Date.parse(x.r.meta_ads_checked_at) > META_ADS_FRESH_MS)
-        .sort((a, b) => stars(b) - stars(a) || (b.r.top100_hits ?? 0) - (a.r.top100_hits ?? 0) || (a.r.total_creators ?? Infinity) - (b.r.total_creators ?? Infinity))
-        .slice(0, 120).map(x => ({ brand_id: x.r.brand_id, name: x.r.name }))
+      ? shown.filter(x => todoRank(x.r) >= 0)
+        .sort((a, b) => todoRank(a.r) - todoRank(b.r) || stars(b) - stars(a) || (b.r.top100_hits ?? 0) - (a.r.top100_hits ?? 0) || (a.r.total_creators ?? Infinity) - (b.r.total_creators ?? Infinity))
+        .slice(0, starPool ? 3000 : 120).map(x => ({ brand_id: x.r.brand_id, name: x.r.name }))
       : undefined
     return NextResponse.json({
       ok: true,
@@ -1639,9 +1675,12 @@ export async function POST(request: Request) {
           // How known it is (migration 452): null with no checked_at is not read.
           web_domain: r.web_domain ?? null, web_rank: r.web_rank ?? null, web_rank_was: r.web_rank_was ?? null, web_rank_days: r.web_rank_days ?? null, web_rank_checked_at: r.web_rank_checked_at ?? null,
           google_searches: r.google_searches ?? null, google_phrases: r.google_phrases ?? [], google_checked_at: r.google_checked_at ?? null,
-          ads_per_creator: metaFresh(r) ? adsPerCreator(r.meta_ads, typeof r.total_creators === 'number' ? r.total_creators : null) : null,
-          ads_per_review: metaFresh(r) ? adsPerReview(r.meta_ads, ratingOf(r)?.reviews ?? null) : null,
+          // No ratio from a count that is not the brand's own.
+          ads_per_creator: metaFresh(r) && trusted(r) ? adsPerCreator(r.meta_ads, typeof r.total_creators === 'number' ? r.total_creators : null) : null,
+          ads_per_review: metaFresh(r) && trusted(r) ? adsPerReview(r.meta_ads, ratingOf(r)?.reviews ?? null) : null,
           meta_fresh: !!metaFresh(r),
+          // Whether the count is the brand's own (migration 453).
+          meta_trust: typeof r.meta_ads === 'number' ? trustOf(r) : null, meta_ads_own: r.meta_ads_own ?? null, meta_ads_sample: r.meta_ads_sample ?? null,
           // TRYBE's rating: stars of 5 from creators' reviews, and how many.
           review_rating: ratingOf(r)?.stars ?? null, review_count: ratingOf(r)?.reviews ?? null,
         }

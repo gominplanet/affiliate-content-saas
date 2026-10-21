@@ -9,7 +9,7 @@
 
 import { useState } from 'react'
 import { Star, Search, X, ExternalLink, Copy, Check, SlidersHorizontal, PlayCircle, ShoppingBag, Ban, RotateCcw, DollarSign, Users, Sparkles, Clock, ChevronDown, TrendingUp, ArrowLeftRight, Globe, Megaphone, Image as ImageIcon } from 'lucide-react'
-import { GRID_FACTORS, FORMATS, DEFAULT_PRIORITIES, verdictOf, VERDICT_WORDS, type Factor, type Priorities, type Weight } from '@/lib/trybe-pick'
+import { GRID_FACTORS, FORMATS, DEFAULT_PRIORITIES, verdictOf, VERDICT_WORDS, metaTrustWords, type Factor, type Priorities, type Weight, type MetaTrust } from '@/lib/trybe-pick'
 import { reviewWords } from '@/lib/trybe-mybrands'
 import { FILTER_WORDS, CROWD_WORDS, type FilterId, type FinderFilters, type DirStats, type CrowdRead, type SpendRead } from '@/lib/trybe-finder'
 import type { PayBasis } from '@/lib/trybe-pay'
@@ -541,6 +541,8 @@ export interface LivePopularity {
   meta_ads?: number | null; total_creators?: number | null; ads_per_creator?: number | null
   /** Meta ads per creator review on TRYBE, while TRYBE gives no creator counts. */
   ads_per_review?: number | null; review_count?: number | null
+  /** Whether the Meta count is the brand's own (lib/trybe-pick metaTrustOf). */
+  meta_trust?: MetaTrust | null; meta_ads_own?: number | null; meta_ads_sample?: number | null; name?: string
 }
 const SAID_STYLE = {
   good: { background: 'rgba(22,163,74,0.10)', color: GREEN },
@@ -575,9 +577,12 @@ export function PopularityChips({ b, perCreator = false }: { b: LivePopularity; 
       : b.ads_per_review != null && typeof b.review_count === 'number' ? adsPerReviewWords(b.meta_ads, b.review_count) : null
   const web = b.website ? webRankWords({ checked: !!b.web_rank_checked_at, domain: b.web_domain ?? null, rank: b.web_rank ?? null, was: b.web_rank_was, days: b.web_rank_days }) : null
   const google = googleWords({ checked: !!b.google_checked_at, searches: b.google_searches ?? null, phrases: b.google_phrases })
-  if (!ads && !web && !google) return null
+  // A Meta count that is not the brand's own says so, wherever it shows.
+  const notOwn = typeof b.meta_ads === 'number' && b.meta_trust ? metaTrustWords(b.meta_trust, { name: b.name || 'its name', count: b.meta_ads, own: b.meta_ads_own, sample: b.meta_ads_sample }) : null
+  if (!ads && !web && !google && !notOwn) return null
   return (
     <>
+      {notOwn && <SaidChip said={{ short: `Meta: ${notOwn.short.toLowerCase()}`, long: notOwn.long, tone: 'bad' }} icon={<Megaphone size={11} />} />}
       {ads && <SaidChip said={ads} icon={<Megaphone size={11} />} />}
       {web && <SaidChip said={web} icon={<Globe size={11} />} />}
       {google && <SaidChip said={google} icon={<Search size={11} />} />}

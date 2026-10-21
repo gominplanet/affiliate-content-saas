@@ -12,7 +12,7 @@
 // HOW KNOWN EACH BRAND IS (migration 452, lib/brand-popularity; Seb,
 // 2026-10-21): its website's rank among the world's websites (the Tranco
 // list, one question a second) and what Google suggests after its name. Read
-// first each run for about 45 seconds, highest TRYBE score first, about 240
+// first each run for about 45 seconds, rated brands first, about 240
 // brands an hour, again after two weeks. A source that did not answer leaves
 // the brand not read, and after two misses in a row it is not asked again
 // that run.
@@ -59,11 +59,19 @@ async function popularityPass(sb: any, started: number): Promise<PopRun> {
   const until = started + POP_BUDGET_MS
   const stale = new Date(Date.now() - POPULARITY_FRESH_MS).toISOString()
   // Never read first (highest TRYBE score first), then the oldest reads.
+  // Brands creators rated on TRYBE first (Star brands lists them; Seb's
+  // test 2026-10-21 showed 5 of its 405 read): TRYBE's list has no score to
+  // order by, so trybe_score put them anywhere.
   const todo = async (col: 'web_rank_checked_at' | 'google_checked_at'): Promise<PopRow[] | null> => {
-    const { data, error } = await sb.from('trybe_directory').select('brand_id, name, website').is(col, null)
-      .order('trybe_score', { ascending: false, nullsFirst: false }).limit(POP_PER_RUN)
+    const { data: rated, error } = await sb.from('trybe_directory').select('brand_id, name, website').is(col, null)
+      .not('raw->>reviewRating', 'is', null).limit(POP_PER_RUN)
     if (error) { if (/does not exist|schema cache/i.test(error.message)) run.missing = true; return null }
-    let rows = (data || []) as PopRow[]
+    let rows = (rated || []) as PopRow[]
+    if (rows.length < POP_PER_RUN) {
+      const { data: rest } = await sb.from('trybe_directory').select('brand_id, name, website').is(col, null)
+        .order('trybe_score', { ascending: false, nullsFirst: false }).limit(POP_PER_RUN - rows.length)
+      rows = rows.concat((rest || []) as PopRow[])
+    }
     if (rows.length < POP_PER_RUN) {
       const { data: old } = await sb.from('trybe_directory').select('brand_id, name, website').lt(col, stale)
         .order(col, { ascending: true }).limit(POP_PER_RUN - rows.length)

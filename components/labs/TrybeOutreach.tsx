@@ -24,7 +24,7 @@ import { Loader2, Lock, Search, Sparkles, Send, Square, ExternalLink, Check, Ale
   Dumbbell, Shirt, House, UtensilsCrossed, Baby, PawPrint, Gem, Cpu, Tent, Plane, BookOpen, Church, Palette, SprayCan, Moon, Pill, HeartPulse,
   Scissors, Droplet, Coffee, Leaf, Wand2, MessageCircle, Pencil, ChevronUp, Bell, Lightbulb, CalendarDays, Inbox, ArrowRight, Clapperboard, UploadCloud, BarChart3, Rocket, type LucideIcon } from 'lucide-react'
 import { requestTrybeTab, requestTrybeTabOpen, requestTrybeApi, requestTrybeAccess, requestTrybeScan, requestTrybeSend, requestTrybeHarvest, requestTrybeRun, requestTrybeRunStatus, requestTrybeRunStop, type TrybeScanPass, type TrybeRun } from '@/lib/extension-frame'
-import { readMetaAds, metaAdsWords } from '@/components/labs/metaAdsRead'
+import { readMetaAds, readMetaAdsAll, metaAdsWords } from '@/components/labs/metaAdsRead'
 import TrybeTabGate from '@/components/labs/TrybeTabGate'
 import TrybeStarBrands from '@/components/labs/TrybeStarBrands'
 import { TRYBE_OPEN_URL, TRYBE_NOT_OPEN, TRYBE_NOT_OPEN_WORDS, trybeTabWords, type TrybeTabState } from '@/lib/trybe-tab'
@@ -34,7 +34,7 @@ import { reportTrybeInbox } from '@/lib/trybe-alerts'
 import { readDiscoveryPage, requestState, acceptRate, type BrandFlags, type RequestState } from '@/lib/trybe-invites'
 import TrybeLink from '@/components/labs/TrybeLink'
 import { SCOUT_TRYBE_OWN_TAB_MIN_VERSION, SCOUT_TRYBE_TAB_OPEN_MIN_VERSION, SCOUT_TRYBE_FIND_MIN_VERSION, SCOUT_TRYBE_HARVEST_MIN_VERSION, SCOUT_TRYBE_BACKGROUND_SEND_MIN_VERSION, SCOUT_TRYBE_RUNNER_MIN_VERSION, SCOUT_TRYBE_HIDDEN_SEND_MIN_VERSION, SCOUT_TRYBE_INBOX_MIN_VERSION, SCOUT_TRYBE_OPEN_BRAND_MIN_VERSION, SCOUT_TRYBE_PLAYBOOK_MIN_VERSION, SCOUT_TRYBE_MYBRANDS_MIN_VERSION, SCOUT_STORE_LISTING_URL, scoutAtLeast } from '@/lib/scout-version'
-import { META_ADS_FRESH_MS, TOP100_FRESH_MS, type PickReason } from '@/lib/trybe-pick'
+import { META_ADS_FRESH_MS, TOP100_FRESH_MS, type PickReason, type MetaTrust } from '@/lib/trybe-pick'
 import { type AfterState } from '@/lib/trybe-playbook'
 import TrybeAfterAccept, { type AfterBrand } from '@/components/labs/TrybeAfterAccept'
 import TrybeMyBrands from '@/components/labs/TrybeMyBrands'
@@ -143,6 +143,7 @@ interface LiveBrand {
   web_domain?: string | null; web_rank?: number | null; web_rank_was?: number | null; web_rank_days?: number | null; web_rank_checked_at?: string | null
   google_searches?: number | null; google_phrases?: string[] | null; google_checked_at?: string | null
   ads_per_creator?: number | null; ads_per_review?: number | null; meta_fresh?: boolean
+  meta_trust?: MetaTrust | null; meta_ads_own?: number | null; meta_ads_sample?: number | null
   /** TRYBE's rating: creators' stars of 5, and how many reviews. */
   review_rating?: number | null; review_count?: number | null
 }
@@ -366,6 +367,16 @@ const TILES: Tile[] = [
   { id: 'changes', label: 'What changed', icon: Bell, group: 'track', color: '#0284C7', line: 'New brands and pay changes', tabs: ['changes'] },
 ]
 
+/** A step of the daily refresh, and how it went. */
+interface DailyStep { id: 'list' | 'top100' | 'meta'; label: string; state: 'waiting' | 'running' | 'done' | 'warn' | 'failed' | 'skipped'; text: string }
+/** Meta counts per daily refresh: about 50 minutes at 10 seconds a brand, so
+ *  every TRYBE brand is counted again within about four weeks. */
+const DAILY_META_MAX = 300
+const DAILY_STYLE: Record<DailyStep['state'], { color: string; word: string }> = {
+  waiting: { color: 'var(--text-3)', word: 'Waiting' }, running: { color: PURPLE, word: 'Running' }, done: { color: GREEN, word: 'Done' },
+  warn: { color: AMBER, word: 'Partly' }, failed: { color: RED, word: 'Not done' }, skipped: { color: 'var(--text-3)', word: 'Skipped' },
+}
+
 /** The menu (TILES in TAB_GROUPS), on its own so it can be looked at alone. */
 export function TrybeMenu({ tab, lockedTab, preview, queue, history, unread, changes, go }: {
   tab: Tab; lockedTab: Tab | null; preview: boolean; queue: unknown[]; history: unknown[]; unread: number
@@ -543,6 +554,13 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
   // COLE'S PICKS (Seb, 2026-10-12): TRYBE's Top 100 and Meta ad counts, read
   // by SCOUT 1.45.0, with what happened said under the list.
   const [signalNote, setSignalNote] = useState<{ tone: 'ok' | 'warn' | 'bad'; text: string } | null>(null)
+  // The daily refresh (the MVP team): its steps now, or as last run.
+  const [daily, setDaily] = useState<{ running: boolean; steps: DailyStep[]; at: string } | null>(null)
+  const dailyStop = useRef(false)
+  useEffect(() => {
+    if (!isAdmin || preview) return
+    void api({ action: 'daily_refresh' }).then((d) => { if (d?.last?.at && Array.isArray(d.last.steps)) setDaily((now) => now?.running ? now : { running: false, steps: d.last.steps, at: d.last.at }) }).catch(() => {})
+  }, [isAdmin, preview])
   const [metaRun, setMetaRun] = useState<{ done: number; total: number } | null>(null)
   // Each after-a-yes panel tells the page its stage, so the counts on top
   // are the panels' own, never a second guess from the list.
@@ -1158,16 +1176,24 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
 
   /** TRYBE's Top 100 videos, read by SCOUT from the creator's own TRYBE and
    *  counted per brand on MVP. A brand seen in it often is spending. */
-  async function readTop100(quiet = false) {
-    if (!canPlaybook) return
+  async function readTop100(quiet = false): Promise<{ tone: 'ok' | 'warn' | 'bad'; text: string } | null> {
+    if (!canPlaybook) return null
+    // What it said, also handed back, so the daily refresh can log it.
+    let said: { tone: 'ok' | 'warn' | 'bad'; text: string } | null = null
+    const rankTone = { ok: 0, warn: 1, bad: 2 } as const
+    const say = (n: { tone: 'ok' | 'warn' | 'bad'; text: string }) => {
+      const had: { tone: 'ok' | 'warn' | 'bad'; text: string } | null = said
+      said = had ? { tone: rankTone[n.tone] > rankTone[had.tone] ? n.tone : had.tone, text: `${had.text} ${n.text}` } : n
+      setSignalNote(n)
+    }
     setTopRun(true)
     try {
       const r = await requestTrybeApi('GET', '/backend/api/creator/v2/top-creatives')
-      if (!r.ok) { setSignalNote({ tone: quiet ? 'warn' : 'bad', text: `TRYBE's Top 100 could not be read${quiet ? ' this time' : ''}: ${r.error || `TRYBE answered ${r.status ?? 'nothing'}`}. Make sure you are signed in to TRYBE.` }); return }
+      if (!r.ok) { say({ tone: quiet ? 'warn' : 'bad', text: `TRYBE's Top 100 could not be read${quiet ? ' this time' : ''}: ${r.error || `TRYBE answered ${r.status ?? 'nothing'}`}. Make sure you are signed in to TRYBE.` }); return said }
       const d = await api({ action: 'top100', json: r.json })
-      if (d.notSaved) { if (!quiet) setSignalNote({ tone: 'warn', text: d.notSaved }) }
-      else if (!d.read || !d.matched) setSignalNote({ tone: 'bad', text: `MVP read TRYBE's Top 100 but could not match its videos to brands${isAdmin && d.sample ? ` (TRYBE sent: ${d.sample})` : ''}. Nothing was changed.` })
-      else if (!quiet) setSignalNote({ tone: 'ok', text: `TRYBE's Top 100 read: ${d.matched} brand${d.matched === 1 ? ' has' : 's have'} videos in it right now.` })
+      if (d.notSaved) { if (!quiet) say({ tone: 'warn', text: d.notSaved }) }
+      else if (!d.read || !d.matched) say({ tone: 'bad', text: `MVP read TRYBE's Top 100 but could not match its videos to brands${isAdmin && d.sample ? ` (TRYBE sent: ${d.sample})` : ''}. Nothing was changed.` })
+      else if (!quiet) say({ tone: 'ok', text: `TRYBE's Top 100 read: ${d.matched} brand${d.matched === 1 ? ' has' : 's have'} videos in it right now.` })
       // HOOKS WINNING ON TRYBE: when the Top 100 carries no words, the MVP
       // team's SCOUT reads each video's script (the same read as a brand's
       // best videos) and MVP keeps their opening lines for every member.
@@ -1179,13 +1205,78 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
           if (text) got.push({ ...v, text })
         }
         const h = await api({ action: 'top100_hooks', hooks: got }).catch(() => null)
-        if (!quiet) setSignalNote({ tone: h?.saved ? 'ok' : 'warn', text: h?.saved ? `Hooks winning on TRYBE: kept the opening lines of ${h.saved} Top 100 videos for Make videos.` : `Hooks winning on TRYBE: ${h?.why || `TRYBE shared the words of ${got.length} of ${d.needScripts.length} Top 100 videos, too few to keep.`}` })
+        if (!quiet) say({ tone: h?.saved ? 'ok' : 'warn', text: h?.saved ? `Hooks winning on TRYBE: kept the opening lines of ${h.saved} Top 100 videos for Make videos.` : `Hooks winning on TRYBE: ${h?.why || `TRYBE shared the words of ${got.length} of ${d.needScripts.length} Top 100 videos, too few to keep.`}` })
       }
       setLiveNonce(n => n + 1)
       void load()
     } catch (e) {
-      setSignalNote({ tone: 'bad', text: e instanceof Error ? e.message : 'TRYBE\u2019s Top 100 could not be saved.' })
+      say({ tone: 'bad', text: e instanceof Error ? e.message : 'TRYBE\u2019s Top 100 could not be saved.' })
     } finally { setTopRun(false) }
+    return said
+  }
+
+  /** THE DAILY REFRESH (Seb, 2026-10-21: "my daily button ... refreshes all
+   *  of the brands. It refreshes the star brands and the meta check and all
+   *  of that stuff ... And I can do that manually every single day"). The
+   *  MVP team only. In order: TRYBE's brand list, TRYBE's Top 100, then Meta
+   *  ads for up to DAILY_META_MAX brands (never counted first, rated first,
+   *  then the oldest counts), checked as each brand's own. Each step says
+   *  what it did or why not, and the run is kept, so the next press says when
+   *  it last ran and how it went. Website ranks and Google run by themselves. */
+  async function dailyRefresh() {
+    if (daily?.running) return
+    dailyStop.current = false
+    const steps: DailyStep[] = [
+      { id: 'list', label: 'TRYBE\u2019s brand list', state: 'waiting', text: '' },
+      { id: 'top100', label: 'TRYBE\u2019s Top 100', state: 'waiting', text: '' },
+      { id: 'meta', label: 'Meta ads', state: 'waiting', text: '' },
+    ]
+    const show = (running: boolean) => setDaily({ running, steps: steps.map((x) => ({ ...x })), at: new Date().toISOString() })
+    const step = (id: DailyStep['id'], state: DailyStep['state'], text: string) => { const x = steps.find((y) => y.id === id)!; x.state = state; x.text = text; show(true) }
+    show(true)
+    try {
+      if (access !== 'granted') {
+        for (const x of steps) { x.state = 'failed'; x.text = 'SCOUT is not allowed on TRYBE in this Chrome. Press Allow SCOUT on TRYBE at the top of this page.' }
+        return
+      }
+      // 1. Every brand on TRYBE, collected again.
+      step('list', 'running', 'SCOUT is collecting every brand on TRYBE, in a tab behind this one...')
+      const notes: string[] = []
+      const ok = await collectFromTrybe(notes, true).catch((e) => { notes.push(e instanceof Error ? e.message : 'Collecting failed.'); return false })
+      setFinding(null)
+      const d0 = await load()
+      step('list', ok && !notes.some((n) => /could not|refused|not allowed|ran out/i.test(n)) ? 'done' : ok ? 'warn' : 'failed',
+        [ok && d0?.directory?.listed != null ? `${Number(d0.directory.listed).toLocaleString()} brands on TRYBE now.` : ok ? 'Collected.' : 'Not collected.', ...notes].join(' '))
+      if (dailyStop.current) { step('top100', 'skipped', 'Stopped.'); step('meta', 'skipped', 'Stopped.'); return }
+      // 2. TRYBE's Top 100: who is spending.
+      step('top100', 'running', 'Reading TRYBE\u2019s Top 100...')
+      const t = await readTop100(false)
+      step('top100', !t ? 'failed' : t.tone === 'ok' ? 'done' : t.tone === 'warn' ? 'warn' : 'failed', t?.text || 'SCOUT cannot read TRYBE\u2019s Top 100 here (update SCOUT).')
+      if (dailyStop.current) { step('meta', 'skipped', 'Stopped.'); return }
+      // 3. Meta ads, every brand in turn: the ones to count next across all of TRYBE.
+      step('meta', 'running', 'Finding the brands to count...')
+      const list = await api({ action: 'browse', categories: [], keywords: [], limit: 1, sort: 'adsPerCreator', payType: 'any', includeMine: true, filters: NO_FILTERS })
+      const todo = ((list.metaTodo || []) as Array<{ brand_id: string; name: string }>)
+      if (!todo.length) { step('meta', 'done', 'Every brand already has a Meta ad count from this week.'); return }
+      const now = todo.slice(0, DAILY_META_MAX)
+      const run = await readMetaAdsAll(now.map((b) => ({ brandId: b.brand_id, name: b.name })), {
+        cards: true, gone: () => leftRef.current, stop: () => dailyStop.current,
+        onProgress: (done, total) => step('meta', 'running', `Reading Meta\u2019s Ad Library: ${done} of ${total}. Leave this tab open; about ${Math.max(1, Math.ceil(((total - done) * 10) / 60))} minutes left.`),
+      })
+      const w = metaAdsWords(run, scoutVersion)
+      const left = todo.length - run.read
+      step('meta', w.tone === 'ok' ? 'done' : w.tone === 'warn' ? 'warn' : 'failed', `${w.text}${left > 0 ? ` ${left.toLocaleString()} brand${left === 1 ? '' : 's'} still to count: the next daily refresh carries on from there.` : ''}`)
+    } catch (e) {
+      const x = steps.find((y) => y.state === 'running')
+      if (x) { x.state = 'failed'; x.text = e instanceof Error ? e.message : 'It stopped with an error.' }
+    } finally {
+      setFinding(null)
+      const at = new Date().toISOString()
+      setDaily({ running: false, steps: steps.map((x) => ({ ...x, state: x.state === 'waiting' || x.state === 'running' ? 'skipped' : x.state })), at })
+      await api({ action: 'daily_refresh', log: { at, steps: steps.map((x) => ({ id: x.id, label: x.label, state: x.state === 'waiting' || x.state === 'running' ? 'skipped' : x.state, text: x.text.slice(0, 600) })) } }).catch(() => null)
+      setLiveNonce((n) => n + 1)
+      void load()
+    }
   }
 
   /** How many active Meta ads mention each brand shown, read by SCOUT from
@@ -1451,7 +1542,32 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
           className="inline-flex items-center gap-1 text-[12.5px] font-semibold rounded-full border px-3 py-1.5" style={{ borderColor: 'rgba(124,58,237,0.35)', color: PURPLE }}>
           New to TRYBE? Join free <ExternalLink size={11} />
         </a>
+        {/* DAILY REFRESH: the MVP team only (Seb, 2026-10-21). */}
+        {isAdmin && !preview && (
+          daily?.running
+            ? <button onClick={() => { dailyStop.current = true }} className="inline-flex items-center gap-1.5 text-[12.5px] font-semibold rounded-full px-3 py-1.5" style={{ background: PURPLE, color: '#fff' }} title="Stop after the brand being read now">
+                <Loader2 size={12} className="animate-spin" /> Refreshing... Stop
+              </button>
+            : <button onClick={() => void dailyRefresh()} className="inline-flex items-center gap-1.5 text-[12.5px] font-semibold rounded-full px-3 py-1.5" style={{ background: PURPLE, color: '#fff' }}
+                title="Team only: collect TRYBE's brand list again, read the Top 100, and count Meta ads for the next brands. About an hour; leave the tab open.">
+                <RotateCcw size={12} /> Daily refresh
+              </button>
+        )}
       </header>
+
+      {/* What the daily refresh is doing, or did last time. */}
+      {isAdmin && !preview && daily && (
+        <section className="rounded-2xl border px-4 py-3 text-[13px] space-y-1.5 -mt-1" style={{ borderColor: 'rgba(124,58,237,0.35)', background: 'rgba(124,58,237,0.04)' }} aria-live="polite">
+          <p className="font-semibold flex flex-wrap items-center gap-2">
+            Daily refresh {daily.running ? 'running' : `last run ${new Date(daily.at).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}`}
+            {!daily.running && Date.now() - Date.parse(daily.at) > 30 * 3600_000 && <span style={{ color: AMBER }}>More than a day ago.</span>}
+            <span className="text-[11px] font-normal" style={soft}>Team only. Website ranks and Google searches refresh by themselves.</span>
+          </p>
+          {daily.steps.map((x) => (
+            <p key={x.id} className="flex gap-2"><span className="w-20 shrink-0 font-semibold" style={{ color: DAILY_STYLE[x.state].color }}>{DAILY_STYLE[x.state].word}</span><span><b>{x.label}</b>{x.text ? `: ${x.text}` : ''}</span></p>
+          ))}
+        </section>
+      )}
 
       {/* THE AMAZON PLAN'S PREVIEW: what is open, and what Pro adds. */}
       {preview && (

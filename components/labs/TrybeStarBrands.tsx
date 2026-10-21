@@ -28,7 +28,8 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { Loader2, Megaphone, Sparkles, RotateCcw, Users } from 'lucide-react'
 import { BrandMark, PayChip, StarButton, PopularityChips, RatingChip, NO_FILTERS, type LivePayEst, type LivePopularity } from '@/components/labs/TrybeFinderControls'
-import { readMetaAds, metaAdsWords } from '@/components/labs/metaAdsRead'
+import { readMetaAdsAll, metaAdsWords } from '@/components/labs/metaAdsRead'
+import { metaTrustWords, type MetaTrust } from '@/lib/trybe-pick'
 
 const COLOR = '#C026D3'
 const GREEN = '#16A34A'
@@ -44,10 +45,12 @@ interface StarBrand extends LivePopularity {
   trybe_score: number | null; total_creators: number | null
   pay_text: string | null; pay_est?: LivePayEst | null
   meta_ads?: number | null; meta_ads_checked_at?: string | null; meta_fresh?: boolean
+  /** Whether the count is the brand's own (lib/trybe-pick metaTrustOf). */
+  meta_trust?: MetaTrust | null; meta_ads_own?: number | null; meta_ads_sample?: number | null
   review_rating?: number | null; review_count?: number | null
   starred?: boolean; is_new?: boolean
 }
-interface ReadCounts { ratingKnown?: number; looked?: number; creators?: number; rankedBy?: 'perCreator' | 'perReview'; total: number; meta: number; web: number; google: number; popularityReady: boolean }
+interface ReadCounts { notOwn?: number; ratingKnown?: number; looked?: number; creators?: number; rankedBy?: 'perCreator' | 'perReview'; total: number; meta: number; web: number; google: number; popularityReady: boolean }
 interface Answer { brands: StarBrand[]; matched: number; hiddenMine: number; readCounts?: ReadCounts; metaTodo?: Array<{ brand_id: string; name: string }>; blankBy?: Record<string, number>; hiddenBy?: Record<string, number> }
 
 async function api(body: Record<string, unknown>) {
@@ -75,7 +78,8 @@ export default function TrybeStarBrands({ canCount, cards, scoutVersion, hasCore
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [picked, setPicked] = useState<Set<string>>(new Set())
-  const [counting, setCounting] = useState<{ done: number; total: number } | null>(null)
+  const [counting, setCounting] = useState<{ done: number; total: number; all: boolean } | null>(null)
+  const stopRef = useRef(false)
   const [note, setNote] = useState<{ tone: 'ok' | 'warn' | 'bad'; text: string } | null>(null)
   const [writing, setWriting] = useState(false)
   // NO RATING IN MVP'S COPY: the rating filter could only empty the list, so
@@ -100,12 +104,16 @@ export default function TrybeStarBrands({ canCount, cards, scoutVersion, hasCore
   }, [minRating, maxCreators])
   useEffect(() => { const t = window.setTimeout(() => void load(), 350); return () => window.clearTimeout(t) }, [load])
 
-  async function countMeta() {
-    const todo = (data?.metaTodo || []).slice(0, COUNT_PER_PRESS)
+  async function countMeta(all = false) {
+    // One press: the next forty. Count all: every brand on the list, the
+    // ranking refreshed after each forty, until done or stopped.
+    const list = data?.metaTodo || []
+    const todo = all ? list : list.slice(0, COUNT_PER_PRESS)
     if (!todo.length) return
-    setNote(null); setCounting({ done: 0, total: todo.length })
+    stopRef.current = false
+    setNote(null); setCounting({ done: 0, total: todo.length, all })
     try {
-      const run = await readMetaAds(todo.map((b) => ({ brandId: b.brand_id, name: b.name })), { cards, onProgress: (done, total) => setCounting({ done, total }), gone: () => left.current })
+      const run = await readMetaAdsAll(todo.map((b) => ({ brandId: b.brand_id, name: b.name })), { cards, onProgress: (done, total) => setCounting({ done, total, all }), gone: () => left.current, stop: () => stopRef.current, onChunk: all ? () => load() : undefined })
       setNote(metaAdsWords(run, scoutVersion))
       await load()
     } catch (e) {
@@ -177,7 +185,7 @@ export default function TrybeStarBrands({ canCount, cards, scoutVersion, hasCore
             {minRating ? <span style={soft}> Only brands creators have reviewed on TRYBE have a rating, about 600 of TRYBE&rsquo;s brands.</span> : null}
           </p>
           <p style={{ color: c.meta < c.total ? AMBER : GREEN }}>
-            Meta ads counted for {c.meta.toLocaleString()} of {c.total.toLocaleString()}.{c.meta < c.total ? ' The ones not counted yet are listed after the rest, best rated first.' : ' Every brand on this list is ranked on its own count.'}
+            Meta ads counted for {c.meta.toLocaleString()} of {c.total.toLocaleString()}.{c.notOwn ? ` ${c.notOwn.toLocaleString()} of those ${c.notOwn === 1 ? 'is' : 'are'} not the brand\u2019s own (a common-word name), listed after the rest.` : ''}{c.meta < c.total ? ' The ones not counted yet are listed after the rest, best rated first.' : ' Every brand on this list is ranked on its own count.'}
           </p>
           {perReview && <p style={soft}>Ranked by Meta ads per creator review. TRYBE does not say how many creators a brand has; its reviews are the closest it gives, since at least that many creators worked with it. Ads per creator takes over once MVP has creator counts.</p>}
           {c.popularityReady
@@ -186,9 +194,16 @@ export default function TrybeStarBrands({ canCount, cards, scoutVersion, hasCore
           {todo > 0 && (
             <div className="flex flex-wrap items-center gap-2 pt-1">
               {canCount
-                ? <button onClick={() => void countMeta()} disabled={counting != null} className={btn} style={{ background: COLOR, color: '#fff' }}>
-                    {counting ? <><Loader2 size={13} className="animate-spin" /> Reading Meta&rsquo;s Ad Library: {counting.done} of {counting.total}</> : <><Megaphone size={13} /> Count Meta ads for the next {Math.min(COUNT_PER_PRESS, todo)}</>}
-                  </button>
+                ? counting
+                  ? <>
+                      <span className={btn} style={{ background: COLOR, color: '#fff' }}><Loader2 size={13} className="animate-spin" /> Reading Meta&rsquo;s Ad Library: {counting.done} of {counting.total}</span>
+                      <button onClick={() => { stopRef.current = true }} className={btn} style={{ border: '1px solid var(--border-2)' }}>Stop</button>
+                      {counting.all && <span className="text-[12px]" style={soft}>About {Math.max(1, Math.ceil(((counting.total - counting.done) * 10) / 60))} minutes left. Leave this tab open; the list ranks itself again after every 40.</span>}
+                    </>
+                  : <>
+                      <button onClick={() => void countMeta(false)} className={btn} style={{ background: COLOR, color: '#fff' }}><Megaphone size={13} /> Count the next {Math.min(COUNT_PER_PRESS, todo)}</button>
+                      {todo > COUNT_PER_PRESS && <button onClick={() => void countMeta(true)} className={btn} style={{ border: `1px solid ${COLOR}`, color: COLOR }}>Count all {todo.toLocaleString()} (about {Math.ceil((todo * 10) / 60)} min)</button>}
+                    </>
                 : <span style={soft}>SCOUT counts Meta ads in this Chrome. Allow SCOUT on TRYBE (top of this page) to count the rest.</span>}
               <span className="text-[12px]" style={soft}>Counts are kept for every MVP member for a week.</span>
             </div>
@@ -215,14 +230,18 @@ export default function TrybeStarBrands({ canCount, cards, scoutVersion, hasCore
               const ratio = b.ads_per_creator
               const perRev = b.ads_per_review ?? null
               const known = !!b.meta_fresh
-              const first = i === 0 || !!brands[i - 1].meta_fresh !== known
+              const notOwn = known && (b.meta_trust === 'capped' || b.meta_trust === 'mixed')
+              const groupOf = (x: StarBrand) => !x.meta_fresh ? 2 : x.meta_trust === 'capped' || x.meta_trust === 'mixed' ? 1 : 0
+              const first = i === 0 || groupOf(brands[i - 1]) !== groupOf(b)
+              const trustSaid = notOwn && b.meta_trust ? metaTrustWords(b.meta_trust, { name: b.name, count: b.meta_ads ?? 0, own: b.meta_ads_own, sample: b.meta_ads_sample }) : null
               return (
                 <li key={b.brand_id}>
+                  {first && i > 0 && notOwn && <p className="text-[12px] font-semibold uppercase tracking-wide mt-3 mb-1.5" style={soft}>Counts that include other advertisers&rsquo; ads</p>}
                   {first && !known && counted.length > 0 && <p className="text-[12px] font-semibold uppercase tracking-wide mt-3 mb-1.5" style={soft}>Meta ads not counted yet</p>}
                   <label className="flex gap-3 rounded-xl border p-3 cursor-pointer" style={{ borderColor: picked.has(b.brand_id) ? COLOR : 'var(--border)', background: 'var(--surface)' }}>
                     <input type="checkbox" className="mt-1 accent-[#C026D3]" checked={picked.has(b.brand_id)}
                       onChange={(e) => setPicked((s) => { const n = new Set(s); if (e.target.checked) n.add(b.brand_id); else n.delete(b.brand_id); return n })} />
-                    <span className="w-7 shrink-0 text-[13px] font-bold tabular-nums mt-0.5" style={{ color: known ? COLOR : 'var(--text-3)' }}>#{i + 1}</span>
+                    <span className="w-7 shrink-0 text-[13px] font-bold tabular-nums mt-0.5" style={{ color: known && !notOwn ? COLOR : 'var(--text-3)' }}>#{i + 1}</span>
                     <BrandMark name={b.name} website={b.website} size={36} />
                     <span className="flex-1 min-w-0 space-y-1">
                       <span className="flex flex-wrap items-center gap-2">
@@ -233,20 +252,22 @@ export default function TrybeStarBrands({ canCount, cards, scoutVersion, hasCore
                       <span className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
                         {!known
                           ? <span className="text-[12.5px] font-semibold" style={soft}>Meta ads not counted yet</span>
+                          : trustSaid
+                            ? <span className="text-[12.5px]" style={{ color: AMBER }} title={trustSaid.long}><b>{trustSaid.short}</b>: {trustSaid.long}</span>
                           : ratio != null
                             ? <><span className="text-[20px] font-extrabold tabular-nums" style={{ color: ratio >= 5 ? GREEN : 'var(--text)' }}>{ratio.toLocaleString('en-US')}</span><span className="text-[12.5px]" style={{ color: 'var(--text-2)' }}>Meta ads per creator</span></>
                             : perRev != null
                               ? <><span className="text-[20px] font-extrabold tabular-nums" style={{ color: perRev >= 5 ? GREEN : 'var(--text)' }}>{perRev.toLocaleString('en-US')}</span><span className="text-[12.5px]" style={{ color: 'var(--text-2)' }}>Meta ads per review</span></>
                               : <><span className="text-[20px] font-extrabold tabular-nums" style={{ color: (b.meta_ads ?? 0) >= 50 ? GREEN : 'var(--text)' }}>{(b.meta_ads ?? 0).toLocaleString('en-US')}</span><span className="text-[12.5px]" style={{ color: 'var(--text-2)' }}>Meta ad{b.meta_ads === 1 ? '' : 's'} running now, no reviews yet</span></>}
                         <span className="text-[12.5px] inline-flex items-center gap-1" style={soft}>
-                          {known && (ratio != null || perRev != null) ? `${(b.meta_ads ?? 0).toLocaleString('en-US')} ads running \u00b7 ` : ''}
+                          {known && !notOwn && (ratio != null || perRev != null) ? `${(b.meta_ads ?? 0).toLocaleString('en-US')} ads running \u00b7 ` : ''}
                           {b.total_creators != null
                             ? <><Users size={11} />{b.total_creators.toLocaleString('en-US')} creator{b.total_creators === 1 ? '' : 's'}</>
                             : b.review_count != null ? `${b.review_count.toLocaleString('en-US')} creator review${b.review_count === 1 ? '' : 's'}` : ''}
                         </span>
                       </span>
                       <span className="flex flex-wrap items-center gap-1.5">
-                        <PopularityChips b={b} />
+                        <PopularityChips b={{ ...b, meta_trust: null }} />
                         <PayChip est={b.pay_est} payText={b.pay_text} />
                       </span>
                     </span>

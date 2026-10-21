@@ -15,6 +15,8 @@
 // said as not read, never scored as zero. Pure, so it is tested
 // (scripts/test-trybe-playbook).
 
+import { brandKey } from '@/lib/brand-normalize'
+
 export type Tone = 'good' | 'bad' | 'info'
 export interface PickReason { text: string; tone: Tone }
 
@@ -318,6 +320,71 @@ export function readAdLibraryCount(text: string): number | null {
   if (!m) return null
   const n = parseFloat(m[1].replace(/,/g, '')) * (/k/i.test(m[2] || '') ? 1_000 : /m/i.test(m[2] || '') ? 1_000_000 : 1)
   return Number.isFinite(n) ? Math.round(n) : null
+}
+
+// ── IS THE COUNT THE BRAND'S? (Seb's Star brands test, 2026-10-21) ─────────
+// The Ad Library is searched by the brand's name as words, so a brand called
+// "Rest", "Dose" or "Loaded" counts every advertiser's ads with that word:
+// all three read 50,000, Meta's most. So each count is checked against the
+// ads SCOUT saw on the page: how many the brand's own page runs. A count at
+// Meta's most, or one that is mostly other advertisers' ads, is said as such
+// and never ranked or scored as the brand's ad spend.
+
+/** Meta's Ad Library shows no count above this. */
+export const META_ADS_CAP = 50_000
+/** Ads seen before a share says anything. */
+const OWN_SAMPLE_MIN = 5
+
+const BOILER_LINE = /^(active|inactive|library id|started running|platforms?|this ad has|see ad details|see summary details|ad details|open drop-?down|\d+ ads? use this creative|sponsored)/i
+
+/** Of the ads SCOUT saw on the page, how many the brand's own page runs: the
+ *  advertiser line (the last line before "Sponsored" that is not Meta's own
+ *  words) spells the brand's name in whole words. Pure. */
+export function metaOwnOf(cards: Array<{ text?: unknown }>, name: string): { sample: number; own: number } {
+  const key = brandKey(name)
+  let sample = 0, own = 0
+  for (const c of cards || []) {
+    const lines = String(c?.text || '').split('\n').map((l) => l.replace(/\s+/g, ' ').trim()).filter(Boolean)
+    if (!lines.some((l) => /^library id/i.test(l))) continue
+    sample++
+    if (key.length < 3) continue
+    const sp = lines.findIndex((l) => /^sponsored$/i.test(l))
+    const head = (sp > 0 ? lines.slice(0, sp) : lines.slice(0, 4)).filter((l) => !BOILER_LINE.test(l))
+    const tokens = head.join(' ').toLowerCase().split(/[^a-z0-9]+/).filter(Boolean)
+    let mine = false
+    for (let i = 0; i < tokens.length && !mine; i++) {
+      let acc = ''
+      for (let j = i; j < tokens.length; j++) { acc += tokens[j]; if (acc === key) { mine = true; break } if (acc.length >= key.length) break }
+    }
+    if (mine) own++
+  }
+  return { sample, own }
+}
+
+export type MetaTrust = 'own' | 'unchecked' | 'capped' | 'mixed'
+/** Whether a Meta count is the brand's: checked and its own ('own'), not
+ *  checked yet ('unchecked', used as before), at Meta's most ('capped'), or
+ *  mostly other advertisers' ads ('mixed'). Pure. */
+export function metaTrustOf(p: { count: number | null | undefined; own?: number | null; sample?: number | null }): MetaTrust {
+  if (typeof p.count !== 'number') return 'unchecked'
+  if (p.count >= META_ADS_CAP) return 'capped'
+  const sample = p.sample ?? 0
+  if (sample >= OWN_SAMPLE_MIN) return (p.own ?? 0) / sample < 0.5 ? 'mixed' : 'own'
+  return 'unchecked'
+}
+
+/** A count that can be used as the brand's ad spend, or null. Pure. */
+export function metaUsable(r: { meta_ads?: unknown; meta_ads_own?: unknown; meta_ads_sample?: unknown }): number | null {
+  if (typeof r.meta_ads !== 'number') return null
+  const t = metaTrustOf({ count: r.meta_ads, own: typeof r.meta_ads_own === 'number' ? r.meta_ads_own : null, sample: typeof r.meta_ads_sample === 'number' ? r.meta_ads_sample : null })
+  return t === 'own' || t === 'unchecked' ? r.meta_ads : null
+}
+
+/** A count that is not the brand's, in words. Pure. */
+export function metaTrustWords(t: MetaTrust, p: { name: string; count: number; own?: number | null; sample?: number | null }): { short: string; long: string } | null {
+  if (t === 'capped') return { short: 'Too many to count', long: `Meta shows ${META_ADS_CAP.toLocaleString('en-US')} or more ads with the words \u201c${p.name}\u201d, its most: the name is a common word, so the count is every advertiser\u2019s, not the brand\u2019s.` }
+  if (t === 'mixed') return { short: 'Mostly other advertisers', long: `Of the ${p.sample} ads SCOUT saw for \u201c${p.name}\u201d, ${p.own} ${p.own === 1 ? 'was' : 'were'} the brand\u2019s own: the name is a common word, so the ${p.count.toLocaleString('en-US')} counted are mostly other advertisers\u2019 ads.` }
+  return null
 }
 
 // ── THE VERDICT (Huntr's strong pick / worth a look / skip; Seb 2026-10-14) ──

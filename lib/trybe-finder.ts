@@ -22,6 +22,7 @@
 
 import { readSells, type Sells, type SellsRead } from '@/lib/trybe-sells'
 import { brandKey } from '@/lib/brand-normalize'
+import { metaUsable } from '@/lib/trybe-pick'
 import type { Judged } from '@/lib/trybe-mybrands'
 
 type Obj = Record<string, unknown>
@@ -422,8 +423,10 @@ export interface FinderFilters {
  *  Top 100 can only say yes. A no takes a Meta Ad Library read that found no
  *  ads; anything else is not known, and is listed after the brands that pass.
  *  Pure. */
-export function spendingOf(r: { meta_ads?: unknown; meta_ads_checked_at?: unknown; top100_hits?: unknown; top100_checked_at?: unknown }): boolean | null {
-  const ads = typeof r.meta_ads === 'number' && r.meta_ads_checked_at ? r.meta_ads : null
+export function spendingOf(r: { meta_ads?: unknown; meta_ads_checked_at?: unknown; meta_ads_own?: unknown; meta_ads_sample?: unknown; top100_hits?: unknown; top100_checked_at?: unknown }): boolean | null {
+  // A count that is not the brand's (a common-word name, lib/trybe-pick
+  // metaUsable) says nothing either way.
+  const ads = r.meta_ads_checked_at ? metaUsable(r) : null
   const top = r.top100_checked_at && typeof r.top100_hits === 'number' ? r.top100_hits : null
   if ((ads ?? 0) > 0 || (top ?? 0) > 0) return true
   return ads === 0 ? false : null
