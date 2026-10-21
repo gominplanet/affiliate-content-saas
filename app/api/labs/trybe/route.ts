@@ -1289,10 +1289,33 @@ export async function POST(request: Request) {
     // details Find brands shows, so the two pages never disagree.
     const idsQ = Array.isArray(body.ids) ? (body.ids as unknown[]).map(v => String(v || '').slice(0, 80)).filter(Boolean).slice(0, 60) : []
     const direct = nameQ.length >= 2 || filters.starred || idsQ.length > 0
-    const rpc = direct ? { data: null, error: null } : await admin.rpc('trybe_directory_search', { p_words: words, p_user: null, p_limit: pool })
+    // STAR BRANDS OVER ALL OF TRYBE (no keyword): the keyword search would
+    // hand back its first 1,000 brands by TRYBE score, and with no score in
+    // MVP's copy (Seb's check, 2026-10-21: none of 7,378 had one) that is
+    // 1,000 brands in no useful order. So every brand with a fresh Meta count
+    // comes in, then the likeliest to count next: in TRYBE's Top 100, then
+    // fewest creators.
+    const starPool = !direct && !words.length && sort === 'adsPerCreator'
+    const rpc = direct || starPool ? { data: null, error: null } : await admin.rpc('trybe_directory_search', { p_words: words, p_user: null, p_limit: pool })
     // Only brands TRYBE still lists: one it dropped cannot be messaged.
     const since = await listedSince(admin)
-    if (direct) {
+    if (starPool) {
+      const fresh = new Date(Date.now() - 4 * META_ADS_FRESH_MS).toISOString()
+      let counted = admin.from('trybe_directory').select(COLS).gte('meta_ads_checked_at', fresh)
+      if (since) counted = counted.gte('last_seen_at', since)
+      const { data: a, error: e1 } = await counted.limit(1500)
+      if (e1) return NextResponse.json({ error: e1.message }, { status: 500 })
+      const next = (withTop: boolean) => {
+        let q = admin.from('trybe_directory').select(COLS).or(`meta_ads_checked_at.is.null,meta_ads_checked_at.lt.${fresh}`)
+        if (since) q = q.gte('last_seen_at', since)
+        if (withTop) q = q.order('top100_hits', { ascending: false, nullsFirst: false })
+        return q.order('trybe_score', { ascending: false, nullsFirst: false }).order('total_creators', { ascending: true, nullsFirst: false }).limit(600)
+      }
+      let b = await next(true)
+      if (b.error && /does not exist|schema cache/i.test(b.error.message)) b = await next(false)
+      if (b.error) return NextResponse.json({ error: b.error.message }, { status: 500 })
+      rows = [...((a || []) as Array<Record<string, any>>), ...((b.data || []) as Array<Record<string, any>>)] // eslint-disable-line @typescript-eslint/no-explicit-any
+    } else if (direct) {
       let q = admin.from('trybe_directory').select(COLS)
       if (filters.starred) q = q.in('brand_id', Array.from(starredIds).slice(0, 500))
       if (idsQ.length) q = q.in('brand_id', idsQ)
@@ -1494,7 +1517,7 @@ export async function POST(request: Request) {
           : sort === 'fit' ? fit(b.r.brand_id) - fit(a.r.brand_id) || byMatch(a, b)
             : sort === 'picks' ? weighed(b) - weighed(a) || byMatch(a, b)
             : sort === 'newest' ? time(b.r.first_seen_at) - time(a.r.first_seen_at) || byMatch(a, b)
-            : sort === 'adsPerCreator' ? perCreator(b) - perCreator(a) || (b.r.trybe_score ?? 0) - (a.r.trybe_score ?? 0) || byMatch(a, b)
+            : sort === 'adsPerCreator' ? perCreator(b) - perCreator(a) || (b.r.trybe_score ?? 0) - (a.r.trybe_score ?? 0) || (b.r.top100_hits ?? 0) - (a.r.top100_hits ?? 0) || creators(a.r.total_creators) - creators(b.r.total_creators) || byMatch(a, b)
               : byMatch(a, b)))
     // Passed on (skipped) leaves the list too, like Oink's Pass, until undone.
     const DONE = ['drafted', 'sending', 'sent', 'already', 'failed', 'removed', 'skipped']
@@ -1507,6 +1530,10 @@ export async function POST(request: Request) {
     // a list ranked on a few counts never looks complete. And the brands with
     // no fresh Meta count, in list order, for SCOUT to count next.
     const readCounts = {
+      // Brands MVP has TRYBE's score for, of all it looked at: 0 means the
+      // score filter can only empty the list, and the page says so.
+      scoreKnown: rows.filter(r => typeof r.trybe_score === 'number').length,
+      looked: rows.length,
       total: shown.length,
       meta: shown.filter(x => metaFresh(x.r)).length,
       web: shown.filter(x => x.r.web_rank_checked_at).length,
@@ -1515,7 +1542,8 @@ export async function POST(request: Request) {
     }
     const metaTodo = sort === 'adsPerCreator'
       ? shown.filter(x => !x.r.meta_ads_checked_at || Date.now() - Date.parse(x.r.meta_ads_checked_at) > META_ADS_FRESH_MS)
-        .sort((a, b) => (b.r.trybe_score ?? 0) - (a.r.trybe_score ?? 0)).slice(0, 120).map(x => ({ brand_id: x.r.brand_id, name: x.r.name }))
+        .sort((a, b) => (b.r.trybe_score ?? 0) - (a.r.trybe_score ?? 0) || (b.r.top100_hits ?? 0) - (a.r.top100_hits ?? 0) || (a.r.total_creators ?? Infinity) - (b.r.total_creators ?? Infinity))
+        .slice(0, 120).map(x => ({ brand_id: x.r.brand_id, name: x.r.name }))
       : undefined
     return NextResponse.json({
       ok: true,
@@ -1526,7 +1554,7 @@ export async function POST(request: Request) {
       payOther,
       sort,
       payType,
-      capped: !direct && rows.length >= (rpc.error ? 800 : pool),
+      capped: !direct && !starPool && rows.length >= (rpc.error ? 800 : pool),
       hiddenBy, blankBy, unknownBy, amazonNotes,
       amazonVideos: videos.length,
       // YOUR MIX: the brands you asked, by size (lib/trybe-finder mixOf).

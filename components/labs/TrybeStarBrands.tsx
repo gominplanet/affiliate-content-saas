@@ -44,7 +44,7 @@ interface StarBrand extends LivePopularity {
   meta_ads?: number | null; meta_ads_checked_at?: string | null
   starred?: boolean; is_new?: boolean
 }
-interface ReadCounts { total: number; meta: number; web: number; google: number; popularityReady: boolean }
+interface ReadCounts { scoreKnown?: number; looked?: number; total: number; meta: number; web: number; google: number; popularityReady: boolean }
 interface Answer { brands: StarBrand[]; matched: number; hiddenMine: number; readCounts?: ReadCounts; metaTodo?: Array<{ brand_id: string; name: string }>; blankBy?: Record<string, number>; hiddenBy?: Record<string, number> }
 
 async function api(body: Record<string, unknown>) {
@@ -74,6 +74,10 @@ export default function TrybeStarBrands({ canCount, cards, scoutVersion, hasCore
   const [counting, setCounting] = useState<{ done: number; total: number } | null>(null)
   const [note, setNote] = useState<{ tone: 'ok' | 'warn' | 'bad'; text: string } | null>(null)
   const [writing, setWriting] = useState(false)
+  // TRYBE'S SCORE NOT IN MVP'S COPY (Seb's check, 2026-10-21: none of 7,378
+  // brands had one): the score filter could only empty the list, so it is
+  // taken off and the page says why, instead of showing "no brand matches".
+  const [scoreMissing, setScoreMissing] = useState<number | null>(null)
   const left = useRef(false)
   useEffect(() => () => { left.current = true }, [])
 
@@ -81,7 +85,13 @@ export default function TrybeStarBrands({ canCount, cards, scoutVersion, hasCore
     setLoading(true); setError(null)
     try {
       const d = await api({ action: 'browse', categories: [], keywords: [], limit: 40, sort: 'adsPerCreator', payType: 'any', includeMine: false, filters: { ...NO_FILTERS, minScore, maxCreators } })
-      setData(d as Answer)
+      const a = d as Answer
+      if (minScore && a.readCounts && a.readCounts.scoreKnown === 0 && (a.readCounts.looked ?? 0) > 0) {
+        setScoreMissing(a.readCounts.looked ?? 0)
+        setMinScore(null)
+        return
+      }
+      setData(a)
     } catch (e) { setError(e instanceof Error ? e.message : 'The list could not be read.') }
     finally { setLoading(false) }
   }, [minScore, maxCreators])
@@ -147,6 +157,11 @@ export default function TrybeStarBrands({ canCount, cards, scoutVersion, hasCore
       </div>
 
       {error && <p className="text-[13px] rounded-lg px-3 py-2" style={{ background: 'rgba(220,38,38,0.08)', color: RED }}>The list could not be read: {error}</p>}
+      {scoreMissing != null && !minScore && (
+        <p className="text-[13px] rounded-lg px-3 py-2" style={{ background: 'rgba(180,83,9,0.10)', color: AMBER }}>
+          TRYBE&rsquo;s score is not in MVP&rsquo;s copy of TRYBE yet: none of the {scoreMissing.toLocaleString()} brands MVP looked at has one. So this list is not limited by score for now. Every brand on it is still ranked by Meta ads per creator.
+        </p>
+      )}
 
       {/* HOW MUCH IS READ, before the list, so a ranking on a few counts says so. */}
       {c && (
