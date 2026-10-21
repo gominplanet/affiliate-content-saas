@@ -81,6 +81,16 @@ check('it says how many were counted before the list, and marks the uncounted on
 // Seb's check, 2026-10-21: none of 7,378 brands had TRYBE's score in MVP's copy.
 check('with no keyword, Star brands starts from every counted brand, then the likeliest to count next, never 1,000 in no order', /const starPool = !direct && !words\.length && sort === 'adsPerCreator'/.test(ROUTE) && /gte\('meta_ads_checked_at', fresh\)/.test(ROUTE) && /order\('top100_hits', \{ ascending: false, nullsFirst: false \}\)/.test(ROUTE) && /direct \|\| starPool \? \{ data: null, error: null \}/.test(ROUTE))
 check('no rating anywhere takes the rating filter off and says why, never "no brand matches"', /ratingKnown: rows\.filter\(r => ratingOf\(r\) != null\)\.length/.test(ROUTE) && /a\.readCounts\.ratingKnown === 0/.test(STARS) && /setMinRating\(null\)/.test(STARS) && /TRYBE&rsquo;s rating is not in MVP&rsquo;s copy of TRYBE/.test(STARS))
+// THE PAGE GETS WHAT IT READS (2026-10-21): Find brands copies the server's
+// answer field by field, and Your mix, the spend note, the crowd window and
+// the read counts were read but never copied, so they never showed.
+{
+  const block = UI.slice(UI.indexOf('setLive({ brands: d.brands'), UI.indexOf('// The saved priorities, until the creator changes them'))
+  const readKeys = Array.from(new Set(Array.from(UI.matchAll(/\blive\??\.(\w+)/g)).map((m) => m[1]))).filter((k) => !['brands', 'matched', 'capped'].includes(k))
+  const missing = readKeys.filter((k) => !new RegExp(`\\b${k}: d\\.${k}\\b`).test(block))
+  check('every answer field Find brands reads is copied into the page', block.length > 100 && missing.length === 0, missing)
+}
+check('no creator counts from TRYBE is said on Fewest creators, the creator limit, the quick list and Best bets', /creatorsKnown,/.test(ROUTE) && /Fewest creators \(no counts yet\)/.test(UI) && /cannot narrow the list/.test(UI) && /noCreators=\{live\?\.creatorsKnown === false\}/.test(UI) && /this part is not read for any brand yet/.test(UI) && /creators \(no counts from TRYBE yet\)/.test(read('components/labs/TrybeFinderControls.tsx')))
 check('migration 452 is there and safe to run twice', existsSync('supabase/migrations/452_trybe_brand_popularity.sql') && (() => { const m = read('supabase/migrations/452_trybe_brand_popularity.sql'); return (m.match(/add column if not exists/g) || []).length === 8 && !/drop |alter column/i.test(m) })())
 // The words themselves: quoted strings and JSX text, never the code around them.
 const words = (src: string) => (src.split('\n').filter((l) => !l.trim().startsWith('//') && !l.trim().startsWith('*')).join('\n').match(/'[^'\n]*'|`[^`\n]*`|>[^<>{}\n]+</g) || []).join(' ')
