@@ -512,7 +512,9 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
   // filters change, no SCOUT and no website fetched.
   const [live, setLive] = useState<{ brands: LiveBrand[]; matched: number; capped: boolean; hiddenMine?: number; payUnknown?: number; payOther?: number
     hiddenBy?: Partial<Record<FilterId, number>>; blankBy?: Partial<Record<FilterId, number>>; unknownBy?: Partial<Record<FilterId, number>>; amazonNotes?: string[]; amazonVideos?: number; rawKeys?: string[]; prioritiesSaved?: boolean; starsSaved?: boolean; crowdDays?: number | null; spendKnown?: { recent: number; lifetime: number; none: number } | null
-    readCounts?: { total: number; meta: number; web: number; google: number; popularityReady: boolean; creators?: number; rankedBy?: 'perCreator' | 'metaAds' }; metaTodo?: Array<{ brand_id: string; name: string }>; mix?: { small: number; mid: number; big: number; unknown: number; says: string | null } | null } | null>(null)
+    readCounts?: { total: number; meta: number; web: number; google: number; popularityReady: boolean; creators?: number; rankedBy?: 'perCreator' | 'metaAds' }; metaTodo?: Array<{ brand_id: string; name: string }>
+    /** Any brand looked at has a creator count (TRYBE's list gave none, Seb's check 2026-10-21). */
+    creatorsKnown?: boolean; mix?: { small: number; mid: number; big: number; unknown: number; says: string | null } | null } | null>(null)
   // FINDER (Seb, 2026-10-14, after Rob's Oink Blue video: "build all 4"):
   // filters, a brand's name, and the creator's priorities for Best bets.
   const [filters, setFilters] = useState<FinderFilters>(NO_FILTERS)
@@ -1064,7 +1066,12 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
         const d = await api({ action: 'browse', categories: cats, keywords: kws, limit: 60, includeMine: showMine, sort: sortBy, payType, filters, name: nameQ.trim(), ...(prioritiesEdited ? { priorities } : {}) })
         if (id !== liveReq.current) return // a newer search has started
         setLive({ brands: d.brands || [], matched: d.matched ?? 0, capped: !!d.capped, hiddenMine: d.hiddenMine ?? 0, payUnknown: d.payUnknown ?? 0, payOther: d.payOther ?? 0,
-          hiddenBy: d.hiddenBy, blankBy: d.blankBy, unknownBy: d.unknownBy, amazonNotes: d.amazonNotes, amazonVideos: d.amazonVideos, rawKeys: d.rawKeys, prioritiesSaved: d.prioritiesSaved, starsSaved: d.starsSaved })
+          hiddenBy: d.hiddenBy, blankBy: d.blankBy, unknownBy: d.unknownBy, amazonNotes: d.amazonNotes, amazonVideos: d.amazonVideos, rawKeys: d.rawKeys, prioritiesSaved: d.prioritiesSaved, starsSaved: d.starsSaved,
+          // EVERY FIELD THE PAGE READS IS COPIED HERE (2026-10-21): Your mix,
+          // the spend note, the crowd window and the read counts were sent and
+          // read but never copied, so none of them ever showed.
+          crowdDays: d.crowdDays ?? null, spendKnown: d.spendKnown ?? null, mix: d.mix ?? null,
+          readCounts: d.readCounts, metaTodo: d.metaTodo, creatorsKnown: d.creatorsKnown })
         // The saved priorities, until the creator changes them on this visit.
         if (!prioritiesEdited && d.priorities) setPriorities(d.priorities)
         setLiveError(null)
@@ -1770,10 +1777,16 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
               </div>}
             </div>
             <p className="text-[12px] mb-3" style={soft}>{SORTS.find(s => s.id === sortBy)?.says} {preview ? 'Star the ones you like and pass on the rest.' : 'Tick the brands you want and MVP writes each one a message from your core message.'}</p>
+            {/* NO CREATOR COUNTS FROM TRYBE (Seb's check, 2026-10-21): said where it matters, never a sort that quietly does nothing. */}
+            {live?.creatorsKnown === false && (sortBy === 'creators' || !!filters.maxCreators) && (
+              <p className="text-[12px] mb-3 rounded-lg px-2.5 py-1.5" style={{ background: 'rgba(180,83,9,0.10)', color: AMBER }}>
+                TRYBE&rsquo;s brand list does not say how many creators each brand has, so {sortBy === 'creators' ? 'Fewest creators cannot order the list' : 'the creator limit cannot narrow the list'} yet. Every brand is listed as not known.
+              </p>
+            )}
             {/* ONE TOOLBAR (Seb, 2026-10-16: "very overwhelming"): Quick lists,
                 then search, Sort, Pay, Sells and Filters; every choice that is
                 on shows as a chip with an x (components/labs/TrybeFinderControls). */}
-            <FinderPresets filters={filters} sort={sortBy} onPick={p => { if (p) { setFilters(p.filters); setSortBy(p.sort) } else setFilters(NO_FILTERS) }} />
+            <FinderPresets filters={filters} sort={sortBy} noCreators={live?.creatorsKnown === false} onPick={p => { if (p) { setFilters(p.filters); setSortBy(p.sort) } else setFilters(NO_FILTERS) }} />
             {(() => {
               const priorityBox = (
                 <FinderPriorities priorities={priorities} onChange={changePriorities}
@@ -1782,7 +1795,8 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
               return (
                 <>
                   <FinderToolbar filters={filters} onFilters={setFilters} name={nameQ} onName={setNameQ}
-                    sort={sortBy} sorts={SORTS.filter(s => !preview || s.id !== 'fit')} onSort={v => setSortBy(v as LiveSort)}
+                    sort={sortBy} sorts={SORTS.filter(s => !preview || s.id !== 'fit').map(s => s.id === 'creators' && live?.creatorsKnown === false ? { ...s, label: 'Fewest creators (no counts yet)' } : s)} onSort={v => setSortBy(v as LiveSort)}
+                    noCreators={live?.creatorsKnown === false}
                     pay={payType} pays={PAYS.map(p => ({ ...p, label: p.id === 'any' ? 'Any' : p.label, says: PAY_SAYS[p.id] }))} onPay={v => setPayType(v as LivePay)}
                     panelExtra={sortBy === 'picks' ? undefined : priorityBox} />
                   {/* Your priorities rank Best bets: in view when that is the sort. */}
@@ -1820,7 +1834,7 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
               return (
                 <div className="rounded-xl border px-3 py-2.5 mb-3 text-[12px] space-y-1" style={{ borderColor: 'var(--border)' }}>
                   <p className="font-semibold flex items-center gap-2">What Best bets reads <button onClick={() => setPicksHelp(false)} className="ml-auto text-[11px] font-semibold underline" style={{ color: PURPLE }}>Hide</button></p>
-                  <p><b>Creators per brand</b>, from TRYBE: fewer means more of the budget for you.</p>
+                  <p><b>Creators per brand</b>, from TRYBE: fewer means more of the budget for you.{live?.creatorsKnown === false && <span style={{ color: AMBER }}> TRYBE&rsquo;s brand list gives no creator counts, so this part is not read for any brand yet.</span>}</p>
                   <p className="flex flex-wrap items-center gap-x-2 gap-y-1">
                     <span><b>TRYBE&rsquo;s Top 100</b>: {topAt ? `read ${new Date(topAt).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}${directory?.top100?.matched != null ? `, ${directory.top100.matched} brands in it` : ''}` : 'not read yet'}. A brand in it is spending on ads.</span>
                     {canPlaybook && isAdmin && <button onClick={() => void readTop100(false)} disabled={topRun} className="font-semibold underline disabled:opacity-50" style={{ color: PURPLE }}>{topRun ? 'Reading...' : 'Read it now'}</button>}

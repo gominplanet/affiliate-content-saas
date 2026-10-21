@@ -38,7 +38,7 @@ check('Clear all resets everything', /onFilters\(NO_FILTERS\); onName\(''\); onS
 check('the dropdowns are native, labelled selects', /<select value=\{value\}/.test(C) && /<Picker label="Sort"/.test(C) && /<Picker label="Pay"/.test(C) && /<Picker label="Sells"/.test(C))
 
 // The page.
-check('the page uses the toolbar, with its sorts and pay types', /<FinderToolbar filters=\{filters\}/.test(P) && /sorts=\{SORTS\.filter\(s => !preview \|\| s\.id !== 'fit'\)\}/.test(P) && /pays=\{PAYS\.map\(/.test(P))
+check('the page uses the toolbar, with its sorts and pay types', /<FinderToolbar filters=\{filters\}/.test(P) && /sorts=\{SORTS\.filter\(s => !preview \|\| s\.id !== 'fit'\)(\.map\([^\n]*?\))?\}/.test(P) && /pays=\{PAYS\.map\(/.test(P))
 check('the old rows are gone', !/aria-label="Sort brands"/.test(P) && !/aria-label="Filter by pay type"/.test(P) && !/FinderFilterBar/.test(P + C))
 check('Your priorities sit in view under Best bets, and in the panel otherwise', /panelExtra=\{sortBy === 'picks' \? undefined : priorityBox\}/.test(P) && /\{sortBy === 'picks' && priorityBox\}/.test(P))
 check('the admin box starts closed', /<details className="rounded-lg border border-dashed/.test(P) && /<summary className="cursor-pointer font-semibold">Admin only/.test(P))

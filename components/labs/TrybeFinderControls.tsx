@@ -78,7 +78,7 @@ export const panelFiltersOn = (f: FinderFilters) =>
  *  dropdowns, and a Filters button that opens the rest, grouped. Every choice
  *  that is on shows as a chip with an x under the bar, so a filter inside a
  *  closed panel is never on without being seen. */
-export function FinderToolbar({ filters, onFilters, name, onName, sort, sorts, onSort, pay, pays, onPay, panelExtra }: {
+export function FinderToolbar({ filters, onFilters, name, onName, sort, sorts, onSort, pay, pays, onPay, panelExtra, noCreators = false }: {
   filters: FinderFilters
   onFilters: (f: FinderFilters) => void
   name: string
@@ -91,6 +91,8 @@ export function FinderToolbar({ filters, onFilters, name, onName, sort, sorts, o
   onPay: (p: string) => void
   /** Shown at the foot of the open panel (Your priorities, when Best bets is not the sort). */
   panelExtra?: React.ReactNode
+  /** TRYBE's list gives no creator counts: the creator limit says so. */
+  noCreators?: boolean
 }) {
   const [open, setOpen] = useState(false)
   const inPanel = panelFiltersOn(filters)
@@ -161,7 +163,7 @@ export function FinderToolbar({ filters, onFilters, name, onName, sort, sorts, o
             {group('Room for you', <>
               {toggle('openOnly', <Users size={12} />, 'Brands with room for you: few creators, and few joining or posting in the last 30 days.')}
               {toggle('newOnly', <Sparkles size={12} />, 'New on TRYBE: joined in the last 30 days, or MVP first saw it in the last 14.')}
-              {numberBox('maxCreators', 'Up to', 'creators', 'Fewer creators means more of the budget for you.')}
+              {numberBox('maxCreators', 'Up to', noCreators ? 'creators (no counts from TRYBE yet)' : 'creators', noCreators ? 'TRYBE\u2019s brand list does not say how many creators each brand has, so this cannot narrow the list yet.' : 'Fewer creators means more of the budget for you.')}
               {numberBox('maxVideos', 'Up to', 'videos approved', 'Few videos approved so far: room for you.')}
             </>)}
             {group('The brand', <>
@@ -639,13 +641,13 @@ export const PRESETS: Array<{ id: PresetId; label: string; says: string; filters
 const sameFilters = (a: FinderFilters, b: FinderFilters) => (Object.keys({ ...a, ...b }) as Array<keyof FinderFilters>).every((k) => (a[k] || null) === (b[k] || null))
 export const presetOf = (f: FinderFilters, sort: string): PresetId | null => PRESETS.find((p) => p.sort === sort && sameFilters(p.filters, f))?.id ?? null
 
-export function FinderPresets({ filters, sort, onPick }: { filters: FinderFilters; sort: string; onPick: (p: (typeof PRESETS)[number] | null) => void }) {
+export function FinderPresets({ filters, sort, onPick, noCreators = false }: { filters: FinderFilters; sort: string; onPick: (p: (typeof PRESETS)[number] | null) => void; noCreators?: boolean }) {
   const on = presetOf(filters, sort)
   return (
     <div className="flex flex-wrap items-center gap-1.5 mb-2.5" role="group" aria-label="Quick lists">
       <span className="text-[12px] mr-1" style={soft}>Quick lists</span>
       {PRESETS.map((p) => (
-        <button key={p.id} onClick={() => onPick(on === p.id ? null : p)} aria-pressed={on === p.id} title={p.says}
+        <button key={p.id} onClick={() => onPick(on === p.id ? null : p)} aria-pressed={on === p.id} title={noCreators && p.filters.maxCreators ? `${p.says} TRYBE\u2019s brand list gives no creator counts yet, so the creator limit cannot narrow it.` : p.says}
           className={chip} style={on === p.id ? { background: GREEN, borderColor: GREEN, color: '#fff' } : { borderColor: 'var(--border-2)' }}>{p.label}</button>
       ))}
     </div>

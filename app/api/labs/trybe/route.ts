@@ -1572,6 +1572,9 @@ export async function POST(request: Request) {
       ok: true,
       matched: shown.length,
       readCounts, ...(metaTodo ? { metaTodo } : {}),
+      // No creator count on any brand looked at: Fewest creators, the creator
+      // limit and Best bets' "few creators" say so instead of doing nothing.
+      creatorsKnown,
       hiddenMine,
       payUnknown,
       payOther,
