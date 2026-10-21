@@ -361,24 +361,51 @@ const check = (name: string, cond: boolean, detail?: string) => {
 
   // ── the page the ads actually land on ─────────────────────────────────────
   //
-  // /amazon-influencer is the ad destination. A free tier the sales page never
-  // mentions does not exist as far as the traffic is concerned.
+  // /amazon-influencer is the ad destination, and until 2026-10-21 it sold the
+  // free TIER there with four "Start free, no card" buttons. Three things were
+  // wrong with that at once:
+  //
+  //   1. The tier's window has been zero days since NO_TRIAL_FROM, so the
+  //      account those buttons opened had nothing in it to spend.
+  //   2. CheckoutButton's tier="trial" branch skips checkout and pushes to
+  //      /signup, where SignupForm defaults any unrecognised tier to 'pro'. So
+  //      the button that said "no card" landed on "Continue to payment".
+  //   3. The page listed freeTrialHighlights() beside it: a count of free
+  //      thumbnails, designs and headshots nobody was going to receive.
+  //
+  // The free week (lib/guarantee, 2026-10-19) is what that button was reaching
+  // for, honestly: card taken, nothing charged for seven days, everything
+  // unlocked meanwhile. So these guard the free tier's ABSENCE here. The real
+  // promise is owned by scripts/test-guarantee.ts, whose SELLING array now
+  // includes this page and /join/amazon.
+  //
+  // Read with the comments stripped, because this very note names tier="trial"
+  // to explain why it is gone, and a raw-file regex counted that as the button
+  // still being there: the inverted check below passed while the page was
+  // already fixed.
   const SALES = readFileSync('app/amazon-influencer/page.tsx', 'utf8')
-  check('the Amazon sales page offers the free trial',
-    /tier="trial"/.test(SALES),
-    'the ad destination sent everyone straight to a $79 checkout with no way to try it')
-  // The signup has to KNOW they came for the Amazon product, or it drops them
-  // in the main funnel whose first required step is "Connect YouTube". This was
-  // a nextPath prop at first, which put ?next= on the signup URL that the signup
-  // form never read. scripts/test-signup-intent.ts owns the full journey.
-  check('the free signup carries the Amazon intent',
-    /intent="amazon"/.test(SALES),
+    .replace(/\{\/\*[\s\S]*?\*\/\}/g, '')
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .split('\n').filter(l => !/^\s*(\/\/|\*)/.test(l)).join('\n')
+  check('the Amazon sales page no longer sells the dead free tier',
+    !/tier="trial"/.test(SALES),
+    'that button opened an account with a zero-day window and landed on a payment screen')
+  check('and does not list its allowances either',
+    !/freeTrialHighlights\(\)/.test(SALES) && !/freeTrialExclusions\(\)/.test(SALES),
+    'a count of free thumbnails nobody receives is the most specific kind of false promise')
+  // The signup still has to KNOW they came for the Amazon product, or it drops
+  // them in the main funnel whose first required step is "Connect YouTube".
+  // intent="amazon" was the free button's way of carrying that. The paid button
+  // carries it in the tier instead: SignupForm reads
+  // `parseOnboardingPath(sp.get('for')) ?? (t === 'amazon' ? 'amazon' : null)`,
+  // so /signup?tier=amazon lands in the same place.
+  // scripts/test-signup-intent.ts owns the full journey.
+  check('the Amazon intent survives on the paid button',
+    /tier="amazon"/.test(SALES),
     'without it they land in the YouTube funnel, which is where this traffic dies')
-  check('the sales page lists the same free plan',
-    /freeTrialHighlights\(\)/.test(SALES) && /freeTrialExclusions\(\)/.test(SALES))
-  check('a paused paid checkout does not close free signup',
-    /tier="trial"[^>]*salesPaused=\{false\}/.test(SALES),
-    'SALES_PAUSED stops selling, not signing up')
+  check('and the free week is what the page offers instead',
+    /from '@\/lib\/guarantee'/.test(readFileSync('app/amazon-influencer/page.tsx', 'utf8')) && /FREE_WEEK_/.test(SALES),
+    'the offer has to come from lib/guarantee so the page, the Terms and Stripe cannot disagree')
 
   // The allowances on that page must be READ from the plan, never typed. Typed,
   // they went stale and oversold it: 300 pins advertised against a 150 cap, 50

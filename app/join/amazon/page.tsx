@@ -23,13 +23,15 @@ import NextImage from 'next/image'
 import { Check, ShieldCheck, Wand2, UserSquare, Download } from 'lucide-react'
 import MetaTrack from '@/components/analytics/MetaTrack'
 import AmazonJoinForm from '@/components/landing/AmazonJoinForm'
-import { FREE_TRIAL, freeTrialHighlights } from '@/lib/free-trial'
 import { TIERS } from '@/lib/tier'
+import {
+  FREE_WEEK_DAYS, FREE_WEEK_SENTENCE, freeWeekUnderButton,
+} from '@/lib/guarantee'
 
 export const metadata: Metadata = {
   title: 'Your Amazon products, post-ready in one click',
   description:
-    'Paste an Amazon product link and get a finished thumbnail or a ready-to-post design with your face on it. No website, no YouTube, no card.',
+    'Paste an Amazon product link and get a finished thumbnail or a ready-to-post design with your face on it. No website, no YouTube. Free for your first week.',
 }
 
 const ACCENT = '#C2410C'
@@ -64,16 +66,22 @@ export default function AmazonJoinPage() {
           </h1>
           <p className="mt-4 text-[16px] leading-relaxed text-[#6e6e73] dark:text-[#ebebf0]">
             Paste a product link, get a finished thumbnail or a ready-to-post pin, Instagram post or Facebook
-            post. No website. No YouTube channel. No card.
+            post. No website. No YouTube channel. Free for your first {FREE_WEEK_DAYS} days.
           </p>
 
           <AmazonJoinForm />
 
-          {/* What free actually is, in one line, right under the field. The
-              numbers are the ones the server enforces. */}
+          {/* WHAT THE NEXT SCREEN ASKS FOR, said here rather than discovered
+              there. This read "no card" and listed a free tier's allowances:
+              a count of thumbnails, designs and headshots nobody receives,
+              because that tier's window has been zero days since
+              NO_TRIAL_FROM. The email field pushes to /signup, where
+              SignupForm defaults an unrecognised tier to 'pro', so the free
+              promise landed on a payment screen. The free week
+              (lib/guarantee) is what closes that gap, and the price comes from
+              lib/tier rather than being typed beside it. */}
           <p className="mt-3 text-[13px] text-[#86868b] dark:text-[#8e8e93]">
-            Free for {FREE_TRIAL.trialDays} days: {FREE_TRIAL.thumbnails} thumbnails, {FREE_TRIAL.socialDesigns} designs, {FREE_TRIAL.photobooth} headshots
-            of you, all yours to download. Then ${TIERS.amazon.price} a month if you want to publish from here.
+            {freeWeekUnderButton(TIERS.pro.price)}
           </p>
         </div>
       </section>
@@ -112,17 +120,33 @@ export default function AmazonJoinPage() {
             <div>
               <h2 className="text-xl font-bold tracking-tight">What you get before paying anything</h2>
               <p className="text-[13.5px] text-[#6e6e73] dark:text-[#ebebf0] mt-0.5">
-                One Amazon Associates tag and you are generating. Nothing to connect, no card.
+                One Amazon Associates tag and you are generating. Nothing is charged until day {FREE_WEEK_DAYS + 1}.
               </p>
             </div>
           </div>
+          {/* THE WHOLE PRODUCT, so the list is the product's own promises. What
+              was here was freeTrialHighlights(), which described the free TIER:
+              a smaller product, and one whose window is zero days, so every
+              line of it was a promise this page could not keep. */}
           <ul className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2">
-            {freeTrialHighlights().map((f) => (
+            {[
+              `Every feature unlocked for ${FREE_WEEK_DAYS} days`,
+              'Art Director thumbnails from one product photo',
+              'Ready-to-post pins, Instagram and Facebook designs',
+              'Your own face on them, from a few selfies',
+              'Amazon product research and live Deal Radar',
+              'Brand-deal campaigns your storefront matches',
+              'Download everything you make, yours to keep',
+              `Cancel before day ${FREE_WEEK_DAYS + 1} and you pay nothing`,
+            ].map((f) => (
               <li key={f} className="flex items-start gap-2 text-[13.5px] leading-relaxed text-[#6e6e73] dark:text-[#ebebf0]">
                 <Check size={14} className="mt-1 flex-shrink-0" style={{ color: ACCENT }} />{f}
               </li>
             ))}
           </ul>
+          <p className="mt-4 text-[12.5px] leading-relaxed text-[#86868b] dark:text-[#8e8e93]">
+            {FREE_WEEK_SENTENCE}
+          </p>
           <div className="mt-7">
             <AmazonJoinForm />
           </div>
