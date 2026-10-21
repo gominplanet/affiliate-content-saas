@@ -583,9 +583,21 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
   // THE TRYBE TAB SCOUT WORKS THROUGH (SCOUT 1.53.2, lib/trybe-tab): looked at
   // again whenever the creator comes back to this page, and every half minute
   // while it is not open, so closing it shows here instead of as failed sends.
-  const ownTab = access === 'granted' && scoutAtLeast(scoutVersion, SCOUT_TRYBE_OWN_TAB_MIN_VERSION)
+  const tabScout = scoutAtLeast(scoutVersion, SCOUT_TRYBE_OWN_TAB_MIN_VERSION)
+  const ownTab = access === 'granted' && tabScout
   const [trybeTab, setTrybeTab] = useState<TrybeTabState | 'checking'>('checking')
-  const lookTab = useCallback(() => { void requestTrybeTab().then(setTrybeTab) }, [])
+  // LOST ON TRYBE (Seb, 2026-10-21, a pop-up saying "SCOUT could not open
+  // TRYBE (no-access)"): SCOUT reinstalled by hand forgets jointrybe.com. The
+  // tab check says so, and the page goes back to asking for it instead of
+  // offering an Open TRYBE that cannot work. Allowed again anywhere, the next
+  // check notices.
+  const lookTab = useCallback(() => {
+    void requestTrybeTab().then((s) => {
+      setTrybeTab(s)
+      if (s === 'not-allowed') setAccess('not-granted')
+      else if (s !== 'unknown') setAccess((a) => (a === 'not-granted' ? 'granted' : a))
+    })
+  }, [])
   useEffect(() => {
     if (preview || !ownTab) return
     lookTab()
@@ -597,7 +609,8 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
   // MVP without doing anything else on their computer, MVP can't talk to
   // tribe"). No TRYBE tab: SCOUT opens one next to this one, behind it, once a
   // visit. Signed out there, the card at the top says so and takes them to it.
-  const tabInBackground = ownTab && scoutAtLeast(scoutVersion, SCOUT_TRYBE_TAB_OPEN_MIN_VERSION)
+  const tabOpens = scoutAtLeast(scoutVersion, SCOUT_TRYBE_TAB_OPEN_MIN_VERSION)
+  const tabInBackground = ownTab && tabOpens
   const autoOpened = useRef(false)
   useEffect(() => {
     if (preview || !tabInBackground || trybeTab !== 'closed' || autoOpened.current) return
@@ -1428,7 +1441,11 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
       )}
 
       {/* TRYBE OPEN FIRST: everything below goes through the creator's TRYBE tab. */}
-      {!preview && ownTab && <TrybeTabGate state={trybeTab} inBackground={tabInBackground} onCheck={lookTab} />}
+      {/* Not allowed on TRYBE yet, or no longer: the same card asks for it first. */}
+      {!preview && tabScout && (access === 'granted' || access === 'not-granted') && (
+        <TrybeTabGate state={access === 'not-granted' ? 'not-allowed' : trybeTab} inBackground={tabScout && tabOpens} onCheck={lookTab}
+          onAllowed={() => { setAccess('granted'); lookTab() }} />
+      )}
 
       {/* YOUR WEEK, in one line: each part opens its tab. */}
       {!preview && (() => {

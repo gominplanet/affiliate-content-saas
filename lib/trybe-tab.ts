@@ -19,7 +19,10 @@ export const TRYBE_NOT_OPEN = 'trybe-not-open'
 
 export const TRYBE_NOT_OPEN_WORDS = 'TRYBE is not open in this Chrome. On MVP’s TRYBE page press Open TRYBE, sign in, and leave that tab open'
 
-export type TrybeTabState = 'open' | 'signed-out' | 'closed' | 'unknown'
+/** 'not-allowed': SCOUT has lost its OK for jointrybe.com in this Chrome
+ *  (SCOUT reinstalled by hand, or the site removed in Chrome's settings), so
+ *  it can neither look for a TRYBE tab nor open one until Chrome asks again. */
+export type TrybeTabState = 'open' | 'signed-out' | 'closed' | 'unknown' | 'not-allowed'
 
 /** SCOUT's error, in words when it means no TRYBE tab is open. */
 export function trybeTabError<T extends string | null | undefined>(error: T): T | string {
@@ -32,6 +35,8 @@ export function trybeTabWords(state: TrybeTabState): { ok: string; todo: string 
     ok: 'Open and signed in. Leave that tab open while you work in other tabs: SCOUT sends your requests and reads your TRYBE through it, and opens nothing else.',
     todo: state === 'signed-out'
       ? 'Your TRYBE tab is open but signed out. Sign in there, then leave the tab open.'
+      : state === 'not-allowed'
+        ? 'SCOUT is not allowed on TRYBE in this Chrome, so it cannot open or use a TRYBE tab. Press Allow SCOUT on TRYBE at the top of this page.'
       : state === 'unknown'
         ? 'SCOUT did not say whether TRYBE is open. Open TRYBE, sign in, and leave that tab open.'
         : 'Press Open TRYBE, sign in, then leave that tab open while you work in other tabs. SCOUT sends your requests and reads your TRYBE through it, and opens no window of its own.',

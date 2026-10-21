@@ -1115,8 +1115,11 @@ export async function requestFacebookAccess(ask: boolean): Promise<{ state: 'gra
  *  through, and signed in (lib/trybe-tab). Opens nothing. Resolves, never
  *  throws. */
 export async function requestTrybeTab(): Promise<TrybeTabState> {
-  const res = await sendToExtension<{ open?: boolean; signedIn?: boolean }>({ type: 'MVP_TRYBE_TAB' }, 20_000)
+  const res = await sendToExtension<{ open?: boolean; signedIn?: boolean; allowed?: boolean }>({ type: 'MVP_TRYBE_TAB' }, 20_000)
   if (!res) return 'unknown'
+  // SCOUT answers allowed: false when it has lost jointrybe.com (reinstalled
+  // by hand drops it): that is not "closed", and Open TRYBE would fail.
+  if (res.allowed === false) return 'not-allowed'
   return !res.open ? 'closed' : res.signedIn === false ? 'signed-out' : 'open'
 }
 
