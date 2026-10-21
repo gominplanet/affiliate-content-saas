@@ -24,7 +24,7 @@ import { Loader2, Lock, Search, Sparkles, Send, Square, ExternalLink, Check, Ale
   Dumbbell, Shirt, House, UtensilsCrossed, Baby, PawPrint, Gem, Cpu, Tent, Plane, BookOpen, Church, Palette, SprayCan, Moon, Pill, HeartPulse,
   Scissors, Droplet, Coffee, Leaf, Wand2, MessageCircle, Pencil, ChevronUp, Bell, Lightbulb, CalendarDays, Inbox, ArrowRight, Clapperboard, UploadCloud, BarChart3, Rocket, type LucideIcon } from 'lucide-react'
 import { requestTrybeTab, requestTrybeTabOpen, requestTrybeApi, requestTrybeAccess, requestTrybeScan, requestTrybeSend, requestTrybeHarvest, requestTrybeRun, requestTrybeRunStatus, requestTrybeRunStop, type TrybeScanPass, type TrybeRun } from '@/lib/extension-frame'
-import { readMetaAds, readMetaAdsAll, metaAdsWords } from '@/components/labs/metaAdsRead'
+import { readMetaAds, readMetaAdsAll, metaAdsWords, type MetaAdsRun } from '@/components/labs/metaAdsRead'
 import TrybeTabGate from '@/components/labs/TrybeTabGate'
 import TrybeStarBrands from '@/components/labs/TrybeStarBrands'
 import { TRYBE_OPEN_URL, TRYBE_NOT_OPEN, TRYBE_NOT_OPEN_WORDS, trybeTabWords, type TrybeTabState } from '@/lib/trybe-tab'
@@ -369,9 +369,11 @@ const TILES: Tile[] = [
 
 /** A step of the daily refresh, and how it went. */
 interface DailyStep { id: 'list' | 'top100' | 'meta'; label: string; state: 'waiting' | 'running' | 'done' | 'warn' | 'failed' | 'skipped'; text: string }
-/** Meta counts per daily refresh: about 50 minutes at 10 seconds a brand, so
- *  every TRYBE brand is counted again within about four weeks. */
-const DAILY_META_MAX = 300
+/** The daily refresh counts Meta ads for every brand, this many at a time
+ *  (about 10 seconds a brand), asking the server for the next ones between. */
+const DAILY_META_CHUNK = 200
+/** The list and the Top 100 are not read again within this long. */
+const DAILY_FRESH_MS = 12 * 3600_000
 const DAILY_STYLE: Record<DailyStep['state'], { color: string; word: string }> = {
   waiting: { color: 'var(--text-3)', word: 'Waiting' }, running: { color: PURPLE, word: 'Running' }, done: { color: GREEN, word: 'Done' },
   warn: { color: AMBER, word: 'Partly' }, failed: { color: RED, word: 'Not done' }, skipped: { color: 'var(--text-3)', word: 'Skipped' },
@@ -1219,8 +1221,8 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
    *  of the brands. It refreshes the star brands and the meta check and all
    *  of that stuff ... And I can do that manually every single day"). The
    *  MVP team only. In order: TRYBE's brand list, TRYBE's Top 100, then Meta
-   *  ads for up to DAILY_META_MAX brands (never counted first, rated first,
-   *  then the oldest counts), checked as each brand's own. Each step says
+   *  ads for every brand not counted this week (rated first, never counted
+   *  first), checked as each brand's own, until done or Stop. Each step says
    *  what it did or why not, and the run is kept, so the next press says when
    *  it last ran and how it went. Website ranks and Google run by themselves. */
   async function dailyRefresh() {
@@ -1239,36 +1241,73 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
         for (const x of steps) { x.state = 'failed'; x.text = 'SCOUT is not allowed on TRYBE in this Chrome. Press Allow SCOUT on TRYBE at the top of this page.' }
         return
       }
+      // RESUMED, NOT REDONE (Seb, 2026-10-21: "if I stop it, can it resume
+      // where it was the next time I run it again?"): the list and the Top
+      // 100 are skipped when read in the last 12 hours, and Meta ads pick up
+      // with the brands not counted yet, since every count is saved as it is read.
+      const fresh = (at: string | null | undefined) => !!at && Date.now() - Date.parse(at) < DAILY_FRESH_MS
+      const ago = (at: string) => { const h = Math.round((Date.now() - Date.parse(at)) / 3600_000); return h < 1 ? 'less than an hour ago' : `${h} hour${h === 1 ? '' : 's'} ago` }
       // 1. Every brand on TRYBE, collected again.
-      step('list', 'running', 'SCOUT is collecting every brand on TRYBE, in a tab behind this one...')
-      const notes: string[] = []
-      const ok = await collectFromTrybe(notes, true).catch((e) => { notes.push(e instanceof Error ? e.message : 'Collecting failed.'); return false })
-      setFinding(null)
-      const d0 = await load()
-      step('list', ok && !notes.some((n) => /could not|refused|not allowed|ran out/i.test(n)) ? 'done' : ok ? 'warn' : 'failed',
-        // Two counts that differ on purpose (Seb's first run, 2026-10-21: 6,920
-        // and 6,864): TRYBE's Discover list leaves out the brands you joined,
-        // and MVP's count of brands on TRYBE keeps them.
-        [ok && d0?.directory?.listed != null ? `${Number(d0.directory.listed).toLocaleString()} brands on TRYBE now, counting the ones you joined (TRYBE\u2019s Discover list leaves those out).` : ok ? 'Collected.' : 'Not collected.', ...notes].join(' '))
+      if (fresh(directory?.lastCollectedAt) && directory?.lastCollectedAt) {
+        step('list', 'skipped', `Collected ${ago(directory.lastCollectedAt)}: not needed again yet.`)
+      } else {
+        step('list', 'running', 'SCOUT is collecting every brand on TRYBE, in a tab behind this one...')
+        const notes: string[] = []
+        const ok = await collectFromTrybe(notes, true).catch((e) => { notes.push(e instanceof Error ? e.message : 'Collecting failed.'); return false })
+        setFinding(null)
+        const d0 = await load()
+        step('list', ok && !notes.some((n) => /could not|refused|not allowed|ran out/i.test(n)) ? 'done' : ok ? 'warn' : 'failed',
+          // Two counts that differ on purpose (Seb's first run, 2026-10-21: 6,920
+          // and 6,864): TRYBE's Discover list leaves out the brands you joined,
+          // and MVP's count of brands on TRYBE keeps them.
+          [ok && d0?.directory?.listed != null ? `${Number(d0.directory.listed).toLocaleString()} brands on TRYBE now, counting the ones you joined (TRYBE\u2019s Discover list leaves those out).` : ok ? 'Collected.' : 'Not collected.', ...notes].join(' '))
+      }
       if (dailyStop.current) { step('top100', 'skipped', 'Stopped.'); step('meta', 'skipped', 'Stopped.'); return }
       // 2. TRYBE's Top 100: who is spending.
-      step('top100', 'running', 'Reading TRYBE\u2019s Top 100...')
-      const t = await readTop100(false)
-      step('top100', !t ? 'failed' : t.tone === 'ok' ? 'done' : t.tone === 'warn' ? 'warn' : 'failed', t?.text || 'SCOUT cannot read TRYBE\u2019s Top 100 here (update SCOUT).')
+      if (fresh(directory?.top100?.at) && directory?.top100?.at) {
+        step('top100', 'skipped', `Read ${ago(directory.top100.at)}: not needed again yet.`)
+      } else {
+        step('top100', 'running', 'Reading TRYBE\u2019s Top 100...')
+        const t = await readTop100(false)
+        step('top100', !t ? 'failed' : t.tone === 'ok' ? 'done' : t.tone === 'warn' ? 'warn' : 'failed', t?.text || 'SCOUT cannot read TRYBE\u2019s Top 100 here (update SCOUT).')
+      }
       if (dailyStop.current) { step('meta', 'skipped', 'Stopped.'); return }
-      // 3. Meta ads, every brand in turn: the ones to count next across all of TRYBE.
+      // 3. Meta ads for EVERY brand (Seb: "keep it running until everything is
+      // counted"), a few hundred at a time: the server names the next ones
+      // (rated first, never counted first), they are counted and saved, and
+      // it asks again, until none are left or Stop. A brand Meta would not
+      // show a count for is tried once a run, so the run always ends.
       step('meta', 'running', 'Finding the brands to count...')
-      const list = await api({ action: 'browse', categories: [], keywords: [], limit: 1, sort: 'adsPerCreator', payType: 'any', includeMine: true, filters: NO_FILTERS })
-      const todo = ((list.metaTodo || []) as Array<{ brand_id: string; name: string }>)
-      if (!todo.length) { step('meta', 'done', 'Every brand already has a Meta ad count from this week.'); return }
-      const now = todo.slice(0, DAILY_META_MAX)
-      const run = await readMetaAdsAll(now.map((b) => ({ brandId: b.brand_id, name: b.name })), {
-        cards: true, gone: () => leftRef.current, stop: () => dailyStop.current,
-        onProgress: (done, total) => step('meta', 'running', `Reading Meta\u2019s Ad Library: ${done} of ${total}. Leave this tab open; about ${Math.max(1, Math.ceil(((total - done) * 10) / 60))} minutes left.`),
-      })
-      const w = metaAdsWords(run, scoutVersion)
-      const left = todo.length - run.read
-      step('meta', w.tone === 'ok' ? 'done' : w.tone === 'warn' ? 'warn' : 'failed', `${w.text}${left > 0 ? ` ${left.toLocaleString()} brand${left === 1 ? '' : 's'} still to count: the next daily refresh carries on from there.` : ''}`)
+      const total: MetaAdsRun = { total: 0, read: 0, noCount: 0, couldNot: 0, late: 0, notEnglish: '', stopped: '', cardsAsked: true, cardsSent: false, galleryAds: 0, cardsMissed: 0, capped: 0, mixed: 0 }
+      const tried = new Set<string>()
+      let left: number | null = null
+      for (;;) {
+        if (dailyStop.current || leftRef.current) { total.stopped = 'Stopped. Press Daily refresh to carry on: it picks up the brands not counted yet.'; break }
+        const list = await api({ action: 'browse', categories: [], keywords: [], limit: 1, sort: 'adsPerCreator', payType: 'any', includeMine: true, filters: NO_FILTERS })
+        left = typeof list.metaLeft === 'number' ? list.metaLeft : left
+        const todo = ((list.metaTodo || []) as Array<{ brand_id: string; name: string }>).filter((b) => !tried.has(b.brand_id)).slice(0, DAILY_META_CHUNK)
+        if (!todo.length) break
+        for (const b of todo) tried.add(b.brand_id)
+        const before = total.read
+        const run = await readMetaAdsAll(todo.map((b) => ({ brandId: b.brand_id, name: b.name })), {
+          cards: true, gone: () => leftRef.current, stop: () => dailyStop.current,
+          onProgress: (done) => {
+            const n = before + done
+            const rest = left != null ? Math.max(0, left - done) : null
+            step('meta', 'running', `${n.toLocaleString()} brand${n === 1 ? '' : 's'} counted this run.${rest != null ? ` About ${rest.toLocaleString()} left across TRYBE, ${rest * 10 >= 3600 ? `about ${Math.round((rest * 10) / 360) / 10} hours` : `about ${Math.max(1, Math.ceil((rest * 10) / 60))} minutes`}.` : ''} Leave this tab open and the computer awake; Stop keeps every count so far.`)
+          },
+        })
+        total.total += run.total
+        for (const k of ['read', 'noCount', 'couldNot', 'late', 'galleryAds', 'cardsMissed', 'capped', 'mixed'] as const) total[k] += run[k]
+        total.cardsSent = total.cardsSent || run.cardsSent
+        if (run.notEnglish) { total.notEnglish = run.notEnglish; break }
+        if (run.stopped) { total.stopped = /left the page/i.test(run.stopped) ? run.stopped : 'Stopped. Press Daily refresh to carry on: it picks up the brands not counted yet.'; break }
+        setLiveNonce((n) => n + 1)
+      }
+      const w = metaAdsWords(total, scoutVersion)
+      const done = !total.stopped && !total.notEnglish
+      step('meta', w.tone === 'ok' ? 'done' : w.tone === 'warn' ? 'warn' : 'failed',
+        total.total ? `${w.text}${done ? ' Every brand on TRYBE now has a count from this week.' : ''}` : 'Every brand on TRYBE already has a Meta ad count from this week.')
     } catch (e) {
       const x = steps.find((y) => y.state === 'running')
       if (x) { x.state = 'failed'; x.text = e instanceof Error ? e.message : 'It stopped with an error.' }
@@ -1552,7 +1591,7 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
                 <Loader2 size={12} className="animate-spin" /> Refreshing... Stop
               </button>
             : <button onClick={() => void dailyRefresh()} className="inline-flex items-center gap-1.5 text-[12.5px] font-semibold rounded-full px-3 py-1.5" style={{ background: PURPLE, color: '#fff' }}
-                title="Team only: collect TRYBE's brand list again, read the Top 100, and count Meta ads for the next brands. About an hour; leave the tab open.">
+                title="Team only: collect TRYBE's brand list again, read the Top 100, and count Meta ads for every brand not counted this week. Can run all night; Stop keeps every count, and the next press carries on.">
                 <RotateCcw size={12} /> Daily refresh
               </button>
         )}
@@ -1724,7 +1763,7 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
       {tab === 'upload' && <TrybeUpload />}
 
       {tab === 'stars' && !lockedTab && (
-        <TrybeStarBrands canCount={canPlaybook} cards={isAdmin} scoutVersion={scoutVersion} hasCore={!!core.trim()} onWrite={(ids) => draftPicked(ids)} />
+        <TrybeStarBrands canCount={canPlaybook} cards={isAdmin} scoutVersion={scoutVersion} hasCore={!!core.trim()} onWrite={(ids) => draftPicked(ids)} scoutOpens={scoutOpens} />
       )}
 
 

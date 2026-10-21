@@ -185,11 +185,11 @@ check('nothing TRYBE says is stored on MVP', (INBOX.match(/fetch\('\/api\//g) ||
 check('an unreadable answer says what TRYBE sent', /TRYBE sent: \$\{shapeOf\(r\.json\)\}/.test(INBOX))
 // Seb 2026-10-13: "is this the real total of brands inside of trybe?" MVP's
 // copy (6,642 ever seen) is not TRYBE's list (6,318 now). Star brands'
-// own three reads (2026-10-21) keep to it too.
+// own reads and its count of brands left to count (2026-10-21) keep to it too.
 {
   const R = readFileSync('app/api/labs/trybe/route.ts', 'utf8')
   check('brands TRYBE no longer lists are counted apart and left out of matches',
-    /async function listedSince\(admin: Db\)/.test(R) && (R.match(/if \(since\) q = q\.gte\('last_seen_at', since\)/g) || []).length === 9 && /if \(since\) counted = counted\.gte\('last_seen_at', since\)/.test(R)
+    /async function listedSince\(admin: Db\)/.test(R) && (R.match(/if \(since\) q = q\.gte\('last_seen_at', since\)/g) || []).length === 10 && /if \(since\) counted = counted\.gte\('last_seen_at', since\)/.test(R)
     && /listed: listed && !listed\.error \? listed\.count/.test(R) && (UI.match(/On TRYBE now: <b>/g) || []).length === 2)
   check('the brands new on TRYBE since the first count are counted from when each was first seen',
     /\.gte\('first_seen_at', newSinceCut\)/.test(R) && (UI.match(/New on TRYBE since MVP&rsquo;s first count/g) || []).length === 2)

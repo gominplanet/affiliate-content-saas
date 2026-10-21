@@ -1318,6 +1318,7 @@ export async function POST(request: Request) {
     // comes in, then the likeliest to count next: in TRYBE's Top 100, then
     // fewest creators.
     const starPool = !direct && !words.length && sort === 'adsPerCreator'
+    let metaLeft: number | null = null
     const rpc = direct || starPool ? { data: null, error: null } : await admin.rpc('trybe_directory_search', { p_words: words, p_user: null, p_limit: pool })
     // Only brands TRYBE still lists: one it dropped cannot be messaged.
     const since = await listedSince(admin)
@@ -1338,13 +1339,24 @@ export async function POST(request: Request) {
       if (b.error) return NextResponse.json({ error: b.error.message }, { status: 500 })
       // Every brand creators rated on TRYBE (its reviewRating, about 600), so
       // a rating filter ranks all of them, not the few in the two reads above.
+      // Rated brands always come in, so they are counted first everywhere
+      // (the daily refresh has no rating filter).
       let rated: Array<Record<string, any>> = [] // eslint-disable-line @typescript-eslint/no-explicit-any
-      if (filters.minRating) {
+      {
         let q = admin.from('trybe_directory').select(COLS).not('raw->>reviewRating', 'is', null)
         if (since) q = q.gte('last_seen_at', since)
         const { data: c, error: e3 } = await q.limit(1500)
         if (e3) return NextResponse.json({ error: e3.message }, { status: 500 })
         rated = (c || []) as Array<Record<string, any>> // eslint-disable-line @typescript-eslint/no-explicit-any
+      }
+      // HOW MANY ARE LEFT TO COUNT across all of TRYBE (Seb, 2026-10-21: "keep
+      // it running until everything is counted"): never counted, or counted
+      // a week ago or more. The daily refresh says it as it goes.
+      {
+        let q = admin.from('trybe_directory').select('brand_id', { count: 'exact', head: true }).or(`meta_ads_checked_at.is.null,meta_ads_checked_at.lt.${new Date(Date.now() - META_ADS_FRESH_MS).toISOString()}`)
+        if (since) q = q.gte('last_seen_at', since)
+        const { count } = await q
+        metaLeft = typeof count === 'number' ? count : null
       }
       const seen = new Set<string>()
       rows = [...((a || []) as Array<Record<string, any>>), ...rated, ...((b.data || []) as Array<Record<string, any>>)].filter(r => !seen.has(r.brand_id) && !!seen.add(r.brand_id)) // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -1614,7 +1626,7 @@ export async function POST(request: Request) {
     return NextResponse.json({
       ok: true,
       matched: shown.length,
-      readCounts, ...(metaTodo ? { metaTodo } : {}),
+      readCounts, ...(metaTodo ? { metaTodo } : {}), ...(starPool ? { metaLeft } : {}),
       // No creator count on any brand looked at: Fewest creators, the creator
       // limit and Best bets' "few creators" say so instead of doing nothing.
       creatorsKnown,

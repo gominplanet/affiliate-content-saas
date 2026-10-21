@@ -26,10 +26,11 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
-import { Loader2, Megaphone, Sparkles, RotateCcw, Users } from 'lucide-react'
+import { Loader2, Megaphone, Sparkles, RotateCcw, Users, Globe, ExternalLink } from 'lucide-react'
+import TrybeLink from '@/components/labs/TrybeLink'
 import { BrandMark, PayChip, StarButton, PopularityChips, RatingChip, NO_FILTERS, type LivePayEst, type LivePopularity } from '@/components/labs/TrybeFinderControls'
 import { readMetaAdsAll, metaAdsWords } from '@/components/labs/metaAdsRead'
-import { metaTrustWords, type MetaTrust } from '@/lib/trybe-pick'
+import { metaTrustWords, adLibraryUrl, type MetaTrust } from '@/lib/trybe-pick'
 
 const COLOR = '#C026D3'
 const GREEN = '#16A34A'
@@ -53,6 +54,9 @@ interface StarBrand extends LivePopularity {
 interface ReadCounts { notOwn?: number; ratingKnown?: number; looked?: number; creators?: number; rankedBy?: 'perCreator' | 'perReview'; total: number; meta: number; web: number; google: number; popularityReady: boolean }
 interface Answer { brands: StarBrand[]; matched: number; hiddenMine: number; readCounts?: ReadCounts; metaTodo?: Array<{ brand_id: string; name: string }>; blankBy?: Record<string, number>; hiddenBy?: Record<string, number> }
 
+/** A website's address as people say it: gentgolfers.com. */
+const hostOf = (url: string) => { try { return new URL(/^https?:/i.test(url) ? url : `https://${url}`).hostname.replace(/^www\./, '') } catch { return url } }
+
 async function api(body: Record<string, unknown>) {
   const r = await fetch('/api/labs/trybe', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
   const d = await r.json().catch(() => ({}))
@@ -60,7 +64,7 @@ async function api(body: Record<string, unknown>) {
   return d
 }
 
-export default function TrybeStarBrands({ canCount, cards, scoutVersion, hasCore, onWrite }: {
+export default function TrybeStarBrands({ canCount, cards, scoutVersion, hasCore, onWrite, scoutOpens = false }: {
   /** SCOUT can read Meta's Ad Library here (allowed on TRYBE, recent enough). */
   canCount: boolean
   /** The MVP team: the ads themselves are copied for What's working too. */
@@ -70,6 +74,8 @@ export default function TrybeStarBrands({ canCount, cards, scoutVersion, hasCore
   hasCore: boolean
   /** Put these brands on the creator's list and write their requests. */
   onWrite: (ids: string[]) => Promise<void>
+  /** SCOUT can open a brand on TRYBE itself (1.41.8+). */
+  scoutOpens?: boolean
 }) {
   // 4.5 of 5 stars is Seb's "over 90".
   const [minRating, setMinRating] = useState<number | null>(4.5)
@@ -223,7 +229,7 @@ export default function TrybeStarBrands({ canCount, cards, scoutVersion, hasCore
             <button onClick={() => void write(pickedIds)} disabled={writing || !pickedIds.length || !hasCore} className={btn} style={{ background: COLOR, color: '#fff' }}>
               {writing ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />} Write {pickedIds.length || ''} request{pickedIds.length === 1 ? '' : 's'}
             </button>
-            <span className="text-[12px]" style={soft}>{hasCore ? 'Tick the brands you want: MVP writes each one a request from your core message, into Ready to send.' : 'Write your core message in Find brands first: every request starts from it.'}</span>
+            <span className="text-[12px]" style={soft}>{hasCore ? 'Tick the brands you want: MVP writes each one a request from your core message, into Ready to send.' : 'Write your core message in Find brands first: every request starts from it.'} The star keeps a brand on your Starred list: Find brands, Filters, Starred.</span>
           </div>
           <ol className="space-y-2">
             {brands.map((b, i) => {
@@ -269,6 +275,15 @@ export default function TrybeStarBrands({ canCount, cards, scoutVersion, hasCore
                       <span className="flex flex-wrap items-center gap-1.5">
                         <PopularityChips b={{ ...b, meta_trust: null }} />
                         <PayChip est={b.pay_est} payText={b.pay_text} />
+                      </span>
+                      {/* WHERE TO GO, AND HOW SURE (Seb, 2026-10-21: "go to their website
+                          directly or to their tribe page directly"): each link names where
+                          it leads, and the count says whether it was checked as the brand's. */}
+                      <span className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px]">
+                        <TrybeLink brandId={b.brand_id} name={b.name} scout={scoutOpens} label={`${b.name} on TRYBE`} />
+                        {b.website && <a href={b.website} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className="inline-flex items-center gap-1 font-semibold" style={{ color: COLOR }}><Globe size={11} /> Its website, {hostOf(b.website)} <ExternalLink size={10} /></a>}
+                        <a href={adLibraryUrl(b.name)} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className="inline-flex items-center gap-1 font-semibold" style={{ color: COLOR }}><Megaphone size={11} /> Its ads in Meta&rsquo;s Ad Library <ExternalLink size={10} /></a>
+                        {known && !notOwn && <span style={soft}>{b.meta_trust === 'own' && b.meta_ads_sample ? `Checked: ${b.meta_ads_own} of the ${b.meta_ads_sample} ads SCOUT saw are its own.` : 'Not checked as its own ads yet: the next count checks it.'}</span>}
                       </span>
                     </span>
                   </label>
