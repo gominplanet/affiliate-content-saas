@@ -67,6 +67,11 @@ export function keysOf(json: unknown): string {
 
 /** GET /backend/api/creator/v2/brands/stats?period=all: the brands the
  *  creator works with and their totals. Most earned first. */
+/** A to Z by name, the way a creator looks for a brand in a list (Seb,
+ *  2026-10-22: "this list of brands we work with should be in alphabetical
+ *  order"). "Aero AI" before "audien", "10X" before "2nd" read as numbers. */
+export const byBrandName = <T extends { name: string }>(a: T, b: T) => a.name.localeCompare(b.name, 'en', { sensitivity: 'base', numeric: true })
+
 export function readBrandStats(json: unknown): MyBrand[] {
   const root = isObj(json) && isObj(json.data) ? json.data : json
   const holder = isObj(root) ? (pick(root, ['brandStats', 'brand_stats', 'brands', 'stats', 'items']) ?? root) : root

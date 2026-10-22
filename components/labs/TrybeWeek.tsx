@@ -17,7 +17,7 @@ import TrybeVideoIdeas, { loadBrandPage, type SavedPlan } from '@/components/lab
 import { planWeek, brandsOf, stageOf, weekText, perDayNeeded, STAGE_WORDS, CHASE_DAYS, MONTHLY_TARGET, type Sample, type Stage, type Pace } from '@/lib/trybe-week'
 import { readBrandSubs } from '@/components/labs/TrybeMyBrands'
 import { requestTrybeApi } from '@/lib/extension-frame'
-import { readBrandStats, withSubmissions, judgeBrands, readTopVideos, type MyBrand, type Submission } from '@/lib/trybe-mybrands'
+import { readBrandStats, byBrandName, withSubmissions, judgeBrands, readTopVideos, type MyBrand, type Submission } from '@/lib/trybe-mybrands'
 import { buildPlanner, readMonthlyEarnings, type MonthMoney, type PlannerProduct } from '@/lib/trybe-planner'
 import { brandPageUrl, readSampleRequests, sampleStage } from '@/lib/trybe-brand-page'
 import type { VideoPlan } from '@/lib/trybe-playbook'
@@ -187,7 +187,7 @@ export default function TrybeWeek({ knownBrands, canRead, isAdmin = false }: {
       const k = b.name.trim().toLowerCase()
       if (!k || seen.has(k)) return false
       seen.add(k); return true
-    })
+    }).sort(byBrandName)
   }, [joined, knownBrands])
 
   const samples: Sample[] = useMemo(() => (rows || []).map((r) => ({ ...r, has_ideas: !!r.ideas })), [rows])

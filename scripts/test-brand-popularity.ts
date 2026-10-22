@@ -14,6 +14,7 @@ import { siteDomain, readRanks, webRankWords, googleSeed, brandSearches, googleW
 import { filterCheck, readFilters, ratingOf, spendingOf, type FilterRow } from '../lib/trybe-finder'
 import { metaOwnOf, metaTrustOf, metaUsable, metaTrustWords, sameAsBefore } from '../lib/trybe-pick'
 import { BROWSE_SORTS } from '../lib/trybe-outreach'
+import { byBrandName } from '../lib/trybe-mybrands'
 
 const fails: string[] = []
 const check = (name: string, ok: boolean | undefined, detail?: unknown) => { if (!ok) fails.push(`${name}${detail !== undefined ? `: ${JSON.stringify(detail)}` : ''}`) }
@@ -137,6 +138,13 @@ check('migration 452 is there and safe to run twice', existsSync('supabase/migra
 // The words themselves: quoted strings and JSX text, never the code around them.
 const words = (src: string) => (src.split('\n').filter((l) => !l.trim().startsWith('//') && !l.trim().startsWith('*')).join('\n').match(/'[^'\n]*'|`[^`\n]*`|>[^<>{}\n]+</g) || []).join(' ')
 check('no dashes in what the creator reads', !/[–—]| - /.test(words(read('lib/brand-popularity.ts'))) && !/[–—]| - /.test(words(STARS)))
+
+// Seb, 2026-10-22: "this list of brands we work with should be in alphabetical order".
+{
+  const order = ['Chef Preserve', 'audien', 'Aero AI', 'BRYN', 'Bat Tan'].map((name) => ({ name })).sort(byBrandName).map((x) => x.name).join(',')
+  check('brands you work with are listed A to Z, capitals ignored', order === 'Aero AI,audien,Bat Tan,BRYN,Chef Preserve', order)
+  check('in Upload videos, Make videos and This week', /\[\.\.\.brands\]\.sort\(byBrandName\)\.map/.test(read('components/labs/DropTrybePicker.tsx')) && /\.sort\(byBrandName\), \[brands, q\]\)/.test(read('components/labs/TrybeCreate.tsx')) && /\}\)\.sort\(byBrandName\)/.test(read('components/labs/TrybeWeek.tsx')))
+}
 
 if (fails.length) { console.error('brand-popularity failed:\n - ' + fails.join('\n - ')); process.exit(1) }
 console.log('✅ brand-popularity: Star brands ranks brands rated 4.5 stars+ by Meta ads per creator (per creator review while TRYBE gives no creator counts), says how much was counted, and shows each website\'s rank and Google searches, never a rank as visits or a miss as zero')

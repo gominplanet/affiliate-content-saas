@@ -11,7 +11,7 @@ import { useEffect, useState } from 'react'
 import { Loader2 } from 'lucide-react'
 import { requestTrybeApi } from '@/lib/extension-frame'
 import { readBrandOptions, type BrandOptions } from '@/lib/trybe-submit'
-import type { MyBrand } from '@/lib/trybe-mybrands'
+import { byBrandName, type MyBrand } from '@/lib/trybe-mybrands'
 
 export interface TrybeChoice {
   brandId: string
@@ -86,7 +86,7 @@ export default function DropTrybePicker({ brands, brandsError, value, onChange }
                 <select className={field} style={fieldStyle} value={value.brandId}
                   onChange={(e) => { const b = brands.find((x) => x.id === e.target.value); onChange({ ...emptyChoice(), notes: value.notes, exclusive: value.exclusive, brandId: b?.id ?? '', brandName: b?.name ?? '' }) }}>
                   <option value="">Pick the brand this video is for</option>
-                  {brands.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+                  {[...brands].sort(byBrandName).map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
                 </select>
               )}
       </label>

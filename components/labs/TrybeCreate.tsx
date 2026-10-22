@@ -14,7 +14,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Loader2, ArrowLeft, Search, Check, FileText, ExternalLink, AlertTriangle } from 'lucide-react'
 import { requestTrybeApi } from '@/lib/extension-frame'
-import { readBrandStats, type MyBrand } from '@/lib/trybe-mybrands'
+import { readBrandStats, byBrandName, type MyBrand } from '@/lib/trybe-mybrands'
 import { brandPageUrl } from '@/lib/trybe-brand-page'
 import TrybeVideoIdeas, { loadBrandPage, type BrandPage } from '@/components/labs/TrybeVideoIdeas'
 import { AmazonLine, ProductAmazon, AmazonFilmedList } from '@/components/labs/TrybeFinderControls'
@@ -71,7 +71,8 @@ export default function TrybeCreate({ canRead, isAdmin, onFind }: { canRead: boo
     try { setPage(await loadBrandPage(b.id)) } finally { setPageLoading(false) }
   }
 
-  const shown = useMemo(() => (brands || []).filter((b) => !q.trim() || b.name.toLowerCase().includes(q.trim().toLowerCase())), [brands, q])
+  // A to Z (Seb, 2026-10-22), whatever order TRYBE sends them in.
+  const shown = useMemo(() => (brands || []).filter((b) => !q.trim() || b.name.toLowerCase().includes(q.trim().toLowerCase())).sort(byBrandName), [brands, q])
   const step = !brand ? 1 : !product ? 2 : 3
   const soft = { color: 'var(--text-soft)' }
   const card = 'rounded-2xl border p-5'
