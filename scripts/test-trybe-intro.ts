@@ -6,7 +6,7 @@
 // kept only when it arrived; and until SCOUT can attach it, the card says
 // requests still go without it, and only admin sees it.
 import { readFileSync, existsSync } from 'node:fs'
-import { introPrompt, introSystem, parseIntro, readIntroVideo, cleanInputs, introSuggest, introSample, isTrybeSampleUrl, WORDS_FOR, INTRO_TIPS } from '../lib/trybe-intro'
+import { INTRO_GUIDE, introPrompt, introSystem, parseIntro, readIntroVideo, cleanInputs, introSuggest, introSample, isTrybeSampleUrl, WORDS_FOR, INTRO_TIPS } from '../lib/trybe-intro'
 
 const fails: string[] = []
 const check = (name: string, ok: boolean | undefined, detail?: unknown) => { if (!ok) fails.push(`${name}${detail !== undefined ? `: ${JSON.stringify(detail)}` : ''}`) }
@@ -45,7 +45,9 @@ check('a video is saved only when storage has it', /if \(!hit\) return NextRespo
 check('only the upload MVP opened, in the creator\'s own folder', /trybe-intro-\[0-9a-f-\]\{36\}/.test(ROUTE))
 check('the clean-up jobs never take it (not burner-, clip- or source-)', /\^\(burner\|clip\|source\)-/.test(read('app/api/cron/purge-shorts-sources/route.ts')))
 const CARD = read('components/labs/TrybeIntroVideo.tsx')
-check('the card has every option: name, years, proud of, niches, socials with links, email, sound, length', ['Your name, or names', 'Making videos for', 'What you are proud of', 'Your niches', 'Where your videos do well', 'Sign off with my email', 'Sound', 'Length'].every((w) => CARD.includes(w)))
+// Seb, 2026-10-22: "I don't want to give a script to someone. Just give them a little idea of what the intro video should be ... make sure that people write their core message".
+check('the card has no form and no script: a short guide to a good intro instead', !['Your name, or names', 'Making videos for', 'Where your videos do well', 'Sign off with my email', 'Write my intro', "action: 'intro_script'"].some((w) => CARD.includes(w)) && /1\. What a good intro video is/.test(CARD) && /INTRO_GUIDE\.map/.test(CARD) && INTRO_GUIDE.length >= 4 && INTRO_GUIDE.some((t) => /no rates or prices/i.test(t)))
+check('it says the core message is the request and the video goes with it, and opens it', /Write your core message first\.<\/b> It is the words of every request/.test(CARD) && /Your core message is written\./.test(CARD) && /<TrybeIntroVideo core=\{core\} onWriteCore=/.test(read('components/labs/TrybeOutreach.tsx')) && /id="trybe-core-message"/.test(read('components/labs/TrybeOutreach.tsx')))
 check('the route reads the options and fills the form from the profile', /const inputs = cleanInputs\(body\.inputs\)/.test(ROUTE) && /suggest: introSuggest\(/.test(ROUTE) && /parseIntro\(\(msg\.content/.test(ROUTE))
 // ── With every request (Seb, 2026-10-21, read from TRYBE's own Request to Join) ──
 check('the card says where it stands: none, in MVP only, SCOUT too old, or on every request', /No intro yet\. Requests go with your message only\./.test(CARD) && /Saved in MVP, not on TRYBE yet, so requests still go with your message only\./.test(CARD) && /which sends requests without it\. Update SCOUT/.test(CARD) && /On TRYBE\. Every request SCOUT sends now carries it/.test(CARD))
@@ -58,7 +60,7 @@ check('MVP hands it to every send, and keeps whether it went', /sample \}\)$/m.t
 const BG = read('extension/background.js')
 check('SCOUT 1.53.7 sends it as TRYBE\'s button does, only a TRYBE cdn link', /sampleCreativeUrl: u, sampleCreativeMimeType: t/.test(BG) && /cdn\\\.jointrybe\\\.com\\\/creators/.test(BG) && /trybeSend\(\{ url: d\.url, name: d\.name, message: d\.message, sample: d\.sample \}\)/.test(BG) && /withVideo: !!res\.withVideo/.test(BG) && /\/\^\\\/backend\\\/api\\\/creator\\\/profile\\\/portfolio\\\/upload-url\$\//.test(BG))
 check('the run log says when a request went with the video', /Sent with your intro video\./.test(BG) && /Sent with your intro video\. /.test(read('components/labs/TrybeOutreach.tsx')))
-check('only admin sees it on Find brands', /\{isAdmin && <TrybeIntroVideo \/>\}/.test(read('components/labs/TrybeOutreach.tsx')))
+check('only admin sees it on Find brands', /\{isAdmin && <TrybeIntroVideo core=/.test(read('components/labs/TrybeOutreach.tsx')))
 check('optional: off sends the message only, as before, and the card shrinks to one line', /No thanks, message only/.test(CARD) && /Intro video off\.<\/b> Requests go with your message only, as before\./.test(CARD) && /action === 'intro_toggle'/.test(ROUTE) && /add column if not exists intro_off boolean not null default false/.test(read('supabase/migrations/450_trybe_intro.sql')))
 check('migration 450, safe to run twice', existsSync('supabase/migrations/450_trybe_intro.sql') && /add column if not exists intro_video jsonb/.test(read('supabase/migrations/450_trybe_intro.sql')))
 

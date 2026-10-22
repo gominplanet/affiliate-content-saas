@@ -93,6 +93,27 @@ check('the plan asks for ten videos across Cole\'s styles and never invents a sa
   check('the page reads the brief through SCOUT and says which kind it found', /loadBrandPage\(brandId\)/.test(ui) && /TRYBE shows no brief for this brand/.test(ui) && /MVP could not read their brief on TRYBE/.test(ui))
   check('the ideas can be copied whole and printed', /planText\(plan, name\)/.test(ui) && /Print or save as PDF/.test(ui))
 }
+// 4c. THE WORDS TO SAY (Seb, 2026-10-22: "give me actual words to say ...
+// small sentences, very, very short and sweet ... And then just give ideas
+// of a bunch of different B-rolls").
+{
+  const vs = (i: number) => ({ angle: `Angle ${i}`, style: 'problem', hook: 'Your leftovers go bad in three days.', shot: 'Fridge door swings open',
+    say: ['Your leftovers go bad in three days.', 'Mine last weeks now.', 'Seal it, and the air is gone.', 'Thirty bags come in the box.', i === 0 ? 'Grab it while the sale lasts.' : 'Try it on your next grocery run.'],
+    broll: ['Slow push in as the bag shrinks around the steak', 'Hands drop a bag into the freezer drawer', 'Close-up of the seal light going green', 'Fridge shelf of sealed bags'], cta: '', forBrief: '' })
+  const ps = parseVideoPlan(JSON.stringify({ product: 'Vacuum Sealer with 30 Bags', body: 'It seals food airtight.', videos: Array.from({ length: 10 }, (_, i) => vs(i)), ctas: [{ kind: 'urgency', line: 'Try it this week' }], funnel: { top: '1', middle: '2', bottom: '3' } }))
+  const one = ps?.videos?.[1]
+  check('each video keeps its words to say, line by line, and its B-roll', one?.say?.length === 5 && one.broll?.length === 4 && one.say[0] === 'Your leftovers go bad in three days.')
+  check('the hook is the first line and the close the last', one?.hook === 'Your leftovers go bad in three days.' && one?.cta === 'Try it on your next grocery run.')
+  check('anything that reads beats still reads the script', (one?.beats.length ?? 0) >= 3 && one?.beats[0] === 'Mine last weeks now.')
+  const hs = ps && honestCtas(ps, [])
+  check('nothing on sale: a spoken line promising a sale is swapped too', !!hs && !hs.videos![0].say!.some((l) => /sale/i.test(l)) && hs.videos![0].say!.includes('Try it this week'))
+  check('one video copies as its words to say, then its B-roll', one ? /SAY, ONE LINE AT A TIME:\n1\) Your leftovers go bad in three days\.\n2\) Mine last weeks now\.[\s\S]*B-ROLL TO FILM:\n- Slow push in/.test(ideaText(one, 2)) : false)
+  const sys = VIDEO_PLAN_SYSTEM('')
+  check('the prompt asks for spoken lines of 4 to 10 words, never directions, modelled on the winners', /"say": \["THE SCRIPT: the exact words the creator says, in order, 4 to 7 lines/.test(sys) && /4 to 10 words, said in one breath/.test(sys) && /THE SCRIPT IS WORDS TO SAY, NOT DIRECTIONS/.test(sys) && /the way the WINNING VIDEOS and WINNING TRYBE ADS below talk/.test(sys) && /"broll": \["4 to 6 B-roll shots/.test(sys))
+  const ui = read('components/labs/TrybeVideoIdeas.tsx')
+  check('the page shows the lines to say one by one, the B-roll, and says when a plan is from before scripts', /Say, one line at a time/.test(ui) && /B-roll to film/.test(ui) && /These ideas are from before scripts\. Press New ideas/.test(ui))
+  check('the planner PDF prints the words to say and the B-roll', /const script = v\.say\?\.length \? v\.say\.slice\(0, 7\) : null/.test(read('lib/trybe-planner-pdf.ts')) && /B-roll: \$\{broll\.join/.test(read('lib/trybe-planner-pdf.ts')))
+}
 check('a broken answer gives no plan rather than an empty one', parseVideoPlan('sorry') === null && parseVideoPlan('{"body":"x","hooks":[]}') === null)
 
 // Wiring

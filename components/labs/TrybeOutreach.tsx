@@ -1786,12 +1786,13 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
       )}
 
       {tab === 'find' && !lockedTab && (<>
-        {/* The intro video for requests (lib/trybe-intro): admin only until SCOUT can attach it. */}
-        {isAdmin && <TrybeIntroVideo />}
+        {/* The intro video for requests (lib/trybe-intro): admin only until SCOUT can attach it.
+            The core message is the request itself, so the card says where it stands and opens it. */}
+        {isAdmin && <TrybeIntroVideo core={core} onWriteCore={() => { setEditingCore(true); window.setTimeout(() => document.getElementById('trybe-core-message')?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 50) }} />}
         {/* Your stage: volume first, then double down on winners (Seb, 2026-10-14). */}
         <TrybeStage canRead={canMyBrands} onGo={go} />
         {/* 1. Core message: a short preview once written, the box while editing. */}
-        {!preview && <div className={card} style={cardStyle}>
+        {!preview && <div id="trybe-core-message" className={card} style={cardStyle}>
           <div className="flex flex-wrap items-center gap-2">
             <p className="text-[14px] font-semibold">1. Your core message</p>
             {!editingCore && core.trim() && (

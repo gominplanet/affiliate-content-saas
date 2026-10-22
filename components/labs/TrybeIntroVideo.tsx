@@ -3,26 +3,26 @@
 //
 // YOUR INTRO VIDEO FOR BRANDS (Seb, 2026-10-20: "have that one single intro
 // video be uploaded to MVP, and then MVP uses that video on all of the
-// requests ... Let's make it a personal intro submission based on what MVP
-// wants to recommend"). MVP writes what to say (lib/trybe-intro), the
-// creator films it once and uploads it here. What it does yet is said in
-// plain words: until SCOUT can add it to TRYBE's Request to Join, the card
-// says requests still go without it, so a saved video never reads as sent.
+// requests"). Optional: one short video, uploaded once, put on TRYBE through
+// SCOUT, and attached to every request SCOUT sends. What it does yet is said
+// in plain words, so a saved video never reads as sent.
+//
+// NO SCRIPT, NO FORM (Seb, 2026-10-22: "I don't want to give a script to
+// someone. Just give them a little idea of what the intro video should be
+// ... make sure that people write their core message, because the core
+// message is what's being written as a request to tribe brands. And then
+// attached to that will be the intro video"). So the card is a few lines on
+// what a good intro is, the upload, and where the core message stands.
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
-import { Video, Loader2, Sparkles, Copy, Check, Trash2, UploadCloud, AlertTriangle } from 'lucide-react'
-import { INTRO_TIPS, INTRO_MAX_BYTES, INTRO_SECONDS, YEARS_CHOICES, SOCIALS, TONES, LENGTHS, TRYBE_PORTFOLIO_PATH, introMime, type IntroLine, type IntroVideo, type IntroInputs, type SocialId, type IntroTone } from '@/lib/trybe-intro'
+import { Video, Loader2, Check, Trash2, UploadCloud, AlertTriangle, Pencil } from 'lucide-react'
+import { INTRO_GUIDE, INTRO_MAX_BYTES, INTRO_SECONDS, TRYBE_PORTFOLIO_PATH, introMime, type IntroVideo } from '@/lib/trybe-intro'
 import { getScoutStatus, requestTrybeApi, requestTrybePutFile } from '@/lib/extension-frame'
 import { SCOUT_TRYBE_INTRO_MIN_VERSION, scoutAtLeast } from '@/lib/scout-version'
 import { TRYBE_NOT_OPEN, TRYBE_NOT_OPEN_WORDS } from '@/lib/trybe-tab'
 
 const ROSE = '#E11D48'
-type Script = { lines: IntroLine[]; words: number; inputs?: Partial<IntroInputs>; at?: string }
-// THE OPTIONS (Seb, 2026-10-20: "name, experience, social used with success
-// (links), signature, name + email (if user wants)"), filled in from the
-// profile, and what they chose last time kept with the script.
-const BLANK: IntroInputs = { name: '', years: '', highlight: '', niches: [], socials: [], withEmail: false, email: '', tone: 'warm', seconds: 30 }
 
 async function api(body: Record<string, unknown>) {
   const r = await fetch('/api/labs/trybe', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(90_000) })
@@ -31,22 +31,18 @@ async function api(body: Record<string, unknown>) {
   return d
 }
 
-export default function TrybeIntroVideo() {
+export default function TrybeIntroVideo({ core, onWriteCore }: {
+  /** The creator's core message: the words of every request. */
+  core: string
+  /** Open the core message to write or edit it. */
+  onWriteCore: () => void
+}) {
   const [video, setVideo] = useState<IntroVideo | null>(null)
-  const [script, setScript] = useState<Script | null>(null)
   const [migrated, setMigrated] = useState(true)
   // OPTIONAL (Seb: "if they do not want to do this, they do not have to and
   // can simply send the intro message like before"): off sends the message only.
   const [off, setOff] = useState(false)
-  const [form, setForm] = useState<IntroInputs>(BLANK)
-  const [nicheText, setNicheText] = useState('')
-  // Every platform's link as typed; the ticked ones are sent.
-  const [links, setLinks] = useState<Record<string, string>>({})
-  const [ticked, setTicked] = useState<Set<SocialId>>(new Set())
-  const set = <K extends keyof IntroInputs>(k: K, v: IntroInputs[K]) => setForm((f) => ({ ...f, [k]: v }))
-  const [writing, setWriting] = useState(false)
   const [uploading, setUploading] = useState<number | null>(null)
-  const [copied, setCopied] = useState(false)
   const [error, setError] = useState<string | null>(null)
   // ON TRYBE (SCOUT 1.53.7): the intro in the creator's TRYBE portfolio, the
   // link every request carries. The SCOUT in this Chrome decides whether it can.
@@ -86,30 +82,8 @@ export default function TrybeIntroVideo() {
       setMigrated(d.migrated !== false)
       setVideo(d.video || null)
       setOff(d.off === true)
-      // Last time's choices first, else what the profile says.
-      const from: Partial<IntroInputs> = d.script?.inputs || d.suggest || {}
-      const sug: Partial<IntroInputs> = d.suggest || {}
-      setForm({ ...BLANK, ...from, email: from.email || sug.email || '' })
-      setNicheText((from.niches || []).join(', '))
-      const all: Record<string, string> = {}
-      for (const x of [...(sug.socials || []), ...(from.socials || [])]) if (x.url) all[x.id] = x.url
-      setLinks(all)
-      setTicked(new Set((from.socials || []).map((x) => x.id)))
-      if (d.script?.lines) setScript(d.script)
     }).catch((e) => setError(e instanceof Error ? e.message : 'MVP did not answer.'))
   }, [])
-
-  const write = useCallback(async () => {
-    setWriting(true); setError(null)
-    const inputs: IntroInputs = {
-      ...form,
-      niches: nicheText.split(',').map((n) => n.trim()).filter(Boolean),
-      socials: SOCIALS.filter((x) => ticked.has(x.id)).map((x) => ({ id: x.id, url: (links[x.id] || '').trim() })),
-    }
-    try { const d = await api({ action: 'intro_script', inputs }); setScript(d.script) }
-    catch (e) { setError(e instanceof Error ? e.message : 'MVP could not write it.') }
-    finally { setWriting(false) }
-  }, [form, nicheText, ticked, links])
 
   const upload = useCallback(async (f: File) => {
     setError(null)
@@ -150,16 +124,8 @@ export default function TrybeIntroVideo() {
     try { await api({ action: 'intro_remove' }); setVideo(null) } catch (e) { setError(e instanceof Error ? e.message : 'MVP could not remove it.') }
   }, [])
 
-  const copy = async () => {
-    if (!script) return
-    try { await navigator.clipboard.writeText(script.lines.map((l) => l.say).join('\n')); setCopied(true); setTimeout(() => setCopied(false), 1500) }
-    catch { toast.error('Copy did not work in this browser. Select the words instead.') }
-  }
-
   const soft = { color: 'var(--text-3)' }
   const box = 'rounded-xl border px-4 py-3.5'
-  const field = 'mt-1 block w-full rounded-lg border px-2.5 py-1.5 text-[13px]'
-  const fieldStyle = { borderColor: 'var(--border)', background: 'var(--surface)', color: 'var(--text)' }
   // Turned off: one quiet line, the way back in, and nothing else.
   if (off) return (
     <div className="rounded-xl border px-4 py-2.5 flex flex-wrap items-center gap-2 text-[13px]" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
@@ -176,7 +142,7 @@ export default function TrybeIntroVideo() {
         <div className="min-w-0 flex-1">
           <p className="text-[16px] font-bold leading-tight">Your intro video for brands <span className="ml-1 text-[11px] font-semibold uppercase tracking-wide rounded-full px-2 py-0.5 align-middle" style={{ background: 'var(--surface-2)', color: 'var(--text-3)' }}>Optional</span></p>
           <p className="text-[13px] mt-0.5 max-w-3xl" style={soft}>
-            TRYBE lets you add a video when you ask to join a brand. A short hello, so the brand sees who is asking. MVP writes what to say; you film it once. Prefer not to? Requests go with your message only, as before.
+            Every request MVP sends to a TRYBE brand is your core message. Add a short intro video and it goes with every one, so the brand sees who is asking. Prefer not to? Requests go with your message only, as before.
           </p>
         </div>
         <button onClick={() => void toggle(true)} className="shrink-0 text-[12.5px] font-semibold underline" style={soft}>No thanks, message only</button>
@@ -186,88 +152,31 @@ export default function TrybeIntroVideo() {
       {error && <p className="mt-3 text-[12.5px] inline-flex items-start gap-1.5" style={{ color: '#D70015' }}><AlertTriangle size={13} className="mt-0.5 shrink-0" />{error}</p>}
 
       <div className="mt-4 grid gap-3 lg:grid-cols-2">
-        {/* 1. What to say */}
+        {/* 1. What a good intro is, and the words it goes with. */}
         <div className={box} style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
-          <p className="text-[13.5px] font-semibold">1. What to say</p>
-          <div className="mt-2 grid gap-2.5 sm:grid-cols-2">
-            <label className="text-[12px]" style={soft}>Your name, or names
-              <input value={form.name} onChange={(e) => set('name', e.target.value)} maxLength={60} placeholder="Seb and Michelle" className={field} style={fieldStyle} />
-            </label>
-            <label className="text-[12px]" style={soft}>Making videos for
-              <select value={form.years} onChange={(e) => set('years', e.target.value)} className={field} style={fieldStyle}>
-                <option value="">Choose...</option>
-                {YEARS_CHOICES.map((y) => <option key={y} value={y}>{y}</option>)}
-              </select>
-            </label>
-            <label className="text-[12px] sm:col-span-2" style={soft}>What you are proud of (optional)
-              <input value={form.highlight} onChange={(e) => set('highlight', e.target.value)} maxLength={240} placeholder="500 Amazon video reviews, 47 brands on TRYBE" className={field} style={fieldStyle} />
-            </label>
-            <label className="text-[12px] sm:col-span-2" style={soft}>Your niches, with commas
-              <input value={nicheText} onChange={(e) => setNicheText(e.target.value)} maxLength={240} placeholder="tech, home, outdoors" className={field} style={fieldStyle} />
-            </label>
-          </div>
-
-          <p className="mt-3 text-[12px] font-semibold" style={{ color: 'var(--text)' }}>Where your videos do well <span className="font-normal" style={soft}>(ticked ones are named; the link shows on screen)</span></p>
-          <div className="mt-1.5 grid gap-1.5">
-            {SOCIALS.map((x) => (
-              <div key={x.id} className="flex items-center gap-2">
-                <label className="inline-flex items-center gap-1.5 text-[12.5px] w-40 shrink-0">
-                  <input type="checkbox" checked={ticked.has(x.id)} onChange={(e) => setTicked((t) => { const n = new Set(t); if (e.target.checked) n.add(x.id); else n.delete(x.id); return n })} />
-                  {x.label}
-                </label>
-                <input value={links[x.id] || ''} onChange={(e) => { setLinks((l) => ({ ...l, [x.id]: e.target.value })); if (e.target.value && !ticked.has(x.id)) setTicked((t) => new Set(t).add(x.id)) }}
-                  placeholder="https://..." maxLength={300} className="flex-1 min-w-0 rounded-lg border px-2 py-1 text-[12.5px]" style={fieldStyle} />
-              </div>
-            ))}
-          </div>
-
-          <div className="mt-3 flex flex-wrap items-center gap-2 text-[12.5px]">
-            <label className="inline-flex items-center gap-1.5">
-              <input type="checkbox" checked={form.withEmail} onChange={(e) => set('withEmail', e.target.checked)} />
-              Sign off with my email
-            </label>
-            {form.withEmail && <input value={form.email} onChange={(e) => set('email', e.target.value)} placeholder="you@email.com" maxLength={254} className="flex-1 min-w-[180px] rounded-lg border px-2 py-1 text-[12.5px]" style={fieldStyle} />}
-          </div>
-
-          <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-[12px]" style={soft}>
-            <span className="inline-flex items-center gap-1">Sound
-              {(Object.keys(TONES) as IntroTone[]).map((t) => (
-                <button key={t} onClick={() => set('tone', t)} className="rounded-full px-2.5 py-0.5 border text-[12px]" style={form.tone === t ? { background: ROSE, color: '#fff', borderColor: ROSE } : { borderColor: 'var(--border)', color: 'var(--text-2)' }}>{TONES[t].split(' and ')[0]}</button>
-              ))}
-            </span>
-            <span className="inline-flex items-center gap-1">Length
-              {LENGTHS.map((n) => (
-                <button key={n} onClick={() => set('seconds', n)} className="rounded-full px-2.5 py-0.5 border text-[12px] tabular-nums" style={form.seconds === n ? { background: ROSE, color: '#fff', borderColor: ROSE } : { borderColor: 'var(--border)', color: 'var(--text-2)' }}>{n}s</button>
-              ))}
-            </span>
-          </div>
-
-          <button onClick={() => void write()} disabled={writing || !migrated} className="mt-3 inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-[13px] font-semibold text-white disabled:opacity-50" style={{ background: ROSE }}>
-            {writing ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />} {script ? 'Write it again' : 'Write my intro'}
-          </button>
-          {script && (
-            <div className="mt-3">
-              <ol className="space-y-1.5">
-                {script.lines.map((l, i) => (
-                  <li key={i} className="text-[13.5px] leading-relaxed">
-                    {l.say}{l.show && <span className="block text-[11.5px]" style={soft}>{/^(https?:\/\/|www\.|@)|@\S+\.[a-z]{2,}$/i.test(l.show) ? 'On screen: ' : 'Show: '}{l.show}</span>}
-                  </li>
-                ))}
-              </ol>
-              <div className="mt-2 flex items-center gap-3 text-[12px]" style={soft}>
-                <span>{script.words} words, about {Math.max(10, Math.round(script.words / 2.6))} seconds</span>
-                <button onClick={() => void copy()} className="inline-flex items-center gap-1 underline" style={{ color: ROSE }}>{copied ? <Check size={12} /> : <Copy size={12} />} {copied ? 'Copied' : 'Copy the words'}</button>
-              </div>
+          <p className="text-[13.5px] font-semibold">1. What a good intro video is</p>
+          <ul className="mt-2 space-y-1.5 text-[13px]">
+            {INTRO_GUIDE.map((t) => <li key={t} className="flex gap-2"><span className="mt-[7px] w-1.5 h-1.5 shrink-0 rounded-full" style={{ background: ROSE }} />{t}</li>)}
+          </ul>
+          {/* THE CORE MESSAGE IS THE REQUEST: the video only goes with it. */}
+          {core.trim() ? (
+            <div className="mt-3 rounded-lg px-2.5 py-2 text-[12.5px]" style={{ background: 'rgba(22,163,74,0.10)', color: '#15803D' }}>
+              <p className="inline-flex items-center gap-1.5 font-semibold"><Check size={12} /> Your core message is written.</p>
+              <p className="mt-0.5">It is the words of every request; the intro video goes with it.{' '}
+                <button onClick={onWriteCore} className="inline-flex items-center gap-1 font-semibold underline"><Pencil size={11} /> Edit it</button>
+              </p>
+            </div>
+          ) : (
+            <div className="mt-3 rounded-lg px-2.5 py-2 text-[12.5px] space-y-1.5" style={{ background: 'rgba(180,83,9,0.08)', color: '#B45309' }}>
+              <p><b>Write your core message first.</b> It is the words of every request MVP sends to a brand; the intro video only goes with it.</p>
+              <button onClick={onWriteCore} className="rounded-lg px-2.5 py-1 text-[12px] font-semibold text-white" style={{ background: ROSE }}>Write my core message</button>
             </div>
           )}
-          <ul className="mt-3 space-y-1 text-[12px]" style={soft}>
-            {INTRO_TIPS.map((t) => <li key={t}>• {t}</li>)}
-          </ul>
         </div>
 
         {/* 2. Upload it */}
         <div className={box} style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
-          <p className="text-[13.5px] font-semibold">2. Upload it once</p>
+          <p className="text-[13.5px] font-semibold">2. Upload it once <span className="font-normal" style={soft}>(optional)</span></p>
           {video ? (
             <div className="mt-2 flex gap-3">
               <video src={video.url} controls playsInline preload="metadata" className="rounded-lg bg-black shrink-0" style={{ width: 120, height: 213, objectFit: 'cover' }} />

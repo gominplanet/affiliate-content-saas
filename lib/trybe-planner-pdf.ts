@@ -186,9 +186,15 @@ export function renderPlannerPdf(model: PlannerModel, assets: PlannerAssets): Ar
     if (!p.ideas.length) para(p.ideasNote || 'No ideas yet: plan them in Make videos.', M, W - 2 * M, 10.5, SOFT)
     p.ideas.forEach((v, i) => {
       const inner = W - 2 * M - 40
-      const beats = v.beats.slice(0, 4)
-      const est = 26 + lines(`Hook: ${v.hook}`, inner).length * lh(10) + (v.shot ? lines(`First 2 seconds: ${v.shot}`, inner).length * lh(9.5) : 0)
-        + beats.reduce((n, b) => n + lines(b, inner - 14).length * lh(9.5), 0) + (v.cta ? lines(`Close: ${v.cta}`, inner).length * lh(9.5) : 0) + 24
+      // A plan with a script prints the words to say, line by line, and its
+      // B-roll; an older plan its hook and beats.
+      const script = v.say?.length ? v.say.slice(0, 7) : null
+      const beats = script ?? v.beats.slice(0, 4)
+      const broll = script ? (v.broll || []).slice(0, 4) : []
+      const brollText = broll.length ? `B-roll: ${broll.join('; ')}` : ''
+      const est = 26 + (script ? 0 : lines(`Hook: ${v.hook}`, inner).length * lh(10)) + (v.shot ? lines(`First 2 seconds: ${v.shot}`, inner).length * lh(9.5) : 0)
+        + beats.reduce((n, b) => n + lines(b, inner - 14).length * lh(9.5), 0) + (!script && v.cta ? lines(`Close: ${v.cta}`, inner).length * lh(9.5) : 0)
+        + (brollText ? lines(brollText, inner).length * lh(9.5) : 0) + 24
       ensure(est)
       const top = y
       fill(TINT); doc.roundedRect(M, top, W - 2 * M, est - 8, 10, 10, 'F')
@@ -199,10 +205,11 @@ export function renderPlannerPdf(model: PlannerModel, assets: PlannerAssets): Ar
       font(11.5, true); color(INK); doc.text(pdfSafe(v.angle || HOOK_STYLE_WORDS[v.style]), x, y + 12)
       font(8.5, true); color(PURPLE); doc.text(pdfSafe(HOOK_STYLE_WORDS[v.style] || '').toUpperCase(), W - M - 12, y + 12, { align: 'right' })
       y += 20
-      para(`Hook: ${v.hook}`, x, inner, 10, INK, true)
+      if (!script) para(`Hook: ${v.hook}`, x, inner, 10, INK, true)
       if (v.shot) para(`First 2 seconds: ${v.shot}`, x, inner, 9.5, SOFT)
-      beats.forEach((b, j) => { font(9.5, true); color(PURPLE); doc.text(`${j + 1}`, x, y + 9.5); para(b, x + 14, inner - 14, 9.5) })
-      if (v.cta) para(`Close: ${v.cta}`, x, inner, 9.5, INK)
+      beats.forEach((b, j) => { font(9.5, true); color(PURPLE); doc.text(`${j + 1}`, x, y + 9.5); para(script ? `\u201c${b}\u201d` : b, x + 14, inner - 14, 9.5) })
+      if (!script && v.cta) para(`Close: ${v.cta}`, x, inner, 9.5, INK)
+      if (brollText) para(brollText, x, inner, 9.5, SOFT)
       // Filmed, edited, submitted.
       let bx = x
       for (const t of ['Filmed', 'Edited', 'Submitted']) { box(bx, y + 3, 8); font(8.5); color(SOFT); doc.text(t, bx + 12, y + 10); bx += doc.getTextWidth(t) + 26 }

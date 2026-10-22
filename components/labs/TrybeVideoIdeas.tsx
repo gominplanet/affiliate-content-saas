@@ -484,13 +484,33 @@ export default function TrybeVideoIdeas({ brandId, name, plan: initial, canRead,
                           <span className="text-[13px] font-semibold">{v.angle || HOOK_STYLE_WORDS[v.style]}</span>
                           <span className="text-[10px] font-bold rounded-full px-1.5 py-0.5" style={{ background: 'rgba(124,58,237,0.10)', color: PURPLE }}>{HOOK_STYLE_WORDS[v.style]}</span>
                         </span>
-                        <span className="block mt-0.5"><b>Hook:</b> {v.hook}</span>
-                        {v.shot && <span className="block" style={soft}>First 2 seconds: {v.shot}</span>}
-                        <ol className="mt-1 list-decimal pl-4 space-y-0.5">{v.beats.map((b, j) => <li key={j}>{b}</li>)}</ol>
-                        {v.cta && <span className="block mt-0.5"><b>Close:</b> {v.cta}</span>}
+                        {v.say?.length ? (<>
+                          {/* THE WORDS TO SAY (Seb, 2026-10-22): one short line at a
+                              time, so each is memorized, filmed, then the next. */}
+                          <span className="block mt-1.5 text-[11px] font-bold uppercase tracking-wider" style={{ color: PURPLE }}>Say, one line at a time</span>
+                          <ol className="mt-1 space-y-1">
+                            {v.say.map((l, j) => (
+                              <li key={j} className="flex items-start gap-2">
+                                <span className="shrink-0 w-5 h-5 rounded-full inline-flex items-center justify-center text-[10.5px] font-bold" style={{ background: 'rgba(124,58,237,0.10)', color: PURPLE }}>{j + 1}</span>
+                                <span className="text-[14px] leading-snug font-medium">&ldquo;{l}&rdquo;</span>
+                              </li>
+                            ))}
+                          </ol>
+                          {v.broll && v.broll.length > 0 && (<>
+                            <span className="block mt-2 text-[11px] font-bold uppercase tracking-wider" style={soft}>B-roll to film</span>
+                            <ul className="mt-0.5 list-disc pl-5 space-y-0.5">{v.broll.map((b, j) => <li key={j}>{b}</li>)}</ul>
+                          </>)}
+                          {v.shot && <span className="block mt-1" style={soft}>First 2 seconds: {v.shot}</span>}
+                        </>) : (<>
+                          <span className="block mt-0.5"><b>Hook:</b> {v.hook}</span>
+                          {v.shot && <span className="block" style={soft}>First 2 seconds: {v.shot}</span>}
+                          <ol className="mt-1 list-decimal pl-4 space-y-0.5">{v.beats.map((b, j) => <li key={j}>{b}</li>)}</ol>
+                          {v.cta && <span className="block mt-0.5"><b>Close:</b> {v.cta}</span>}
+                          {i === 0 && <span className="block mt-1" style={{ color: AMBER }}>These ideas are from before scripts. Press New ideas for the words to say, line by line, and the B-roll for each video.</span>}
+                        </>)}
                         {v.forBrief && <span className="block mt-0.5" style={{ color: GREEN }}>For the brief: {v.forBrief}</span>}
                       </span>
-                      <button onClick={() => void copyText(`v${i}`, ideaText(v, i + 1))} className="shrink-0 inline-flex items-center gap-1 text-[11px] font-semibold" style={{ color: PURPLE }} title="Copy this video's plan">
+                      <button onClick={() => void copyText(`v${i}`, ideaText(v, i + 1))} className="shrink-0 inline-flex items-center gap-1 text-[11px] font-semibold" style={{ color: PURPLE }} title={v.say?.length ? "Copy this video's script and B-roll" : "Copy this video's plan"}>
                         {copiedKey === `v${i}` ? <Check size={12} /> : <Copy size={12} />} {copiedKey === `v${i}` ? 'Copied' : 'Copy'}
                       </button>
                     </div>

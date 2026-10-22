@@ -1228,7 +1228,8 @@ export async function POST(request: Request) {
     const examplesText = examplesBlock(examples, String(row.name || ''))
     try {
       const msg = await createAnthropicClient().messages.create({
-        model: MODEL, max_tokens: 6000,
+        // Room for ten scripts and their B-roll (2026-10-22).
+        model: MODEL, max_tokens: 10000,
         system: VIDEO_PLAN_SYSTEM(BANNED_RULE),
         messages: [{ role: 'user', content: `BRAND:\n${brandBlock({ name: row.name, categories: row.categories || [], about: row.about, siteSummary: summary, products, onSale, payText: row.pay_text })}${briefText ? `\n\nBRIEF (the brand's own creative brief on TRYBE):\n${briefText}` : ''}${product ? `\n\nTHE PRODUCT ON HAND: ${product}. The creator has this one in hand, so every video is about it and shows it.` : ''}${winners.length ? `\n\n${winnersBlock(winners)}` : ''}${examplesText ? `\n\n${examplesText}` : ''}${hooksText ? `\n\n${hooksText}` : ''}` }],
       })

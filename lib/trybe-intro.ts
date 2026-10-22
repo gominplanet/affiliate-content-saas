@@ -49,6 +49,17 @@ export interface IntroInputs {
   seconds: (typeof LENGTHS)[number]
 }
 
+/** WHAT A GOOD INTRO VIDEO IS, in a few lines (Seb, 2026-10-22: "Just give
+ *  them a little idea of what the intro video should be"). No script: the
+ *  creator says it in their own words. */
+export const INTRO_GUIDE: string[] = [
+  'A 20 to 40 second hello, filmed on your phone, held upright.',
+  'Say your name, the kind of videos you make, and the niches you film.',
+  'Show a product or two you have filmed, so the brand sees your work.',
+  'Look into the lens, with the light in front of you, and keep it natural.',
+  'No music, and no rates or prices: your core message does the asking.',
+]
+
 export const INTRO_TIPS: string[] = [
   'Film it vertical, at eye level, with the light in front of you (a window works).',
   'Look into the lens, not at the screen, and smile before you start talking.',

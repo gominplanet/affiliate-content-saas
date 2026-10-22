@@ -139,8 +139,17 @@ export interface VideoIdea {
   style: HookStyle
   hook: string
   shot: string
-  /** What happens after the hook, beat by beat. */
+  /** What happens after the hook, beat by beat. On plans with a script, the
+   *  script's own lines, so anything that reads beats still reads the video. */
   beats: string[]
+  /** THE WORDS TO SAY (Seb, 2026-10-22: "give me actual words to say ...
+   *  small sentences, very, very short and sweet, so people can just like
+   *  memorize one sentence, shoot it, go for it"): the script in order, one
+   *  short sentence a line, the hook first and the call to action last.
+   *  Absent on plans made before. */
+  say?: string[]
+  /** B-roll to film for it: separate shots laid under the words. */
+  broll?: string[]
   cta: string
   /** Which part of the brief it answers, when there is a brief. */
   forBrief: string
@@ -178,16 +187,19 @@ Return ONLY JSON, no markdown:
   "videos": [ {
     "angle": "the angle in under 8 words",
     "style": "versus|before_after|negative|stat|problem|reaction|pov|myth",
-    "hook": "the first words said or shown, under 12 words",
+    "hook": "the first line said, under 10 words (the same as say[0])",
     "shot": "what the camera shows in the first 2 seconds, with movement",
-    "beats": ["3 or 4 beats after the hook, each one short line: what is shown and said"],
-    "cta": "the last line, under 15 words",
+    "say": ["THE SCRIPT: the exact words the creator says, in order, 4 to 7 lines. Each line is ONE short spoken sentence of 4 to 10 words, said in one breath. The first line is the hook, the last line is the call to action."],
+    "broll": ["4 to 6 B-roll shots to film for this video, each one short line: what the camera shows and how it moves"],
+    "cta": "the last line said, under 12 words (the same as the last line of say)",
     "forBrief": "which want of the brief it answers, in a few words; empty when there is no BRIEF"
   } ],
   "ctas": [ { "kind": "sale|bundle|social_proof|urgency", "line": "a call to action under 15 words" } ],
   "funnel": { "top": "the idea number (1 to 10) and why, for people who do not know the problem yet", "middle": "the same, for people comparing", "bottom": "the same, for people ready to buy" }
 }
 Write exactly ${VIDEO_IDEAS} videos with ${VIDEO_IDEAS} clearly different angles, using every style at least once: versus (a playful side by side, like "boomer versus Gen Z", "cheap one versus this"), before_after (a visual contrast), negative (the honest thing you did not like first, then why you kept it), stat (a surprising true fact from BRAND or BRIEF only), problem, reaction, pov, myth. Every shot moves something: pouring, sliding, opening, comparing side by side.
+THE SCRIPT IS WORDS TO SAY, NOT DIRECTIONS. Every line of "say" is a sentence the creator speaks to camera, word for word, never a description like "show it working" or "talk about the bags". Short and plain: everyday words, contractions, no lists, no commas strung together, nothing a person would stumble on. A creator memorizes one line, films it, then the next, so each line stands on its own and makes sense cut together. Write them the way the WINNING VIDEOS and WINNING TRYBE ADS below talk when they are given: the same short sentences, the same kind of opening, how fast they get to the product, the proof, the ask. Never copy their sentences.
+B-ROLL IS WHAT THE CAMERA FILMS UNDER THE WORDS: close-ups of the product working, the result, hands using it, the before and after, the place. Each shot is one line with movement ("Slow push in as the bag shrinks around the steak"), never a line of speech, and together they cover every line of the script.
 Write 3 calls to action. Use kind "sale" or "bundle" ONLY when BRAND lists something on sale or a bundle; otherwise use social_proof or urgency that claims nothing false (never "sold out", never numbers, never ratings that are not in BRAND). A video's own cta follows the same rule.
 WRITE FOR THE VIEWER (TRYBE's co-founder, Lukas Pakter: "switch from I to you"). Nobody knows a UGC creator, so the video is about what the product does for the person watching. Hooks and beats talk to them: "you", "your", "if you...". A story hook may start with a personal moment, but it turns to the viewer by its second sentence. Never "I'm obsessed", never a list of what the creator likes.
 IT MUST NOT LOOK LIKE AN AD. No brand logo and no product held up to the camera in the first 2 seconds, no influencer tone ("hey guys", "so today", "link in bio", "use my code"), never "introducing". Open on the problem, the result or the moment, then the product.
@@ -218,12 +230,17 @@ export function parseVideoPlan(text: string): VideoPlan | null {
   const videos: VideoIdea[] = (Array.isArray(o.videos) ? o.videos : []).map((v) => {
     const x = (v || {}) as Record<string, unknown>
     const style = (HOOK_STYLES as readonly string[]).includes(String(x.style)) ? x.style as HookStyle : 'reaction'
+    const say = (Array.isArray(x.say) ? x.say : []).map((b) => s(b, 160)).filter(Boolean).slice(0, 8)
+    const broll = (Array.isArray(x.broll) ? x.broll : []).map((b) => s(b, 180)).filter(Boolean).slice(0, 7)
+    const beats = (Array.isArray(x.beats) ? x.beats : []).map((b) => s(b, 200)).filter(Boolean).slice(0, 5)
     return {
-      angle: s(x.angle, 80), style, hook: s(x.hook, 120), shot: s(x.shot, 200),
-      beats: (Array.isArray(x.beats) ? x.beats : []).map((b) => s(b, 200)).filter(Boolean).slice(0, 5),
-      cta: s(x.cta, 140), forBrief: s(x.forBrief, 120),
+      angle: s(x.angle, 80), style, hook: s(x.hook, 120) || say[0] || '', shot: s(x.shot, 200),
+      // Anything that reads beats (the planner PDF, older screens) reads the script.
+      beats: beats.length ? beats : say.slice(1, -1).length ? say.slice(1, -1) : say,
+      ...(say.length ? { say } : {}), ...(broll.length ? { broll } : {}),
+      cta: s(x.cta, 140) || (say.length > 1 ? say[say.length - 1] : ''), forBrief: s(x.forBrief, 120),
     }
-  }).filter((v) => v.hook && v.beats.length).slice(0, 12)
+  }).filter((v) => v.hook && (v.beats.length || v.say?.length)).slice(0, 12)
   const lines = (v: unknown, n: number) => (Array.isArray(v) ? v : []).map((x) => s(x, 160)).filter(Boolean).slice(0, n)
   const plan: VideoPlan = {
     product: s(o.product, 140),
@@ -246,14 +263,32 @@ export function honestCtas(plan: VideoPlan, onSale: string[]): VideoPlan {
   // first honest call to action.
   const ctas = plan.ctas.filter((c) => c.kind !== 'sale')
   const SALE = /\b(sale|discount|\d+\s?% off|off today|deal|coupon|promo code)\b/i
-  const videos = plan.videos?.map((v) => (SALE.test(v.cta) ? { ...v, cta: ctas[0]?.line || '' } : v))
+  const videos = plan.videos?.map((v) => {
+    const cta = SALE.test(v.cta) ? ctas[0]?.line || '' : v.cta
+    // A spoken line that promises a sale is swapped the same way, or dropped.
+    const say = v.say?.map((l) => (SALE.test(l) ? ctas[0]?.line || '' : l)).filter(Boolean)
+    return { ...v, cta, ...(say ? { say } : {}) }
+  })
   return { ...plan, ctas, ...(videos ? { videos } : {}) }
 }
 
-/** One idea, ready to film or print. */
+/** One idea, ready to film or print: the words to say, line by line, then
+ *  the B-roll, when the plan has a script; else the hook and beats. */
 export function ideaText(v: VideoIdea, n: number): string {
+  const head = `${n}. ${v.angle || HOOK_STYLE_WORDS[v.style]} (${HOOK_STYLE_WORDS[v.style]})`
+  if (v.say?.length) {
+    return [
+      head,
+      'SAY, ONE LINE AT A TIME:',
+      ...v.say.map((l, i) => `${i + 1}) ${l}`),
+      v.broll?.length ? 'B-ROLL TO FILM:' : '',
+      ...(v.broll || []).map((b) => `- ${b}`),
+      v.shot ? `FIRST 2 SECONDS: ${v.shot}` : '',
+      v.forBrief ? `FOR THE BRIEF: ${v.forBrief}` : '',
+    ].filter(Boolean).join('\n')
+  }
   return [
-    `${n}. ${v.angle || HOOK_STYLE_WORDS[v.style]} (${HOOK_STYLE_WORDS[v.style]})`,
+    head,
     `HOOK: ${v.hook}`,
     v.shot ? `FIRST 2 SECONDS: ${v.shot}` : '',
     ...v.beats.map((b, i) => `${i + 1}) ${b}`),
