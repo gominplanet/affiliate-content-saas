@@ -368,7 +368,7 @@ const TILES: Tile[] = [
 ]
 
 /** A step of the daily refresh, and how it went. */
-interface DailyStep { id: 'list' | 'top100' | 'meta'; label: string; state: 'waiting' | 'running' | 'done' | 'warn' | 'failed' | 'skipped'; text: string }
+interface DailyStep { id: 'trybe' | 'list' | 'top100' | 'meta'; label: string; state: 'waiting' | 'running' | 'done' | 'warn' | 'failed' | 'skipped'; text: string }
 /** The daily refresh counts Meta ads for every brand, this many at a time
  *  (about 10 seconds a brand), asking the server for the next ones between. */
 const DAILY_META_CHUNK = 200
@@ -1178,8 +1178,10 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
 
   /** TRYBE's Top 100 videos, read by SCOUT from the creator's own TRYBE and
    *  counted per brand on MVP. A brand seen in it often is spending. */
-  async function readTop100(quiet = false): Promise<{ tone: 'ok' | 'warn' | 'bad'; text: string } | null> {
-    if (!canPlaybook) return null
+  async function readTop100(quiet = false, ready = false): Promise<{ tone: 'ok' | 'warn' | 'bad'; text: string } | null> {
+    // `ready`: the daily refresh has just made sure SCOUT and TRYBE are, which
+    // this page's own flags may not show yet.
+    if (!canPlaybook && !ready) return null
     // What it said, also handed back, so the daily refresh can log it.
     let said: { tone: 'ok' | 'warn' | 'bad'; text: string } | null = null
     const rankTone = { ok: 0, warn: 1, bad: 2 } as const
@@ -1217,6 +1219,60 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
     return said
   }
 
+  /** TRYBE READY for the daily refresh (Seb, 2026-10-22: "if my Trybe account
+   *  is not open or scout is not running.. this should be automatic"). SCOUT
+   *  answers and is allowed on TRYBE (asked once when not); a TRYBE tab is
+   *  open (SCOUT opens one next to this tab); it is signed in (the TRYBE tab
+   *  comes to the front and the run waits up to 15 minutes for the sign-in,
+   *  then carries on by itself). Says why when it cannot be. */
+  async function trybeReady(say: (t: string) => void): Promise<{ ok: boolean; text: string }> {
+    const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
+    let a = await requestTrybeAccess(false)
+    if (a.state === 'no-scout') return { ok: false, text: 'SCOUT did not answer in this Chrome. Reload this page; if it still does not answer, install SCOUT again from the Chrome Web Store.' }
+    if (a.state === 'old') return { ok: false, text: `SCOUT ${a.version || ''} is too old for TRYBE. Open chrome://extensions, turn on Developer mode and press Update.` }
+    setScoutVersion(a.version ?? null)
+    const allow = async () => {
+      say('SCOUT needs your OK for TRYBE: press Allow on TRYBE in the small SCOUT window, then Allow in Chrome\u2019s box.')
+      a = await requestTrybeAccess(true)
+      setAccess(a.state)
+      return a.state === 'granted'
+    }
+    if (a.state !== 'granted' && !(await allow())) return { ok: false, text: 'SCOUT was not allowed on TRYBE, so nothing could be refreshed. Press Daily refresh again and choose Allow.' }
+    const v = a.version ?? null
+    // An older SCOUT reads TRYBE its own way: nothing to open first.
+    if (!scoutAtLeast(v, SCOUT_TRYBE_OWN_TAB_MIN_VERSION)) return { ok: true, text: 'SCOUT is allowed on TRYBE.' }
+    let t = await requestTrybeTab()
+    if (t === 'not-allowed') {
+      if (!(await allow())) return { ok: false, text: 'SCOUT was not allowed on TRYBE, so nothing could be refreshed. Press Daily refresh again and choose Allow.' }
+      t = await requestTrybeTab()
+    }
+    if (t === 'closed' || t === 'unknown') {
+      if (!scoutAtLeast(v, SCOUT_TRYBE_TAB_OPEN_MIN_VERSION)) return { ok: false, text: `TRYBE is not open in this Chrome, and SCOUT ${v || ''} cannot open it by itself (SCOUT ${SCOUT_TRYBE_TAB_OPEN_MIN_VERSION} can). Open TRYBE, sign in, then press Daily refresh again.` }
+      say('TRYBE is not open: SCOUT is opening it in a tab next to this one...')
+      const r = await requestTrybeTabOpen(false)
+      if (!r.open) return { ok: false, text: `SCOUT could not open TRYBE (${r.error || 'no answer'}). Open jointrybe.com in this Chrome, sign in, then press Daily refresh again.` }
+      for (let i = 0; i < 20 && (t === 'closed' || t === 'unknown'); i++) { await sleep(3000); t = await requestTrybeTab() }
+    }
+    if (t === 'signed-out') {
+      await requestTrybeTabOpen(true)
+      say('TRYBE is signed out: sign in on the TRYBE tab that just came to the front. The refresh carries on by itself once you are.')
+      const until = Date.now() + 15 * 60_000
+      while (t === 'signed-out' && Date.now() < until && !dailyStop.current && !leftRef.current) { await sleep(5000); t = await requestTrybeTab() }
+    }
+    setTrybeTab(t)
+    if (t === 'open') return { ok: true, text: 'SCOUT is allowed on TRYBE, and your TRYBE tab is open and signed in.' }
+    if (t === 'signed-out') return { ok: false, text: dailyStop.current ? 'Stopped while waiting for the TRYBE sign-in.' : 'TRYBE stayed signed out for 15 minutes. Sign in on the TRYBE tab, then press Daily refresh again.' }
+    return { ok: false, text: 'SCOUT did not say whether TRYBE is open. Open jointrybe.com in this Chrome, sign in, then press Daily refresh again.' }
+  }
+
+  /** An expired TRYBE sign-in, renewed: a TRYBE read that is refused makes
+   *  SCOUT reload the TRYBE tab and pick up the fresh sign-in (its trybeApi),
+   *  which the brand list's own read does not do. */
+  async function renewTrybeSignIn() {
+    await requestTrybeApi('GET', '/backend/api/creator/v2/top-creatives').catch(() => null)
+    await new Promise((r) => setTimeout(r, 3000))
+  }
+
   /** THE DAILY REFRESH (Seb, 2026-10-21: "my daily button ... refreshes all
    *  of the brands. It refreshes the star brands and the meta check and all
    *  of that stuff ... And I can do that manually every single day"). The
@@ -1228,32 +1284,59 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
   async function dailyRefresh() {
     if (daily?.running) return
     dailyStop.current = false
+    // TRYBE READY FIRST, THEN THE TOP 100, THEN THE LIST (Seb, 2026-10-22: "if
+    // my Trybe account is not open or scout is not running.. this should be
+    // automatic"). The Top 100 goes before the list because reading it renews
+    // an expired TRYBE sign-in by itself (SCOUT reloads the TRYBE tab on a
+    // 401), and the list does not: his run was refused with a 401.
     const steps: DailyStep[] = [
-      { id: 'list', label: 'TRYBE\u2019s brand list', state: 'waiting', text: '' },
+      { id: 'trybe', label: 'TRYBE ready', state: 'waiting', text: '' },
       { id: 'top100', label: 'TRYBE\u2019s Top 100', state: 'waiting', text: '' },
+      { id: 'list', label: 'TRYBE\u2019s brand list', state: 'waiting', text: '' },
       { id: 'meta', label: 'Meta ads', state: 'waiting', text: '' },
     ]
     const show = (running: boolean) => setDaily({ running, steps: steps.map((x) => ({ ...x })), at: new Date().toISOString() })
     const step = (id: DailyStep['id'], state: DailyStep['state'], text: string) => { const x = steps.find((y) => y.id === id)!; x.state = state; x.text = text; show(true) }
     show(true)
     try {
-      if (access !== 'granted') {
-        for (const x of steps) { x.state = 'failed'; x.text = 'SCOUT is not allowed on TRYBE in this Chrome. Press Allow SCOUT on TRYBE at the top of this page.' }
-        return
-      }
-      // RESUMED, NOT REDONE (Seb, 2026-10-21: "if I stop it, can it resume
-      // where it was the next time I run it again?"): the list and the Top
-      // 100 are skipped when read in the last 12 hours, and Meta ads pick up
-      // with the brands not counted yet, since every count is saved as it is read.
       const fresh = (at: string | null | undefined) => !!at && Date.now() - Date.parse(at) < DAILY_FRESH_MS
       const ago = (at: string) => { const h = Math.round((Date.now() - Date.parse(at)) / 3600_000); return h < 1 ? 'less than an hour ago' : `${h} hour${h === 1 ? '' : 's'} ago` }
-      // 1. Every brand on TRYBE, collected again.
+      const stopRest = (from: DailyStep['id'][], why: string) => { for (const id of from) step(id, 'skipped', why) }
+      // 0. TRYBE READY: SCOUT answers and is allowed, a TRYBE tab is open,
+      // and it is signed in. Opened by itself; a signed-out tab is brought to
+      // the front and the run waits for the sign-in, then carries on.
+      step('trybe', 'running', 'Checking SCOUT and TRYBE in this Chrome...')
+      const ready = await trybeReady((t) => step('trybe', 'running', t))
+      if (!ready.ok) { step('trybe', 'failed', ready.text); stopRest(['top100', 'list', 'meta'], 'Not started: TRYBE was not ready.'); return }
+      step('trybe', 'done', ready.text)
+      if (dailyStop.current) { stopRest(['top100', 'list', 'meta'], 'Stopped.'); return }
+      // RESUMED, NOT REDONE (Seb, 2026-10-21: "if I stop it, can it resume
+      // where it was the next time I run it again?"): the Top 100 and the
+      // list are skipped when read in the last 12 hours, and Meta ads pick up
+      // with the brands not counted yet, since every count is saved as it is read.
+      // 1. TRYBE's Top 100: who is spending (and a fresh TRYBE sign-in).
+      if (fresh(directory?.top100?.at) && directory?.top100?.at) {
+        step('top100', 'skipped', `Read ${ago(directory.top100.at)}: not needed again yet.`)
+      } else {
+        step('top100', 'running', 'Reading TRYBE\u2019s Top 100...')
+        const t = await readTop100(false, true)
+        step('top100', !t ? 'failed' : t.tone === 'ok' ? 'done' : t.tone === 'warn' ? 'warn' : 'failed', t?.text || 'SCOUT cannot read TRYBE\u2019s Top 100 here (update SCOUT).')
+      }
+      if (dailyStop.current) { stopRest(['list', 'meta'], 'Stopped.'); return }
+      // 2. Every brand on TRYBE, collected again. Refused for the sign-in: the
+      // sign-in is renewed through the TRYBE tab and it is asked once more.
       if (fresh(directory?.lastCollectedAt) && directory?.lastCollectedAt) {
         step('list', 'skipped', `Collected ${ago(directory.lastCollectedAt)}: not needed again yet.`)
       } else {
-        step('list', 'running', 'SCOUT is collecting every brand on TRYBE, in a tab behind this one...')
-        const notes: string[] = []
-        const ok = await collectFromTrybe(notes, true).catch((e) => { notes.push(e instanceof Error ? e.message : 'Collecting failed.'); return false })
+        step('list', 'running', 'SCOUT is collecting every brand on TRYBE, in your TRYBE tab...')
+        let notes: string[] = []
+        let ok = await collectFromTrybe(notes, true).catch((e) => { notes.push(e instanceof Error ? e.message : 'Collecting failed.'); return false })
+        if (notes.some((n) => /refused the brand list with your sign-in/i.test(n))) {
+          step('list', 'running', 'TRYBE refused the old sign-in: renewing it through your TRYBE tab, then asking again...')
+          await renewTrybeSignIn()
+          notes = []
+          ok = await collectFromTrybe(notes, true).catch((e) => { notes.push(e instanceof Error ? e.message : 'Collecting failed.'); return false })
+        }
         setFinding(null)
         const d0 = await load()
         step('list', ok && !notes.some((n) => /could not|refused|not allowed|ran out/i.test(n)) ? 'done' : ok ? 'warn' : 'failed',
@@ -1261,15 +1344,6 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
           // and 6,864): TRYBE's Discover list leaves out the brands you joined,
           // and MVP's count of brands on TRYBE keeps them.
           [ok && d0?.directory?.listed != null ? `${Number(d0.directory.listed).toLocaleString()} brands on TRYBE now, counting the ones you joined (TRYBE\u2019s Discover list leaves those out).` : ok ? 'Collected.' : 'Not collected.', ...notes].join(' '))
-      }
-      if (dailyStop.current) { step('top100', 'skipped', 'Stopped.'); step('meta', 'skipped', 'Stopped.'); return }
-      // 2. TRYBE's Top 100: who is spending.
-      if (fresh(directory?.top100?.at) && directory?.top100?.at) {
-        step('top100', 'skipped', `Read ${ago(directory.top100.at)}: not needed again yet.`)
-      } else {
-        step('top100', 'running', 'Reading TRYBE\u2019s Top 100...')
-        const t = await readTop100(false)
-        step('top100', !t ? 'failed' : t.tone === 'ok' ? 'done' : t.tone === 'warn' ? 'warn' : 'failed', t?.text || 'SCOUT cannot read TRYBE\u2019s Top 100 here (update SCOUT).')
       }
       if (dailyStop.current) { step('meta', 'skipped', 'Stopped.'); return }
       // 3. Meta ads for EVERY brand (Seb: "keep it running until everything is
