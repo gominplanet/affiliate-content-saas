@@ -11,7 +11,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Loader2, AlertTriangle, ExternalLink, Play, Handshake, RotateCcw } from 'lucide-react'
-import { galleryStats, sortAds, adDays, adUrl, type MetaAd, type AdSort } from '@/lib/trybe-adsgallery'
+import { galleryStats, sortAds, adDays, adUrl, nextToRead, type MetaAd, type AdSort } from '@/lib/trybe-adsgallery'
 import { readMetaAds, metaAdsWords } from '@/components/labs/metaAdsRead'
 import { SCOUT_META_CARDS_MIN_VERSION, scoutAtLeast } from '@/lib/scout-version'
 
@@ -22,7 +22,22 @@ const RED = '#DC2626'
 const PINK = '#DB2777'
 const SHOWN = 10
 
-interface GalleryRead { at: string | null; brandsRead: number; ads: MetaAd[]; categories: Record<string, string[]> }
+interface GalleryRead {
+  at: string | null
+  brandsRead: number
+  /** Brands whose last read found ads running. */
+  withAds: number
+  /** The most ad cards MVP keeps (the newest read). */
+  keepMax: number
+  ads: MetaAd[]
+  categories: Record<string, string[]>
+  /** When each Top 100 brand's ads were last read, for reading the oldest first. */
+  readAt: Record<string, { at: string }>
+  /** The Top 100 as MVP saved it (admin only). */
+  top: { at: string | null; brands: Array<{ brandId: string; name: string; readAt: string | null }> } | null
+}
+/** Brands read per press. */
+const PER_PRESS = 25
 
 export default function TrybeAdsGallery({ isAdmin, scoutVersion, canRead, topBrands, category }: {
   isAdmin: boolean
@@ -46,7 +61,13 @@ export default function TrybeAdsGallery({ isAdmin, scoutVersion, canRead, topBra
       const r = await fetch('/api/labs/trybe', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'meta_gallery' }), signal: AbortSignal.timeout(30_000) })
       const d = await r.json().catch(() => ({}))
       if (!r.ok) throw new Error(d.error || `Request failed (${r.status})`)
-      setData({ at: d.at ?? null, brandsRead: Number(d.brandsRead) || 0, ads: Array.isArray(d.ads) ? d.ads : [], categories: d.categories || {} }); setError(null)
+      const ads: MetaAd[] = Array.isArray(d.ads) ? d.ads : []
+      const readAt: Record<string, { at: string }> = {}
+      for (const b of (d.top?.brands || []) as Array<{ brandId: string; readAt: string | null }>) if (b.readAt) readAt[b.brandId] = { at: b.readAt }
+      setData({
+        at: d.at ?? null, brandsRead: Number(d.brandsRead) || 0, withAds: Number(d.brandsWithAds) || 0, keepMax: Number(d.keepMax) || 0,
+        ads, categories: d.categories || {}, readAt, top: d.top && Array.isArray(d.top.brands) ? d.top : null,
+      }); setError(null)
     } catch (e) { setError(e instanceof Error ? e.message : 'MVP could not read the ads gallery.') }
   }, [])
   useEffect(() => { void load() }, [load])
@@ -57,9 +78,14 @@ export default function TrybeAdsGallery({ isAdmin, scoutVersion, canRead, topBra
   const shown = useMemo(() => sortAds(inCat, sort, now), [inCat, sort]) // eslint-disable-line react-hooks/exhaustive-deps
   const canCards = scoutAtLeast(scoutVersion, SCOUT_META_CARDS_MIN_VERSION)
 
+  // The Top 100 read on this visit, else the one MVP saved (the Daily refresh
+  // or an earlier visit): the button said "0 Top 100 brands" without it.
+  const pool = topBrands.length ? topBrands : data?.top?.brands || []
+  const fromSaved = !topBrands.length && pool.length > 0
+  const todo = useMemo(() => nextToRead(pool, { brands: data?.readAt || {} }, PER_PRESS), [pool, data])
+
   async function readTop() {
-    const todo = topBrands.slice(0, 25)
-    if (!todo.length) { setNote({ tone: 'warn', text: 'No brands in the Top 100 read yet. Read the Top 100 above first.' }); return }
+    if (!todo.length) { setNote({ tone: 'warn', text: 'MVP has no Top 100 saved yet. Press Daily refresh at the top of TRYBE, then come back.' }); return }
     setRun({ done: 0, total: todo.length }); setNote(null)
     try {
       const r = await readMetaAds(todo, { cards: true, onProgress: (done, total) => setRun({ done, total }) })
@@ -77,7 +103,7 @@ export default function TrybeAdsGallery({ isAdmin, scoutVersion, canRead, topBra
     <section id="ww-ads" className="space-y-3 scroll-mt-24" aria-label="Ads TRYBE brands run on Meta">
       <div className="flex flex-wrap items-baseline gap-2">
         <h2 className="text-[22px] font-bold tracking-tight">Ads TRYBE brands run on Meta</h2>
-        {data && data.ads.length > 0 && <span className="text-[12px] font-semibold rounded-full px-2 py-0.5" style={{ background: 'rgba(219,39,119,0.10)', color: PINK }}>{inCat.length} ads</span>}
+        {data && data.ads.length > 0 && <span className="text-[12px] font-semibold rounded-full px-2 py-0.5" style={{ background: 'rgba(219,39,119,0.10)', color: PINK }}>{inCat.length} ad cards</span>}
         {data?.at && <span className="text-[12px] font-semibold rounded-full px-2 py-0.5" style={{ background: 'var(--surface-2)', color: 'var(--text-2)' }}>Read {new Date(data.at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</span>}
       </div>
       <p className="text-[13px]" style={soft}>The ads with each brand&rsquo;s name running on Facebook and Instagram now, copied from Meta&rsquo;s public Ad Library by the MVP team&rsquo;s SCOUT, with how long each has run. Each card links to the ad on Meta. A preview Meta has since taken down shows the ad&rsquo;s words instead.</p>
@@ -88,9 +114,13 @@ export default function TrybeAdsGallery({ isAdmin, scoutVersion, canRead, topBra
           {!canRead ? <span style={{ color: AMBER }}>Allow SCOUT on TRYBE first (top of this page).</span>
             : !canCards ? <span style={{ color: AMBER }}>Copying the ads needs SCOUT {SCOUT_META_CARDS_MIN_VERSION}. Yours is {scoutVersion || 'unknown'}; the counts still work.</span>
             : <button onClick={() => void readTop()} disabled={run != null} className="inline-flex items-center gap-1 rounded-lg px-3 py-1.5 font-semibold disabled:opacity-50" style={{ background: PURPLE, color: '#fff' }}>
-                {run ? <><Loader2 size={12} className="animate-spin" /> Reading Meta&rsquo;s Ad Library: {run.done} of {run.total}</> : <><RotateCcw size={12} /> Read the ads of {Math.min(25, topBrands.length)} Top 100 brands</>}
+                {run ? <><Loader2 size={12} className="animate-spin" /> Reading Meta&rsquo;s Ad Library: {run.done} of {run.total}</> : <><RotateCcw size={12} /> {todo.length ? `Read the ads of ${todo.length} Top 100 brands` : 'Read the ads of Top 100 brands'}</>}
               </button>}
-          <span style={soft}>Find brands&rsquo; &ldquo;Check for Meta ads&rdquo; adds to this too.</span>
+          <span style={soft}>
+            {pool.length
+              ? `Of ${pool.length} in the Top 100${fromSaved && data?.top?.at ? ` (as saved ${new Date(data.top.at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })})` : ''}, the ones read longest ago first. Daily refresh and Find brands’ “Check for Meta ads” add to this too.`
+              : 'Daily refresh and Find brands’ “Check for Meta ads” add to this too.'}
+          </span>
           {note && <span className="basis-full" style={{ color: note.tone === 'ok' ? GREEN : note.tone === 'warn' ? AMBER : RED }}>{note.text}</span>}
         </div>
       )}
@@ -104,8 +134,11 @@ export default function TrybeAdsGallery({ isAdmin, scoutVersion, canRead, topBra
       )}
       {data && data.ads.length > 0 && (<>
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-          <Stat color={PURPLE} big={stats.brands.toLocaleString()} label={category ? `Brands in ${category}` : 'TRYBE brands read on Meta'} />
-          <Stat color={PINK} big={stats.ads.toLocaleString()} label="Ads they are running" />
+          {/* WHAT EACH NUMBER IS (Seb, 2026-10-23, "??" at 6,119 brands beside
+              400 ads): the brands are every one read on Meta; the cards are
+              only the newest MVP keeps, so they are never "the ads running". */}
+          <Stat color={PURPLE} big={stats.brands.toLocaleString()} label={category ? `Brands in ${category} with ad cards kept` : `TRYBE brands read on Meta${data.withAds ? `, ${data.withAds.toLocaleString()} running ads` : ''}`} />
+          <Stat color={PINK} big={stats.ads.toLocaleString()} label={data.keepMax && data.ads.length >= data.keepMax ? `Ad cards kept: the newest ${data.keepMax.toLocaleString()} read` : 'Ad cards kept to look through'} />
           <Stat color="#0891B2" big={stats.medianDays != null ? `${stats.medianDays} days` : 'Not read'} label={`Middle ad's time running${stats.dated && stats.dated < stats.ads ? ` (${stats.dated} with a date)` : ''}`} />
           <Stat color={GREEN} big={pct(stats.paidShare)} label={`Paid partnerships · ${pct(stats.videoShare)} videos`} />
         </div>

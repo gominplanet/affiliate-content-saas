@@ -132,6 +132,19 @@ export function adDays(started: string | null | undefined, now: number): number 
 
 export interface GalleryStats { brands: number; ads: number; medianDays: number | null; paidShare: number | null; videoShare: number | null; dated: number }
 
+/** Brands whose last read found ads running. Pure. */
+export function brandsWithAds(g: Pick<Gallery, 'brands'> | null | undefined): number {
+  return Object.values(g?.brands || {}).filter((b) => typeof b.count === 'number' && b.count > 0).length
+}
+
+/** Which Top 100 brands to read next: never read first, then the longest ago,
+ *  so each press reads brands the last one did not (Seb, 2026-10-23: the
+ *  button said "0 Top 100 brands" while the Top 100 was saved). Pure. */
+export function nextToRead<T extends { brandId: string }>(top: T[], g: { brands?: Record<string, { at: string }> } | null | undefined, n: number): T[] {
+  const at = (id: string) => g?.brands?.[id]?.at || ''
+  return [...top].map((b, i) => ({ b, i })).sort((x, y) => at(x.b.brandId).localeCompare(at(y.b.brandId)) || x.i - y.i).slice(0, n).map((x) => x.b)
+}
+
 /** The four tiles: brands read, ads kept, the middle ad's age, the share of
  *  paid partnerships and of videos. A share over no ads is null, never 0%. Pure. */
 export function galleryStats(ads: MetaAd[], brandsRead: number, now: number): GalleryStats {

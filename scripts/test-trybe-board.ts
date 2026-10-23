@@ -10,7 +10,7 @@ import { readFileSync } from 'node:fs'
 import { activeKeys, activeRows, activeBy, rankActive, categoryCounts, tierWentUp, latestTierChanges, VIDEOS_LEAD_MIN } from '../lib/trybe-active'
 import { topCreators } from '../lib/trybe-creators'
 import { readTopEntries } from '../lib/trybe-working'
-import { readAdCard, readCardsBody, adDate, safePreview, mergeGallery, galleryStats, sortAds, adDays, GALLERY_MAX, ADS_PER_BRAND, type MetaAd } from '../lib/trybe-adsgallery'
+import { readAdCard, readCardsBody, adDate, safePreview, mergeGallery, galleryStats, sortAds, adDays, GALLERY_MAX, ADS_PER_BRAND, brandsWithAds, nextToRead, type MetaAd } from '../lib/trybe-adsgallery'
 import { compareRows } from '../lib/trybe-compare'
 import { filterCheck, readFilters, FILTER_WORDS, readDirStats } from '../lib/trybe-finder'
 import { BROWSE_SORTS } from '../lib/trybe-outreach'
@@ -156,6 +156,23 @@ check('SCOUT copies ad cards from 1.51.0', /SCOUT_META_CARDS_MIN_VERSION = '1\.5
 // ── Words ────────────────────────────────────────────────────────────────────
 for (const f of ['components/labs/TrybeActive.tsx', 'components/labs/TrybeOffDiscover.tsx', 'components/labs/TrybeAdsGallery.tsx', 'components/labs/TrybeCompare.tsx', 'components/labs/metaAdsRead.ts', 'lib/trybe-compare.ts', 'lib/trybe-adsgallery.ts', 'lib/trybe-active.ts', 'lib/trybe-creators.ts']) {
   check(`no long dashes in ${f}`, !/[–—]/.test(read(f).replace(/^\/\/.*$/gm, '')))
+}
+
+// THE ADMIN'S TOP 100 READ AND WHAT THE TILES SAY (Seb, 2026-10-23: "??" at
+// "Read the ads of 0 Top 100 brands" beside "6,119 TRYBE brands read on Meta"
+// and "400 ads they are running").
+{
+  const g = { brands: { a: { name: 'A', at: '2026-10-20', count: 12 }, b: { name: 'B', at: '2026-10-22', count: 0 }, c: { name: 'C', at: '2026-10-21', count: null } } }
+  check('brands with ads counts only a read that found some', brandsWithAds(g) === 1 && brandsWithAds(null) === 0)
+  const top = [{ brandId: 'b' }, { brandId: 'new' }, { brandId: 'a' }, { brandId: 'c' }]
+  check('never read first, then the longest ago', nextToRead(top, g, 3).map((x) => x.brandId).join() === 'new,a,c')
+  check('a press reads at most what it is asked', nextToRead(top, g, 2).length === 2 && nextToRead([], g, 25).length === 0)
+  const PANEL = read('components/labs/TrybeAdsGallery.tsx'), ROUTE = read('app/api/labs/trybe/route.ts')
+  check('the panel falls back to the Top 100 MVP saved', /const pool = topBrands\.length \? topBrands : data\?\.top\?\.brands \|\| \[\]/.test(PANEL))
+  check('the route sends the saved Top 100 to the team, with when each was read', /if \(tier === 'admin'\) \{[\s\S]{0,200}gt\('top100_hits', 0\)/.test(ROUTE) && /readAt: g\?\.brands\?\.\[r\.brand_id\]\?\.at \?\? null/.test(ROUTE))
+  check('the button never offers 0 brands', !/Read the ads of \{Math\.min\(25, topBrands\.length\)\}/.test(PANEL) && /todo\.length \? `Read the ads of \$\{todo\.length\} Top 100 brands`/.test(PANEL))
+  check('no "read the Top 100 above" when nothing above can', !/Read the Top 100 above first/.test(PANEL))
+  check('the kept cards are never called the ads running', !/label="Ads they are running"/.test(PANEL) && /Ad cards kept: the newest/.test(PANEL) && /running ads/.test(PANEL))
 }
 
 if (failures.length) {

@@ -35,7 +35,7 @@ import { winnersForPlan, winnersBlock, readScript } from '@/lib/trybe-mybrands'
 import { directoryChanges, adsChange, poolBrands, type Change, type MemberRow } from '@/lib/trybe-changes'
 import { topDayKey, topDayOf, TOP_DAYS_KEEP } from '@/lib/trybe-topdays'
 import { activeKeys, activeRows, activeBy, rankActive, categoryCounts, latestTierChanges, type ActiveBy, type ActiveRow } from '@/lib/trybe-active'
-import { GALLERY_KEY, readCardsBody, readAdCard, mergeGallery, type Gallery, type MetaAd } from '@/lib/trybe-adsgallery'
+import { GALLERY_KEY, readCardsBody, readAdCard, mergeGallery, type Gallery, type MetaAd, brandsWithAds, GALLERY_MAX } from '@/lib/trybe-adsgallery'
 import { HOOK_FIX_SYSTEM, checkHook } from '@/lib/trybe-hook'
 import {
   cleanScript, toTranscribe, coverageWords, openingOf, bestRank, whyNoWords, noWordsSentence, pickExamples, examplesBlock, type TopScript,
@@ -870,7 +870,29 @@ export async function POST(request: Request) {
       const { data: d } = await admin.from('trybe_directory').select('brand_id, categories').in('brand_id', ids.slice(i, i + 200))
       for (const r of (d || []) as Array<{ brand_id: string; categories: string[] | null }>) cats[r.brand_id] = r.categories || []
     }
-    return NextResponse.json({ ok: true, at: g?.at ?? null, brandsRead: g ? Object.keys(g.brands || {}).length : 0, ads, categories: cats })
+    // THE TOP 100 AS MVP SAVED IT (Seb, 2026-10-23: the admin's button said
+    // "Read the ads of 0 Top 100 brands" whenever this visit had not read the
+    // Top 100 through SCOUT, though the Daily refresh had saved it). The team
+    // reads from it; members do not need it.
+    let top: { at: string | null; brands: Array<{ brandId: string; name: string; readAt: string | null }> } | null = null
+    if (tier === 'admin') {
+      const { data: tRows } = await admin.from('trybe_directory').select('brand_id, name, top100_best_rank')
+        .gt('top100_hits', 0).order('top100_best_rank', { ascending: true, nullsFirst: false }).limit(150)
+      const { data: tMeta } = await admin.from('trybe_directory_meta').select('value').eq('key', 'top100').maybeSingle()
+      top = {
+        at: (tMeta?.value as { at?: string } | null)?.at ?? null,
+        // When each one's ads were last read, so a press reads the oldest first.
+        brands: ((tRows || []) as Array<{ brand_id: string; name: string }>).filter(r => r.brand_id && r.name)
+          .map(r => ({ brandId: r.brand_id, name: r.name, readAt: g?.brands?.[r.brand_id]?.at ?? null })),
+      }
+    }
+    return NextResponse.json({
+      ok: true, at: g?.at ?? null,
+      // Every brand read on Meta, and how many of those had ads running: the
+      // gallery keeps only the newest GALLERY_MAX cards, so the two differ.
+      brandsRead: g ? Object.keys(g.brands || {}).length : 0, brandsWithAds: brandsWithAds(g), keepMax: GALLERY_MAX,
+      ads, categories: cats, top,
+    })
   }
 
   if (action === 'brands_brief') {
