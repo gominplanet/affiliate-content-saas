@@ -39,6 +39,17 @@ check('a feature still admin only is news for the owner and nothing for Pro',
 const POP = read('components/dashboard/MvpNews.tsx')
 check('once a day when there is news', opensToday({ today: '2026-10-17', shownDay: null, updates: 5, scout: false, force: false }) && !opensToday({ today: '2026-10-17', shownDay: '2026-10-17', updates: 5, scout: false, force: false }) && opensToday({ today: '2026-10-18', shownDay: '2026-10-17', updates: 5, scout: false, force: false }))
 check('no news, no card', !opensToday({ today: '2026-10-17', shownDay: null, updates: 0, scout: false, force: false }))
+// A NEW ENTRY THE SAME DAY (Seb, 2026-10-23: Instagram Auto-DM "for all users to see").
+check('an entry they have not seen opens it again the same day', opensToday({ today: '2026-10-23', shownDay: '2026-10-23', updates: 5, scout: false, force: false, newest: '2026-10-23:B', newestSeen: '2026-10-23:A' }))
+check('and so does one when nothing was kept yet', opensToday({ today: '2026-10-23', shownDay: '2026-10-23', updates: 5, scout: false, force: false, newest: '2026-10-23:B', newestSeen: null }))
+check('the newest seen does not open it twice', !opensToday({ today: '2026-10-23', shownDay: '2026-10-23', updates: 5, scout: false, force: false, newest: '2026-10-23:B', newestSeen: '2026-10-23:B' }))
+check('the card keeps the newest it showed', /localSet\(NEWEST_KEY, newest\)/.test(readFileSync('components/dashboard/MvpNews.tsx', 'utf8')))
+{
+  const dm = WHATS_NEW.find(u => u.gate === 'instagram_dm')
+  check('Instagram Auto-DM is news for Pro, at the top', !!dm && dm.date === '2026-10-23' && recentNews('pro', at('2026-10-23T18:00:00Z'))[0]?.gate === 'instagram_dm')
+  check('and nothing for a plan that cannot post to Instagram', !recentNews(null, at('2026-10-23T18:00:00Z')).some(u => u.gate === 'instagram_dm'))
+  check('its link goes to the Auto-DM page', dm?.href === '/instagram-dm')
+}
 check('SCOUT news not yet seen opens it even after the day’s card', opensToday({ today: '2026-10-17', shownDay: '2026-10-17', updates: 0, scout: true, force: false }))
 check('?whatsnew opens it any time', opensToday({ today: '2026-10-17', shownDay: '2026-10-17', updates: 0, scout: false, force: true }) && /const FORCE_PARAMS = \['whatsnew', 'scoutnews'\]/.test(POP))
 check('opening counts as the day’s, and Got it records the SCOUT release too', /setOpen\(true\)\s*\/\/[^\n]*\n\s*localSet\(DAY_KEY, today\)/.test(POP) && /localSet\(DAY_KEY, localDay\(\)\)\s*if \(plan\) \{ localSet\(SEEN_KEY, plan\.seenTo\)/.test(POP))

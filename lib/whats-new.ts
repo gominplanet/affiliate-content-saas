@@ -11,8 +11,9 @@
 // after 7 days. Plain words, no dashes, no year in the copy.
 
 import { canUsePreview, trybeAccess, type PreviewFeature } from '@/lib/labs-preview'
+import { canUseIgDm } from '@/lib/ig-dm-access'
 
-export type NewsGate = PreviewFeature | 'trybe'
+export type NewsGate = PreviewFeature | 'trybe' | 'instagram_dm'
 export interface WhatsNewItem {
   /** The day it went live, YYYY-MM-DD. */
   date: string
@@ -26,6 +27,18 @@ export interface WhatsNewItem {
 }
 
 export const WHATS_NEW: WhatsNewItem[] = [
+  // Instagram Auto-DM, open to members (Seb, 2026-10-23: "the auto DM
+  // Instagram feature works perfectly. Now add it to the what's new of the
+  // pop-up message for all users to see").
+  {
+    date: '2026-10-23',
+    gate: 'instagram_dm',
+    badge: 'NEW',
+    tone: '#E1306C',
+    title: 'Instagram Auto-DM: comment LINK, get the link in a DM',
+    desc: 'When someone comments your word on your Instagram Reel or post, MVP sends them the product link in a DM within a minute and replies under their comment. Every Reel and post MVP makes now carries it: Clip Factory, Shorts, blog posts, Amazon and deal posts and your schedules, each with its own product link, and the caption tells viewers what to comment. Before you post you see the exact DM they will get. Included in Pro, no ManyChat needed. Connected Instagram before today? Reconnect it once in Setup, Socials and allow messages and comments.',
+    href: '/instagram-dm',
+  },
   // Import your Deals Hub file, then post the deals to social (2026-10-19).
   {
     date: '2026-10-19',
@@ -434,6 +447,7 @@ export const NEWS_DAYS = 7
 export function newsGateOpen(gate: NewsGate | undefined, tier: unknown): boolean {
   if (!gate) return true
   if (gate === 'trybe') return trybeAccess(tier) !== 'none'
+  if (gate === 'instagram_dm') return canUseIgDm(typeof tier === 'string' ? tier : null)
   return canUsePreview(gate, tier)
 }
 
@@ -449,9 +463,18 @@ export function recentNews(tier: unknown, now: Date = new Date(), days = NEWS_DA
 export function localDay(d: Date = new Date()): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
-/** Opens by itself: once a day when there is news, and whenever SCOUT has
- *  news not yet seen. Pure. */
-export function opensToday(input: { today: string; shownDay: string | null; updates: number; scout: boolean; force: boolean }): boolean {
+/** Which entry is the newest, to tell whether the member has seen it. Pure. */
+export function newsKey(items: WhatsNewItem[]): string | null {
+  const u = items[0]
+  return u ? `${u.date}:${u.title}` : null
+}
+
+/** Opens by itself: once a day when there is news, again the same day when an
+ *  entry came out after they saw it (Seb, 2026-10-23: Instagram Auto-DM "for
+ *  all users to see", and most had seen that day's card already), and
+ *  whenever SCOUT has news not yet seen. Pure. */
+export function opensToday(input: { today: string; shownDay: string | null; updates: number; scout: boolean; force: boolean; newest?: string | null; newestSeen?: string | null }): boolean {
   if (input.force || input.scout) return true
+  if (input.updates > 0 && input.newest && input.newestSeen !== undefined && input.newest !== input.newestSeen) return true
   return input.updates > 0 && input.shownDay !== input.today
 }

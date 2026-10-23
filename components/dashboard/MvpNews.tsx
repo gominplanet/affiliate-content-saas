@@ -31,7 +31,7 @@ import { Check, ExternalLink, Facebook, Handshake, Play, Sparkles, Telescope, X,
 import { getScoutInstallKind } from '@/lib/extension-frame'
 import { SCOUT_STORE_LISTING_URL } from '@/lib/scout-version'
 import { FACEBOOK_GROUP_URL } from '@/lib/community'
-import { recentNews, NEWS_DAYS, localDay, opensToday, type WhatsNewItem } from '@/lib/whats-new'
+import { recentNews, NEWS_DAYS, localDay, opensToday, newsKey, type WhatsNewItem } from '@/lib/whats-new'
 import {
   LATER_KEY, MVP_CHANNEL_URL, MVP_SUBSCRIBE_URL, SCOUT_RELEASES, SEEN_KEY, scoutPopupPlan,
   type ChannelVideo, type PopupPlan, type ScoutRelease,
@@ -41,6 +41,8 @@ import {
 export const TRYBE_JOIN_URL = 'https://jointrybe.com/r/HTLEJE47'
 /** The day the card last opened by itself, YYYY-MM-DD in the member's time. */
 export const DAY_KEY = 'mvp_news_day'
+/** The newest entry the card showed (lib/whats-new newsKey). */
+export const NEWEST_KEY = 'mvp_news_newest'
 /** The What's new pill sends this to open the card. */
 export const OPEN_EVENT = 'mvp-news-open'
 const FORCE_PARAMS = ['whatsnew', 'scoutnews']
@@ -97,13 +99,19 @@ export default function MvpNews({ tier }: { tier: string }) {
       const base = { kind: found.kind, installed: found.version, seen: localGet(SEEN_KEY), later: sessionGet(LATER_KEY), desktop, force: params.has('scoutnews') }
       const scoutMaybe = !!scoutPopupPlan({ ...base, later: null, releases: SCOUT_RELEASES })
       const today = localDay()
-      if (!opensToday({ today, shownDay: localGet(DAY_KEY), updates: updates.length, scout: scoutMaybe, force })) return
+      // AN ENTRY THEY HAVE NOT SEEN opens it again the same day. Nothing was
+      // kept before 2026-10-23, so on that day everyone sees the card once
+      // more, which is the point: Instagram Auto-DM is for all of them.
+      const newest = newsKey(updates)
+      const newestSeen = localGet(NEWEST_KEY)
+      const unseen = !!newest && newestSeen !== newest
+      if (!opensToday({ today, shownDay: localGet(DAY_KEY), updates: updates.length, scout: scoutMaybe, force, newest, newestSeen })) return
       const res = await load()
       if (!alive) return
       const p = res ? scoutPopupPlan({ ...base, releases: (res.releases || []) as ScoutRelease[] }) : null
       // Nothing for this plan after all: SCOUT news filtered out and no updates.
       if (!p && !updates.length && !force) return
-      if (!p && !force && localGet(DAY_KEY) === today) return
+      if (!p && !force && !unseen && localGet(DAY_KEY) === today) return
       for (let i = 0; i < 80 && otherPopupOpen(); i++) { await sleep(1500); if (!alive) return }
       if (!alive || otherPopupOpen()) return
       setInstalled(found.version)
@@ -111,9 +119,10 @@ export default function MvpNews({ tier }: { tier: string }) {
       setOpen(true)
       // Counted as today's opening as soon as it is on screen.
       localSet(DAY_KEY, today)
+      if (newest) localSet(NEWEST_KEY, newest)
     })()
     return () => { alive = false }
-  }, [load, updates.length])
+  }, [load, updates])
 
   // The What's new pill opens it any time, with SCOUT news if there is any.
   useEffect(() => {
