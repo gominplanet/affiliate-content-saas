@@ -21,7 +21,8 @@ import { getPublishContext } from '@/lib/agency-publish'
 import { maybeDecrypt } from '@/lib/secrets'
 import { encryptIntegrationWrite } from '@/lib/integration-secrets'
 import { tierAllowsSocial, type Tier } from '@/lib/tier'
-import { publishMedia, refreshLongLivedToken } from '@/services/instagram'
+import { publishMedia, refreshLongLivedToken, subscribeToComments } from '@/services/instagram'
+import { attachReelAutoDm } from '@/lib/ig-dm'
 import { addPostedProductToBio } from '@/lib/link-bio-import'
 import { fitHashtags } from '@/lib/hashtag-engine'
 
@@ -35,7 +36,9 @@ export async function POST(request: Request) {
   if ('error' in pub) return pub.error
   const { supabase, user } = pub
 
-  let body: { videoId?: string; caption?: string; mode?: Mode }
+  // autoDm: commenting `keyword` on the Reel DMs `link` (lib/ig-dm), as the
+  // TikTok window's "Also post to Instagram" offers it.
+  let body: { videoId?: string; caption?: string; mode?: Mode; autoDm?: { link?: string; keyword?: string; productName?: string } }
   try { body = await request.json() } catch { return NextResponse.json({ error: 'Bad request' }, { status: 400 }) }
 
   const videoId = (body.videoId || '').trim()
@@ -157,12 +160,32 @@ export async function POST(request: Request) {
     }, { status: 502 })
   }
 
+  // The Reel's own Auto-DM, reported as it went (never assumed).
+  let autoDm = false
+  let autoDmError: string | null = null
+  let autoDmKeyword: string | null = null
+  if (body.autoDm) {
+    const att = await attachReelAutoDm(sb, {
+      userId: user.id, mediaId: reelId, keyword: body.autoDm.keyword, link: body.autoDm.link,
+      productName: body.autoDm.productName, caption, videoUrl,
+    })
+    if (att.ok) {
+      autoDm = true
+      autoDmKeyword = att.keyword
+      // Make sure this account receives comment webhooks (idempotent).
+      try { await subscribeToComments({ igUserId, accessToken: accessToken! }) } catch { /* non-fatal */ }
+    } else autoDmError = reelId ? att.error : 'Only a Reel takes Auto-DM, and no Reel was posted.'
+  }
+
   // PULSE ON EVERY PLATFORM (lib/reach-pulse trackPost): the Reel's tags.
   if (reelId) await trackPost({ userId: user.id, platform: 'instagram', postId: reelId, caption })
   return NextResponse.json({
     ok: true,
     reelId,
     storyId,
+    autoDm,
+    autoDmError,
+    autoDmKeyword,
     partialErrors: errors.length ? errors : undefined,
   })
 }

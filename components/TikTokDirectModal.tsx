@@ -21,6 +21,9 @@ import {
 import { ShortVideoUpload } from '@/components/ShortVideoUpload'
 import { useModalA11y } from '@/components/ui/useModalA11y'
 import { youtubeUploadEnabled } from '@/lib/feature-flags'
+import { canUseIgDm } from '@/lib/ig-dm-access'
+import { withDmCta } from '@/lib/dm-caption-cta'
+import ReelAutoDm, { type ReelAutoDmState } from '@/components/instagram/ReelAutoDm'
 import { tzAbbrev } from '@/lib/format-schedule'
 
 type PrivacyLevel = 'PUBLIC_TO_EVERYONE' | 'MUTUAL_FOLLOW_FRIENDS' | 'SELF_ONLY' | 'FOLLOWER_OF_CREATOR'
@@ -67,6 +70,7 @@ export function TikTokDirectModal({
   onPosted,
   prepareYouTube,
   onYouTubePosted,
+  dmVideoId,
 }: {
   videoId?: string
   /** Shop Burner mode: a burned Cloudinary video URL to post directly (no
@@ -96,6 +100,9 @@ export function TikTokDirectModal({
    *  no link because TikTok shows none. An `error` stops the Short. */
   prepareYouTube?: () => Promise<{ title: string; description: string; tags?: string[]; note?: string } | { error: string }>
   onYouTubePosted?: (videoId: string | null) => void
+  /** The source video (youtube_videos.id) of a burned clip, so the Instagram
+   *  Reel's Auto-DM can offer its blog post and product links. */
+  dmVideoId?: string
 }) {
   const isBurned = !!burnedVideoUrl
   const [loading, setLoading] = useState(true)
@@ -138,6 +145,12 @@ export function TikTokDirectModal({
   const [alsoIg, setAlsoIg] = useState(false)
   const [igResult, setIgResult] = useState<'idle' | 'posting' | 'done' | 'failed'>('idle')
   const [igErr, setIgErr] = useState<string | null>(null)
+  // …with its own Auto-DM (Seb, 2026-10-23): the cross-posted Reel used to go
+  // out with none. The caption change ("Comment LINK and I'll DM you the
+  // link.") is made on the Instagram copy only: TikTok sends no DM.
+  const igDmAvailable = canUseIgDm(tier)
+  const [igDm, setIgDm] = useState<ReelAutoDmState>({ on: false, keyword: 'LINK', payload: null })
+  const [igDmResult, setIgDmResult] = useState<{ ok: true; keyword: string; link: string } | { ok: false; error: string } | null>(null)
   // …and a Pinterest video pin (needs a cover — only offered when we have the
   // Short's YouTube thumbnail to use). Links to the creator's blog (route default).
   const [alsoPin, setAlsoPin] = useState(false)
@@ -359,19 +372,26 @@ export function TikTokDirectModal({
       // Burned clip → /publish-burned (by URL); a Short → /post-direct-video (by
       // videoId). Reported separately so a failed IG post never masks TikTok.
       if (alsoIg && igResult !== 'done') {
-        setIgResult('posting'); setIgErr(null)
+        setIgResult('posting'); setIgErr(null); setIgDmResult(null)
+        const dm = igDmAvailable ? igDm.payload : null
+        const igCaption = dm ? withDmCta(caption, dm.keyword) : caption
         try {
           const igRes = isBurned
             ? await fetch('/api/instagram/publish-burned', {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ videoUrl: burnedVideoUrl, caption, product, productTitle, sourceYoutubeVideoId }),
+                body: JSON.stringify({ videoUrl: burnedVideoUrl, caption: igCaption, product, productTitle, sourceYoutubeVideoId, ...(dm ? { autoDm: dm } : {}) }),
               })
             : await fetch('/api/instagram/post-direct-video', {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ videoId, caption, mode: 'reel' }),
+                body: JSON.stringify({ videoId, caption: igCaption, mode: 'reel', ...(dm ? { autoDm: dm } : {}) }),
               })
           const igJson = await igRes.json().catch(() => ({}))
           if (igRes.ok && igJson.bio?.note) setBioNote((cur) => cur ?? { ok: igJson.bio.state === 'added', text: String(igJson.bio.note) })
+          if (igRes.ok && dm) {
+            setIgDmResult(igJson.autoDm
+              ? { ok: true, keyword: String(igJson.autoDmKeyword || dm.keyword), link: dm.link }
+              : { ok: false, error: String(igJson.autoDmError || 'MVP could not attach Auto-DM to this Reel.') })
+          }
           if (igRes.ok) setIgResult('done')
           else { setIgResult('failed'); setIgErr((igJson.error as string) || 'Instagram post failed.') }
         } catch (e) {
@@ -448,7 +468,7 @@ export function TikTokDirectModal({
     } finally {
       setPosting(false)
     }
-  }, [canPost, videoId, isBurned, burnedVideoUrl, product, productTitle, caption, privacy, allowComment, allowDuet, allowStitch, isCommercial, brandedContent, brandedPartnership, info, alsoIg, alsoPin, ytEnabled, alsoYt, youtubeId, meta?.videoUrl, meta?.title, publishId, igResult, pinResult, ytResult, sourceYoutubeVideoId, prepareYouTube, onYouTubePosted])
+  }, [canPost, videoId, isBurned, burnedVideoUrl, product, productTitle, caption, privacy, allowComment, allowDuet, allowStitch, isCommercial, brandedContent, brandedPartnership, info, alsoIg, igDmAvailable, igDm.payload, alsoPin, ytEnabled, alsoYt, youtubeId, meta?.videoUrl, meta?.title, publishId, igResult, pinResult, ytResult, sourceYoutubeVideoId, prepareYouTube, onYouTubePosted])
 
   // Schedule this Short for a future time (real video targets only — a URL-only
   // burned clip has no DB row, so it can't be queued).
@@ -813,8 +833,21 @@ export function TikTokDirectModal({
           <div className="px-5 pb-1">
             <label className="flex items-center gap-2.5 cursor-pointer select-none">
               <input type="checkbox" checked={alsoIg} onChange={e => setAlsoIg(e.target.checked)} className="h-4 w-4 accent-[#E1306C]" />
-              <span className="text-xs text-[#1d1d1f] dark:text-[#f5f5f7]">Also post to Instagram as a Reel <span className="text-[#86868b]">(same video + caption)</span></span>
+              <span className="text-xs text-[#1d1d1f] dark:text-[#f5f5f7]">Also post to Instagram as a Reel <span className="text-[#86868b]">(same video + caption{igDmAvailable && igDm.payload ? ', with Auto-DM' : ''})</span></span>
             </label>
+            {alsoIg && igDmAvailable && (
+              <div className="mt-1.5 ml-6">
+                <ReelAutoDm
+                  videoId={isBurned ? dmVideoId : videoId}
+                  product={product}
+                  productName={productTitle}
+                  onChange={setIgDm}
+                />
+                {igDm.payload && (
+                  <p className="mt-1 text-[10px] text-[#86868b]">On Instagram only, the caption says &quot;Comment {igDm.keyword.toUpperCase()} and I’ll DM you the link.&quot; TikTok keeps your caption as it is.</p>
+                )}
+              </div>
+            )}
             <label className="mt-1.5 flex items-center gap-2.5 cursor-pointer select-none">
               <input type="checkbox" checked={alsoPin} onChange={e => setAlsoPin(e.target.checked)} className="h-4 w-4 accent-[#E60023]" />
               <span className="text-xs text-[#1d1d1f] dark:text-[#f5f5f7]">Also pin to Pinterest as a video <span className="text-[#86868b]">(links to the blog post or YouTube video)</span></span>
@@ -830,6 +863,8 @@ export function TikTokDirectModal({
         {bioNote && <p className={`px-5 pb-1 text-[11px] flex items-center gap-1.5 ${bioNote.ok ? 'text-[#34c759]' : 'text-[#c93400]'}`}>{bioNote.ok ? <CheckCircle size={11} /> : <AlertCircle size={11} />} Link in Bio: {bioNote.text}</p>}
         {igResult === 'posting' && <p className="px-5 pb-1 text-[11px] text-[#E1306C] flex items-center gap-1.5"><Loader2 size={11} className="animate-spin" /> Also sending to Instagram…</p>}
         {igResult === 'done' && <p className="px-5 pb-1 text-[11px] text-[#34c759] flex items-center gap-1.5"><CheckCircle size={11} /> Sent to Instagram too.</p>}
+        {igResult === 'done' && igDmResult?.ok && <p className="px-5 pb-1 text-[11px] text-[#34c759]">Instagram Auto-DM is on: anyone who comments {igDmResult.keyword.toUpperCase()} on the Reel gets {igDmResult.link}</p>}
+        {igResult === 'done' && igDmResult && !igDmResult.ok && <p className="px-5 pb-1 text-[11px] text-[#ff3b30] flex items-start gap-1.5"><AlertCircle size={11} className="mt-px shrink-0" /> The Reel is live, but Auto-DM was not attached: {igDmResult.error} You can give it a keyword and link on the <a href="/instagram-dm" target="_blank" rel="noopener noreferrer" className="underline">Instagram Auto-DM page</a>.</p>}
         {igResult === 'failed' && <p className="px-5 pb-1 text-[11px] text-[#ff3b30] flex items-center gap-1.5"><AlertCircle size={11} /> Instagram: {igErr || 'failed'} (TikTok was unaffected.)</p>}
         {pinResult === 'posting' && <p className="px-5 pb-1 text-[11px] text-[#E60023] flex items-center gap-1.5"><Loader2 size={11} className="animate-spin" /> {pinWait > 0 ? `Pinterest is still processing the video (${Math.floor(pinWait / 60)}:${String(pinWait % 60).padStart(2, '0')}). Keep this window open; it can take a few minutes.` : 'Sending the video to Pinterest…'}</p>}
         {pinResult === 'done' && <p className="px-5 pb-1 text-[11px] text-[#34c759] flex items-center gap-1.5"><CheckCircle size={11} /> Pinned to Pinterest{pinBoard ? ` on your "${pinBoard}" board` : ''}.</p>}

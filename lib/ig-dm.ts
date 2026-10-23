@@ -9,8 +9,8 @@
 // the operator's own account under Standard Access. See project_ig_comment_to_dm.
 
 import { createAdminClient } from '@/lib/supabase/admin'
-import { ensureDisclaimer } from '@/lib/social-disclaimer'
-import { storeOf } from '@/lib/store-name'
+import { renderMessage, PUBLIC_REPLY, oneWordKeyword } from '@/lib/ig-dm-message'
+import { confirmLinkStores } from '@/lib/link-store'
 import { sendPrivateReply, replyToComment, refreshLongLivedToken } from '@/services/instagram'
 import { maybeDecrypt, maybeEncrypt } from '@/lib/secrets'
 import { resolveCloakedLink } from '@/lib/link-cloak'
@@ -63,44 +63,9 @@ export function resolvePostAffiliateLink(post: {
 export { postProductDestination, postProductAsin }
 export type { PostLinkStyle }
 
-/**
- * Fill the {link} placeholder, then guarantee the two things a DM carrying an
- * affiliate link has to say.
- *
- * The template is the creator's to write, and the default was "Here you go
- * {link}". Next to a cloaked link that is a bare mvpl.ink URL with no retailer
- * named and no disclosure, in a private message, which is the least transparent
- * place a link can land. Amazon policy 6(w) wants the placement to make clear it
- * goes to an Amazon Site, and the FTC wants the relationship disclosed where the
- * recommendation is made, not only on a blog somewhere else.
- *
- * Neither is added when the creator already said it, so a template that reads
- * naturally is left exactly as written.
- */
-export function renderMessage(template: string, link: string, amazonDestination = false): string {
-  const t = stripStopLine(template) || 'Here you go \u{1F517} {link}'
-  let out = t.includes('{link}') ? t.replace(/\{link\}/g, link) : `${t}\n${link}`
-  // Another store a plain address names says so too (lib/store-name); a short
-  // link that hides its store gets no guess.
-  const store = amazonDestination ? 'Amazon' : storeOf(link)
-  if (store && !out.toLowerCase().includes(store.toLowerCase())) out = `${out}\n\nThis link goes to ${store}.`
-  return ensureDisclaimer(out)
-}
-
-/**
- * "Reply STOP to opt out" WAS IN THE DEFAULT MESSAGE, and nothing read the
- * replies (Seb, 2026-10-09). A DM that promises an opt-out MVP never honours is
- * worse than no line at all, and Meta does not ask for one on a private reply
- * (it is a single answer to a comment the person wrote). Saved templates still
- * hold it, so it is taken out when the message is built.
- */
-export function stripStopLine(template: string | null | undefined): string {
-  return String(template ?? '').replace(/\s*reply\s+stop\s+to\s+opt\s+out\.?/gi, '').trim()
-}
-
-/** What MVP posts under a comment after sending the DM. Its own reply comes back
- *  as a comment event, and with the keyword "DM" it would match. */
-export const PUBLIC_REPLY = 'Sent you a DM! \u{1F4E9}'
+// The message itself (renderMessage, stripStopLine, PUBLIC_REPLY) lives in
+// lib/ig-dm-message, pure, so the posting window previews the exact DM.
+export { renderMessage, stripStopLine, PUBLIC_REPLY, DEFAULT_DM_TEMPLATE, oneWordKeyword } from '@/lib/ig-dm-message'
 
 /** The settings row read as a whole (`select('*')`), so a column a migration has
  *  not added yet reads as its default instead of failing the read, which would
@@ -176,6 +141,46 @@ export async function ownerOfIgAccount(sb: Sb, igAccountId: string): Promise<str
   } catch {
     return null
   }
+}
+
+/** The DM a link sends, exactly as the webhook sends it: the creator's message,
+ *  the link, the store it leads to and the disclosure. A link whose address
+ *  hides its store (Passport, Geniuslink, Bitly) is followed to it first, so a
+ *  Reel's cloaked Amazon link says Amazon. The posting window's preview
+ *  (/api/instagram/dm-preview) is built here too: what the creator reads before
+ *  posting is what goes out. Never throws. */
+export async function dmMessageFor(userId: string, template: string | null | undefined, link: string, amazonDestination = false): Promise<{ message: string; store: string | null }> {
+  let store: string | null = amazonDestination ? 'Amazon' : null
+  if (!store) {
+    try { store = (await confirmLinkStores(userId, link)).confirmed[0]?.store ?? null } catch { /* not confirmed: no store named */ }
+  }
+  return { message: renderMessage(template || '', link, amazonDestination, store), store }
+}
+
+/** Give a Reel that was just published its own Auto-DM: commenting `keyword`
+ *  on it DMs `link`. Says why when it could not, so a posting window never
+ *  reports an Auto-DM that was not attached (the insert error used to be a
+ *  console line while the window said only "Reel live"). Never throws. */
+export async function attachReelAutoDm(sb: Sb, row: {
+  userId: string; mediaId: string | null | undefined; keyword: unknown; link: unknown
+  productName?: string | null; caption?: string | null; videoUrl?: string | null
+}): Promise<{ ok: true; keyword: string; link: string } | { ok: false; error: string }> {
+  const link = String(row.link ?? '').trim()
+  if (!/^https?:\/\//i.test(link)) return { ok: false, error: 'There was no link to send, so Auto-DM was not attached.' }
+  const media = String(row.mediaId ?? '').trim()
+  if (!media) return { ok: false, error: 'Instagram gave back no post id, so MVP could not attach Auto-DM to this Reel.' }
+  const keyword = oneWordKeyword(row.keyword)
+  try {
+    const { error } = await sb.from('ig_dm_campaigns').insert({
+      user_id: row.userId, ig_media_id: media, keyword, link,
+      product_name: (row.productName || '').trim() || null,
+      caption: row.caption ?? null, video_url: row.videoUrl ?? null, status: 'active',
+    })
+    if (error) return { ok: false, error: `MVP could not save the Auto-DM for this Reel (${String(error.message || error).slice(0, 160)}).` }
+  } catch (e) {
+    return { ok: false, error: `MVP could not save the Auto-DM for this Reel (${(e instanceof Error ? e.message : String(e)).slice(0, 160)}).` }
+  }
+  return { ok: true, keyword, link }
 }
 
 /** Read the user's IG token, refreshing + persisting it if it's near expiry. */
@@ -333,7 +338,7 @@ export async function processCommentEvent(ev: IgCommentEvent): Promise<string> {
     return 'fail:no-token'
   }
 
-  const message = renderMessage(settings?.message_template || '', link, amazonDest)
+  const { message } = await dmMessageFor(userId as string, settings?.message_template, link, amazonDest)
   try {
     const sent = await sendPrivateReply({ igUserId: tok.igUserId, commentId: ev.commentId, message, accessToken: tok.accessToken })
     await sb.from('ig_dm_sends').update({ status: 'sent', error: sent.messageId ? null : 'Meta accepted it but returned no message id.' }).eq('comment_id', ev.commentId)

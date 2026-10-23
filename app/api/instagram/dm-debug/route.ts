@@ -9,7 +9,7 @@
 // at all from Instagram after Aug 13: not a skip, not a failure. Every comment
 // on the account would at least have left a "skipped" row, so Instagram had
 // stopped sending comments to MVP, and nothing on any screen said so. This is
-// that screen. Labs, admin only, like the page.
+// that screen. Every member who can use Auto-DM sees it (2026-10-23).
 
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
@@ -37,6 +37,9 @@ async function gate() {
   const token = maybeDecrypt(integ?.instagram_access_token as string | null | undefined) || null
   return { userId: user.id, admin, integ, token, igUserId: (integ?.instagram_user_id as string | null) ?? null, team: normalizeTier(integ?.tier) === 'admin' }
 }
+
+/** What Auto-DM needs from the Instagram connection. */
+const DM_PERMISSIONS = ['instagram_business_manage_comments', 'instagram_business_manage_messages']
 
 /** Meta's App Review page for MVP's app, where approval of the two messaging
  *  permissions shows. The app id is public: it is in every login link. */
@@ -75,32 +78,56 @@ export async function GET() {
   }
   const commentsOn = fields ? fields.includes('comments') : null
 
+  // The permissions granted when Instagram was last connected (recorded since
+  // 2026-10-23). null: connected before that, so not known; the comment alert
+  // check below still catches an account without them.
+  let permissions: string[] | null = null
+  if (connected) {
+    try {
+      const { data: acct } = await admin.from('social_accounts').select('extra')
+        .eq('user_id', userId).eq('platform', 'instagram').eq('external_id', igUserId).maybeSingle()
+      const p = (acct?.extra as { permissions?: unknown } | null)?.permissions
+      if (Array.isArray(p)) permissions = p.map(String)
+    } catch { /* not known */ }
+  }
+  const missing = permissions ? DM_PERMISSIONS.filter((p) => !permissions!.includes(p)) : []
+
   const { data: settings } = await admin.from('ig_dm_settings').select('*').eq('user_id', userId).maybeSingle()
   const { data: last } = await admin.from('ig_dm_sends').select('status,error,created_at')
     .eq('user_id', userId).eq('platform', 'instagram').order('created_at', { ascending: false }).limit(1).maybeSingle()
 
+  // The first broken link in the chain, or null when comments can be answered.
+  // A Reel posted with its own Auto-DM needs only this: its keyword and link
+  // work even with the account-wide switch below turned off.
+  let blocker: string | null = null
+  if (!connected) blocker = 'Instagram is not connected in MVP. Connect it under Setup, Socials.'
+  else if (tokenExpired) blocker = 'The Instagram connection has expired. Reconnect Instagram under Setup, Socials.'
+  else if (!appSecretSet) blocker = 'INSTAGRAM_APP_SECRET is not set in Vercel, so MVP refuses every comment Meta sends. Set it and redeploy.'
+  else if (!scopesRequested) blocker = 'IG_DM_SCOPES is "false" in Vercel, so connecting Instagram never asks for the two messaging permissions. Remove it, redeploy, then reconnect Instagram.'
+  else if (missing.length) blocker = `Instagram was connected without permission to ${missing.includes('instagram_business_manage_messages') ? 'send messages' : 'read comments'}. Reconnect Instagram under Setup, Socials and allow MVP to manage your messages and comments.`
+  else if (commentsOn === false) blocker = 'This account is not sending comments to MVP. Press "Turn on comment alerts". If Instagram refuses, reconnect Instagram and accept the messaging permissions.'
+  else if (commentsOn === null) blocker = `MVP could not read the comment alert setting from Instagram${subError ? `: ${subError}` : '.'} Reconnecting Instagram usually fixes this.`
+  // A member is never told about Vercel settings: those are MVP's to fix.
+  if (blocker && !team && (!appSecretSet || !scopesRequested)) blocker = 'Auto-DM is not ready on MVP\u2019s side yet, so comments cannot be answered. Let MVP support know.'
+
   let verdict: string
   let ok = false
-  if (!connected) verdict = 'Instagram is not connected in MVP. Connect it under Setup, Socials.'
-  else if (tokenExpired) verdict = 'The Instagram connection has expired. Reconnect Instagram under Setup, Socials.'
-  else if (!appSecretSet) verdict = 'INSTAGRAM_APP_SECRET is not set in Vercel, so MVP refuses every comment Meta sends. Set it and redeploy.'
-  else if (!scopesRequested) verdict = 'IG_DM_SCOPES is "false" in Vercel, so connecting Instagram never asks for the two messaging permissions. Remove it, redeploy, then reconnect Instagram.'
-  else if (commentsOn === false) verdict = 'This account is not sending comments to MVP. Press "Turn on comment alerts". If Instagram refuses, reconnect Instagram and accept the messaging permissions.'
-  else if (commentsOn === null) verdict = `MVP could not read the comment alert setting from Instagram${subError ? `: ${subError}` : '.'} Reconnecting Instagram usually fixes this.`
+  if (blocker) verdict = blocker
   else if (!settings?.enabled) verdict = 'Everything is connected, but Auto-DM is turned off. Turn it on below and save.'
   else {
     ok = true
     verdict = 'Connected and listening. Comment your keyword from a second account and a row appears under Recent comments within a minute.'
   }
-
-  // A member is never told about Vercel settings: those are MVP's to fix.
-  if (!team && (!appSecretSet || !scopesRequested)) verdict = 'Auto-DM is not ready on MVP\u2019s side yet, so comments cannot be answered. Let MVP support know.'
   return NextResponse.json({
     ok,
     verdict,
-    // The setup rows (Vercel settings) are the MVP team's to read.
+    // For the posting window: can a Reel's own Auto-DM answer comments, and if
+    // not, why.
+    reel: { ok: !blocker, why: blocker },
+    // The setup rows (Vercel settings) and Meta's App Review page are the MVP
+    // team's to read.
     team,
-    appReviewUrl: appReviewUrl(),
+    appReviewUrl: team ? appReviewUrl() : null,
     checks: {
       connected,
       username: integ?.instagram_username ?? null,
@@ -112,6 +139,9 @@ export async function GET() {
       subscribedFields: fields ?? [],
       subError,
       professionalIdSaved: !!professionalId,
+      // null: connected before MVP recorded them.
+      permissionsKnown: permissions !== null,
+      permissionsMissing: missing,
       autoDmEnabled: !!settings?.enabled,
       lastInstagramEvent: last?.created_at ?? null,
     },

@@ -59,6 +59,19 @@ export interface InstagramTokens {
   username: string
   /** Unix ms when the token expires */
   expiresAt: number
+  /** The permissions the creator granted, as Instagram listed them when the
+   *  code was exchanged, or null when it listed none. */
+  permissions: string[] | null
+}
+
+/** The granted permissions in a token exchange answer: a list or a comma
+ *  string, flat or inside data[0] (Meta's docs show both). Pure. */
+export function grantedPermissions(answer: unknown): string[] | null {
+  const a = answer as { permissions?: unknown; data?: { permissions?: unknown }[] } | null
+  const raw = a?.permissions ?? (Array.isArray(a?.data) ? a?.data?.[0]?.permissions : undefined)
+  const list = Array.isArray(raw) ? raw.map(String) : typeof raw === 'string' ? raw.split(',') : null
+  const out = list?.map((p) => p.trim()).filter(Boolean) ?? []
+  return out.length ? out : null
 }
 
 /** Build the OAuth URL the user visits to authorize MVP Affiliate. */
@@ -104,6 +117,7 @@ export async function exchangeCodeForTokens(opts: {
   const shortData = await shortRes.json() as {
     access_token?: string
     user_id?: string | number
+    permissions?: string[] | string
     error_type?: string
     error_message?: string
     error?: { message: string }
@@ -141,6 +155,7 @@ export async function exchangeCodeForTokens(opts: {
     userId: meData.id,
     username: meData.username ?? '',
     expiresAt,
+    permissions: grantedPermissions(shortData),
   }
 }
 

@@ -82,6 +82,7 @@ export async function GET(request: NextRequest) {
         username: tokens.username,
         accessToken: tokens.accessToken,
         tokenExpiry: tokens.expiresAt,
+        permissions: tokens.permissions,
       })
     } catch (e) {
       console.warn('[instagram/callback] syncInstagramAccount failed:', e)

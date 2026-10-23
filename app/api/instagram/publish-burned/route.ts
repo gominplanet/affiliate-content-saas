@@ -19,6 +19,7 @@ import { normalizeTier, tierAllowsSocial, type Tier } from '@/lib/tier'
 import { resolveSocialAccount } from '@/lib/social-accounts'
 import { publishMedia, subscribeToComments } from '@/services/instagram'
 import { dmLinkOptions } from '@/lib/dm-link-options'
+import { attachReelAutoDm } from '@/lib/ig-dm'
 import { syncLinkInBioTile } from '@/lib/amazon-social-publish'
 import { metaEnabledForUser } from '@/lib/feature-flags'
 import { toUserMessage } from '@/lib/friendly-error'
@@ -98,24 +99,21 @@ export async function POST(request: Request) {
 
       // Optional: attach a comment→DM campaign to the just-published Reel. Keyed
       // by the returned media id, so commenting `keyword` on it auto-DMs `link`.
+      // What happened is returned (autoDm / autoDmError), never assumed.
       let autoDm = false
+      let autoDmError: string | null = null
+      let autoDmKeyword: string | null = null
       const dm = body.autoDm
-      if (dm && typeof dm.link === 'string' && /^https?:\/\//i.test(dm.link.trim()) && mediaId) {
-        const keyword = (dm.keyword || 'LINK').trim().split(/\s+/)[0].slice(0, 30) || 'LINK'
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const sb = supabase as any
-        const { error: insErr } = await sb.from('ig_dm_campaigns').insert({
-          user_id: user.id,
-          ig_media_id: mediaId,
-          keyword,
-          link: dm.link.trim(),
-          product_name: (dm.productName || '').trim() || null,
-          caption,
-          video_url: videoUrl,
-          status: 'active',
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const sb = supabase as any
+      if (dm) {
+        const att = await attachReelAutoDm(sb, {
+          userId: user.id, mediaId, keyword: dm.keyword, link: dm.link,
+          productName: dm.productName, caption, videoUrl,
         })
-        if (insErr) console.error('[publish-burned] campaign insert failed:', insErr.message || insErr)
-        else autoDm = true
+        if (att.ok) { autoDm = true; autoDmKeyword = att.keyword } else autoDmError = att.error
+      }
+      if (autoDm && dm) {
         // THE PAGE THE DM SENDS PEOPLE TO HAS THE PRODUCT ON IT. A DM pointing
         // at the Link in Bio product page must land on a tile with the
         // affiliate link, so the product is put on the page now.
@@ -151,7 +149,7 @@ export async function POST(request: Request) {
         bio = await addProductUrlToBio(supabase, user.id, { url: bioUrl, title: bioTitle }, { caption, sourceYoutubeVideoId: body.sourceYoutubeVideoId })
       } catch { /* non-fatal */ }
 
-      return NextResponse.json({ ok: true, published: true, mediaId, autoDm, bio })
+      return NextResponse.json({ ok: true, published: true, mediaId, autoDm, autoDmError, autoDmKeyword, bio })
     } catch (e) {
       console.error('[instagram/publish-burned] publish failed:', e instanceof Error ? e.message : e)
       return NextResponse.json({ ok: false, published: false, error: toUserMessage(e, 'Instagram couldn’t accept the post — please try again in a moment.') }, { status: 502 })

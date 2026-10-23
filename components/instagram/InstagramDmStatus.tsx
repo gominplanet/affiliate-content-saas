@@ -22,10 +22,12 @@ interface Checks {
   subscribedFields: string[]
   subError: string | null
   professionalIdSaved: boolean
+  permissionsKnown?: boolean
+  permissionsMissing?: string[]
   autoDmEnabled: boolean
   lastInstagramEvent: string | null
 }
-interface Result { ok: boolean; verdict: string; appReviewUrl: string; checks: Checks; team?: boolean }
+interface Result { ok: boolean; verdict: string; appReviewUrl: string | null; checks: Checks; team?: boolean }
 
 function Mark({ state }: { state: boolean | null }) {
   if (state === true) return <CheckCircle2 size={15} className="text-[#34c759] flex-shrink-0" />
@@ -72,6 +74,9 @@ export default function InstagramDmStatus({ onAppReviewUrl }: { onAppReviewUrl?:
   const c = data?.checks
   const rows: { label: string; state: boolean | null; note?: string }[] = c ? [
     { label: c.username ? `Instagram connected (@${c.username})` : 'Instagram connected', state: c.connected && !c.tokenExpired, note: c.tokenExpired ? 'The connection has expired.' : undefined },
+    // Unknown (a dash, not a tick) for a connection made before MVP recorded
+    // what was granted: not checked is not the same as allowed.
+    { label: 'Allowed to manage your messages and comments', state: c.permissionsKnown ? !(c.permissionsMissing ?? []).length : null, note: c.permissionsKnown ? undefined : 'Not known for a connection made before October 23. Reconnecting Instagram records it.' },
     { label: 'Comments are sent to MVP', state: c.commentsOn, note: c.commentsOn === null && c.subError ? c.subError : undefined },
     // MVP's own setup (Vercel settings): the team's to read, never a member's.
     ...(data?.team ? [
@@ -124,11 +129,14 @@ export default function InstagramDmStatus({ onAppReviewUrl }: { onAppReviewUrl?:
                 {busy ? <Loader2 size={13} className="animate-spin" /> : <BellRing size={13} />} Turn on comment alerts
               </button>
             )}
-            <a href={data.appReviewUrl} target="_blank" rel="noopener noreferrer"
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[13px] font-semibold border"
-              style={{ borderColor: 'var(--border-bright)', color: 'var(--text)' }}>
-              <ExternalLink size={13} /> Check Meta approval
-            </a>
+            {/* Meta's App Review page is the MVP team's, never a member's. */}
+            {data.team && data.appReviewUrl && (
+              <a href={data.appReviewUrl} target="_blank" rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[13px] font-semibold border"
+                style={{ borderColor: 'var(--border-bright)', color: 'var(--text)' }}>
+                <ExternalLink size={13} /> Check Meta approval on Meta for Developers
+              </a>
+            )}
           </div>
         </>
       )}

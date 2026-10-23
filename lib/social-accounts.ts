@@ -313,7 +313,7 @@ export async function syncFacebookAccounts(
 export async function syncInstagramAccount(
   supabase: any,
   userId: string,
-  account: { externalId: string; username: string | null; accessToken: string; tokenExpiry?: number | null },
+  account: { externalId: string; username: string | null; accessToken: string; tokenExpiry?: number | null; permissions?: string[] | null },
 ): Promise<void> {
   if (!account.externalId || !account.accessToken) return
   // This account becomes the new default — clear the flag on the others.
@@ -330,7 +330,13 @@ export async function syncInstagramAccount(
       display_name: account.username,
       kind: 'account',
       access_token: maybeEncrypt(account.accessToken),
-      extra: account.tokenExpiry ? { token_expiry: account.tokenExpiry } : {},
+      // The permissions granted on this connect (Auto-DM needs the messages
+      // and comments ones), so a status screen can say "reconnect" before a
+      // DM fails rather than after.
+      extra: {
+        ...(account.tokenExpiry ? { token_expiry: account.tokenExpiry } : {}),
+        ...(account.permissions ? { permissions: account.permissions } : {}),
+      },
       is_default: true,
       updated_at: new Date().toISOString(),
     },

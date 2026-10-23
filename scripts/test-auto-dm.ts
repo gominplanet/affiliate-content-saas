@@ -109,8 +109,10 @@ async function main() {
   check('the creator\'s last choice is preselected when it exists', pickDmLink(opts, 'amazon')?.kind === 'amazon')
   check('a last choice this clip lacks falls back to the first that exists', pickDmLink(opts, 'shop')?.kind === 'blog')
   check('no options means no preselected link', pickDmLink([], 'shop') === null)
-  const modal2 = read('components/InstagramBurnedModal.tsx')
-  check('the window offers the found links and remembers the choice', /dm-link-options/.test(modal2) && /mvp\.ig\.dmLinkKind/.test(modal2))
+  // The block lives in components/instagram/ReelAutoDm since 2026-10-23,
+  // shared with the TikTok window's "Also post to Instagram".
+  const modal2 = read('components/InstagramBurnedModal.tsx'), block2 = read('components/instagram/ReelAutoDm.tsx')
+  check('the window offers the found links and remembers the choice', /<ReelAutoDm/.test(modal2) && /dm-link-options/.test(block2) && /mvp\.ig\.dmLinkKind/.test(block2))
   check('Clip Factory passes the source video too', /videoId=\{clip\?\.sourceVideoId \|\| selectedVideo\?\.id/.test(read('components/clip-factory/ClipFactory.tsx')))
   check('Shorts Studio passes the video so its blog post can be found', /videoId=\{videoId\}/.test(read('components/content/ShortsStudioModal.tsx')))
   const pub = read('app/api/instagram/publish-burned/route.ts')

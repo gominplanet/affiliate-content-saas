@@ -15,11 +15,9 @@ import { Loader2, AlertCircle, CheckCircle, Send, ExternalLink, X, Instagram } f
 import { useModalA11y } from '@/components/ui/useModalA11y'
 import { canUseIgDm } from '@/lib/ig-dm-access'
 import { useEffectiveTier } from '@/lib/useEffectiveTier'
-import { withDmCta, dmCtaLine } from '@/lib/dm-caption-cta'
+import { withDmCta } from '@/lib/dm-caption-cta'
+import ReelAutoDm, { type ReelAutoDmState } from '@/components/instagram/ReelAutoDm'
 
-type DmChoice = { kind: 'shop' | 'blog' | 'amazon'; url: string; label: string; note: string }
-const DM_KIND_KEY = 'mvp.ig.dmLinkKind'
-const DM_ORDER: DmChoice['kind'][] = ['shop', 'blog', 'amazon']
 
 export function InstagramBurnedModal({
   burnedVideoUrl,
@@ -55,65 +53,26 @@ export function InstagramBurnedModal({
   const [postError, setPostError] = useState<string | null>(null)
   const [posted, setPosted] = useState(false)
 
-  // Auto-DM: commenting `dmKeyword` on the Reel DMs `dmLink` to that person.
+  // Auto-DM: commenting the keyword on the Reel DMs the link to that person.
   // Every plan that posts to Instagram since Meta approved the messaging
-  // permissions (2026-10-23, lib/ig-dm-access).
+  // permissions (2026-10-23, lib/ig-dm-access). The block, with the DM itself
+  // shown word for word, is components/instagram/ReelAutoDm.
   const tier = useEffectiveTier()
   const dmAvailable = canUseIgDm(tier)
-  const [autoDm, setAutoDm] = useState(false)
-  const [dmKeyword, setDmKeyword] = useState('LINK')
-  const [dmLink, setDmLink] = useState((defaultDmLink || '').trim())
-  // THE LINK IS PICKED FOR THE CREATOR (Seb, 2026-10-09). MVP works out the
-  // Link in Bio page, the blog post and the affiliate link for this clip and
-  // preselects the kind they chose last time; pasting their own still works.
-  const [choices, setChoices] = useState<DmChoice[] | null>(null)
-  const [dmKind, setDmKind] = useState<DmChoice['kind'] | 'custom'>('custom')
-  useEffect(() => {
-    if (!dmAvailable) return
-    let off = false
-    const q = new URLSearchParams()
-    if (videoId) q.set('videoId', videoId)
-    if (product && product.trim()) q.set('product', product.trim())
-    else if (defaultDmLink && defaultDmLink.trim()) q.set('product', defaultDmLink.trim())
-    fetch(`/api/instagram/dm-link-options?${q.toString()}`)
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d: { options?: DmChoice[] } | null) => {
-        if (off) return
-        const opts = Array.isArray(d?.options) ? d!.options : []
-        setChoices(opts)
-        let last: string | null = null
-        try { last = localStorage.getItem(DM_KIND_KEY) } catch { /* private window */ }
-        const pick = opts.find((o) => o.kind === last) ?? DM_ORDER.map((k) => opts.find((o) => o.kind === k)).find(Boolean)
-        if (pick) { setDmKind(pick.kind); setDmLink(pick.url) }
-      })
-      .catch(() => { if (!off) setChoices([]) })
-    return () => { off = true }
-  }, [dmAvailable, videoId, product, defaultDmLink])
-  const choose = (c: DmChoice) => {
-    setDmKind(c.kind)
-    setDmLink(c.url)
-    try { localStorage.setItem(DM_KIND_KEY, c.kind) } catch { /* private window */ }
-  }
-  // On by default once we know it is available and a link is ready.
-  const dmDefaulted = useRef(false)
-  useEffect(() => {
-    if (dmDefaulted.current || !dmAvailable) return
-    if ((defaultDmLink && defaultDmLink.trim()) || (choices && choices.length)) {
-      dmDefaulted.current = true
-      setAutoDm(true)
-    } else if (choices) dmDefaulted.current = true
-  }, [dmAvailable, defaultDmLink, choices])
+  const [dm, setDm] = useState<ReelAutoDmState>({ on: false, keyword: 'LINK', payload: null })
+  // What happened to the Auto-DM when the Reel went out, as the route said.
+  const [dmResult, setDmResult] = useState<{ ok: true; keyword: string; link: string } | { ok: false; error: string } | null>(null)
   // THE CAPTION SAYS HOW TO GET THE LINK (Seb, 2026-10-09). With Auto-DM on,
   // "Link in bio" becomes "Comment LINK and I'll DM you the link.", follows the
   // keyword as it is typed, and goes back to "Link in bio." when turned off.
   useEffect(() => {
     if (!dmAvailable) return
-    setCaption((c) => withDmCta(c, autoDm ? (dmKeyword.trim() || 'LINK') : null))
-  }, [autoDm, dmKeyword, dmAvailable])
+    setCaption((c) => withDmCta(c, dm.on ? dm.keyword : null))
+  }, [dm.on, dm.keyword, dmAvailable])
 
   const submit = useCallback(async () => {
     if (posting || posted) return
-    const wantDm = autoDm && /^https?:\/\//i.test(dmLink.trim())
+    const wantDm = dmAvailable ? dm.payload : null
     setPosting(true)
     setPostError(null)
     try {
@@ -125,7 +84,7 @@ export function InstagramBurnedModal({
           caption,
           ...(product && product.trim() ? { product: product.trim(), productTitle: (productTitle || '').trim() } : {}),
           ...(typeof coverOffsetMs === 'number' && coverOffsetMs >= 0 ? { thumbOffsetMs: Math.round(coverOffsetMs) } : {}),
-          ...(wantDm ? { autoDm: { link: dmLink.trim(), keyword: dmKeyword.trim() || 'LINK', kind: dmKind === 'custom' ? undefined : dmKind, videoId, productName: (productTitle || '').trim() || undefined } } : {}),
+          ...(wantDm ? { autoDm: wantDm } : {}),
         }),
       })
       const json = await res.json()
@@ -134,13 +93,18 @@ export function InstagramBurnedModal({
         return
       }
       setPosted(true)
+      if (wantDm) {
+        setDmResult(json.autoDm
+          ? { ok: true, keyword: String(json.autoDmKeyword || wantDm.keyword), link: wantDm.link }
+          : { ok: false, error: String(json.autoDmError || 'MVP could not attach Auto-DM to this Reel.') })
+      }
       if (onPosted) onPosted()
     } catch (e) {
       setPostError(e instanceof Error ? e.message : 'Posting failed.')
     } finally {
       setPosting(false)
     }
-  }, [posting, posted, burnedVideoUrl, caption, product, productTitle, coverOffsetMs, autoDm, dmKeyword, dmLink, dmKind, videoId, onPosted])
+  }, [posting, posted, burnedVideoUrl, caption, product, productTitle, coverOffsetMs, dmAvailable, dm.payload, onPosted])
 
   const closeAllowed = !posting
   const panelRef = useRef<HTMLDivElement | null>(null)
@@ -207,61 +171,15 @@ export function InstagramBurnedModal({
               <p className="text-[10px] text-[#86868b] mt-1">{caption.length} / 2200 · Hashtags + disclaimer included.</p>
             </div>
 
-            {/* Auto-DM: comment a keyword → DM the link. Gated until Meta
-                approves the messaging permissions. */}
-            {dmAvailable && (
-            <div className="rounded-lg border border-gray-200 dark:border-white/10 p-3">
-              <label className="flex items-center gap-2 cursor-pointer select-none">
-                <input type="checkbox" checked={autoDm} onChange={(e) => setAutoDm(e.target.checked)} className="accent-[#7C3AED]" />
-                <span className="text-[13px] font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">Auto-DM the link when someone comments</span>
-              </label>
-              {autoDm && (
-                <div className="mt-2.5 flex flex-col gap-2">
-                  <div className="flex items-center gap-2">
-                    <span className="text-[11px] text-[#86868b] shrink-0">When they comment</span>
-                    <input
-                      value={dmKeyword}
-                      onChange={(e) => setDmKeyword(e.target.value.replace(/\s+/g, ' ').trimStart().slice(0, 30))}
-                      placeholder="LINK"
-                      className="flex-1 text-sm px-2.5 py-1.5 rounded-md border border-gray-200 dark:border-white/10 bg-white dark:bg-[#2c2c2e] text-[#1d1d1f] dark:text-[#f5f5f7]"
-                    />
-                  </div>
-                  {choices === null && (
-                    <p className="text-[11px] text-[#86868b] inline-flex items-center gap-1.5"><Loader2 size={11} className="animate-spin" /> Finding this product&apos;s links…</p>
-                  )}
-                  {choices && choices.length > 0 && (
-                    <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label="Link to send">
-                      {choices.map((c) => (
-                        <button key={c.kind} type="button" role="radio" aria-checked={dmKind === c.kind} onClick={() => choose(c)} title={c.note}
-                          className={`text-[12px] font-semibold px-2.5 py-1 rounded-full border ${dmKind === c.kind
-                            ? 'border-[#7C3AED] bg-[#7C3AED]/10 text-[#7C3AED]'
-                            : 'border-gray-200 dark:border-white/10 text-[#3a3a3c] dark:text-[#d2d2d7]'}`}>
-                          {c.label}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                  {choices && choices.length > 0 && dmKind !== 'custom' && (
-                    <p className="text-[10px] text-[#86868b] -mt-0.5">{choices.find((c) => c.kind === dmKind)?.note}</p>
-                  )}
-                  {choices && choices.length === 0 && (
-                    <p className="text-[11px] text-[#86868b]">MVP found no blog post, Link in Bio page or product for this clip. Paste the link to send.</p>
-                  )}
-                  <input
-                    value={dmLink}
-                    onChange={(e) => { setDmLink(e.target.value); setDmKind('custom') }}
-                    placeholder="Link to DM them (https://…)"
-                    className="w-full text-sm px-2.5 py-1.5 rounded-md border border-gray-200 dark:border-white/10 bg-white dark:bg-[#2c2c2e] text-[#1d1d1f] dark:text-[#f5f5f7]"
-                  />
-                  <p className="text-[10px] text-[#86868b]">
-                    Anyone who comments <span className="font-semibold">{(dmKeyword || 'LINK').toUpperCase()}</span> on this Reel gets your link in their DMs automatically. The caption now says &quot;{dmCtaLine(dmKeyword)}&quot;
-                  </p>
-                  {!/^https?:\/\//i.test(dmLink.trim()) && (
-                    <p className="text-[11px] text-[#ff3b30]">Paste the link to send, or this Reel posts without Auto-DM.</p>
-                  )}
-                </div>
-              )}
-            </div>
+            {/* Auto-DM: comment a keyword, get the link in a DM. */}
+            {dmAvailable && !posted && (
+              <ReelAutoDm
+                videoId={videoId}
+                product={product}
+                defaultDmLink={defaultDmLink}
+                productName={productTitle}
+                onChange={setDm}
+              />
             )}
 
             {postError && (
@@ -272,6 +190,12 @@ export function InstagramBurnedModal({
             {posted && (
               <div className="rounded-lg border-[#34c759]/20 bg-[#34c759]/5 p-3 flex flex-col gap-1">
                 <p className="text-xs text-[#34c759] flex items-center gap-1.5"><CheckCircle size={12} /> Reel live on Instagram.</p>
+                {dmResult?.ok && (
+                  <p className="text-[11px] text-[#34c759]">Auto-DM is on: anyone who comments {dmResult.keyword.toUpperCase()} gets {dmResult.link}</p>
+                )}
+                {dmResult && !dmResult.ok && (
+                  <p className="text-[11px] text-[#ff3b30] flex items-start gap-1.5"><AlertCircle size={12} className="mt-px shrink-0" /> The Reel is live, but Auto-DM was not attached: {dmResult.error} You can give this Reel its keyword and link on the <a href="/instagram-dm" target="_blank" rel="noopener noreferrer" className="underline">Instagram Auto-DM page</a>.</p>
+                )}
                 <a href="https://www.instagram.com/" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-[11px] text-[#7C3AED] hover:underline self-start">
                   Open Instagram <ExternalLink size={10} />
                 </a>

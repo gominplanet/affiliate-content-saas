@@ -28,7 +28,7 @@ const read = (f: string) => readFileSync(f, 'utf8')
   check('the menu shows it to members, out of Labs', /href: '\/instagram-dm', icon: <MessageCircle size=\{15\} \/>, label: 'Instagram Auto-DM', gate: canUseIgDm\(effectiveTier\)/.test(NAV) && !/label: 'Instagram Auto-DM', gate: isAdmin/.test(NAV))
   check('the Reel option and the routes use the same rule', /const dmAvailable = canUseIgDm\(tier\)/.test(read('components/InstagramBurnedModal.tsx')) && /if \(!canUseIgDm\(integ\?\.tier\)\)/.test(read('app/api/instagram/dm-posts/route.ts')) && /if \(!canUseIgDm\(integ\?\.tier\)\)/.test(read('app/api/instagram/dm-debug/route.ts')))
   const DBG = read('app/api/instagram/dm-debug/route.ts'), STATUS = read('components/instagram/InstagramDmStatus.tsx')
-  check('a member never sees Vercel settings, in the rows or the verdict', /\.\.\.\(data\?\.team \? \[/.test(STATUS) && /if \(!team && \(!appSecretSet \|\| !scopesRequested\)\) verdict = /.test(DBG) && !/Until Meta approves the app/.test(DBG))
+  check('a member never sees Vercel settings, in the rows or the verdict', /\.\.\.\(data\?\.team \? \[/.test(STATUS) && /if \(blocker && !team && \(!appSecretSet \|\| !scopesRequested\)\) blocker = /.test(DBG) && /if \(blocker\) verdict = blocker/.test(DBG) && !/Until Meta approves the app/.test(DBG))
   if (fails.length) { console.error('ig-dm-access failed:\n - ' + fails.join('\n - ')); process.exit(1) }
   console.log('✅ ig-dm-access: Instagram Auto-DM is open to every plan that posts to Instagram, the permissions are asked for on connect, Facebook stays with the team, and members never see Vercel settings')
 })()

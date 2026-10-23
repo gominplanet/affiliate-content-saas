@@ -1590,6 +1590,9 @@ export default function ClipFactory({ facebookOnly = false }: { facebookOnly?: b
           burnedVideoUrl={publishUrl}
           initialCaption={ttCaption ?? publishCaption}
           tier={tier}
+          // The source video, so "Also post to Instagram" can offer its blog
+          // post and product links for the Reel's Auto-DM.
+          dmVideoId={clip?.sourceVideoId || selectedVideo?.id || undefined}
           sourceYoutubeVideoId={selectedVideo?.youtubeVideoId ?? ytVideoId ?? undefined}
           product={product.trim() || undefined}
           productTitle={(productName.trim() || clip?.title || '').trim() || undefined}
