@@ -27,6 +27,9 @@ import { effectiveTier } from '@/lib/view-as'
 import { dispatchCapReached } from '@/components/CapReachedBanner'
 import { pickWeightedStyleIndex, renderThumbnailOverlay } from '@/lib/thumbnail-overlay'
 import { INSTAGRAM_AI_IMAGES } from '@/lib/ig-ai-images'
+import { canUseIgDm } from '@/lib/ig-dm-access'
+import { withDmCta } from '@/lib/dm-caption-cta'
+import ReelAutoDm, { type ReelAutoDmState } from '@/components/instagram/ReelAutoDm'
 
 // ── Instagram Publish modal ───────────────────────────────────────────────────
 // Opens when the user clicks the Instagram pill on a video card. Walks them
@@ -110,18 +113,22 @@ export function InstagramPublishModal({
   // Aggregated feedback summary used to bias the random style picker.
   // Re-fetched on mount + after every reaction so weights stay fresh.
   const [styleWeights, setStyleWeights] = useState<{ liked: Record<string, number>; disliked: Record<string, number> }>({ liked: {}, disliked: {} })
-  // Global Auto-DM state — surfaced (not configured) here. When on, commenting
-  // the keyword on this post already DMs its affiliate link (the global rule
-  // resolves the link from the blog post's stored media id). Null until loaded.
-  const [dmEnabled, setDmEnabled] = useState<boolean | null>(null)
-  const [dmKeyword, setDmKeyword] = useState('LINK')
-
+  // AUTO-DM ON THE REEL OR FEED POST (components/instagram/ReelAutoDm, Seb
+  // 2026-10-23: "anywhere a user can use instagram, this auto dm feature
+  // should be set up and ready to use"). This used to say "Auto-DM is on"
+  // from the account-wide switch; the post now gets its own keyword and link,
+  // shown here. A Story takes no comments, so Story only has none.
+  const sendsFeed = mode === feedMode || mode === 'both'
+  const dmAvailable = canUseIgDm(aiTier) && sendsFeed
+  const [dm, setDm] = useState<ReelAutoDmState>({ on: false, keyword: 'LINK', payload: null })
+  const dmNow = useRef<{ use: boolean; keyword: string | null }>({ use: false, keyword: null })
+  dmNow.current = { use: canUseIgDm(aiTier), keyword: dmAvailable && dm.on ? dm.keyword : null }
   useEffect(() => {
-    fetch('/api/instagram/dm-settings')
-      .then(r => r.json())
-      .then(d => { const s = d.settings || {}; setDmEnabled(!!s.enabled); setDmKeyword(s.keyword || 'LINK') })
-      .catch(() => setDmEnabled(false))
-  }, [])
+    if (!canUseIgDm(aiTier)) return
+    setPreviewedReelCaption((c) => (c ? withDmCta(c, dmAvailable && dm.on ? dm.keyword : null) : c))
+  }, [dm.on, dm.keyword, dmAvailable, aiTier])
+  /** What the routes take: the block's choice, or false when unticked. */
+  const dmBody = () => (canUseIgDm(aiTier) ? { autoDm: dmAvailable ? (dm.payload ?? false) : false } : {})
 
   // Load Pro status + face models on mount so the AI option only shows
   // to users who can actually use it. Free-tier users see no second
@@ -363,11 +370,12 @@ export function InstagramPublishModal({
       const res = await fetch('/api/blog/instagram-post', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ postId, kind: apiKind, mode, dryRun: true, socialAccountId: selectedIgAccountId || undefined }),
+        body: JSON.stringify({ postId, kind: apiKind, mode, dryRun: true, socialAccountId: selectedIgAccountId || undefined, ...dmBody() }),
       })
       const data = await res.json().catch(() => ({ error: `HTTP ${res.status}` }))
       if (!res.ok) throw new Error(data.error || 'Preview failed')
-      setPreviewedReelCaption((data.reelCaption as string) ?? '')
+      const fresh = (data.reelCaption as string) ?? ''
+      setPreviewedReelCaption(fresh && dmNow.current.use ? withDmCta(fresh, dmNow.current.keyword) : fresh)
       setPreviewedAffiliateUrl((data.affiliateUrl as string) ?? null)
       setPreviewLoaded(true)
     } catch (err) {
@@ -397,6 +405,7 @@ export function InstagramPublishModal({
           mode,
           caption: sendsFeedCaption ? previewedReelCaption : undefined,
           socialAccountId: selectedIgAccountId || undefined,
+          ...dmBody(),
         }),
       })
       const data = await res.json().catch(() => ({ error: `HTTP ${res.status}` }))
@@ -405,6 +414,11 @@ export function InstagramPublishModal({
       if (!res.ok) throw new Error(data.error || (Array.isArray(data.warnings) && data.warnings.length ? data.warnings.join(' · ') : '') || 'Publish failed')
 
       if (data.reelId || data.imagePostId) onReelPosted()
+      // What happened to the Auto-DM, said (the window closes on success).
+      if (data.autoDmWords) {
+        if (data.autoDm) toast.success(String(data.autoDmWords), { duration: 10000 })
+        else toast.error(String(data.autoDmWords), { duration: 12000 })
+      }
       if (data.storyId) onStoryPosted(data.affiliateUrl ?? '')
 
       if (Array.isArray(data.warnings) && data.warnings.length > 0) {
@@ -797,21 +811,17 @@ export function InstagramPublishModal({
             </div>
           )}
 
-          {/* Auto-DM status — the global rule already covers this post; we just
-              surface it. It's especially relevant here: the feed post can't carry
-              a clickable link, and comment→DM is the workaround. */}
-          {dmEnabled !== null && (
-            dmEnabled ? (
-              <div className="flex items-start gap-1.5 rounded-lg border px-3 py-2 text-[11px] text-[#6e6e73] dark:text-[#a1a1a6]"
-                style={{ background: 'rgba(225,48,108,0.06)', borderColor: 'rgba(225,48,108,0.22)' }}>
-                <MessageCircle size={13} className="text-[#E1306C] flex-shrink-0 mt-0.5" />
-                <span><strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Auto-DM is on.</strong> A comment of “{dmKeyword}” on this post will DM your affiliate link automatically, the workaround for Instagram’s no-clickable-link rule.</span>
+          {/* Auto-DM: comment a keyword, get this post's link in a DM. */}
+          {canUseIgDm(aiTier) && (
+            dmAvailable ? (
+              <div className="mb-3">
+                <ReelAutoDm postId={postId} onChange={setDm} />
               </div>
             ) : (
-              <Link href="/instagram-dm" className="flex items-start gap-1.5 rounded-lg border border-gray-200 dark:border-white/10 bg-black/[0.02] dark:bg-white/[0.03] px-3 py-2 text-[11px] text-[#6e6e73] dark:text-[#a1a1a6] hover:border-[#E1306C]/40 transition-colors">
+              <p className="mb-3 flex items-start gap-1.5 text-[11px] text-[#86868b]">
                 <MessageCircle size={13} className="text-[#E1306C] flex-shrink-0 mt-0.5" />
-                <span><strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Turn on Auto-DM</strong> so a comment fetches your link automatically, since this feed post can’t carry a clickable link. Set it up →</span>
-              </Link>
+                No Auto-DM on a Story: Instagram Stories take no comments. Post a {videoKind === 'horizontal' ? 'feed post' : 'Reel'} too to give it Auto-DM.
+              </p>
             )
           )}
 

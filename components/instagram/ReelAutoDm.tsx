@@ -46,6 +46,7 @@ const isLink = (u: string) => /^https?:\/\//i.test(u.trim())
 
 export default function ReelAutoDm({
   videoId,
+  postId,
   product,
   defaultDmLink,
   productName,
@@ -53,6 +54,8 @@ export default function ReelAutoDm({
 }: {
   /** The source video (youtube_videos.id), for its blog post and product. */
   videoId?: string
+  /** A blog post (blog_posts.id), for its own address and product. */
+  postId?: string
   /** The clip's product link (Clip Factory's Enhance step). */
   product?: string
   /** Prefills the link when MVP finds no choices. */
@@ -70,6 +73,7 @@ export default function ReelAutoDm({
   useEffect(() => {
     const q = new URLSearchParams()
     if (videoId) q.set('videoId', videoId)
+    if (postId) q.set('postId', postId)
     if (product && product.trim()) q.set('product', product.trim())
     else if (defaultDmLink && defaultDmLink.trim()) q.set('product', defaultDmLink.trim())
     let gone = false
@@ -86,7 +90,7 @@ export default function ReelAutoDm({
       })
       .catch(() => { if (!gone) setChoices([]) })
     return () => { gone = true }
-  }, [videoId, product, defaultDmLink])
+  }, [videoId, postId, product, defaultDmLink])
 
   // On by default once a link is ready.
   const defaulted = useRef(false)

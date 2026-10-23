@@ -12,7 +12,9 @@ export function dmCtaLine(keyword: string): string {
 }
 
 const OURS = /Comment\s+\S+\s+and I[’']ll DM you the link\.?/i
-const BIO = /(?:\u{1F449}\s*)?(?:shop the )?link (?:is )?in (?:my |the )?bio[.!]?/iu
+// "Link in bio to shop" (Amazon and deal posts) is replaced whole, so no
+// "... the link. to shop" is left behind.
+const BIO = /(?:\u{1F449}\s*)?(?:shop the )?link (?:is )?in (?:my |the )?bio(?: to (?:shop|buy)(?: it| this)?)?[.!]?/iu
 
 /**
  * The caption with the Auto-DM line in place (keyword given) or back to

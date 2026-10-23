@@ -23,6 +23,7 @@ import { recordAnthropicUsage } from '@/lib/ai-usage'
 import { scrubReviewLanguage } from '@/lib/deal-scrub'
 import { scrubBanned } from '@/lib/scrub'
 import type { Tier } from '@/lib/tier'
+import { autoDmPlan, captionForPlan, finishAutoDm, autoDmWords, type AutoDmChoice, type AutoDmOutcome } from '@/lib/ig-auto-dm'
 
 export interface SocialIntegration extends PinIntegration {
   instagram_user_id?: string | null
@@ -251,7 +252,10 @@ export async function publishToInstagram(opts: {
   /** Send the clicks to the creator's TikTok Shop showcase instead of Amazon. */
   useShowcase?: boolean
   showcaseUrl?: string | null
-}): Promise<{ id: string; url: string | null; caption: string; linkUrl: string; note: string | null; destinationKind?: 'amazon' | 'showcase' }> {
+  /** The post's own Auto-DM (lib/ig-auto-dm): a window's choice, false when
+   *  unticked, or left out for the automatic one. */
+  autoDm?: AutoDmChoice
+}): Promise<{ id: string; url: string | null; caption: string; linkUrl: string; note: string | null; destinationKind?: 'amazon' | 'showcase'; autoDm?: AutoDmOutcome | null }> {
   const { intRow } = opts
   if (!intRow.instagram_user_id || !intRow.instagram_access_token) throw new Error('Instagram is not connected.')
   const isStory = opts.postType === 'story'
@@ -265,6 +269,19 @@ export async function publishToInstagram(opts: {
   caption = finalizeSocialCaption(caption)
   // IG can't put a clickable link in the caption — route through Link-in-Bio.
   if (!/link in bio/i.test(caption)) caption = `${caption}\n\n🔗 Link in bio to shop`
+
+  // AUTO-DM ON EVERY FEED POST (lib/ig-auto-dm): this product's Link in Bio
+  // page when MVP knows the product, else the link the post sends people to.
+  // The tile is put on the page below, so the plan does not add it again. A
+  // Story takes no comments.
+  const dmPlan = isStory ? null : await autoDmPlan(opts.db, {
+    userId: opts.userId, tier: opts.tier, choice: opts.autoDm,
+    find: asin && !opts.useShowcase ? { product: `https://www.amazon.com/dp/${asin}` } : undefined,
+    link: linkUrl || null,
+    igUserId: intRow.instagram_user_id, accessToken: intRow.instagram_access_token,
+  })
+  if (dmPlan) dmPlan.tile = null
+  caption = captionForPlan(caption, dmPlan)
 
   // The whole point: the posted product lands in the bio shop grid. A Story
   // marks it live in the "in my story" section so followers can tap link-in-bio
@@ -293,6 +310,11 @@ export async function publishToInstagram(opts: {
   })
   // PULSE ON EVERY PLATFORM (lib/reach-pulse trackPost); a Story has no caption.
   if (!isStory) await trackPost({ userId: opts.userId, platform: 'instagram', postId: mediaId, caption, productText: opts.productTitle || null })
+  // The post's own Auto-DM, reported in the note as it went (never assumed).
+  const dmOut = await finishAutoDm(opts.db, dmPlan, {
+    userId: opts.userId, mediaId, caption, productName: opts.productTitle || null,
+    igUserId: intRow.instagram_user_id, accessToken: intRow.instagram_access_token,
+  })
   // THE ADDRESS META REPORTS, NOT ONE BUILT FROM THE ID. /p/<mediaId> was dead
   // on every post. No permalink means no link (null), and the id is still kept.
   return {
@@ -301,6 +323,10 @@ export async function publishToInstagram(opts: {
       ? `https://www.instagram.com/${intRow.instagram_username || ''}`
       : await getMediaPermalink({ mediaId, accessToken: intRow.instagram_access_token }),
     caption, linkUrl,
-    note: [note, tileNote].filter(Boolean).join(' ') || note,
+    // The note is a warning on every screen that shows it, so only an Auto-DM
+    // that failed, or that waits on Instagram, goes in it; one that is on is
+    // returned as autoDm.
+    note: [note, tileNote, dmOut && (!dmOut.ok || !dmOut.ready) ? autoDmWords(dmOut) : null].filter(Boolean).join(' ') || note,
+    autoDm: dmOut,
   }
 }

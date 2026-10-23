@@ -96,7 +96,7 @@ for (const [name, src] of [['pinterest', PIN], ['instagram', SOCIAL]] as const) 
     /Promise<string \| null>/.test(SOCIAL),
     'a void return is how this failed invisibly the first time')
   check('instagram: and the caller folds it into the post note',
-    /tileNote/.test(SOCIAL) && /\[note, tileNote\]/.test(SOCIAL),
+    /tileNote/.test(SOCIAL) && /\[note, tileNote[,\]]/.test(SOCIAL),
     'a note nobody prints is the same as no note')
   check('pinterest: keeps its own tile error surface',
     /tileError/.test(PIN))

@@ -116,7 +116,10 @@ async function main() {
   check('Clip Factory passes the source video too', /videoId=\{clip\?\.sourceVideoId \|\| selectedVideo\?\.id/.test(read('components/clip-factory/ClipFactory.tsx')))
   check('Shorts Studio passes the video so its blog post can be found', /videoId=\{videoId\}/.test(read('components/content/ShortsStudioModal.tsx')))
   const pub = read('app/api/instagram/publish-burned/route.ts')
-  check('a DM to the Link in Bio page puts the product on that page', /dm\.kind === 'shop'[\s\S]*syncLinkInBioTile/.test(pub))
+  // Since 2026-10-23 every post's Auto-DM goes through lib/ig-auto-dm, which
+  // puts the product on the page for a chosen or an automatic Link in Bio link.
+  const auto = read('lib/ig-auto-dm.ts')
+  check('a DM to the Link in Bio page puts the product on that page', /finishAutoDm\(sb, dmPlan/.test(pub) && /kind === 'shop' && opts\.find/.test(auto) && /if \(plan\.tile\)[\s\S]*syncLinkInBioTile\(sb, post\.userId, plan\.tile, false\)/.test(auto))
   check('a blog or shop DM link never becomes a product tile', /dmIsProduct/.test(pub))
 
   if (failed) { console.error(`\n${failed} Auto-DM check(s) failed`); process.exit(1) }

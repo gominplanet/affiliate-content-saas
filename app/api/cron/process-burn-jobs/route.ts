@@ -15,6 +15,7 @@ import { maybeDecrypt } from '@/lib/secrets'
 import { overlayCaptionOnVideo, getLastOverlayError, type OverlayPosition, type CaptionStyle } from '@/services/cloudinary'
 import { researchProductContext, composeReelCaption } from '@/lib/ig-burn'
 import { publishMedia } from '@/services/instagram'
+import { autoDmPlan, captionForPlan, finishAutoDm } from '@/lib/ig-auto-dm'
 import { recordReachSample } from '@/lib/reach-pulse'
 import { recordUsage } from '@/lib/ai-usage'
 import { checkSpendCeiling } from '@/lib/ai-spend'
@@ -194,21 +195,32 @@ export async function GET(request: Request) {
     const reelCaption = productContext ? await composeReelCaption(productContext, ctx) : null
 
     // 3. Publish the Reel to the user's connected Instagram (default account).
-    //    Credentials were resolved in step 0.
+    //    Credentials were resolved in step 0. AUTO-DM ON EVERY REEL (lib/
+    //    ig-auto-dm): the job's product link with the creator's keyword.
+    // The job's product is a link, an ASIN, or a few words (no link then).
+    const product = String(job.product ?? '').trim()
+    const productLink = /^https?:\/\//i.test(product) ? product
+      : /^[A-Z0-9]{10}$/i.test(product) ? `https://www.amazon.com/dp/${product.toUpperCase()}` : null
+    const dmPlan = await autoDmPlan(admin, {
+      userId: job.user_id, tier, find: productLink ? { product: productLink } : undefined,
+      igUserId, accessToken: igToken,
+    })
+    const finalCaption = captionForPlan(reelCaption ?? job.caption_text, dmPlan)
     const reelMediaId = await publishMedia({
       userId: igUserId,
       accessToken: igToken,
       mediaType: 'REELS',
       videoUrl: burned.url,
-      caption: reelCaption ?? job.caption_text,
+      caption: finalCaption,
       shareToFeed: true,
     })
+    await finishAutoDm(admin, dmPlan, { userId: job.user_id, mediaId: reelMediaId, caption: finalCaption, videoUrl: burned.url, igUserId, accessToken: igToken })
 
     // Pulse: learn which tags this Reel used (best-effort, non-blocking).
     void recordReachSample({
       userId: job.user_id,
       mediaId: reelMediaId,
-      caption: reelCaption ?? job.caption_text,
+      caption: finalCaption,
       productText: productContext || null,
     })
 

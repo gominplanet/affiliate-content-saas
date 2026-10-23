@@ -24,6 +24,7 @@ import { Instagram, MessageCircle, Loader2, Info, Trash2, Flame, ExternalLink, R
 import { canUseIgDm } from '@/lib/ig-dm-access'
 import FacebookDmStatus from '@/components/instagram/FacebookDmStatus'
 import InstagramDmStatus from '@/components/instagram/InstagramDmStatus'
+import { renderMessage } from '@/lib/ig-dm-message'
 
 const EXAMPLE_LINK = 'https://mvpl.ink/abc123'
 const DEFAULT_TEMPLATE = 'Here you go 🔗 {link}'
@@ -81,6 +82,7 @@ function InstagramDm({ team }: { team: boolean }) {
   const [template, setTemplate] = useState(DEFAULT_TEMPLATE)
   const [replyToComment, setReplyToComment] = useState(true)
   const [anyPost, setAnyPost] = useState(true)
+  const [mvpPosts, setMvpPosts] = useState(true)
   const [fallbackLink, setFallbackLink] = useState('')
   const [campaigns, setCampaigns] = useState<Campaign[]>([])
   const [posts, setPosts] = useState<IgPost[]>([])
@@ -105,6 +107,7 @@ function InstagramDm({ team }: { team: boolean }) {
         setTemplate(s.message_template || DEFAULT_TEMPLATE)
         setReplyToComment(s.reply_to_comment !== false)
         setAnyPost(s.any_post !== false)
+        setMvpPosts(s.mvp_posts !== false)
         setFallbackLink(s.fallback_link || '')
       })
       .catch(() => { /* keep defaults */ })
@@ -135,7 +138,10 @@ function InstagramDm({ team }: { team: boolean }) {
       .finally(() => setPostsLoading(false))
   }
 
-  const preview = template.includes('{link}') ? template.replace(/\{link\}/g, EXAMPLE_LINK) : `${template}\n${EXAMPLE_LINK}`
+  // The DM as it goes out for an Amazon product, built by the code that sends
+  // it: the disclosure and the store line included, which the old preview
+  // left out.
+  const preview = renderMessage(template, EXAMPLE_LINK, true)
 
   async function save() {
     setSaving(true)
@@ -143,7 +149,7 @@ function InstagramDm({ team }: { team: boolean }) {
       const res = await fetch('/api/instagram/dm-settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ enabled, keyword, message_template: template, reply_to_comment: replyToComment, any_post: anyPost, fallback_link: fallbackLink }),
+        body: JSON.stringify({ enabled, keyword, message_template: template, reply_to_comment: replyToComment, any_post: anyPost, fallback_link: fallbackLink, mvp_posts: mvpPosts }),
       })
       const d = await res.json().catch(() => ({}))
       if (!res.ok) { toast.error(d.error || 'Could not save'); return }
@@ -256,22 +262,36 @@ function InstagramDm({ team }: { team: boolean }) {
               </p>
             </div>
 
+            {/* POSTS MVP MAKES (Seb, 2026-10-23: "anywhere a user can use
+                instagram, this auto dm feature should be set up and ready to
+                use"): each gets its own keyword and link (lib/ig-auto-dm). */}
+            <label className="flex items-start gap-3 cursor-pointer">
+              <input type="checkbox" checked={mvpPosts} onChange={e => setMvpPosts(e.target.checked)}
+                className="mt-0.5 w-4 h-4 rounded accent-[#E1306C]" />
+              <div>
+                <p className="text-sm font-semibold" style={{ color: 'var(--text)' }}>Auto-DM on every post MVP makes</p>
+                <p className="text-[12px]" style={{ color: 'var(--text-faint)' }}>
+                  Reels and posts from Clip Factory, Shorts, blog posts, Amazon and deal posts, the Instagram burner and your schedules each DM their own product link when someone comments your keyword, and the caption says so. You can change the link or untick it in each posting window. Stories take no comments, so they never get one.
+                </p>
+              </div>
+            </label>
+
             <label className="flex items-start gap-3 cursor-pointer">
               <input type="checkbox" checked={enabled} onChange={e => setEnabled(e.target.checked)}
                 className="mt-0.5 w-4 h-4 rounded accent-[#E1306C]" />
               <div>
-                <p className="text-sm font-semibold" style={{ color: 'var(--text)' }}>Turn on comment → auto-DM</p>
-                <p className="text-[12px]" style={{ color: 'var(--text-faint)' }}>Posts with their own keyword below work even when this is off.</p>
+                <p className="text-sm font-semibold" style={{ color: 'var(--text)' }}>Also on posts without their own Auto-DM</p>
+                <p className="text-[12px]" style={{ color: 'var(--text-faint)' }}>Older posts, and posts you made in the Instagram app. A blog post MVP published sends its product link; with the box below, any other post sends your backup link. Posts with their own Auto-DM work either way.</p>
               </div>
             </label>
 
             <div>
               <label htmlFor="ig-dm-keyword" className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text)' }}>Trigger keyword</label>
-              <input id="ig-dm-keyword" value={keyword} onChange={e => setKeyword(e.target.value)} maxLength={40}
+              <input id="ig-dm-keyword" value={keyword} onChange={e => setKeyword(e.target.value.replace(/\s+/g, ''))} maxLength={30}
                 className="w-full px-3 py-2 rounded-lg border bg-transparent text-sm"
                 style={{ borderColor: 'var(--border-bright)', color: 'var(--text)' }} placeholder="LINK" />
               <p className="text-[11px] mt-1" style={{ color: 'var(--text-faint)' }}>
-                Matched as a whole word, in any case. A comment of “link please!” triggers on “LINK”.
+                One word, matched in any case. A comment of “link please!” triggers on “LINK”. New posts MVP makes use it.
               </p>
             </div>
 

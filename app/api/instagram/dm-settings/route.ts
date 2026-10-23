@@ -5,7 +5,7 @@
  */
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
-import { stripStopLine } from '@/lib/ig-dm'
+import { stripStopLine, oneWordKeyword } from '@/lib/ig-dm'
 
 export const dynamic = 'force-dynamic'
 
@@ -17,6 +17,9 @@ const DEFAULTS = {
   // Every post on the account, not only MVP's (migration 422).
   any_post: true,
   fallback_link: null as string | null,
+  // Every post MVP makes gets its own Auto-DM with its own link (migration
+  // 454, lib/ig-auto-dm). On unless the creator turns it off.
+  mvp_posts: true,
 }
 
 export async function GET() {
@@ -29,7 +32,7 @@ export async function GET() {
     .eq('user_id', user.id).maybeSingle()
   // Read whole, so the two columns migration 422 adds read as their defaults
   // until it runs, and the saved template comes back without the STOP line.
-  const settings = data ? { ...DEFAULTS, ...data, any_post: data.any_post !== false, message_template: stripStopLine(data.message_template) || DEFAULTS.message_template } : DEFAULTS
+  const settings = data ? { ...DEFAULTS, ...data, any_post: data.any_post !== false, mvp_posts: data.mvp_posts !== false, message_template: stripStopLine(data.message_template) || DEFAULTS.message_template } : DEFAULTS
   return NextResponse.json({ settings })
 }
 
@@ -40,10 +43,11 @@ export async function POST(req: Request) {
 
   const body = (await req.json().catch(() => ({}))) as {
     enabled?: boolean; keyword?: string; message_template?: string; reply_to_comment?: boolean
-    any_post?: boolean; fallback_link?: string | null
+    any_post?: boolean; fallback_link?: string | null; mvp_posts?: boolean
   }
 
-  const keyword = (body.keyword ?? DEFAULTS.keyword).trim().slice(0, 40)
+  // One word, as every post's own Auto-DM saves and matches it (lib/ig-dm-message).
+  const keyword = oneWordKeyword(body.keyword ?? DEFAULTS.keyword, '')
   const message_template = stripStopLine(body.message_template ?? DEFAULTS.message_template).slice(0, 900)
   const fallback_link = String(body.fallback_link ?? '').trim() || null
   if (fallback_link && !/^https?:\/\/\S+$/i.test(fallback_link)) {
@@ -68,6 +72,14 @@ export async function POST(req: Request) {
   }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { error } = await (supabase as any).from('ig_dm_settings').upsert(row, { onConflict: 'user_id' })
+  // "Posts MVP makes" is written on its own, so a database without migration
+  // 454 still saves everything else, and says so rather than refusing.
+  let mvpWarning: string | null = null
+  if (!error && typeof body.mvp_posts === 'boolean') {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { error: mErr } = await (supabase as any).from('ig_dm_settings').update({ mvp_posts: body.mvp_posts }).eq('user_id', user.id)
+    if (mErr) mvpWarning = 'Saved, except "posts MVP makes": MVP\u2019s database needs an update first. Let MVP support know.'
+  }
   if (error && /any_post|fallback_link/i.test(error.message)) {
     // Migration 422 not run yet: save the rest and say so, rather than refuse
     // the whole save over two new columns.
@@ -79,5 +91,5 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true, settings: row, warning: 'Saved, except "every post" and the backup link: run migration 422 in Supabase first.' })
   }
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-  return NextResponse.json({ ok: true, settings: row })
+  return NextResponse.json({ ok: true, settings: { ...row, mvp_posts: body.mvp_posts !== false }, ...(mvpWarning ? { warning: mvpWarning } : {}) })
 }

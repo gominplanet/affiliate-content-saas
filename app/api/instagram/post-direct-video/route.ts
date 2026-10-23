@@ -21,8 +21,8 @@ import { getPublishContext } from '@/lib/agency-publish'
 import { maybeDecrypt } from '@/lib/secrets'
 import { encryptIntegrationWrite } from '@/lib/integration-secrets'
 import { tierAllowsSocial, type Tier } from '@/lib/tier'
-import { publishMedia, refreshLongLivedToken, subscribeToComments } from '@/services/instagram'
-import { attachReelAutoDm } from '@/lib/ig-dm'
+import { publishMedia, refreshLongLivedToken } from '@/services/instagram'
+import { autoDmPlan, captionForPlan, finishAutoDm, autoDmWords } from '@/lib/ig-auto-dm'
 import { addPostedProductToBio } from '@/lib/link-bio-import'
 import { fitHashtags } from '@/lib/hashtag-engine'
 
@@ -36,9 +36,9 @@ export async function POST(request: Request) {
   if ('error' in pub) return pub.error
   const { supabase, user } = pub
 
-  // autoDm: commenting `keyword` on the Reel DMs `link` (lib/ig-dm), as the
-  // TikTok window's "Also post to Instagram" offers it.
-  let body: { videoId?: string; caption?: string; mode?: Mode; autoDm?: { link?: string; keyword?: string; productName?: string } }
+  // autoDm: the Reel's own Auto-DM (lib/ig-auto-dm), the window's choice,
+  // false when unticked, or left out for the automatic one.
+  let body: { videoId?: string; caption?: string; mode?: Mode; autoDm?: { link?: string; keyword?: string; productName?: string; kind?: string } | false }
   try { body = await request.json() } catch { return NextResponse.json({ error: 'Bad request' }, { status: 400 }) }
 
   const videoId = (body.videoId || '').trim()
@@ -100,11 +100,16 @@ export async function POST(request: Request) {
 
   // The hashtag safety net (lib/hashtag-engine): each tag once, no spam or
   // years, and no more than Instagram takes with #ad counted.
-  const caption = fitHashtags((body.caption || '').slice(0, 2200), 'instagram')
-
-  // ── Publish ──────────────────────────────────────────────────────────────
   const wantReel = mode === 'reel' || mode === 'both'
   const wantStory = mode === 'story' || mode === 'both'
+
+  // AUTO-DM ON EVERY REEL (lib/ig-auto-dm). A Story takes no comments.
+  const dmPlan = wantReel
+    ? await autoDmPlan(sb, { userId: user.id, tier, choice: body.autoDm, find: { videoId }, igUserId, accessToken })
+    : null
+  const caption = captionForPlan(fitHashtags((body.caption || '').slice(0, 2200), 'instagram'), dmPlan)
+
+  // ── Publish ──────────────────────────────────────────────────────────────
 
   let reelId: string | null = null
   let storyId: string | null = null
@@ -161,21 +166,9 @@ export async function POST(request: Request) {
   }
 
   // The Reel's own Auto-DM, reported as it went (never assumed).
-  let autoDm = false
-  let autoDmError: string | null = null
-  let autoDmKeyword: string | null = null
-  if (body.autoDm) {
-    const att = await attachReelAutoDm(sb, {
-      userId: user.id, mediaId: reelId, keyword: body.autoDm.keyword, link: body.autoDm.link,
-      productName: body.autoDm.productName, caption, videoUrl,
-    })
-    if (att.ok) {
-      autoDm = true
-      autoDmKeyword = att.keyword
-      // Make sure this account receives comment webhooks (idempotent).
-      try { await subscribeToComments({ igUserId, accessToken: accessToken! }) } catch { /* non-fatal */ }
-    } else autoDmError = reelId ? att.error : 'Only a Reel takes Auto-DM, and no Reel was posted.'
-  }
+  const dmOut = reelId
+    ? await finishAutoDm(sb, dmPlan, { userId: user.id, mediaId: reelId, caption, videoUrl, productName: body.autoDm ? body.autoDm.productName : null, igUserId, accessToken })
+    : null
 
   // PULSE ON EVERY PLATFORM (lib/reach-pulse trackPost): the Reel's tags.
   if (reelId) await trackPost({ userId: user.id, platform: 'instagram', postId: reelId, caption })
@@ -183,9 +176,11 @@ export async function POST(request: Request) {
     ok: true,
     reelId,
     storyId,
-    autoDm,
-    autoDmError,
-    autoDmKeyword,
+    autoDm: !!dmOut?.ok,
+    autoDmError: dmOut && !dmOut.ok ? dmOut.error : null,
+    autoDmKeyword: dmOut?.ok ? dmOut.keyword : null,
+    autoDmLink: dmOut?.ok ? dmOut.link : null,
+    autoDmWords: autoDmWords(dmOut),
     partialErrors: errors.length ? errors : undefined,
   })
 }

@@ -99,6 +99,7 @@ export default function TikTokPublishPage() {
   const [alsoInstagram, setAlsoInstagram] = useState(false)
   const [igResult, setIgResult] = useState<'idle' | 'posting' | 'done' | 'failed'>('idle')
   const [igError, setIgError] = useState<string | null>(null)
+  const [igDmWords, setIgDmWords] = useState<{ ok: boolean; text: string } | null>(null)
   // Schedule-for-later
   const [scheduleOpen, setScheduleOpen] = useState(false)
   const [scheduleAt, setScheduleAt] = useState('')
@@ -287,6 +288,8 @@ export default function TikTokPublishPage() {
             body: JSON.stringify({ videoId: meta.videoId, caption, mode: 'reel' }),
           })
           const igJson = await igRes.json()
+          // The Reel's own Auto-DM, as the route reports it (lib/ig-auto-dm).
+          setIgDmWords(igRes.ok && igJson.autoDmWords ? { ok: !!igJson.autoDm, text: String(igJson.autoDmWords) } : null)
           if (igRes.ok) setIgResult('done')
           else { setIgResult('failed'); setIgError(igJson.error || 'Instagram post failed.') }
         } catch (e) {
@@ -652,6 +655,9 @@ export default function TikTokPublishPage() {
           )}
           {igResult === 'done' && (
             <p className="mb-2 text-[11px] text-[#34c759] flex items-center gap-1.5"><CheckCircle size={11} /> Sent to Instagram too.</p>
+          )}
+          {igResult === 'done' && igDmWords && (
+            <p className={`mb-2 text-[11px] ${igDmWords.ok ? 'text-[#34c759]' : 'text-[#ff3b30]'}`}>{igDmWords.text}</p>
           )}
           {igResult === 'failed' && (
             <p className="mb-2 text-[11px] text-[#ff3b30] flex items-center gap-1.5"><AlertCircle size={11} /> Instagram: {igError || 'failed'} (TikTok was unaffected.)</p>

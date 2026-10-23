@@ -24,6 +24,7 @@ import { resolveCloakedLinkDetailed, cloakFallbackNote, getLinkStyle } from '@/l
 import { CHANNEL_GROUP_NAMES, channelKey } from '@/lib/geniuslink-group'
 import type { Tier } from '@/lib/tier'
 import { fetchAmazonProduct } from '@/services/amazon'
+import { autoDmWords } from '@/lib/ig-auto-dm'
 
 /** A deal from the member's own Deals Hub file (components/deals/DealsHubImport),
  *  stored on its scheduled row (migration 445, deal_known). Deal Radar never
@@ -369,8 +370,14 @@ Return ONLY the caption text.` }],
         useShowcase: destination.kind === 'showcase',
         showcaseUrl: destination.kind === 'showcase' ? destination.url : null,
       })
+      // The post's own Auto-DM (lib/ig-auto-dm): one that failed or waits on
+      // Instagram is in ig.note, said below like every other note. A note is
+      // a warning on this window, so one that is on is not put here.
       results.push({ platform: 'instagram', ok: true, url: ig.url ?? undefined })
       if (ig.note && !geniuslinkNote) geniuslinkNote = ig.note
+      // An earlier note must not hide one about the Auto-DM.
+      const dmNote = ig.autoDm && (!ig.autoDm.ok || !ig.autoDm.ready) ? autoDmWords(ig.autoDm) : null
+      if (dmNote && geniuslinkNote && !geniuslinkNote.includes(dmNote)) geniuslinkNote = `${geniuslinkNote} ${dmNote}`
     } catch (e) {
       results.push({ platform: 'instagram', ok: false, error: e instanceof Error ? e.message : 'Instagram post failed.' })
     }

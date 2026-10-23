@@ -72,7 +72,7 @@ const read = (f: string) => readFileSync(f, 'utf8')
 
   for (const f of ['app/api/instagram/publish-burned/route.ts', 'app/api/instagram/post-direct-video/route.ts']) {
     const R = read(f)
-    check(`${f} attaches Auto-DM through the shared helper`, /attachReelAutoDm\(sb, \{/.test(R))
+    check(`${f} attaches Auto-DM through the shared helper`, /autoDmPlan\(sb, \{/.test(R) && /finishAutoDm\(sb, dmPlan/.test(R))
     check(`${f} says what happened to it`, /autoDmError/.test(R) && /autoDmKeyword/.test(R))
   }
   check('no route cuts the keyword on its own any more', !/split\(\/\\s\+\/\)\[0\]/.test(read('app/api/instagram/publish-burned/route.ts')))

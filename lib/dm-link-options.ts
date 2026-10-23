@@ -41,26 +41,51 @@ function origin(): string {
   return (process.env.NEXT_PUBLIC_APP_URL || 'https://www.mvpaffiliate.io').replace(/\/+$/, '')
 }
 
-export async function dmLinkOptions(db: Db, userId: string, input: { videoId?: string | null; product?: string | null }): Promise<DmLinkOptions> {
+/** The automatic pick for a post nobody chose a link for in a window (lib/
+ *  ig-auto-dm): this product's Link in Bio page, its blog post, its product
+ *  link, and the whole shop only when nothing names the product. Pure. */
+export function autoDmLink(o: DmLinkOptions): DmLinkOption | null {
+  const productPage = o.asin ? o.options.find((x) => x.kind === 'shop') : undefined
+  return productPage ?? o.options.find((x) => x.kind === 'blog') ?? o.options.find((x) => x.kind === 'amazon') ?? o.options.find((x) => x.kind === 'shop') ?? null
+}
+
+export async function dmLinkOptions(db: Db, userId: string, input: { videoId?: string | null; product?: string | null; postId?: string | null }): Promise<DmLinkOptions> {
   let asin: string | null = null
   let title = ''
   let productUrl = String(input.product ?? '').trim()
   let blogUrl: string | null = null
   let blogAsin: string | null = null
 
+  // A blog post (the blog's Instagram window, a scheduled blog post): its own
+  // address and product, and its video when it has one.
+  let videoId = String(input.videoId ?? '').trim()
+  const postId = String(input.postId ?? '').trim()
+  if (postId) {
+    try {
+      const { data: p } = await db.from('blog_posts').select('title,wordpress_url,content,video_id')
+        .eq('id', postId).eq('user_id', userId).maybeSingle()
+      if (p) {
+        title = String(p.title ?? '')
+        const u = String(p.wordpress_url ?? '').trim()
+        if (/^https?:\/\//i.test(u)) blogUrl = u
+        blogAsin = postProductAsin(p)
+        if (!videoId && p.video_id) videoId = String(p.video_id)
+      }
+    } catch { /* no post */ }
+  }
+
   // The video: its product and its blog post.
-  const videoId = String(input.videoId ?? '').trim()
   if (videoId) {
     try {
       const { data: v } = await db.from('youtube_videos').select('id,title,asin,product_url')
         .eq('id', videoId).eq('user_id', userId).maybeSingle()
       if (v) {
-        title = String(v.title ?? '')
+        if (!title) title = String(v.title ?? '')
         asin = (String(v.asin ?? '').trim().toUpperCase() || null)
         if (!productUrl) productUrl = String(v.product_url ?? '').trim()
       }
     } catch { /* no video row */ }
-    try {
+    if (!blogUrl) try {
       const { data: p } = await db.from('blog_posts').select('wordpress_url,content')
         .eq('user_id', userId).eq('video_id', videoId).not('wordpress_url', 'is', null)
         .order('created_at', { ascending: false }).limit(1).maybeSingle()

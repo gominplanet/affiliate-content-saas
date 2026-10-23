@@ -61,7 +61,7 @@ export default function PostComposer({ network, presetProduct }: { network: Netw
   const [scheduleAt, setScheduleAt] = useState('')
   const [pubBusy, setPubBusy] = useState(false)
   const [pubError, setPubError] = useState<string | null>(null)
-  const [result, setResult] = useState<{ postUrl?: string; scheduledAt?: string; note: string | null; queued?: string } | null>(null)
+  const [result, setResult] = useState<{ postUrl?: string; scheduledAt?: string; note: string | null; queued?: string; autoDm?: string | null } | null>(null)
 
   // ── The image this creator already approved for this product ──────────────
   // Offered, never imposed. Pre-fills the preview so posting the same ASIN to
@@ -198,6 +198,8 @@ export default function PostComposer({ network, presetProduct }: { network: Netw
         // destinationNote is set on the scheduled path, geniuslinkNote on the
         // immediate one. Either can say the showcase was asked for and not used.
         note: (data.geniuslinkNote as string) || (data.destinationNote as string) || null,
+        // Instagram Auto-DM on this post (lib/ig-auto-dm), said when it is on.
+        autoDm: (data.autoDmWords as string) || null,
       })
       // Tell the queue on this page to reload, so a post they just scheduled
       // appears in the list right below instead of after a refresh.
@@ -389,6 +391,7 @@ export default function PostComposer({ network, presetProduct }: { network: Netw
                   </span>
                 )}
                 {result.note && <p className="text-[12.5px] leading-relaxed" style={{ color: 'var(--text)' }}>{result.note}</p>}
+                {result.autoDm && <p className="text-[12.5px] leading-relaxed text-[#16a34a]">{result.autoDm}</p>}
               </div>
             )}
           </div>

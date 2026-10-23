@@ -379,11 +379,11 @@ export function TikTokDirectModal({
           const igRes = isBurned
             ? await fetch('/api/instagram/publish-burned', {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ videoUrl: burnedVideoUrl, caption: igCaption, product, productTitle, sourceYoutubeVideoId, ...(dm ? { autoDm: dm } : {}) }),
+                body: JSON.stringify({ videoUrl: burnedVideoUrl, caption: igCaption, product, productTitle, sourceYoutubeVideoId, ...(igDmAvailable ? { autoDm: dm ?? false } : {}) }),
               })
             : await fetch('/api/instagram/post-direct-video', {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ videoId, caption: igCaption, mode: 'reel', ...(dm ? { autoDm: dm } : {}) }),
+                body: JSON.stringify({ videoId, caption: igCaption, mode: 'reel', ...(igDmAvailable ? { autoDm: dm ?? false } : {}) }),
               })
           const igJson = await igRes.json().catch(() => ({}))
           if (igRes.ok && igJson.bio?.note) setBioNote((cur) => cur ?? { ok: igJson.bio.state === 'added', text: String(igJson.bio.note) })

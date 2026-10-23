@@ -8,6 +8,7 @@
 import { publishMedia, refreshLongLivedToken } from '@/services/instagram'
 import { maybeDecrypt, maybeEncrypt } from '@/lib/secrets'
 import type { PublishTarget } from '@/lib/tiktok-publish'
+import { autoDmPlan, captionForPlan, finishAutoDm, type AutoDmOutcome } from '@/lib/ig-auto-dm'
 
 export type IgMode = 'reel' | 'story' | 'both'
 
@@ -22,14 +23,14 @@ export async function publishInstagramForTarget(
   target: PublishTarget,
   caption: string,
   mode: IgMode = 'reel',
-): Promise<{ reelId: string | null; storyId: string | null }> {
+): Promise<{ reelId: string | null; storyId: string | null; autoDm?: AutoDmOutcome | null }> {
   const blogPostId = target.blogPostId || null
   const videoId0 = target.videoId || null
   if (!blogPostId && !videoId0) throw new Error('Nothing to post — no blog post or video given.')
 
   const { data: integ } = await sb
     .from('integrations')
-    .select('instagram_user_id,instagram_access_token,instagram_token_expiry')
+    .select('tier,instagram_user_id,instagram_access_token,instagram_token_expiry')
     .eq('user_id', userId)
     .single()
   // DECRYPT ON READ, ENCRYPT ON WRITE (2026-10-06 security audit). The
@@ -85,9 +86,14 @@ export async function publishInstagramForTarget(
     throw new Error('No vertical MP4 for this — add a 9:16 render before it can post.')
   }
 
-  const cap = (caption || '').slice(0, 2200)
   const wantReel = mode === 'reel' || mode === 'both'
   const wantStory = mode === 'story' || mode === 'both'
+  // AUTO-DM ON EVERY REEL (lib/ig-auto-dm), scheduled ones too: this post's
+  // own link with the creator's keyword. A Story takes no comments.
+  const dmPlan = wantReel
+    ? await autoDmPlan(sb, { userId, tier: integ?.tier as string | null, find: { videoId: videoDbId, postId: blogPostId }, igUserId, accessToken })
+    : null
+  const cap = captionForPlan((caption || '').slice(0, 2200), dmPlan)
   let reelId: string | null = null
   let storyId: string | null = null
   const errors: string[] = []
@@ -111,7 +117,10 @@ export async function publishInstagramForTarget(
   }
 
   if (!reelId && !storyId) throw new Error(errors.join(' · ') || 'Instagram publish failed.')
-  return { reelId, storyId }
+  const autoDm = reelId
+    ? await finishAutoDm(sb, dmPlan, { userId, mediaId: reelId, caption: cap, videoUrl, igUserId, accessToken })
+    : null
+  return { reelId, storyId, autoDm }
 }
 
 /** Back-compat shim — older callers passed a bare blogPostId. */

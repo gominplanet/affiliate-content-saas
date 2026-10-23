@@ -84,7 +84,9 @@ export function InstagramBurnedModal({
           caption,
           ...(product && product.trim() ? { product: product.trim(), productTitle: (productTitle || '').trim() } : {}),
           ...(typeof coverOffsetMs === 'number' && coverOffsetMs >= 0 ? { thumbOffsetMs: Math.round(coverOffsetMs) } : {}),
-          ...(wantDm ? { autoDm: wantDm } : {}),
+          // The block's choice, or false when unticked: never the automatic
+          // one behind the creator's back (lib/ig-auto-dm).
+          ...(dmAvailable ? { autoDm: wantDm ?? false } : {}),
         }),
       })
       const json = await res.json()

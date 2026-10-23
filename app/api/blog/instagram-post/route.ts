@@ -28,6 +28,7 @@ import { recordReachSample } from '@/lib/reach-pulse'
 import { checkInstagramPace, logSocialPublish } from '@/lib/social-pace'
 import { cloudinaryConfigured, overlayCaptionOnVideo } from '@/services/cloudinary'
 import { resolveCloakedLink } from '@/lib/link-cloak'
+import { autoDmPlan, captionForPlan, finishAutoDm, autoDmWords } from '@/lib/ig-auto-dm'
 import { tierAllowsSocial, type Tier } from '@/lib/tier'
 import { creatorVoiceBlock } from '@/lib/creator-voice'
 import { recordAnthropicUsage } from '@/lib/ai-usage'
@@ -62,6 +63,9 @@ export async function POST(request: NextRequest) {
       dryRun?: boolean
       caption?: string
       socialAccountId?: string
+      // The post's own Auto-DM (lib/ig-auto-dm): the window's choice, false
+      // when unticked, or left out for the automatic one.
+      autoDm?: { link?: string; keyword?: string; kind?: string; productName?: string } | false
     }
     // Resolve video-less rows' WP post id → blog_posts UUID, like every other
     // social-post route — future-proofs IG when wired into OrphanPostShare.
@@ -290,10 +294,24 @@ Return ONLY the caption text + hashtags.`,
       }
     }
 
+    // AUTO-DM ON THE REEL OR FEED POST (lib/ig-auto-dm): the window's choice,
+    // or this post's own link with the creator's keyword. A Story takes no
+    // comments, so a Story-only post gets none.
+    const wantsFeed = kind === 'video' ? (mode === 'reel' || mode === 'both') : (mode === 'image' || mode === 'both')
+    const dmPlan = wantsFeed && feedCaption
+      ? await autoDmPlan(supabase, {
+          userId: user.id, tier, choice: body.autoDm, find: { postId }, link: affiliateUrl || null,
+          igUserId, accessToken: igToken,
+        })
+      : null
+    if (feedCaption) feedCaption = captionForPlan(feedCaption, dmPlan)
+
     if (dryRun) {
       return NextResponse.json({
         ok: true,
         dryRun: true,
+        // What a comment will get, said before posting.
+        autoDm: dmPlan ? { keyword: dmPlan.keyword, link: dmPlan.link, kind: dmPlan.kind, ready: dmPlan.ready } : null,
         // THE PREVIEW IS WHAT POSTS: services/instagram discloses every caption
         // (#ad first, hashtags capped at Instagram's 5). Idempotent, so the
         // edited copy coming back as `caption` is not tagged twice.
@@ -332,7 +350,9 @@ Return ONLY the caption text + hashtags.`,
       // Cloudinary isn't configured or the overlay fails.
       let effectiveVideoUrl = videoUrl as string
       if (cloudinaryConfigured() && effectiveVideoUrl) {
-        const overlaid = await overlayCaptionOnVideo(effectiveVideoUrl, 'LINK IN BIO')
+        // With Auto-DM on an account that can answer, the video says the same
+        // as the caption: comment the word.
+        const overlaid = await overlayCaptionOnVideo(effectiveVideoUrl, dmPlan?.ready ? `COMMENT ${dmPlan.keyword.toUpperCase()}` : 'LINK IN BIO')
         if (overlaid?.url) effectiveVideoUrl = overlaid.url
         else results.warnings.push('Could not burn the on-screen caption, so the original video was posted.')
       }
@@ -416,6 +436,11 @@ Return ONLY the caption text + hashtags.`,
     if (!anySuccess) {
       return NextResponse.json({ ok: false, ...results }, { status: 502 })
     }
+    // The post's own Auto-DM, reported as it went (never assumed).
+    const feedId = results.reelId || results.imagePostId || null
+    const dmOut = feedId
+      ? await finishAutoDm(supabase, dmPlan, { userId: user.id, mediaId: feedId, caption: feedCaption, productName: post.title || null, igUserId, accessToken: igToken })
+      : null
     // Count one increment per successful publish session, regardless of
     // mode — Reel + Story together still = 1 use of the cap on this post.
     await incrementSocialCount(supabase, postId!, 'instagram')
@@ -424,6 +449,11 @@ Return ONLY the caption text + hashtags.`,
     return NextResponse.json({
       ok: true,
       ...results,
+      autoDm: !!dmOut?.ok,
+      autoDmError: dmOut && !dmOut.ok ? dmOut.error : null,
+      autoDmKeyword: dmOut?.ok ? dmOut.keyword : null,
+      autoDmLink: dmOut?.ok ? dmOut.link : null,
+      autoDmWords: autoDmWords(dmOut),
       publishCount: igSocialCount + 1,
       isLastAllowed: igCap.willBeLast,
     })

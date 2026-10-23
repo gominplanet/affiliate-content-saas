@@ -13,6 +13,7 @@ import { tierAllowsSocial, type Tier } from '@/lib/tier'
 import { reportPaywallReached } from '@/lib/paywall-signal'
 import { decryptIntegrationRow } from '@/lib/integration-secrets'
 import { publishToInstagram, type SocialIntegration } from '@/lib/amazon-social-publish'
+import { autoDmWords } from '@/lib/ig-auto-dm'
 import { resolvePostDestination } from '@/lib/post-destination'
 
 export const maxDuration = 120
@@ -110,6 +111,9 @@ export async function POST(request: Request) {
       // the one that was asked for. Neither may hide the other.
       geniuslinkNote: [destination.note, res.note].filter(Boolean).join(' ') || null,
       destinationKind: res.destinationKind ?? destination.kind,
+      // The post's own Auto-DM when it is on (lib/ig-auto-dm); one that failed
+      // or waits on Instagram is in the note above.
+      autoDmWords: res.autoDm?.ok && res.autoDm.ready ? autoDmWords(res.autoDm) : null,
     })
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : 'Instagram post failed' }, { status: 500 })

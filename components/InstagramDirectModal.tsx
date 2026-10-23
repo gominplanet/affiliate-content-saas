@@ -17,6 +17,10 @@ import {
 } from 'lucide-react'
 import { ShortVideoUpload } from '@/components/ShortVideoUpload'
 import { useModalA11y } from '@/components/ui/useModalA11y'
+import { canUseIgDm } from '@/lib/ig-dm-access'
+import { useEffectiveTier } from '@/lib/useEffectiveTier'
+import { withDmCta } from '@/lib/dm-caption-cta'
+import ReelAutoDm, { type ReelAutoDmState } from '@/components/instagram/ReelAutoDm'
 
 interface VideoMeta {
   title: string
@@ -63,6 +67,17 @@ export function InstagramDirectModal({
   const [postError, setPostError] = useState<string | null>(null)
   const [posted, setPosted] = useState<{ reel?: string; story?: string } | null>(null)
   const [partialErrors, setPartialErrors] = useState<string[]>([])
+  // AUTO-DM ON THE REEL (components/instagram/ReelAutoDm, Seb 2026-10-23:
+  // "anywhere a user can use instagram, this auto dm feature should be set up
+  // and ready to use"). A Story takes no comments, so Story only has none.
+  const tier = useEffectiveTier()
+  const dmAvailable = canUseIgDm(tier) && mode !== 'story'
+  const [dm, setDm] = useState<ReelAutoDmState>({ on: false, keyword: 'LINK', payload: null })
+  const [dmWords, setDmWords] = useState<{ ok: boolean; text: string } | null>(null)
+  useEffect(() => {
+    if (!canUseIgDm(tier)) return
+    setCaption((c) => withDmCta(c, dmAvailable && dm.on ? dm.keyword : null))
+  }, [dm.on, dm.keyword, dmAvailable, tier])
   // 11-char YouTube id stashed separately so we can build the Studio link
   // even on the error path (where `meta` is null).
   const [youtubeId, setYoutubeId] = useState<string | null>(null)
@@ -115,7 +130,8 @@ export function InstagramDirectModal({
       const res = await fetch('/api/instagram/post-direct-video', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ videoId, caption, mode }),
+        // The block's choice, or false when it is unticked or hidden (Story).
+        body: JSON.stringify({ videoId, caption, mode, ...(canUseIgDm(tier) ? { autoDm: dmAvailable ? (dm.payload ?? false) : false } : {}) }),
       })
       const json = await res.json()
       if (!res.ok || !json.ok) {
@@ -125,13 +141,14 @@ export function InstagramDirectModal({
       }
       setPosted({ reel: json.reelId ?? undefined, story: json.storyId ?? undefined })
       setPartialErrors(Array.isArray(json.partialErrors) ? json.partialErrors : [])
+      if (json.autoDmWords) setDmWords({ ok: !!json.autoDm, text: String(json.autoDmWords) })
       if (onPosted) onPosted(mode)
     } catch (e) {
       setPostError(e instanceof Error ? e.message : 'Posting failed.')
     } finally {
       setPosting(false)
     }
-  }, [meta, posting, posted, videoId, caption, mode, onPosted])
+  }, [meta, posting, posted, videoId, caption, mode, onPosted, tier, dmAvailable, dm.payload])
 
   const closeAllowed = !posting
   const panelRef = useRef<HTMLDivElement | null>(null)
@@ -322,6 +339,13 @@ export function InstagramDirectModal({
                 </p>
               </div>
 
+              {dmAvailable && !posted && (
+                <ReelAutoDm videoId={videoId} productName={productResolved?.title} onChange={setDm} />
+              )}
+              {canUseIgDm(tier) && mode === 'story' && !posted && (
+                <p className="text-[11px] text-[#86868b]">No Auto-DM on a Story: Instagram Stories take no comments. Pick Reel to give this post Auto-DM.</p>
+              )}
+
               {postError && (
                 <div className="rounded-lg border-[#ff3b30]/20 bg-[#ff3b30]/5 p-3">
                   <p className="text-xs text-[#ff3b30] flex items-center gap-1.5"><AlertCircle size={12} /> {postError}</p>
@@ -335,6 +359,7 @@ export function InstagramDirectModal({
                     {posted.reel && !posted.story && 'Reel live on Instagram.'}
                     {!posted.reel && posted.story && 'Story live on Instagram.'}
                   </p>
+                  {dmWords && <p className={`text-[11px] ${dmWords.ok ? 'text-[#34c759]' : 'text-[#ff3b30]'}`}>{dmWords.text}</p>}
                   <a href="https://www.instagram.com/" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-[11px] text-[#7C3AED] hover:underline self-start">
                     Open Instagram <ExternalLink size={10} />
                   </a>

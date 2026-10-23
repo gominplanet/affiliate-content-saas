@@ -110,13 +110,19 @@ export async function GET() {
   // A member is never told about Vercel settings: those are MVP's to fix.
   if (blocker && !team && (!appSecretSet || !scopesRequested)) blocker = 'Auto-DM is not ready on MVP\u2019s side yet, so comments cannot be answered. Let MVP support know.'
 
+  // Posts MVP makes carry their own Auto-DM unless "posts MVP makes" is off
+  // (lib/ig-auto-dm, migration 454); the account-wide switch covers the rest.
+  const mvpPostsOn = settings?.mvp_posts !== false
+  const anyOn = mvpPostsOn || !!settings?.enabled
   let verdict: string
   let ok = false
   if (blocker) verdict = blocker
-  else if (!settings?.enabled) verdict = 'Everything is connected, but Auto-DM is turned off. Turn it on below and save.'
+  else if (!anyOn) verdict = 'Everything is connected, but Auto-DM is turned off for every post. Turn it on below and save.'
   else {
     ok = true
-    verdict = 'Connected and listening. Comment your keyword from a second account and a row appears under Recent comments within a minute.'
+    verdict = mvpPostsOn
+      ? 'Connected and listening. Every post MVP makes answers your keyword. Comment it from a second account and a row appears under Recent comments within a minute.'
+      : 'Connected and listening. Comment your keyword from a second account and a row appears under Recent comments within a minute.'
   }
   return NextResponse.json({
     ok,
@@ -142,7 +148,7 @@ export async function GET() {
       // null: connected before MVP recorded them.
       permissionsKnown: permissions !== null,
       permissionsMissing: missing,
-      autoDmEnabled: !!settings?.enabled,
+      autoDmEnabled: anyOn,
       lastInstagramEvent: last?.created_at ?? null,
     },
   })

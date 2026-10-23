@@ -1,6 +1,6 @@
 // © 2026 Gominplanet / MVP Affiliate — proprietary & confidential.
 //
-// GET /api/instagram/dm-link-options?videoId=&product=
+// GET /api/instagram/dm-link-options?videoId=&product=&postId=
 // The links an Auto-DM can send for this clip: the Link in Bio product page,
 // the blog post and the affiliate link, each only when it exists. See
 // lib/dm-link-options.ts.
@@ -19,6 +19,7 @@ export async function GET(req: Request) {
   const result = await dmLinkOptions(supabase, user.id, {
     videoId: url.searchParams.get('videoId'),
     product: url.searchParams.get('product'),
+    postId: url.searchParams.get('postId'),
   })
   return NextResponse.json(result)
 }
