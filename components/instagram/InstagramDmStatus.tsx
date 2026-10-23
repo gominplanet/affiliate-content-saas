@@ -25,7 +25,7 @@ interface Checks {
   autoDmEnabled: boolean
   lastInstagramEvent: string | null
 }
-interface Result { ok: boolean; verdict: string; appReviewUrl: string; checks: Checks }
+interface Result { ok: boolean; verdict: string; appReviewUrl: string; checks: Checks; team?: boolean }
 
 function Mark({ state }: { state: boolean | null }) {
   if (state === true) return <CheckCircle2 size={15} className="text-[#34c759] flex-shrink-0" />
@@ -73,9 +73,12 @@ export default function InstagramDmStatus({ onAppReviewUrl }: { onAppReviewUrl?:
   const rows: { label: string; state: boolean | null; note?: string }[] = c ? [
     { label: c.username ? `Instagram connected (@${c.username})` : 'Instagram connected', state: c.connected && !c.tokenExpired, note: c.tokenExpired ? 'The connection has expired.' : undefined },
     { label: 'Comments are sent to MVP', state: c.commentsOn, note: c.commentsOn === null && c.subError ? c.subError : undefined },
-    { label: 'Messaging permissions asked for on connect (IG_DM_SCOPES)', state: c.scopesRequested },
-    { label: 'Comment signatures can be checked (INSTAGRAM_APP_SECRET)', state: c.appSecretSet },
-    { label: 'Webhook verify code set (IG_WEBHOOK_VERIFY_TOKEN)', state: c.verifyTokenSet },
+    // MVP's own setup (Vercel settings): the team's to read, never a member's.
+    ...(data?.team ? [
+      { label: 'Messaging permissions asked for on connect (IG_DM_SCOPES)', state: c.scopesRequested },
+      { label: 'Comment signatures can be checked (INSTAGRAM_APP_SECRET)', state: c.appSecretSet },
+      { label: 'Webhook verify code set (IG_WEBHOOK_VERIFY_TOKEN)', state: c.verifyTokenSet },
+    ] : []),
     { label: 'Auto-DM turned on', state: c.autoDmEnabled },
   ] : []
 

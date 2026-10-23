@@ -13,7 +13,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Loader2, AlertCircle, CheckCircle, Send, ExternalLink, X, Instagram } from 'lucide-react'
 import { useModalA11y } from '@/components/ui/useModalA11y'
-import { igDmEnabled } from '@/lib/feature-flags'
+import { canUseIgDm } from '@/lib/ig-dm-access'
 import { useEffectiveTier } from '@/lib/useEffectiveTier'
 import { withDmCta, dmCtaLine } from '@/lib/dm-caption-cta'
 
@@ -56,10 +56,10 @@ export function InstagramBurnedModal({
   const [posted, setPosted] = useState(false)
 
   // Auto-DM: commenting `dmKeyword` on the Reel DMs `dmLink` to that person.
-  // Everyone once Meta approves the messaging permissions (igDmEnabled); until
-  // then Labs, so admin accounts can use it with their testers.
+  // Every plan that posts to Instagram since Meta approved the messaging
+  // permissions (2026-10-23, lib/ig-dm-access).
   const tier = useEffectiveTier()
-  const dmAvailable = igDmEnabled() || tier === 'admin'
+  const dmAvailable = canUseIgDm(tier)
   const [autoDm, setAutoDm] = useState(false)
   const [dmKeyword, setDmKeyword] = useState('LINK')
   const [dmLink, setDmLink] = useState((defaultDmLink || '').trim())

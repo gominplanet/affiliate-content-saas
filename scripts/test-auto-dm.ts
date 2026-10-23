@@ -79,11 +79,12 @@ async function main() {
   check('the default message has no STOP line', !/Reply STOP/i.test(settingsRoute))
   const page = read('app/(dashboard)/instagram-dm/page.tsx')
   check('the page has no STOP line or "Meta requires it" claim', !/Reply STOP|Meta requires/i.test(page))
-  check('the page links to Meta approval', /Check Meta approval/.test(page))
+  // Out of Labs on 2026-10-23 (Meta approved): the team keeps the App Review link, for Facebook's side.
+  check('the page links the team to Meta App Review', /Meta App Review <ExternalLink/.test(page))
   check('the page lists recent comments and the posts picker', /Recent comments/.test(page) && /dm-posts/.test(page))
   const debug = read('app/api/instagram/dm-debug/route.ts')
   check('the Instagram check can turn comment alerts on and shows Meta\'s reason', /subscribeToCommentsWhy/.test(debug) && /Instagram refused/.test(debug))
-  check('both new routes stay Labs, admin only', /normalizeTier\(integ\?\.tier\) !== 'admin'/.test(debug) && /normalizeTier\(integ\?\.tier\) !== 'admin'/.test(read('app/api/instagram/dm-posts/route.ts')))
+  check('both routes are open to every plan that posts to Instagram (lib/ig-dm-access)', /if \(!canUseIgDm\(integ\?\.tier\)\)/.test(debug) && /if \(!canUseIgDm\(integ\?\.tier\)\)/.test(read('app/api/instagram/dm-posts/route.ts')))
   const mig = read('supabase/migrations/422_auto_dm_any_post.sql')
   check('migration 422 is safe to run twice', /add column if not exists any_post/.test(mig) && /add column if not exists fallback_link/.test(mig))
 
@@ -98,7 +99,7 @@ async function main() {
   check('a caption opening with #ad gets the line under the body, not under the disclosure', /Great dryer\.\n\nComment LINK[^\n]*\n\n#hair/.test(adFirst), adFirst)
   check('a short product link is followed to find the product', /resolveTrueDestination\(productUrl\)/.test(read('lib/dm-link-options.ts')))
   const modal = read('components/InstagramBurnedModal.tsx')
-  check('the Shorts Instagram window offers Auto-DM to Labs accounts', /tier === 'admin'/.test(modal) && /withDmCta\(/.test(modal))
+  check('the Shorts Instagram window offers Auto-DM to every plan that can use it', /const dmAvailable = canUseIgDm\(tier\)/.test(modal) && /withDmCta\(/.test(modal))
 
   // The DM link is picked for the creator (Seb, 2026-10-09).
   const opts = [

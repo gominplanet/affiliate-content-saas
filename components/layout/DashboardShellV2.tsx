@@ -25,6 +25,7 @@
 import SoldCampaignsDaily from '@/components/earnings/SoldCampaignsDaily'
 import { previewOpenToPro, canUsePreview, trybeAccess } from '@/lib/labs-preview'
 import { hasVideoTools } from '@/lib/amazon-plan'
+import { canUseIgDm } from '@/lib/ig-dm-access'
 import { NEWSLETTER_FOR_MEMBERS } from '@/lib/feature-flags'
 import { useState, useEffect, useCallback, Fragment } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
@@ -565,6 +566,10 @@ export default function DashboardShellV2({
             { href: '/encore', icon: null, label: 'On sale comments', gate: canUsePreview('on_sale', effectiveTier) },
           ],
         },
+        // INSTAGRAM AUTO-DM, out of Labs (Seb, 2026-10-23, the day Meta approved
+        // the messaging permissions: "let's open to users"). Every plan that
+        // posts to Instagram (lib/ig-dm-access).
+        { href: '/instagram-dm', icon: <MessageCircle size={15} />, label: 'Instagram Auto-DM', gate: canUseIgDm(effectiveTier), badge: 'New' },
         // Before the show and after it.
         {
           href: '/amazon-live', icon: <Radio size={15} />, label: 'Amazon Live', badge: 'New', onAmazon: 'included',
@@ -687,8 +692,6 @@ export default function DashboardShellV2({
         { href: '/storefront', icon: <BarChart3 size={15} />, label: 'AMZ Storefront', gate: isAdmin },
         // Admin only while in Labs (lib/labs-preview earnings).
         { href: '/earnings', icon: <TrendingUp size={15} />, label: 'Amazon Earnings', gate: isAdmin },
-        // Dormant until Meta approves the messaging permissions.
-        { href: '/instagram-dm', icon: <MessageCircle size={15} />, label: 'Instagram Auto-DM', gate: isAdmin },
         // Brand Radar: storefront + TikTok ingestion into the brands a creator
         // has worked with. Ships dark until a provider token is set.
         { href: '/brand-radar', icon: <Radar size={15} />, label: 'Brand Radar', gate: isAdmin },

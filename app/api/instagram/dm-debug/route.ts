@@ -16,6 +16,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { maybeDecrypt } from '@/lib/secrets'
 import { normalizeTier } from '@/lib/tier'
+import { canUseIgDm } from '@/lib/ig-dm-access'
 import { commentSubscription, subscribeToCommentsWhy, fetchIgProfessionalId } from '@/services/instagram'
 
 export const dynamic = 'force-dynamic'
@@ -31,9 +32,10 @@ async function gate() {
   const { data: integ } = await admin.from('integrations')
     .select('tier,instagram_user_id,instagram_username,instagram_access_token,instagram_token_expiry')
     .eq('user_id', user.id).maybeSingle()
-  if (normalizeTier(integ?.tier) !== 'admin') return { error: NextResponse.json({ error: 'Labs is not open on this account.' }, { status: 403 }) }
+  // Out of Labs (2026-10-23, Meta approved): every plan that posts to Instagram.
+  if (!canUseIgDm(integ?.tier)) return { error: NextResponse.json({ error: 'Instagram Auto-DM is not on your plan.' }, { status: 403 }) }
   const token = maybeDecrypt(integ?.instagram_access_token as string | null | undefined) || null
-  return { userId: user.id, admin, integ, token, igUserId: (integ?.instagram_user_id as string | null) ?? null }
+  return { userId: user.id, admin, integ, token, igUserId: (integ?.instagram_user_id as string | null) ?? null, team: normalizeTier(integ?.tier) === 'admin' }
 }
 
 /** Meta's App Review page for MVP's app, where approval of the two messaging
@@ -48,10 +50,10 @@ function appReviewUrl(): string {
 export async function GET() {
   const g = await gate()
   if ('error' in g) return g.error
-  const { admin, userId, integ, token, igUserId } = g
+  const { admin, userId, integ, token, igUserId, team } = g
 
   const connected = !!(token && igUserId)
-  const scopesRequested = process.env.IG_DM_SCOPES === 'true'
+  const scopesRequested = process.env.IG_DM_SCOPES !== 'false'
   const appSecretSet = !!process.env.INSTAGRAM_APP_SECRET
   const verifyTokenSet = !!process.env.IG_WEBHOOK_VERIFY_TOKEN
   const expiry = Number(integ?.instagram_token_expiry || 0)
@@ -82,18 +84,22 @@ export async function GET() {
   if (!connected) verdict = 'Instagram is not connected in MVP. Connect it under Setup, Socials.'
   else if (tokenExpired) verdict = 'The Instagram connection has expired. Reconnect Instagram under Setup, Socials.'
   else if (!appSecretSet) verdict = 'INSTAGRAM_APP_SECRET is not set in Vercel, so MVP refuses every comment Meta sends. Set it and redeploy.'
-  else if (!scopesRequested) verdict = 'IG_DM_SCOPES is not "true" in Vercel, so connecting Instagram never asks for the two messaging permissions. Set it, redeploy, then reconnect Instagram.'
+  else if (!scopesRequested) verdict = 'IG_DM_SCOPES is "false" in Vercel, so connecting Instagram never asks for the two messaging permissions. Remove it, redeploy, then reconnect Instagram.'
   else if (commentsOn === false) verdict = 'This account is not sending comments to MVP. Press "Turn on comment alerts". If Instagram refuses, reconnect Instagram and accept the messaging permissions.'
   else if (commentsOn === null) verdict = `MVP could not read the comment alert setting from Instagram${subError ? `: ${subError}` : '.'} Reconnecting Instagram usually fixes this.`
   else if (!settings?.enabled) verdict = 'Everything is connected, but Auto-DM is turned off. Turn it on below and save.'
   else {
     ok = true
-    verdict = 'Connected and listening. Comment your keyword from a second account and a row appears under Recent comments within a minute. Until Meta approves the app, only comments from people listed on the app (you and testers) come through.'
+    verdict = 'Connected and listening. Comment your keyword from a second account and a row appears under Recent comments within a minute.'
   }
 
+  // A member is never told about Vercel settings: those are MVP's to fix.
+  if (!team && (!appSecretSet || !scopesRequested)) verdict = 'Auto-DM is not ready on MVP\u2019s side yet, so comments cannot be answered. Let MVP support know.'
   return NextResponse.json({
     ok,
     verdict,
+    // The setup rows (Vercel settings) are the MVP team's to read.
+    team,
     appReviewUrl: appReviewUrl(),
     checks: {
       connected,

@@ -57,14 +57,13 @@ export function youtubeUploadEnabled(opts?: { tier?: string | null }): boolean {
 
 /**
  * Instagram comment→DM automation (auto-DM the link when someone comments a
- * keyword). Requires Meta to approve the messaging permissions
- * (instagram_business_manage_messages) — until then it only works for the app
- * owner + added testers, so the toggle stays hidden for everyone else. Flip on
- * with NEXT_PUBLIC_IG_DM_ENABLED=true (client toggle) alongside IG_DM_SCOPES=true
- * (server scope request) once Meta approves.
+ * keyword). Meta approved the messaging permissions on 2026-10-23
+ * (instagram_business_manage_messages and _comments), so it is ON for members
+ * unless NEXT_PUBLIC_IG_DM_ENABLED=false in Vercel shuts it. Who may use it:
+ * lib/ig-dm-access canUseIgDm.
  */
 export function igDmEnabled(): boolean {
-  return process.env.NEXT_PUBLIC_IG_DM_ENABLED === 'true'
+  return process.env.NEXT_PUBLIC_IG_DM_ENABLED !== 'false'
 }
 
 /**

@@ -1,6 +1,9 @@
 'use client'
 
-// Instagram and Facebook comment→DM automation (Labs, admin only).
+// Instagram comment→DM automation, for every plan that posts to Instagram
+// (out of Labs on 2026-10-23, when Meta approved the messaging permissions;
+// lib/ig-dm-access). Facebook's side stays with the MVP team until Meta
+// approves its own permissions.
 //
 // Someone comments the keyword on a post, MVP DMs them a link:
 //   - a post with its own keyword + link (an Auto-DM Reel from Clip Factory, or
@@ -17,7 +20,8 @@ import { useEffectiveTier } from '@/lib/useEffectiveTier'
 import { InstagramDmGuide } from '@/components/guide/tool-guides'
 import Link from 'next/link'
 import { toast } from 'sonner'
-import { Instagram, MessageCircle, Loader2, Info, FlaskConical, Trash2, Flame, ExternalLink, RefreshCw, Link2 } from 'lucide-react'
+import { Instagram, MessageCircle, Loader2, Info, Trash2, Flame, ExternalLink, RefreshCw, Link2 } from 'lucide-react'
+import { canUseIgDm } from '@/lib/ig-dm-access'
 import FacebookDmStatus from '@/components/instagram/FacebookDmStatus'
 import InstagramDmStatus from '@/components/instagram/InstagramDmStatus'
 
@@ -57,16 +61,19 @@ const TONE: Record<Recent['tone'], { bg: string; fg: string }> = {
   muted: { bg: 'var(--surface-2)', fg: 'var(--text-faint)' },
 }
 
-// In Labs, so admin only: everyone else is sent to the dashboard.
+// Every plan that posts to Instagram (lib/ig-dm-access); anyone else is sent
+// to the dashboard.
 export default function InstagramDmPage() {
   const tier = useEffectiveTier()
   const router = useRouter()
-  useEffect(() => { if (tier !== null && tier !== 'admin') router.replace('/dashboard') }, [tier, router])
-  if (tier !== 'admin') return <div className="flex items-center justify-center py-24"><Loader2 size={18} className="animate-spin text-[#86868b]" /></div>
-  return <InstagramDm />
+  const allowed = tier !== null && canUseIgDm(tier)
+  useEffect(() => { if (tier !== null && !canUseIgDm(tier)) router.replace('/dashboard') }, [tier, router])
+  if (!allowed) return <div className="flex items-center justify-center py-24"><Loader2 size={18} className="animate-spin text-[#86868b]" /></div>
+  return <InstagramDm team={tier === 'admin'} />
 }
 
-function InstagramDm() {
+/** `team`: the MVP team also sees Facebook's side, not yet approved by Meta. */
+function InstagramDm({ team }: { team: boolean }) {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [enabled, setEnabled] = useState(false)
@@ -202,31 +209,36 @@ function InstagramDm() {
         <Instagram size={20} className="text-[#E1306C]" />
         <h1 className="text-lg font-semibold" style={{ color: 'var(--text)' }}>Instagram Auto-DM</h1>
         <InstagramDmGuide />
-        <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full"
-          style={{ background: 'rgba(220,38,38,0.12)', color: '#DC2626' }}>
-          <FlaskConical size={11} /> Labs
-        </span>
       </div>
       <p className="text-sm" style={{ color: 'var(--text-soft)' }}>
-        When someone comments your keyword on an Instagram <em>or Facebook</em> post, MVP DMs them the right link.
+        When someone comments your keyword on an Instagram{team ? <> <em>or Facebook</em></> : null} post, MVP DMs them the right link.
         No manual replies, no “link in bio.”
       </p>
 
-      {/* Approval banner */}
+      {/* ONE RECONNECT (Meta approved Auto-DM on 2026-10-23): an Instagram
+          connected before then never granted the two messaging permissions. */}
       <div className="rounded-xl border p-3 flex items-start gap-2 text-[13px]"
-        style={{ background: 'rgba(255,149,0,0.07)', borderColor: 'rgba(255,149,0,0.3)', color: 'var(--text-soft)' }}>
-        <Info size={15} className="text-[#ff9500] flex-shrink-0 mt-0.5" />
+        style={{ background: 'rgba(225,48,108,0.06)', borderColor: 'rgba(225,48,108,0.25)', color: 'var(--text-soft)' }}>
+        <Info size={15} className="text-[#E1306C] flex-shrink-0 mt-0.5" />
         <span>
-          <strong style={{ color: 'var(--text)' }}>Until Meta approves the app, only comments from you and testers come through.</strong>{' '}
-          Meta holds back everyone else&apos;s comments until it approves the two messaging permissions.{' '}
-          <a href={reviewUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 font-semibold underline" style={{ color: 'var(--text)' }}>
-            Check Meta approval <ExternalLink size={12} />
-          </a>
+          <strong style={{ color: 'var(--text)' }}>Connected Instagram before Auto-DM opened?</strong>{' '}
+          Reconnect it once and say yes when Instagram asks to let MVP manage your messages and comments. Instagram status below says when it is needed.{' '}
+          <Link href="/connect-socials" className="inline-flex items-center gap-1 font-semibold underline" style={{ color: 'var(--text)' }}>
+            Reconnect Instagram in Setup, Socials
+          </Link>
         </span>
       </div>
 
       <InstagramDmStatus onAppReviewUrl={onReviewUrl} />
-      <FacebookDmStatus />
+      {/* FACEBOOK WAITS ON META: pages_messaging, pages_read_engagement and
+          pages_manage_metadata are not approved, so it is the team's alone. */}
+      {team && (<>
+        <p className="text-[12px] -mb-2" style={{ color: 'var(--text-faint)' }}>
+          Team only: Facebook Auto-DM waits on Meta approving pages_messaging, pages_read_engagement and pages_manage_metadata.{' '}
+          <a href={reviewUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 underline">Meta App Review <ExternalLink size={11} /></a>
+        </p>
+        <FacebookDmStatus />
+      </>)}
 
       {loading ? (
         <div className="flex items-center gap-2 text-sm py-8 justify-center" style={{ color: 'var(--text-faint)' }}>
@@ -240,7 +252,7 @@ function InstagramDm() {
             <div>
               <p className="text-sm font-semibold" style={{ color: 'var(--text)' }}>Settings</p>
               <p className="text-[12px]" style={{ color: 'var(--text-faint)' }}>
-                One keyword for your Instagram and Facebook posts. A post with its own keyword below uses that instead.
+                One keyword for your Instagram{team ? ' and Facebook' : ''} posts. A post with its own keyword below uses that instead.
               </p>
             </div>
 
@@ -269,7 +281,7 @@ function InstagramDm() {
               <div>
                 <p className="text-sm font-medium" style={{ color: 'var(--text)' }}>Also on posts MVP did not publish</p>
                 <p className="text-[12px]" style={{ color: 'var(--text-faint)' }}>
-                  Posts you made in the Instagram or Facebook app send the backup link below.
+                  Posts you made in the Instagram{team ? ' or Facebook' : ''} app send the backup link below.
                 </p>
               </div>
             </label>

@@ -9,14 +9,14 @@
 //      existing DELETE /api/instagram/dm-campaign?id=.
 //
 // WHY (Seb, 2026-10-09). Auto-DM only knew posts MVP had published. Most
-// creators post from the Instagram app, and those comments were dropped. Labs,
-// admin only, like the page.
+// creators post from the Instagram app, and those comments were dropped. Every
+// plan that posts to Instagram, like the page (lib/ig-dm-access).
 
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { maybeDecrypt } from '@/lib/secrets'
-import { normalizeTier } from '@/lib/tier'
+import { canUseIgDm } from '@/lib/ig-dm-access'
 import { listRecentMedia, ownsMedia } from '@/services/instagram'
 import { fallbackDmLink, anyPostOn, type DmSettings } from '@/lib/ig-dm'
 import { dmLogWords } from '@/lib/dm-log-words'
@@ -34,7 +34,8 @@ async function gate() {
   const { data: integ } = await admin.from('integrations')
     .select('tier,instagram_user_id,instagram_access_token')
     .eq('user_id', user.id).maybeSingle()
-  if (normalizeTier(integ?.tier) !== 'admin') return { error: NextResponse.json({ error: 'Labs is not open on this account.' }, { status: 403 }) }
+  // Out of Labs (2026-10-23, Meta approved): every plan that posts to Instagram.
+  if (!canUseIgDm(integ?.tier)) return { error: NextResponse.json({ error: 'Instagram Auto-DM is not on your plan.' }, { status: 403 }) }
   const token = maybeDecrypt(integ?.instagram_access_token as string | null | undefined) || null
   return { userId: user.id, admin, token, igUserId: (integ?.instagram_user_id as string | null) ?? null }
 }
