@@ -63,7 +63,7 @@ import {
   DRAFT_SYSTEM, draftUserPrompt, DEFAULT_DAILY_CAP, type ScannedBrand,
   cleanTerms, prefsKey, FIT_SYSTEM, fitUserPrompt, parseFit,
   readPay, payPasses, payRank, BROWSE_SORTS, PAY_TYPES, type BrowseSort, type PayType,
-  REPLY_SYSTEM, replyUserPrompt, replyBlanks, talksTerms, MIN_SEND_GAP_MS,
+  REPLY_SYSTEM, replyUserPrompt, replyBlanks, talksTerms, termsHit, MIN_SEND_GAP_MS,
   nextFreeAt, MAX_DAILY_CAP, readReplySteps, claimsUnticked, REPLY_STEPS } from '@/lib/trybe-outreach'
 
 export const runtime = 'nodejs'
@@ -689,7 +689,8 @@ export async function POST(request: Request) {
     if (coreChanged) { try { await admin.from('trybe_outreach_settings').update({ core_saved_at: now }).eq('user_id', ownerId) } catch { /* before 457: no drafts are marked */ } }
     // A core message that talks pay is saved, and said: every message is
     // written from it, and TRYBE messages never talk rates.
-    const warning = coreMessage && talksTerms(coreMessage, { adSpendQuestion: false }) ? 'Your core message talks about pay, rates or prices. TRYBE brands set the pay, so MVP will not send messages that mention it: take that part out.' : null
+    const coreHit = coreMessage ? termsHit(coreMessage) : null
+    const warning = coreHit ? `Your core message says “${coreHit}”, which reads as talk about pay, rates or prices. TRYBE brands set the pay, so MVP will not write requests from it until that part is out.` : null
     return NextResponse.json({ ok: true, settings: await readSettings(admin, ownerId), ...(warning ? { warning } : {}) })
   }
 
@@ -1276,18 +1277,19 @@ export async function POST(request: Request) {
       // budget is written once more, then refused. No exception: Seb took the
       // first message's ad spend question out (2026-10-24).
       const moneyOk = (t: string) => !talksTerms(t)
-      if (text && !moneyOk(text)) {
+      const firstHit = text ? termsHit(text) : null
+      if (firstHit) {
         const again = await createAnthropicClient().messages.create({
           model: MODEL, max_tokens: 500,
           system: (action === 'kickoff' ? KICKOFF_SYSTEM(BANNED_RULE) : FOLLOWUP_SYSTEM(BANNED_RULE)) + (voice.length ? `\n${VOICE_RULE}` : ''),
           messages: [{ role: 'user', content: (action === 'kickoff'
             ? kickoffUserPrompt({ coreMessage: settings.coreMessage, creator, brand: facts })
-            : `CREATOR FACTS:\n${creator.join('\n') || '(none)'}\n\nBRAND:\n${brandBlock(facts)}`) + voiceBlock(voice) + '\n\n(Your last try talked about pay, rates or prices. On TRYBE the brand sets the pay and TRYBE pays the creator. Write it again without any of that.)' }],
+            : `CREATOR FACTS:\n${creator.join('\n') || '(none)'}\n\nBRAND:\n${brandBlock(facts)}`) + voiceBlock(voice) + `\n\n(Your last try said “${firstHit}”, which talks about pay, rates or prices. On TRYBE the brand sets the pay and TRYBE pays the creator. Write it again without that or anything like it.)` }],
         })
         text = tidyDraft(scrubBanned((again.content as Array<{ type: string; text?: string }>).map(b => b.type === 'text' ? b.text || '' : '').join('')), 1500)
       }
       if (!text) return NextResponse.json({ error: 'The message came back empty. Try again.' }, { status: 502 })
-      if (!moneyOk(text)) return NextResponse.json({ error: 'The message kept talking about pay or rates, which TRYBE brands set themselves, so it is not shown. Press it again.' }, { status: 502 })
+      if (!moneyOk(text)) return NextResponse.json({ error: `The message kept saying “${termsHit(text)}”, which reads as talk about pay or rates. TRYBE brands set the pay, so it is not shown. Press it again.` }, { status: 502 })
       // Kept so it is there next visit; before migration 425 it is only shown.
       try { await admin.from('trybe_brands').update({ kickoff_draft: text, updated_at: now }).eq('user_id', ownerId).eq('brand_id', brandId) } catch { /* shown either way */ }
       return NextResponse.json({ ok: true, text, researched: !!(f.summary || f.products.length) })
@@ -2222,6 +2224,12 @@ export async function POST(request: Request) {
     if (!ids.length) return NextResponse.json({ ok: true, results: [] })
     const settings = await readSettings(admin, ownerId)
     if (!settings.coreMessage.trim()) return NextResponse.json({ error: 'Write your core message first.' }, { status: 400 })
+    // A request keeps the core message nearly word for word, so a core message
+    // that talks pay makes every request fail: said once, up front, naming the
+    // words, before anything is written (Seb, 2026-10-24: "draft could not be
+    // written", with no reason).
+    const coreHit = termsHit(settings.coreMessage)
+    if (coreHit) return NextResponse.json({ error: `Your core message says “${coreHit}”, which reads as talk about pay or rates. TRYBE brands set the pay, so no request was written. Take that part out of your core message, press Save message, and write again.` }, { status: 400 })
     const spend = await spendGate(userId, tier)
     if (spend) return spend
     const creator = await writerFacts(admin, ownerId)
@@ -2251,10 +2259,12 @@ export async function POST(request: Request) {
           return tidyDraft(scrubBanned((msg.content as Array<{ type: string; text?: string }>).map(b => b.type === 'text' ? b.text || '' : '').join('')))
         }
         let text = await write()
-        // NEVER RATES (house rule): once more, then refused, saying why.
-        if (text && talksTerms(text)) text = await write('\n\n(Your last try talked about pay, rates or prices. On TRYBE the brand sets the pay. Write it again without any of that.)')
+        // NEVER RATES (house rule): once more, told the words, then refused, saying which.
+        const firstHit = text ? termsHit(text) : null
+        if (firstHit) text = await write(`\n\n(Your last try said “${firstHit}”, which talks about pay, rates or prices. On TRYBE the brand sets the pay. Write it again without that or anything like it.)`)
         if (!text) throw new Error('The draft came back empty.')
-        if (talksTerms(text)) throw new Error(talksTerms(settings.coreMessage) ? 'Your core message talks about pay or rates, which TRYBE brands set themselves. Take that out of it and write again.' : 'The draft kept talking about pay or rates, which TRYBE brands set themselves, so it was not kept. Write it again.')
+        const lastHit = termsHit(text)
+        if (lastHit) throw new Error(`The draft kept saying “${lastHit}”, which reads as talk about pay or rates. TRYBE brands set the pay, so it was not kept. Try again.`)
         const { data: saved, error: upErr } = await admin.from('trybe_brands').update({
           draft: text, drafted_at: new Date().toISOString(), status: 'drafted', error: null,
           site_summary: summary || null, site_products: products, site_error: siteError, site_fetched_at: fresh ? r.site_fetched_at : sf.fetchedAt,
@@ -2269,6 +2279,8 @@ export async function POST(request: Request) {
         return { brandId: r.brand_id, ok: false, error: e instanceof Error ? e.message : 'Draft failed.' }
       }
     }))
+    const got = new Set(((rows || []) as Array<{ brand_id: string }>).map(r => r.brand_id))
+    for (const id of ids) if (!got.has(id)) results.push({ brandId: id, ok: false, error: 'That brand is not on your list, so it was not written. Load the page again and pick it again.' })
     return NextResponse.json({ ok: true, results })
   }
 
@@ -2654,12 +2666,13 @@ export async function POST(request: Request) {
         return tidyDraft(scrubBanned((msg.content as Array<{ type: string; text?: string }>).map(b => b.type === 'text' ? b.text || '' : '').join('')), 1200)
       }
       let text = await ask('')
-      if (text && talksTerms(text)) text = await ask('\n\n(Your last try talked about rates, pay, deliverables or terms. On TRYBE the brand sets the pay. Write it again without any of that.)')
+      const firstHit = text ? termsHit(text) : null
+      if (firstHit) text = await ask(`\n\n(Your last try said “${firstHit}”, which talks about rates, pay, deliverables or terms. On TRYBE the brand sets the pay. Write it again without that or anything like it.)`)
       // NEVER SAYS A STEP IS DONE THAT WAS NOT TICKED: written again once, then refused.
       const claimed = (t: string) => claimsUnticked(t, steps).map(k => REPLY_STEPS.find(s => s.id === k)!.done.toLowerCase())
       if (text && claimed(text).length) text = await ask(`\n\n(Your last try said the creator ${claimed(text).join(' and ')}, which they have not ticked. Do not say that. If it is the next step, say they will do it next.)`)
       if (!text) return NextResponse.json({ error: 'The suggestion came back empty. Try again.' }, { status: 502 })
-      if (talksTerms(text)) return NextResponse.json({ error: 'The suggestion kept talking about rates or terms, which TRYBE brands set themselves, so it is not shown. Press Suggest another.' }, { status: 502 })
+      if (talksTerms(text)) return NextResponse.json({ error: `The suggestion kept saying “${termsHit(text)}”, which reads as talk about rates or terms. TRYBE brands set those, so it is not shown. Press Suggest another.` }, { status: 502 })
       if (claimed(text).length) return NextResponse.json({ error: `The suggestion kept saying you ${claimed(text).join(' and ')}, which you have not ticked, so it is not shown. Tick it if it is true, or press Suggest another.` }, { status: 502 })
       return NextResponse.json({ ok: true, text, blanks: replyBlanks(text) })
     } catch (e) {

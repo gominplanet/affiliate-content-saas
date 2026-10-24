@@ -398,19 +398,48 @@ Plain text: no subject line, no hashtags, no markdown, no emoji unless the creat
 ${bannedRule}
 Output ONLY the reply.`
 
+/** Phrases that hold a pay word without talking pay: an ad type, a sales
+ *  result, a device feature, a turn of speech. Blanked before the check, so a
+ *  core message that says "videos built for paid ads" or "$250K in Amazon
+ *  sales" is not refused (Seb, 2026-10-24: "draft could not be written"). */
+const NOT_TERMS: RegExp[] = [
+  /\bpaid\s+(ads?|social|media|campaigns?|traffic|advertising|search|placements?|channels?)\b/gi,
+  /\bpa(y|ys|id|ying)\s+(close\s+)?attention\b/gi,
+  /\bpa(ys|id)\s+off\b/gi,
+  /\$\s?\d[\d,.]*\s*(k|m|mm|million|thousand)?\+?\s+(in|of)\s+([a-z]+\s+){0,2}(sales|revenue|gmv)\b/gi,
+  /\b(fast|wireless|quick|rapid|magnetic|solar)\s+charging\b/gi,
+  /\bcharging\s+(cables?|cases?|stations?|ports?|pads?|speeds?|docks?|stands?|bricks?|times?)\b/gi,
+  /\bin charge of\b/gi,
+  /\b(heart|success|conversion|engagement|retention|completion|return|refresh|frame|absorption|approval|click[- ]through)\s+rates?\b/gi,
+]
+
+// TRYBE MESSAGES NEVER TALK RATES (house rule). One broad check for every
+// message MVP writes to a brand, the creator's core message and the voice
+// samples (review 2026-10-24: "Love that you pay $50 per video", "Is
+// payment handled through TRYBE?", "The 20% commission works great" and
+// "We charge $150 per video" all went through the old one).
+const TERMS = /\$\s?\d|\b(our|my|your)\s+rates?\b|\brates?\s+(for|is|are|would|of)\b|\[your rate|\bprices?\b|\bpricing\b|\bprice list\b|\bfees?\b|\binvoice|\bmedia kit\b|\bdeliverables\b|\busage rights\b|\b(content|video|creator) packages?\b|what a partnership could look like|\b(pay|pays|paid|paying|payment|payments|payout|payouts)\b|\bcommissions?\b|\bcompensat(e|ed|ion)\b|\bcharg(e|es|ed|ing)\b|\bper (video|post|piece|submission)\b/i
+// A brand's ad budget: kept out everywhere except where a caller allows it.
+const BUDGET = /\bbudgets?\b(?!-)|\bspend(s|ing)?\b[^.?!\n]{0,20}\bon ads\b|\bad spend\b/i
+
+/** The words that make a message talk pay or terms, with a word or two
+ *  around them so a person can find them, or null when it does not. Said in
+ *  every refusal, so "could not be written" always says what to change. Pure. */
+export function termsHit(text: string, o: { adSpendQuestion?: boolean } = {}): string | null {
+  const src = String(text || '')
+  let t = src
+  for (const re of NOT_TERMS) t = t.replace(re, (m) => ' '.repeat(m.length))
+  const m = TERMS.exec(t) || (!o.adSpendQuestion ? BUDGET.exec(t) : null)
+  if (!m) return null
+  const before = src.slice(0, m.index).match(/(\S+\s+){0,2}$/)?.[0] || ''
+  const after = src.slice(m.index + m[0].length).match(/^\S*(\s+\S+){0,2}/)?.[0] || ''
+  return (before + src.slice(m.index, m.index + m[0].length) + after).replace(/\s+/g, ' ').trim().slice(0, 80)
+}
+
 /** A reply that talks money or terms, which a TRYBE reply never should: the
  *  brand sets the pay on TRYBE (Seb, 2026-10-14). Pure. */
 export function talksTerms(text: string, o: { adSpendQuestion?: boolean } = {}): boolean {
-  // TRYBE MESSAGES NEVER TALK RATES (house rule). One broad check for every
-  // message MVP writes to a brand, the creator's core message and the voice
-  // samples (review 2026-10-24: "Love that you pay $50 per video", "Is
-  // payment handled through TRYBE?", "The 20% commission works great" and
-  // "We charge $150 per video" all went through the old one).
-  if (/\$\s?\d|\b(our|my|your)\s+rates?\b|\brates?\s+(for|is|are|would|of)\b|\[your rate|\bprices?\b|\bpricing\b|\bprice list\b|\bfees?\b|\binvoice|\bmedia kit\b|\bdeliverables\b|\busage rights\b|\b(content|video|creator) packages?\b|what a partnership could look like|\b(pay|pays|paid|paying|payment|payments|payout|payouts)\b|\bcommissions?\b|\bcompensat(e|ed|ion)\b|\bcharg(e|es|ed|ing)\b|\bper (video|post|piece|submission)\b/i.test(text)) return true
-  // A brand's ad budget: kept out everywhere except the one question the
-  // first message after a yes asks (Cole's call question, lib/trybe-playbook).
-  if (!o.adSpendQuestion && /\bbudgets?\b(?!-)|\bspend(s|ing)?\b[^.?!\n]{0,20}\bon ads\b|\bad spend\b/i.test(text)) return true
-  return false
+  return termsHit(text, o) != null
 }
 
 /** A message about money the creator raised themselves (a retainer ask:

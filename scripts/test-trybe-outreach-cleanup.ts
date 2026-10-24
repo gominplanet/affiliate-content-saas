@@ -17,7 +17,7 @@
 //     changed nothing says so, and Send all waits for edits;
 //   - links name where they go, no dashes, no plan that does not exist.
 import { readFileSync } from 'node:fs'
-import { talksTerms, asksMoney, tidyDraft } from '../lib/trybe-outreach'
+import { talksTerms, termsHit, asksMoney, tidyDraft } from '../lib/trybe-outreach'
 import { inboxSnapshot } from '../lib/trybe-alerts'
 
 const fails: string[] = []
@@ -32,8 +32,20 @@ const OUT = read('lib/trybe-outreach.ts')
 for (const t of ['Love that you pay $50 per video', 'Is payment handled through TRYBE?', 'The 20% commission works great', 'What is the price per video?', 'your monthly ad budget', 'We charge $150 per video']) check(`"${t}" is money talk`, talksTerms(t))
 check('a voice sample that talks pay is never learned', asksMoney('We charge $150 per video'))
 check('budget-friendly is not money talk', !talksTerms('Budget-friendly and sturdy.'))
-check('kickoff, follow up and join requests are checked, written once more, then refused, with no exception', /const moneyOk = \(t: string\) => !talksTerms\(t\)/.test(ROUTE) && /The message kept talking about pay or rates/.test(ROUTE) && /if \(text && talksTerms\(text\)\) text = await write\(/.test(ROUTE) && /The draft kept talking about pay or rates/.test(ROUTE))
-check('a core message that talks pay is said on save', /const warning = coreMessage && talksTerms\(coreMessage/.test(ROUTE) && /if \(d\.warning\) toast\.warning\(d\.warning/.test(UI))
+check('kickoff, follow up and join requests are checked, written once more, then refused, with no exception', /const moneyOk = \(t: string\) => !talksTerms\(t\)/.test(ROUTE) && /The message kept saying \u201c\$\{termsHit\(text\)\}\u201d/.test(ROUTE) && /if \(firstHit\) text = await write\(/.test(ROUTE) && /The draft kept saying \u201c\$\{lastHit\}\u201d/.test(ROUTE))
+check('a core message that talks pay is said on save', /const coreHit = coreMessage \? termsHit\(coreMessage\) : null/.test(ROUTE) && /if \(d\.warning\) toast\.warning\(d\.warning/.test(UI))
+
+// WHY A REQUEST WAS NOT WRITTEN (Seb, 2026-10-24: "draft could not be
+// written", with no reason). Every refusal names the words it caught, the
+// core message is checked before anything is written, and the page shows the
+// server's reason instead of a bare count.
+check('the refusal names the words it caught, with a word or two around them', termsHit('Love that you pay $50 per video') === 'that you pay $50 per' && termsHit('Hi Haus, so glad to have found you here.') === null)
+for (const t of ['Our videos are built to run as paid ads on Meta and TikTok.', 'We have driven $250K+ in Amazon sales with our reviews.', 'Your fast charging power banks look great.', 'We pay close attention to lighting.', 'Our approval rate is high.']) check(`"${t}" is not pay talk`, !talksTerms(t))
+check('a core message that talks pay stops the requests before any writing, naming the words', /const coreHit = termsHit\(settings\.coreMessage\)\n    if \(coreHit\) return NextResponse\.json\(\{ error: `Your core message says/.test(ROUTE) && ROUTE.indexOf('const coreHit = termsHit(settings.coreMessage)') < ROUTE.indexOf("if (action === 'ideas')") && ROUTE.indexOf('const coreHit = termsHit(settings.coreMessage)') > ROUTE.indexOf("if (action === 'draft')"))
+check('the writer is told which words to take out', /Your last try said \u201c\$\{firstHit\}\u201d/.test(ROUTE))
+check('a brand that is not on the list is said, not dropped', /That brand is not on your list, so it was not written/.test(ROUTE))
+check('the page shows the server\'s reason with the count', /reasons\.push\(r\.error\)/.test(UI) && /function notWritten\(/.test(UI) && (UI.match(/notWritten\(r\.failed, r\.reasons/g) || []).length === 4 && !/could not be written`\)/.test(UI))
+check('the core message card warns while you type', /const coreHit = useMemo\(\(\) => termsHit\(core\), \[core\]\)/.test(UI) && /\{coreHit && <p/.test(UI))
 check('the brand\'s pay is never given to a writer', !/`TRYBE pay: \$\{b\.payText\}`/.test(OUT) && !/`Pays: \$\{b\.payText\}`/.test(read('lib/trybe-playbook.ts')) && /payText: null, website: r\.website/.test(ROUTE))
 
 // Voice.

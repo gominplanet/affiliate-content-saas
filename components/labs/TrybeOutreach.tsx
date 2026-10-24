@@ -31,7 +31,7 @@ import { readMetaAds, readMetaAdsAll, metaAdsWords, type MetaAdsRun } from '@/co
 import TrybeTabGate from '@/components/labs/TrybeTabGate'
 import TrybeStarBrands from '@/components/labs/TrybeStarBrands'
 import { TRYBE_OPEN_URL, TRYBE_NOT_OPEN, TRYBE_NOT_OPEN_WORDS, trybeTabWords, type TrybeTabState } from '@/lib/trybe-tab'
-import { nextGapMs, prefsKey, CATEGORY_SUGGESTIONS, DAILY_FIND, SCAN_READ, SHORT_RUN_UNDER, SHORT_GAP_MS, MAX_DAILY_CAP } from '@/lib/trybe-outreach'
+import { nextGapMs, prefsKey, CATEGORY_SUGGESTIONS, DAILY_FIND, SCAN_READ, SHORT_RUN_UNDER, SHORT_GAP_MS, MAX_DAILY_CAP, termsHit } from '@/lib/trybe-outreach'
 import TrybeInbox, { fetchTrybeInbox, lastIsMine, type Conversation } from '@/components/labs/TrybeInbox'
 import { reportTrybeInbox, inboxSnapshot } from '@/lib/trybe-alerts'
 import { readDiscoveryPage, requestState, acceptRate, type BrandFlags, type RequestState } from '@/lib/trybe-invites'
@@ -975,21 +975,30 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
     setKwInput('')
   }
 
-  /** Draft these brands into Ready to send, four at a time. */
-  async function draftIds(ids: string[]): Promise<{ ok: number; failed: number }> {
+  /** Draft these brands into Ready to send, four at a time. Each failure
+   *  keeps the server's reason, so "could not be written" always says why
+   *  (Seb, 2026-10-24: a bare "draft could not be written"). */
+  async function draftIds(ids: string[]): Promise<{ ok: number; failed: number; reasons: string[] }> {
     let ok = 0, failed = 0
+    const reasons: string[] = []
     setFinding({ stage: 'Writing messages', done: 0, total: ids.length })
     for (let i = 0; i < ids.length; i += 4) {
       const chunk = ids.slice(i, i + 4)
       try {
         // Your own messages to brands, so the first message writes the way you do.
         const d = await api({ action: 'draft', brandIds: chunk, voice: readVoice() })
-        for (const r of (d.results || []) as Array<{ ok: boolean }>) r.ok ? ok++ : failed++
+        for (const r of (d.results || []) as Array<{ ok: boolean; error?: string }>) { if (r.ok) ok++; else { failed++; if (r.error) reasons.push(r.error) } }
       // The rest are counted too: a stop must not make them vanish from the total.
-      } catch (e) { failed += ids.length - i; toast.error(e instanceof Error ? e.message : 'Draft failed'); break }
+      } catch (e) { failed += ids.length - i; reasons.push(e instanceof Error ? e.message : 'Writing stopped.'); break }
       setFinding({ stage: 'Writing messages', done: Math.min(ids.length, i + 4), total: ids.length })
     }
-    return { ok, failed }
+    return { ok, failed, reasons }
+  }
+
+  /** "1 draft could not be written: <why>", with each different reason once. */
+  function notWritten(n: number, reasons: string[], what = 'could not be written'): string {
+    const why = Array.from(new Set(reasons))
+    return `${n} draft${n === 1 ? '' : 's'} ${what}${why.length ? `: ${why.slice(0, 2).join(' ')}${why.length > 2 ? ` And ${why.length - 2} other reason${why.length === 3 ? '' : 's'}.` : ''}` : '.'}`
   }
 
   /** Judge every brand not yet judged against the saved niche, five at a time. */
@@ -1044,7 +1053,7 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
         const pick = list.slice(0, room).map(b => b.brand_id)
         if (pick.length) {
           const r = await draftIds(pick)
-          notes.push(`Today's drafts: ${r.ok} added to Ready to send${r.failed ? `, ${r.failed} could not be written` : ''}.`)
+          notes.push(`Today's drafts: ${r.ok} added to Ready to send.${r.failed ? ` ${notWritten(r.failed, r.reasons)}` : ''}`)
         } else notes.push(room ? 'No new brands that fit today, so nothing was added to the queue.' : 'Ready to send already holds today’s 20.')
         await api({ action: 'found' }).catch(() => null)
         setLastFindAt(new Date().toISOString())
@@ -1250,8 +1259,8 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
       setFinding({ stage: 'Putting the brands you picked on your list' })
       const a = await api({ action: 'adopt', brandIds: ids })
       const ready: string[] = a.ready || []
-      const r = ready.length ? await draftIds(ready) : { ok: 0, failed: 0 }
-      if (r.failed) toast.error(`${r.failed} draft${r.failed === 1 ? '' : 's'} could not be written`)
+      const r = ready.length ? await draftIds(ready) : { ok: 0, failed: 0, reasons: [] }
+      if (r.failed) toast.error(notWritten(r.failed, r.reasons), { duration: 15000 })
       if (r.ok) { toast.success(`${r.ok} added to Ready to send`); if (!only) setTab('queue') }
       if (!ready.length) toast.message(only?.length === 1 ? 'That brand is already in Ready to send or sent.' : 'None of those could be drafted: they are already in your queue or sent.')
       if (!only) setLivePick(new Set())
@@ -1542,7 +1551,7 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
     unsavedCoreSaid()
     const r = await draftIds(ids)
     setFinding(null)
-    if (r.failed) toast.error(`${r.failed} draft${r.failed === 1 ? '' : 's'} could not be written`)
+    if (r.failed) toast.error(notWritten(r.failed, r.reasons), { duration: 15000 })
     if (r.ok) { toast.success(`${r.ok} added to Ready to send`); setTab('queue') }
     setSelected(new Set())
     await load()
@@ -1577,7 +1586,7 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
     unsavedCoreSaid()
     const r = await draftIds(list.map(b => b.brand_id))
     setFinding(null)
-    if (r.failed) toast.error(`${r.failed} could not be rewritten`)
+    if (r.failed) toast.error(notWritten(r.failed, r.reasons, 'could not be rewritten'), { duration: 15000 })
     if (r.ok) toast.success(`${r.ok} message${r.ok === 1 ? '' : 's'} rewritten`)
     await load()
   }
@@ -1729,6 +1738,9 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
   // working, and a draft never touches a brand being sent (the server writes
   // drafts only to brands still waiting).
   const busy = !!finding || pageRunning
+  // Said on the card as you type: the server writes no request from a core
+  // message that talks pay, and names the same words (lib/trybe-outreach).
+  const coreHit = useMemo(() => termsHit(core), [core])
   // WHAT CHANGED CAN MESSAGE TOO (Seb, 2026-10-16): the same draft and send
   // steps as Find brands and Ready to send, handed to the brand details there.
   // Not on the Amazon plan's preview, which only shows the details.
@@ -2044,6 +2056,7 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
               {saved?.core.trim() && <button onClick={() => { setCore(saved.core); setEditingCore(false) }} className="text-[12px] font-semibold" style={soft}>Cancel</button>}
             </div>
           </>)}
+          {coreHit && <p className="text-[12px] mt-2 font-semibold" style={{ color: '#B45309' }}>Your core message says &ldquo;{coreHit}&rdquo;, which reads as talk about pay or rates. TRYBE brands set the pay, so MVP will not write requests from it until that part is out.</p>}
         </div>}
 
         {/* 2. Find brands. Seb, 2026-10-07: one click on a niche shows its
