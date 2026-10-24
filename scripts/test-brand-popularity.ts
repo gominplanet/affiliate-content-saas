@@ -143,7 +143,7 @@ check('no dashes in what the creator reads', !/[–—]| - /.test(words(read('li
 {
   const order = ['Chef Preserve', 'audien', 'Aero AI', 'BRYN', 'Bat Tan'].map((name) => ({ name })).sort(byBrandName).map((x) => x.name).join(',')
   check('brands you work with are listed A to Z, capitals ignored', order === 'Aero AI,audien,Bat Tan,BRYN,Chef Preserve', order)
-  check('in Upload videos, Make videos and This week', /\[\.\.\.brands\]\.sort\(byBrandName\)\.map/.test(read('components/labs/DropTrybePicker.tsx')) && /\.sort\(byBrandName\), \[brands, q\]\)/.test(read('components/labs/TrybeCreate.tsx')) && /\}\)\.sort\(byBrandName\)/.test(read('components/labs/TrybeWeek.tsx')))
+  check('in Upload videos, Make videos and This week', /\[\.\.\.brands\]\.sort\(byBrandName\)\.map/.test(read('components/labs/DropTrybePicker.tsx')) && /\.sort\(byBrandName\), \[brands, q\]\)/.test(read('components/labs/TrybeCreate.tsx')) && /\[\.\.\.\(joined \|\| \[\]\)\]\.sort\(byBrandName\)/.test(read('components/labs/TrybeWeek.tsx')))
 }
 
 if (fails.length) { console.error('brand-popularity failed:\n - ' + fails.join('\n - ')); process.exit(1) }

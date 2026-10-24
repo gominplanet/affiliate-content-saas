@@ -2423,9 +2423,10 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
       )}
 
       {tab === 'week' && (
-        // Accepted brands first, for the brand box (Seb, 2026-10-13).
+        // Accepted brands first, for the brand box (Seb, 2026-10-13); a brand
+        // that declined is no brand to send a sample from.
         <TrybeWeek canRead={canMyBrands} isAdmin={isAdmin}
-          knownBrands={[...sentRows.filter(r => r.rq?.state === 'accepted'), ...sentRows.filter(r => r.rq?.state !== 'accepted')].map(r => ({ id: r.b.brand_id, name: r.b.name }))} />
+          knownBrands={[...sentRows.filter(r => r.rq?.state === 'accepted'), ...sentRows.filter(r => r.rq?.state !== 'accepted' && r.rq?.state !== 'declined')].map(r => ({ id: r.b.brand_id, name: r.b.name }))} />
       )}
 
       {tab === 'sent' && (

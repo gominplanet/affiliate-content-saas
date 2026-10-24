@@ -45,7 +45,7 @@ export const CHASE_DAYS = 7
 export const LATE_DAYS = 7
 
 export type TaskKind = 'ideas' | 'film' | 'submit' | 'chase' | 'volume'
-export interface Task { kind: TaskKind; sampleId: string; brand: string; product: string; text: string; late?: boolean }
+export interface Task { kind: TaskKind; sampleId: string; brand: string; product: string; text: string; late?: boolean; videos?: number }
 export interface Day { date: string; label: string; tasks: Task[] }
 
 const DAY = 86_400_000
@@ -85,15 +85,23 @@ export function planWeek(samples: Sample[], opts: { perDay: number; now?: number
   // Here: oldest first, `perDay` a day; each one's ideas the day before
   // filming (or the same day for today's), and its submission the day after.
   const toFilm = open.filter((x) => stageOf(x) === 'to_film').sort((a, b) => Date.parse(a.received_at || '') - Date.parse(b.received_at || ''))
-  toFilm.forEach((s, i) => {
-    const d = Math.min(6, Math.floor(i / perDay))
+  // Seven days of `perDay` each. The rest used to pile onto day 7 as one long
+  // list; they are said once there, as next week's.
+  const slots = 7 * perDay
+  const overflow = toFilm.slice(slots)
+  toFilm.slice(0, slots).forEach((s, i) => {
+    const d = Math.floor(i / perDay)
     const n = Math.max(1, Math.min(10, s.videos_planned || 3))
     const late = daysSince(s.received_at, now) >= LATE_DAYS
-    if (!s.has_ideas) days[Math.max(0, d - 1)].tasks.push({ kind: 'ideas', sampleId: s.id, brand: s.brand_name, product: s.product, text: `Get video ideas for ${s.product} (${s.brand_name})` })
-    days[d].tasks.push({ kind: 'film', sampleId: s.id, brand: s.brand_name, product: s.product, late,
+    if (!s.has_ideas) days[Math.max(0, d - 1)].tasks.push({ kind: 'ideas', sampleId: s.id, brand: s.brand_name, product: s.product, text: `Write the scripts for ${s.product} (${s.brand_name})` })
+    days[d].tasks.push({ kind: 'film', sampleId: s.id, brand: s.brand_name, product: s.product, late, videos: n,
       text: `Film ${n} video${n === 1 ? '' : 's'} of ${s.product} for ${s.brand_name}${late ? ` (here ${daysSince(s.received_at, now)} days)` : ''}` })
     if (d + 1 <= 6) days[d + 1].tasks.push({ kind: 'submit', sampleId: s.id, brand: s.brand_name, product: s.product, text: `Edit and submit the ${s.product} videos to ${s.brand_name}` })
   })
+  if (overflow.length) {
+    days[6].tasks.push({ kind: 'film', sampleId: '', brand: '', product: '',
+      text: `${overflow.length} more sample${overflow.length === 1 ? '' : 's'} on hand to film next week: ${overflow.slice(0, 3).map((x) => x.product).join(', ')}${overflow.length > 3 ? ' and more' : ''}` })
+  }
   // Asked a week ago and not here: ask when it ships, today.
   for (const s of open.filter((x) => stageOf(x) === 'on_the_way' && daysSince(x.requested_at, now) >= CHASE_DAYS)) {
     days[0].tasks.push({ kind: 'chase', sampleId: s.id, brand: s.brand_name, product: s.product, text: `Ask ${s.brand_name} when the ${s.product} sample ships (asked ${daysSince(s.requested_at, now)} days ago)` })
@@ -106,7 +114,12 @@ export function planWeek(samples: Sample[], opts: { perDay: number; now?: number
     if (!n) continue
     days.forEach((d, i) => {
       if (new Date(now + i * DAY).getMonth() !== month) return
-      d.tasks.push({ kind: 'volume', sampleId: '', brand: p.brand, product: '', text: `Film ${n} video${n === 1 ? '' : 's'} for ${p.brand} (${p.sent} of ${p.target} sent this month)` })
+      // A day that already films this brand's sample counts toward its pace:
+      // the same videos were asked for twice, once per list.
+      const filming = d.tasks.filter((t) => t.kind === 'film' && t.brand.trim().toLowerCase() === p.brand.trim().toLowerCase()).reduce((m, t) => m + (t.videos ?? 0), 0)
+      const more = n - filming
+      if (more <= 0) return
+      d.tasks.push({ kind: 'volume', sampleId: '', brand: p.brand, product: '', text: `Film ${more}${filming ? ' more' : ''} video${more === 1 ? '' : 's'} for ${p.brand} (${p.sent} of ${p.target} sent this month)` })
     })
   }
   return days

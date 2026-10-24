@@ -64,17 +64,21 @@ export default function TrybeBrandScripts({ brands, isAdmin }: { brands: MyBrand
       else failed++
       setReading({ done: i + 1, of: list.length })
     }
-    let saved = 0
+    let saved = 0, fileErr: string | null = null
     try {
       for (let i = 0; i < filed.length; i += 10) { const d = await api({ action: 'brand_top_seen', brands: filed.slice(i, i + 10) }); saved += Number(d.saved || 0) }
-    } catch (e) { setNote({ tone: 'bad', text: `MVP read your brands but could not file their videos: ${e instanceof Error ? e.message : 'no answer'}` }) }
+    } catch (e) { fileErr = e instanceof Error ? e.message : 'no answer' }
     setReading(null)
     busy.current = false
+    // Only a read that worked counts as today's: anything short of it is said
+    // as a failure and read again on the next visit.
+    const found = filed.reduce((n, b) => n + b.videos.length, 0)
     if (stop) setNote({ tone: 'bad', text: `Stopped after ${filed.length} of ${list.length} brands: ${stop}.` })
+    else if (fileErr) setNote({ tone: 'bad', text: `MVP read ${filed.length} of your brands on TRYBE but could not keep their videos: ${fileErr}` })
+    else if (!filed.length) setNote({ tone: 'bad', text: `TRYBE did not answer for any of your ${list.length} brands. MVP tries again on your next visit.` })
     else {
-      const found = filed.reduce((n, b) => n + b.videos.length, 0)
-      setNote({ tone: 'ok', text: `Read ${filed.length} of ${list.length} brands on TRYBE${failed ? ` (${failed} did not answer)` : ''}: ${found} top videos, ${saved} new to MVP.` })
-      markRead()
+      setNote({ tone: failed ? 'bad' : 'ok', text: `Read ${filed.length} of ${list.length} brands on TRYBE${failed ? ` (${failed} did not answer, tried again on your next visit)` : ''}: ${found} top videos, ${saved} new to MVP.` })
+      if (!failed) markRead()
     }
     await show()
   }, [list, show])

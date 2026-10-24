@@ -80,6 +80,9 @@ export interface PlannerInput {
   target: number
   perDay: number
   products: PlannerProduct[]
+  /** TRYBE was read for this planner. False: money and stuck videos are
+   *  "not read", never "$0" and "nothing stuck". */
+  trybeRead?: boolean
 }
 
 export interface PlannerModel {
@@ -95,7 +98,11 @@ export interface PlannerModel {
     months: Array<{ label: string; amount: number }>
     monthsNote: string | null
     total: number
+    /** False when TRYBE could not be read for this planner. */
+    read: boolean
   }
+  /** Stuck videos were read (each brand's submissions came back). */
+  stuckRead: boolean
 }
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
@@ -169,8 +176,11 @@ export function buildPlanner(x: PlannerInput): PlannerModel {
     .map(([k, amount]) => ({ label: MONTHS[Number(k.slice(5, 7)) - 1] || k, amount: Math.round(amount * 100) / 100 }))
   const total = brands.reduce((n, b) => n + b.earned, 0)
 
+  const read = x.trybeRead !== false
   return {
     weekLabel: weekOf(x.now), jobs: jobs.slice(0, 3), pace, stuck, days, products: x.products, shipping,
-    money: { brands, months, monthsNote: anyMonths ? null : 'TRYBE did not give your earnings by month, so only the totals per brand show.', total },
+    money: { brands, months, monthsNote: anyMonths ? null : 'TRYBE did not give your earnings by month, so only the totals per brand show.', total, read },
+    // Every brand's submissions came back, or "nothing stuck" is not known.
+    stuckRead: read && x.brands.every((b) => x.subs[b.id] && !x.subs[b.id].error),
   }
 }

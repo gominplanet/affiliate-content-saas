@@ -126,8 +126,9 @@ check('a worse day never demotes a video', bestRank(71, 3) === 3 && bestRank(3, 
 check('the video plan reads the Top 100 words and picks examples for the brand',
   /\.from\('trybe_top_scripts'\)\.select\('brand_id,brand_name,best_rank,category,script,state'\)\.eq\('state', 'ready'\)/.test(R)
     && /pickExamples\(/.test(R) && /\$\{examplesText \? `\\n\\n\$\{examplesText\}` : ''\}/.test(R))
-check('and says how many it used, on both answers', (R.match(/fromTop100: examples\.length/g) || []).length === 2)
-check('the page says it on the plan', /Written with \$\{d\.fromTop100\} winning ad/.test(V))
+check('and says how many it used, on both answers', (R.match(/fromTop100: examples\.length, fromRanked: examples\.filter\(\(x\) => x\.best_rank != null\)\.length/g) || []).length === 2)
+check('the page says it on the plan, Top 100 ads apart from brand page videos', /winning ad\$\{ranked === 1 \? '' : 's'\} from TRYBE’s Top 100/.test(V) && /top video\$\{fromPages === 1 \? '' : 's'\} from brands’ own TRYBE pages/.test(V))
+check('a video from a brand page is never called a Top 100 ad', /'a top video on its brand’s TRYBE page'/.test(read('lib/trybe-scripts.ts')))
 {
   const rows = [
     { brand_id: 'a', brand_name: 'Hollow Socks', best_rank: 5, category: 'Apparel & Accessories', script: 'Hollow Socks changed my runs. Stop buying cheap socks that fall apart in a week.', state: 'ready' as const },

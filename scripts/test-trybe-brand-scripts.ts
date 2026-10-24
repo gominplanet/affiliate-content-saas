@@ -31,6 +31,8 @@ check('a file not on TRYBE\'s hosts is filed without it, so it is never listened
 check('a bad brand id is dropped and one pass is capped', !filed.some((b) => b.brandId === '<script>') && filed.length <= 40)
 const many = cleanFiling([{ brandId: 'brand-123456', videos: Array.from({ length: 40 }, (_, i) => ({ id: `sub-${String(i).padStart(6, '0')}`, video: 'https://media.trybe-cdn.com/v.mp4' })) }], hosts)
 check('up to the per-brand count is kept', many[0].videos.length === BRAND_SCRIPTS_PER_BRAND)
+const deaf = { state: 'waiting', source: 'none', detail: 'MVP could not listen to it: the file is gone', video_url: 'https://x' }
+check('a video MVP could not listen to says why, never "being written down", and is not counted as waiting', wordsFrom(deaf).tone === 'none' && /could not listen to it: the file is gone\.$/.test(wordsFrom(deaf).text) && scriptCounts([deaf]).waiting === 0 && scriptCounts([deaf]).none === 1)
 check('where the words came from is said, and a gap says why', wordsFrom({ state: 'ready', source: 'transcribed', detail: null, video_url: 'x' }).text === 'Written down by MVP from the video'
   && wordsFrom({ state: 'ready', source: 'trybe', detail: null, video_url: null }).text === 'TRYBE’s own words for this video'
   && wordsFrom({ state: 'waiting', source: 'none', detail: null, video_url: 'https://x' }).tone === 'wait'

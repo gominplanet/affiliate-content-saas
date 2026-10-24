@@ -76,7 +76,7 @@ export function renderPlannerPdf(model: PlannerModel, assets: PlannerAssets): Ar
   const tiles: Array<[string, string, RGB]> = [
     [String(model.products.length), 'products on hand to film', PURPLE],
     [String(model.shipping.length), 'samples on the way', AMBER],
-    [`$${Math.round(model.money.total).toLocaleString('en-US')}`, 'earned on TRYBE', GREEN],
+    model.money.read ? [`$${Math.round(model.money.total).toLocaleString('en-US')}`, 'earned on TRYBE', GREEN] : ['Not read', 'earned on TRYBE: MVP could not read it', SOFT],
   ]
   const tw = (W - 2 * M - 24) / 3
   tiles.forEach(([big, small, c], i) => tile(kit, M + i * (tw + 12), y, tw, big, small, c))
@@ -110,7 +110,7 @@ export function renderPlannerPdf(model: PlannerModel, assets: PlannerAssets): Ar
   }
 
   label('Stuck in review', model.stuck.length ? AMBER : SOFT)
-  if (!model.stuck.length) para('Nothing stuck: no video has waited more than 5 days.', M, W - 2 * M, 10.5, SOFT)
+  if (!model.stuck.length) para(model.stuckRead ? 'Nothing stuck: no video has waited more than 5 days.' : 'Not known: MVP could not read your submissions on TRYBE for every brand, so stuck videos may be missing here.', M, W - 2 * M, 10.5, SOFT)
   for (const s of model.stuck) {
     ensure(18); box(M, y + 2)
     font(10.5); color(INK); doc.text(pdfSafe(`Nudge ${s.brand}: ${s.count} video${s.count === 1 ? '' : 's'} waiting, the oldest ${s.oldestDays} days. Send a short note in their TRYBE chat.`), M + 16, y + 10)
@@ -125,7 +125,8 @@ export function renderPlannerPdf(model: PlannerModel, assets: PlannerAssets): Ar
   let rowTop = y
   let rowH = 0
   for (const d of model.days) {
-    const tasks = d.tasks.slice(0, 7)
+    // Seven a day fit; the rest are said, never dropped in silence.
+    const tasks = d.tasks.length > 7 ? [...d.tasks.slice(0, 6), { ...d.tasks[6], kind: d.tasks[6].kind, text: `And ${d.tasks.length - 6} more: see This week in MVP` }] : d.tasks
     const bodyH = tasks.length ? tasks.reduce((n, t) => n + lines(t.text, cw - 34).length * lh(9.5) + 4, 0) : lh(9.5)
     const hgt = Math.max(70, 34 + bodyH + 10)
     if (col === 0 && rowTop + hgt > BOTTOM) { newPage(); rowTop = y }
@@ -164,7 +165,8 @@ export function renderPlannerPdf(model: PlannerModel, assets: PlannerAssets): Ar
     for (const l of lines(p.product, tWidth).slice(0, 2)) { doc.text(l, tx, ty + 18); ty += 22 }
     if (p.price) { font(11); color(SOFT); doc.text(pdfSafe(p.price), tx, ty + 12); ty += 18 }
     let lx = tx
-    if (p.productUrl) { link('Product page', lx, ty + 12, p.productUrl); lx += doc.getTextWidth('Product page') + 16 }
+    // The link names where it goes (CLAUDE.md, links say where they go).
+    if (p.productUrl) { const w = productLinkWords(p.productUrl, p.brand); link(w, lx, ty + 12, p.productUrl); lx += doc.getTextWidth(w) + 16 }
     if (p.brandPage) { link('Brand on TRYBE', lx, ty + 12, p.brandPage); lx += doc.getTextWidth('Brand on TRYBE') + 16 }
     // You already filmed it on Amazon: the video, to reuse for TRYBE.
     if (p.amazonVideo) link('Your Amazon video', lx, ty + 12, p.amazonVideo)
@@ -188,13 +190,17 @@ export function renderPlannerPdf(model: PlannerModel, assets: PlannerAssets): Ar
       const inner = W - 2 * M - 40
       // A plan with a script prints the words to say, line by line, and its
       // B-roll; an older plan its hook and beats.
-      const script = v.say?.length ? v.say.slice(0, 7) : null
+      // Every line and every shot the plan has: the parser keeps up to 8 lines
+      // (the last is the call to action) and the prompt asks for 4 to 6 shots,
+      // and cutting at 7 and 4 lost the close and shots for lines.
+      const script = v.say?.length ? v.say.slice(0, 8) : null
       const beats = script ?? v.beats.slice(0, 4)
-      const broll = script ? (v.broll || []).slice(0, 4) : []
+      const broll = script ? (v.broll || []).slice(0, 6) : []
       const brollText = broll.length ? `B-roll: ${broll.join('; ')}` : ''
+      const briefText = v.forBrief ? `For the brief: ${v.forBrief}` : ''
       const est = 26 + (script ? 0 : lines(`Hook: ${v.hook}`, inner).length * lh(10)) + (v.shot ? lines(`First 2 seconds: ${v.shot}`, inner).length * lh(9.5) : 0)
         + beats.reduce((n, b) => n + lines(b, inner - 14).length * lh(9.5), 0) + (!script && v.cta ? lines(`Close: ${v.cta}`, inner).length * lh(9.5) : 0)
-        + (brollText ? lines(brollText, inner).length * lh(9.5) : 0) + 24
+        + (brollText ? lines(brollText, inner).length * lh(9.5) : 0) + (briefText ? lines(briefText, inner).length * lh(9.5) : 0) + 24
       ensure(est)
       const top = y
       fill(TINT); doc.roundedRect(M, top, W - 2 * M, est - 8, 10, 10, 'F')
@@ -210,6 +216,7 @@ export function renderPlannerPdf(model: PlannerModel, assets: PlannerAssets): Ar
       beats.forEach((b, j) => { font(9.5, true); color(PURPLE); doc.text(`${j + 1}`, x, y + 9.5); para(script ? `\u201c${b}\u201d` : b, x + 14, inner - 14, 9.5) })
       if (!script && v.cta) para(`Close: ${v.cta}`, x, inner, 9.5, INK)
       if (brollText) para(brollText, x, inner, 9.5, SOFT)
+      if (briefText) para(briefText, x, inner, 9.5, GREEN)
       // Filmed, edited, submitted.
       let bx = x
       for (const t of ['Filmed', 'Edited', 'Submitted']) { box(bx, y + 3, 8); font(8.5); color(SOFT); doc.text(t, bx + 12, y + 10); bx += doc.getTextWidth(t) + 26 }
@@ -257,12 +264,17 @@ export function renderPlannerPdf(model: PlannerModel, assets: PlannerAssets): Ar
   // ── Money ──────────────────────────────────────────────────────────────────
   newPage()
   title('Your money', 'What is working and what is not, at a glance.')
-  font(30, true); color(GREEN); doc.text(`$${Math.round(model.money.total).toLocaleString('en-US')}`, M, y + 28)
-  font(10); color(SOFT); doc.text('earned on TRYBE, all brands', M, y + 44); y += 62
+  if (model.money.read) {
+    font(30, true); color(GREEN); doc.text(`$${Math.round(model.money.total).toLocaleString('en-US')}`, M, y + 28)
+    font(10); color(SOFT); doc.text('earned on TRYBE, all brands', M, y + 44); y += 62
+  } else {
+    font(20, true); color(SOFT); doc.text('Not read', M, y + 24)
+    font(10); color(SOFT); doc.text('MVP could not read your earnings on TRYBE for this planner. Sign in to TRYBE in Chrome and print it again.', M, y + 40); y += 58
+  }
 
   const top = model.money.brands.filter((b) => b.earned > 0 || (b.sent ?? 0) > 0).slice(0, 10)
   label('Earned per brand')
-  if (!top.length) para('No earnings yet. Your first approved videos show here.', M, W - 2 * M, 10.5, SOFT)
+  if (!top.length && model.money.read) para('No earnings yet. Your first approved videos show here.', M, W - 2 * M, 10.5, SOFT)
   const max = Math.max(1, ...top.map((b) => b.earned))
   const nameW = 130
   const barW = W - 2 * M - nameW - 70
@@ -342,4 +354,13 @@ export function renderPlannerPdf(model: PlannerModel, assets: PlannerAssets): Ar
   // Who made it, and page n of N, on every page after the cover.
   drawFooters(kit)
   return doc.output('arraybuffer')
+}
+
+/** A product link's words, naming the store it opens. Pure. */
+export function productLinkWords(url: string, brand: string): string {
+  let host = ''
+  try { host = new URL(url).hostname.toLowerCase().replace(/^www\./, '') } catch { /* named by the brand below */ }
+  if (/(^|\.)amazon\.|^amzn\.to$|^a\.co$/.test(host)) return 'See it on Amazon'
+  if (/(^|\.)trybe\./.test(host)) return 'See it on TRYBE'
+  return pdfSafe(`See it on the ${brand.trim() || 'brand'} store`).slice(0, 48)
 }

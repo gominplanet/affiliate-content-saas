@@ -70,6 +70,27 @@ export async function POST(request: Request) {
       // Brought in from TRYBE's own sample requests: when it was asked for.
       ...(typeof body.requestedAt === 'string' && Number.isFinite(Date.parse(body.requestedAt)) ? { requested_at: new Date(Date.parse(body.requestedAt)).toISOString() } : {}),
     }
+    // ONE ROW PER BRAND AND PRODUCT. "I have this product" in Make videos,
+    // pressed twice or after a revisit, added a second row, and a sample
+    // already brought in from TRYBE as on the way stayed on the way beside it
+    // and kept asking when it ships. The existing row is used, and ticked
+    // Received when that is what was said.
+    const same = (a: string) => a.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
+    {
+      let q = admin.from('trybe_samples').select(COLS).eq('user_id', ownerId)
+      q = row.brand_id ? q.or(`brand_id.eq.${row.brand_id},brand_name.ilike.${brandName.replace(/[%,()]/g, ' ')}`) : q.ilike('brand_name', brandName.replace(/[%,()]/g, ' '))
+      const { data: had, error: hadErr } = await q.limit(200)
+      if (hadErr) return fail(hadErr.message, g.tier)
+      const hit = ((had || []) as Array<Record<string, any>>).find((r) => same(String(r.product || '')) === same(product)) // eslint-disable-line @typescript-eslint/no-explicit-any
+      if (hit) {
+        if (body.received === true && !hit.received_at) {
+          const { data, error } = await admin.from('trybe_samples').update({ received_at: now, updated_at: now }).eq('user_id', ownerId).eq('id', hit.id).select(COLS).single()
+          if (error) return fail(error.message, g.tier)
+          return NextResponse.json({ ok: true, sample: data, existing: true })
+        }
+        return NextResponse.json({ ok: true, sample: hit, existing: true })
+      }
+    }
     const { data, error } = await admin.from('trybe_samples').insert(row).select(COLS).single()
     if (error) return fail(error.message, g.tier)
     return NextResponse.json({ ok: true, sample: data })

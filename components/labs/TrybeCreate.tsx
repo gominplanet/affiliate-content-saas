@@ -11,7 +11,7 @@
 //   3. Your shooting scripts: ten videos for that product, from the brief,
 //      saved per brand and product (TrybeVideoIdeas does the writing).
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Loader2, ArrowLeft, Search, Check, FileText, ExternalLink, AlertTriangle } from 'lucide-react'
 import { requestTrybeApi } from '@/lib/extension-frame'
 import { readBrandStats, byBrandName, type MyBrand } from '@/lib/trybe-mybrands'
@@ -66,10 +66,19 @@ export default function TrybeCreate({ canRead, isAdmin, onFind }: { canRead: boo
     }).catch((e) => setError(e instanceof Error ? e.message : 'SCOUT did not answer.'))
   }, [canRead, brands])
 
+  // ONLY THE BRAND STILL PICKED GETS ITS PAGE. A brief read can take ten
+  // seconds or more; picking A, going back and picking B used to let A's page
+  // land under B, and B's scripts were then written from A's brief.
+  const picking = useRef<string | null>(null)
   async function pickBrand(b: MyBrand) {
+    picking.current = b.id
     setBrand(b); setProduct(null); setTyped(''); setPage(null); setPageLoading(true)
-    try { setPage(await loadBrandPage(b.id)) } finally { setPageLoading(false) }
+    try {
+      const p = await loadBrandPage(b.id)
+      if (picking.current === b.id) setPage(p)
+    } finally { if (picking.current === b.id) setPageLoading(false) }
   }
+  const leaveBrand = () => { picking.current = null; setBrand(null); setProduct(null); setPage(null); setPageLoading(false) }
 
   // A to Z (Seb, 2026-10-22), whatever order TRYBE sends them in.
   const shown = useMemo(() => (brands || []).filter((b) => !q.trim() || b.name.toLowerCase().includes(q.trim().toLowerCase())).sort(byBrandName), [brands, q])
@@ -88,7 +97,7 @@ export default function TrybeCreate({ canRead, isAdmin, onFind }: { canRead: boo
         return (
           <li key={label} className="inline-flex items-center gap-2">
             {i > 0 && <span aria-hidden style={soft}>&rsaquo;</span>}
-            <button disabled={!done} onClick={() => { if (n === 1) { setBrand(null); setProduct(null) } else if (n === 2) setProduct(null) }}
+            <button disabled={!done} onClick={() => { if (n === 1) leaveBrand(); else if (n === 2) setProduct(null) }}
               className="inline-flex items-center gap-1.5 disabled:cursor-default" style={on ? { color: PURPLE } : done ? { color: 'var(--text)' } : soft}>
               <span className="w-6 h-6 rounded-full inline-flex items-center justify-center text-[12px] font-bold"
                 style={done ? { background: GREEN, color: '#fff' } : on ? { background: PURPLE, color: '#fff' } : { border: '1px solid var(--border)' }}>
@@ -109,6 +118,8 @@ export default function TrybeCreate({ canRead, isAdmin, onFind }: { canRead: boo
   return (
     <div className="space-y-4">
       {steps()}
+      {/* A failed Amazon match is said, so it never reads as "not on Amazon". */}
+      {amz.error && <p className="text-[12.5px] inline-flex items-start gap-1.5" style={{ color: AMBER }}><AlertTriangle size={13} className="mt-0.5 shrink-0" /> {amz.error.replace(/\.$/, '')}. The Amazon lines below may be missing.</p>}
 
       {/* 1. The brand */}
       {step === 1 && (
@@ -146,7 +157,7 @@ export default function TrybeCreate({ canRead, isAdmin, onFind }: { canRead: boo
       {/* 2. The product */}
       {step === 2 && brand && (
         <section className={card} style={cardStyle}>
-          <button onClick={() => setBrand(null)} className="mb-2 inline-flex items-center gap-1 text-[13px] font-semibold" style={{ color: PURPLE }}><ArrowLeft size={13} /> Another brand</button>
+          <button onClick={leaveBrand} className="mb-2 inline-flex items-center gap-1 text-[13px] font-semibold" style={{ color: PURPLE }}><ArrowLeft size={13} /> Another brand</button>
           <h2 className="text-[20px] font-bold">Which {brand.name} product do you have?</h2>
           <AmazonLine amazon={amz.brand(brand.id)} />
           <AmazonFilmedList products={amz.brand(brand.id)?.products} title={`Your Amazon videos of ${brand.name}`} />
@@ -232,7 +243,7 @@ export default function TrybeCreate({ canRead, isAdmin, onFind }: { canRead: boo
               </div>
             )
           })()}
-          <p className="text-[13.5px] mt-0.5 mb-3" style={soft}>Ten videos, each with its hook, the first 2 seconds, the beats and the close. Copy one, or print them all and start shooting.</p>
+          <p className="text-[13.5px] mt-0.5 mb-3" style={soft}>Ten videos, each as short lines to say one at a time, with the B-roll to film. Copy one, or print them all and start shooting.</p>
           <TrybeVideoIdeas key={`${brand.id}|${product}`} brandId={brand.id} name={brand.name} plan={null} canRead={canRead} isAdmin={isAdmin} product={product} page={page} auto emphasize />
         </section>
       )}

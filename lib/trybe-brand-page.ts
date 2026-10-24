@@ -332,8 +332,10 @@ export function readSampleRequests(json: unknown): SampleRequest[] {
 
 /** Where a sample request stands, in the words of the This week tab. Pure. */
 export function sampleStage(status: string): 'here' | 'coming' | 'no' {
-  const s = status.toLowerCase()
-  if (/deliver|received|complete|fulfilled/.test(s)) return 'here'
-  if (/reject|declin|cancel|expire|denied/.test(s)) return 'no'
+  const s = status.toLowerCase().replace(/[\s-]+/g, '_')
+  // A refusal first, and words that only look delivered are not:
+  // "undelivered", "not_received" and "out_for_delivery" ticked Received.
+  if (/reject|declin|cancel|expire|denied|undeliver|not_received|not_delivered|lost|returned/.test(s)) return 'no'
+  if (/^(delivered|received|complete|completed|fulfilled)$/.test(s)) return 'here'
   return 'coming'
 }

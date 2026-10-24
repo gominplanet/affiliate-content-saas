@@ -195,7 +195,11 @@ export default function TrybeWorking({ canRead, isAdmin, newToTop, scoutVersion 
         </div>
         <p className="text-[13px] mt-0.5" style={soft}>The first line of the videos TRYBE picked for its Top 100. Press a kind to see examples of it.</p>
         {lineList.length === 0 ? (
-          <p className="text-[13px] mt-3" style={soft}>TRYBE did not share the words of these videos, so MVP cannot count how they open. Watch a few from the Top 100 on TRYBE and note their first 2 seconds.</p>
+          // The words come from MVP's own copy (top_lines), written down from
+          // each video: when there are none, it is MVP that has not got them.
+          <p className="text-[13px] mt-3" style={soft}>{data?.waiting
+            ? `MVP is still writing down the words of these videos (${data.waiting} to go), so it cannot count how they open yet. Check back tomorrow, or watch a few from the Top 100 on TRYBE and note their first 2 seconds.`
+            : 'MVP does not have the words of these videos yet, so it cannot count how they open. Watch a few from the Top 100 on TRYBE and note their first 2 seconds.'}</p>
         ) : (
           <div className="mt-3 grid gap-3 grid-cols-2 lg:grid-cols-5">
             {HOOK_TYPES.map((h) => {

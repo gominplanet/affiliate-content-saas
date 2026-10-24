@@ -15,6 +15,8 @@
 //     "Japanese versus American", the negative hook, the crumpled bottle).
 // Pure, so the stages and the prompts are tested (scripts/test-trybe-playbook).
 
+import { scrubBanned } from '@/lib/scrub'
+
 // ── Where an accepted brand stands ───────────────────────────────────────────
 
 export type AfterState = 'none' | 'checking' | 'unknown' | 'send_first' | 'waiting' | 'no_answer' | 'answered'
@@ -79,7 +81,7 @@ export const KICKOFF_SYSTEM = (bannedRule: string) => `You write the first messa
 
 The message does four things, in this order, in a short chat message (under 120 words):
 1. Thank them for approving the creator, warmly and briefly.
-2. Say what the creator wants to make for them: two or three concrete video ideas, one line each, about the brand's real products (only products listed in BRAND). Each idea names the angle, for example a side by side comparison, a before and after, an honest first impression, a problem it solves. Never invent a product, a feature, a claim or a number.
+2. Say what the creator wants to make for them: two or three concrete video ideas, one line each, about the brand's real products (only products listed in BRAND). Each idea names the angle, for example a side by side comparison, a before and after, a real first impression, a problem it solves. Never invent a product, a feature, a claim or a number.
 3. Say the creator will start with two or three videos.
 4. Ask two questions: whether someone has ten minutes for a quick call this week, and roughly how much they spend on ads each month, so the creator knows how many videos to plan.
 Write in the creator's voice: "we" if the core message says we, "I" if it says I. Plain text, short paragraphs, no markdown, no hashtags, no emoji unless the core message uses them. Never write a year. Never promise results or dates. If the creator facts give a sign-off, end with it on its own lines; never invent a name.
@@ -197,7 +199,7 @@ Return ONLY JSON, no markdown:
   "ctas": [ { "kind": "sale|bundle|social_proof|urgency", "line": "a call to action under 15 words" } ],
   "funnel": { "top": "the idea number (1 to 10) and why, for people who do not know the problem yet", "middle": "the same, for people comparing", "bottom": "the same, for people ready to buy" }
 }
-Write exactly ${VIDEO_IDEAS} videos with ${VIDEO_IDEAS} clearly different angles, using every style at least once: versus (a playful side by side, like "boomer versus Gen Z", "cheap one versus this"), before_after (a visual contrast), negative (the honest thing you did not like first, then why you kept it), stat (a surprising true fact from BRAND or BRIEF only), problem, reaction, pov, myth. Every shot moves something: pouring, sliding, opening, comparing side by side.
+Write exactly ${VIDEO_IDEAS} videos with ${VIDEO_IDEAS} clearly different angles, using every style at least once: versus (a playful side by side, like "boomer versus Gen Z", "cheap one versus this"), before_after (a visual contrast), negative (the one thing you did not like at first, then why you kept it), stat (a surprising true fact from BRAND or BRIEF only), problem, reaction, pov, myth. Every shot moves something: pouring, sliding, opening, comparing side by side.
 THE SCRIPT IS WORDS TO SAY, NOT DIRECTIONS. Every line of "say" is a sentence the creator speaks to camera, word for word, never a description like "show it working" or "talk about the bags". Short and plain: everyday words, contractions, no lists, no commas strung together, nothing a person would stumble on. A creator memorizes one line, films it, then the next, so each line stands on its own and makes sense cut together. Write them the way the WINNING VIDEOS and WINNING TRYBE ADS below talk when they are given: the same short sentences, the same kind of opening, how fast they get to the product, the proof, the ask. Never copy their sentences.
 B-ROLL IS WHAT THE CAMERA FILMS UNDER THE WORDS: close-ups of the product working, the result, hands using it, the before and after, the place. Each shot is one line with movement ("Slow push in as the bag shrinks around the steak"), never a line of speech, and together they cover every line of the script.
 Write 3 calls to action. Use kind "sale" or "bundle" ONLY when BRAND lists something on sale or a bundle; otherwise use social_proof or urgency that claims nothing false (never "sold out", never numbers, never ratings that are not in BRAND). A video's own cta follows the same rule.
@@ -214,7 +216,9 @@ export function parseVideoPlan(text: string): VideoPlan | null {
   if (!m) return null
   let o: Record<string, unknown>
   try { o = JSON.parse(m[0]) } catch { return null }
-  const s = (v: unknown, max: number) => (typeof v === 'string' ? v.replace(/\s+/g, ' ').replace(/\s*[–—]\s*/g, ', ').trim().slice(0, max) : '')
+  // Every line goes through the same scrub as the rest of MVP's copy: no
+  // dashes, no "honest", no health claim, even when the model forgot the rule.
+  const s = (v: unknown, max: number) => (typeof v === 'string' ? scrubBanned(v.replace(/\s+/g, ' ')).slice(0, max) : '')
   const hooks = (Array.isArray(o.hooks) ? o.hooks : []).map((h) => {
     const x = (h || {}) as Record<string, unknown>
     const style = (HOOK_STYLES as readonly string[]).includes(String(x.style)) ? x.style as HookStyle : 'reaction'
@@ -244,7 +248,7 @@ export function parseVideoPlan(text: string): VideoPlan | null {
   const lines = (v: unknown, n: number) => (Array.isArray(v) ? v : []).map((x) => s(x, 160)).filter(Boolean).slice(0, n)
   const plan: VideoPlan = {
     product: s(o.product, 140),
-    body: typeof o.body === 'string' ? o.body.replace(/\s*[–—]\s*/g, ', ').trim().slice(0, 900) : '',
+    body: typeof o.body === 'string' ? scrubBanned(o.body).slice(0, 900) : '',
     // The hook-swap list: the model's own, or each video's hook.
     hooks: hooks.length ? hooks : videos.map((v) => ({ style: v.style, line: v.hook, shot: v.shot })),
     ctas,
@@ -262,7 +266,9 @@ export function honestCtas(plan: VideoPlan, onSale: string[]): VideoPlan {
   // A video's own close that promises a sale goes too: it falls back to the
   // first honest call to action.
   const ctas = plan.ctas.filter((c) => c.kind !== 'sale')
-  const SALE = /\b(sale|discount|\d+\s?% off|off today|deal|coupon|promo code)\b/i
+  // "Deal" only as a price: "I deal with back pain" or "no big deal" is no
+  // promise of a sale and keeps its line.
+  const SALE = /\b(sale|discount|\d+\s?% off|off today|coupon|promo code)\b|\b(?<!big )deals?\b(?!\s+with)/i
   const videos = plan.videos?.map((v) => {
     const cta = SALE.test(v.cta) ? ctas[0]?.line || '' : v.cta
     // A spoken line that promises a sale is swapped the same way, or dropped.

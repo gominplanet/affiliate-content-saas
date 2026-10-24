@@ -79,9 +79,14 @@ export interface ScriptRow {
   best_rank: number | null
 }
 
+const couldNotHear = (detail: string | null | undefined) => /^MVP could not listen to it/i.test(detail || '')
+
 /** Where a video's words came from, or why there are none, in words. */
 export function wordsFrom(r: Pick<ScriptRow, 'state' | 'source' | 'detail' | 'video_url'>): { tone: 'ok' | 'wait' | 'none'; text: string } {
   if (r.state === 'ready') return { tone: 'ok', text: r.source === 'transcribed' ? 'Written down by MVP from the video' : 'TRYBE’s own words for this video' }
+  // A video MVP tried and could not listen to is never tried again
+  // (cron/trybe-top-hear), so it is not "being written down": it says why.
+  if (r.state === 'waiting' && couldNotHear(r.detail)) return { tone: 'none', text: String(r.detail).replace(/\.$/, '') + '.' }
   if (r.state === 'waiting') return r.video_url
     ? { tone: 'wait', text: 'Being written down. MVP listens to each video once, within a day or two.' }
     : { tone: 'none', text: 'TRYBE gave no video file MVP can listen to.' }
@@ -89,11 +94,11 @@ export function wordsFrom(r: Pick<ScriptRow, 'state' | 'source' | 'detail' | 'vi
 }
 
 /** Counts for the heading, over the rows shown. */
-export function scriptCounts(rows: Array<Pick<ScriptRow, 'state' | 'video_url'>>): { videos: number; ready: number; waiting: number; none: number } {
+export function scriptCounts(rows: Array<Pick<ScriptRow, 'state' | 'video_url'> & { detail?: string | null }>): { videos: number; ready: number; waiting: number; none: number } {
   let ready = 0, waiting = 0, none = 0
   for (const r of rows) {
     if (r.state === 'ready') ready++
-    else if (r.state === 'waiting' && r.video_url) waiting++
+    else if (r.state === 'waiting' && r.video_url && !couldNotHear(r.detail)) waiting++
     else none++
   }
   return { videos: rows.length, ready, waiting, none }

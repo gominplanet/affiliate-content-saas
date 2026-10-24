@@ -101,6 +101,8 @@ export interface BrandPage {
   samplesRead?: 'ok' | 'old' | 'failed'
   /** Why the store catalog is missing, when it is. */
   storeWhy?: string | null
+  /** The website TRYBE lists for the brand, when the page was read. */
+  website?: string | null
   keys: string
 }
 
@@ -140,12 +142,13 @@ async function loadBrandPageInner(brandId: string): Promise<BrandPage> {
     const st = await store(c.website)
     const products = mergeProducts(readPromotedProducts(d.json), st.list)
     const keys = keysOf(d.json)
-    if (c.brief) return { brief: c.brief, briefUrl: c.briefUrl, briefWhy: null, state: 'text', products, storeWhy: st.why, keys }
-    if (!c.briefUrl) return { brief: null, briefUrl: null, briefWhy: null, state: 'none', products, storeWhy: st.why, keys }
+    const website = c.website || null
+    if (c.brief) return { brief: c.brief, briefUrl: c.briefUrl, briefWhy: null, state: 'text', products, storeWhy: st.why, website, keys }
+    if (!c.briefUrl) return { brief: null, briefUrl: null, briefWhy: null, state: 'none', products, storeWhy: st.why, website, keys }
     let text: string | null = null
     let why: string | null = null
     try { const r = await api({ action: 'brief_read', url: c.briefUrl, brandId }); text = r.text || null; why = r.why || null } catch (e) { why = e instanceof Error ? e.message : 'MVP could not open the brief link.' }
-    return { brief: text, briefUrl: c.briefUrl, briefWhy: why, state: text ? 'text' : 'link_only', products, storeWhy: st.why, keys }
+    return { brief: text, briefUrl: c.briefUrl, briefWhy: why, state: text ? 'text' : 'link_only', products, storeWhy: st.why, website, keys }
   } catch { return empty }
 }
 
@@ -229,6 +232,9 @@ export default function TrybeVideoIdeas({ brandId, name, plan: initial, canRead,
   }
 
   const winnerWords = (winners?.videos || []).map((v) => v.words || v.caption || '').filter((t) => t.length >= 12)
+  // Of those, the ones with real spoken words: a caption is not a script and
+  // is never said to be one.
+  const winnerSpoken = (winners?.videos || []).filter((v) => (v.words || '').length >= 12).length
 
   // STEP 1, BEFORE ANY PLAN: the brand's page (brief and products), and the
   // product the creator has on hand (Seb, 2026-10-13: "the user needs to
@@ -247,11 +253,20 @@ export default function TrybeVideoIdeas({ brandId, name, plan: initial, canRead,
   useEffect(() => {
     if (!fixedProduct || autoDone.current || kept === null) return
     autoDone.current = true
-    const match = kept.find((k) => (k.product || '').toLowerCase() === fixedProduct.toLowerCase())
-    if (match) { setPlan(match.plan); setPlanOpen(true); setPlanNote({ tone: 'ok', text: `Your saved ideas for ${fixedProduct}, from ${new Date(match.created_at).toLocaleDateString([], { month: 'short', day: 'numeric' })}. Press New ideas for a fresh set.` }) }
+    const match = kept.find((k) => sameProduct(k.product, fixedProduct))
+    if (match) { setPlan(match.plan); setPlanOpen(true); setPlanNote({ tone: 'ok', text: `Your saved ideas for ${fixedProduct}, from ${new Date(match.created_at).toLocaleDateString([], { month: 'short', day: 'numeric' })}. Press New scripts for a fresh set.` }) }
     else if (auto) void makePlan(fixedProduct)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [kept, fixedProduct, auto])
+
+  // Making videos for one product: only that product's saved ideas, never
+  // another product's plan one tap away from being filmed for this one.
+  const sameProduct = (a: string | null | undefined, b: string) => (a || '').trim().toLowerCase() === b.trim().toLowerCase()
+  const shownKept = (kept || []).filter((k) => !fixedProduct || sameProduct(k.product, fixedProduct))
+  // A plan with scripts says everything in its videos: the older body, calls
+  // to action and stage list repeat it in another shape, so they are kept
+  // only for plans from before scripts.
+  const scripted = !!plan?.videos?.some((v) => v.say?.length)
 
   async function startPick() {
     if (fixedProduct) { void makePlan(fixedProduct); return }
@@ -269,8 +284,10 @@ export default function TrybeVideoIdeas({ brandId, name, plan: initial, canRead,
       const b = page || (canRead && brandId ? await loadBrandPage(brandId) : null)
       if (b && !page) setPage(b)
       const state = b ? b.state : 'unread'
-      setStep(`Writing ${VIDEO_IDEAS} video ideas${product ? ` for ${product}` : ''} from ${b?.brief ? 'the brief, ' : ''}the brand and its website. This takes about a minute.`)
-      const d = await api({ action: 'video_plan', brandId, ...(sampleId ? { sampleId } : {}), ...(product ? { product } : {}), winners: winnerWords, ...(b?.brief ? { brief: b.brief } : state !== 'unread' ? { briefState: state } : {}) })
+      setStep(`Writing ${VIDEO_IDEAS} scripts${product ? ` for ${product}` : ''} from ${b?.brief ? 'the brief, ' : ''}the brand and its website. This takes about a minute.`)
+      // What TRYBE's own page says about the brand goes too, so a brand MVP's
+      // directory has not collected yet is still planned, not refused.
+      const d = await api({ action: 'video_plan', brandId, brandName: name, ...(b?.website ? { website: b.website } : {}), ...(b?.products.length ? { knownProducts: b.products.slice(0, 15).map((x) => x.name) } : {}), ...(sampleId ? { sampleId } : {}), ...(product ? { product } : {}), winners: winnerWords, ...(b?.brief ? { brief: b.brief } : state !== 'unread' ? { briefState: state } : {}) })
       setPicking(false)
       const s0 = state as string
       const b0 = { state: s0 }
@@ -278,7 +295,8 @@ export default function TrybeVideoIdeas({ brandId, name, plan: initial, canRead,
       setPlan(p); setPlanOpen(true)
       onPlan?.(p)
       if (!sampleId && d.saved) setKept((ks) => [{ id: `new-${Date.now()}`, product: product || p.product || null, plan: p, created_at: new Date().toISOString() }, ...(ks || []).filter((k) => (k.product || '').toLowerCase() !== (product || p.product || '').toLowerCase())])
-      const fromWin = d.fromWinners ? `Planned from the words of ${d.fromWinners} of their best video${d.fromWinners === 1 ? '' : 's'}.` : ''
+      const spoken = Math.min(winnerSpoken, Number(d.fromWinners) || 0), captions = (Number(d.fromWinners) || 0) - spoken
+      const fromWin = d.fromWinners ? `Planned from ${[spoken ? `the words of ${spoken}` : '', captions ? `the captions of ${captions}` : ''].filter(Boolean).join(' and ')} of their best video${d.fromWinners === 1 ? '' : 's'}.` : ''
       const briefSaid = b0.state === 'text' ? 'Planned from their creative brief.'
         : b0.state === 'link_only' ? `MVP could not read their brief${b?.briefWhy ? ` (${b.briefWhy.replace(/\.$/, '')})` : ''}: check these ideas against it.`
         : b0.state === 'none' ? 'TRYBE shows no brief for this brand, so these come from the brand and its website.'
@@ -286,12 +304,14 @@ export default function TrybeVideoIdeas({ brandId, name, plan: initial, canRead,
         : canRead ? 'MVP could not read their brief on TRYBE, so these come from the brand and its website.' : 'Update SCOUT to 1.46.0 or newer and MVP also plans from the brand\'s brief.'
       // HOW MANY WINNING TRYBE ADS WENT IN, said, so a plan written with
       // none of them (the Top 100 had no words yet) never reads as one that had.
-      const fromTop = d.fromTop100 ? `Written with ${d.fromTop100} winning ad${d.fromTop100 === 1 ? '' : 's'} from TRYBE’s Top 100 as examples.` : ''
+      const ranked = typeof d.fromRanked === 'number' ? d.fromRanked : d.fromTop100, fromPages = (Number(d.fromTop100) || 0) - (Number(ranked) || 0)
+      const fromTop = d.fromTop100 ? `Written with ${[ranked ? `${ranked} winning ad${ranked === 1 ? '' : 's'} from TRYBE’s Top 100` : '', fromPages ? `${fromPages} top video${fromPages === 1 ? '' : 's'} from brands’ own TRYBE pages` : ''].filter(Boolean).join(' and ')} as examples.` : ''
       const from = [briefSaid, fromWin, fromTop].filter(Boolean).join(' ')
-      if (d.onList === false) setPlanNote({ tone: 'warn', text: `${from ? `${from} ` : ''}${name} is not on your MVP list, so these ideas are shown but not kept. Copy what you want.` })
-      else if (!d.saved) setPlanNote({ tone: 'warn', text: `${from ? `${from} ` : ''}These ideas are shown but could not be saved, so they will be gone next visit. Copy what you want to keep.` })
+      // A plan that did not save says so: every brand's plans are kept now
+      // (migration 429), so "not on your list" was never the reason.
+      if (!d.saved) setPlanNote({ tone: 'warn', text: `${from ? `${from} ` : ''}These scripts are shown but could not be saved, so they will be gone next visit. Copy or print what you want to keep.` })
       else if (from) setPlanNote({ tone: 'ok', text: from })
-    } catch (e) { setPlanNote({ tone: 'warn', text: e instanceof Error ? (/abort|timed? ?out/i.test(e.message) ? 'The ideas took too long to write. Try again.' : e.message) : 'MVP could not plan the videos.' }) }
+    } catch (e) { setPlanNote({ tone: 'warn', text: e instanceof Error ? (/abort|timed? ?out/i.test(e.message) ? 'The scripts took too long to write. Try again.' : e.message) : 'MVP could not plan the videos.' }) }
     finally { setPlanning(false); setStep(null) }
   }
 
@@ -312,7 +332,7 @@ export default function TrybeVideoIdeas({ brandId, name, plan: initial, canRead,
       <div className="flex flex-wrap items-center gap-2">
         <button onClick={() => (plan ? setPlanOpen((v) => !v) : sampleId ? void makePlan() : void startPick())} disabled={planning} className={btn}
           style={emphasize ? { background: PURPLE, color: '#fff' } : { border: `1px solid ${PURPLE}`, color: PURPLE }}>
-          {planning ? <Loader2 size={12} className="animate-spin" /> : <Clapperboard size={12} />} {plan ? (planOpen ? 'Hide video ideas' : 'Video ideas') : winnerWords.length ? 'Plan videos like their winners' : 'Plan videos'}
+          {planning ? <Loader2 size={12} className="animate-spin" /> : <Clapperboard size={12} />} {plan ? (planOpen ? 'Hide scripts' : 'Scripts') : winnerWords.length ? 'Write scripts like their winners' : 'Write scripts'}
           {plan && (planOpen ? <ChevronUp size={12} /> : <ChevronDown size={12} />)}
         </button>
         {brandId && <button onClick={() => void showWinners()} disabled={!canRead || winLoading} className={btn} style={{ border: '1px solid var(--border)' }}
@@ -356,7 +376,7 @@ export default function TrybeVideoIdeas({ brandId, name, plan: initial, canRead,
                 ? `${[
                   winners.wordsRead ? `TRYBE shared the words of ${winners.wordsRead} of these` : '',
                   winners.fromTeam ? `MVP has the words of ${winners.fromTeam}${winners.wordsRead ? ' more' : ' of these'}, written down from the brand’s top videos` : '',
-                ].filter(Boolean).join(', and ')}. ${plan ? 'Press New ideas' : 'Plan videos'} to build hooks from them.`
+                ].filter(Boolean).join(', and ')}. ${plan ? 'Press New scripts' : 'Press Write scripts'} to build hooks from them.`
                 : `TRYBE did not share the words of ${winners.wordsTried === 1 ? 'this video' : 'these videos'}. Watch them, then plan: note the first 2 seconds and what they show.`}
             </p>
           </>)}
@@ -425,7 +445,7 @@ export default function TrybeVideoIdeas({ brandId, name, plan: initial, canRead,
 
           <div className="flex flex-wrap items-center gap-2">
             <button onClick={() => void makePlan((other.trim() || chosen).slice(0, 140) || undefined)} disabled={pageLoading || !(other.trim() || chosen)} className={btn} style={{ background: PURPLE, color: '#fff' }}>
-              <Clapperboard size={12} /> Plan {VIDEO_IDEAS} videos{(other.trim() || chosen) ? ` for ${(other.trim() || chosen).slice(0, 40)}` : ''}
+              <Clapperboard size={12} /> Write {VIDEO_IDEAS} scripts{(other.trim() || chosen) ? ` for ${(other.trim() || chosen).slice(0, 40)}` : ''}
             </button>
             <button onClick={() => setPicking(false)} className="text-[12px] font-semibold" style={soft}>Cancel</button>
             {!(other.trim() || chosen) && !pageLoading && <span className="text-[12px]" style={soft}>Pick the product you have, so every idea is about it.</span>}
@@ -434,10 +454,10 @@ export default function TrybeVideoIdeas({ brandId, name, plan: initial, canRead,
       )}
 
       {planning && step && <p className="mt-1.5 inline-flex items-center gap-1" style={soft}><Loader2 size={12} className="animate-spin" /> {step}</p>}
-      {kept && kept.length > 1 && (
+      {shownKept.length > 1 && (
         <div className="mt-2 flex flex-wrap items-center gap-1.5">
           <span className="text-[11px] font-bold uppercase tracking-wider" style={soft}>Saved ideas</span>
-          {kept.map((k) => {
+          {shownKept.map((k) => {
             const on = plan === k.plan
             return (
               <button key={k.id} onClick={() => { setPlan(k.plan); setPlanOpen(true) }} aria-pressed={on} className="rounded-full border px-2.5 py-0.5 text-[12px] font-semibold"
@@ -506,7 +526,7 @@ export default function TrybeVideoIdeas({ brandId, name, plan: initial, canRead,
                           {v.shot && <span className="block" style={soft}>First 2 seconds: {v.shot}</span>}
                           <ol className="mt-1 list-decimal pl-4 space-y-0.5">{v.beats.map((b, j) => <li key={j}>{b}</li>)}</ol>
                           {v.cta && <span className="block mt-0.5"><b>Close:</b> {v.cta}</span>}
-                          {i === 0 && <span className="block mt-1" style={{ color: AMBER }}>These ideas are from before scripts. Press New ideas for the words to say, line by line, and the B-roll for each video.</span>}
+                          {i === 0 && <span className="block mt-1" style={{ color: AMBER }}>These ideas are from before scripts. Press New scripts for the words to say, line by line, and the B-roll for each video.</span>}
                         </>)}
                         {v.forBrief && <span className="block mt-0.5" style={{ color: GREEN }}>For the brief: {v.forBrief}</span>}
                       </span>
@@ -520,8 +540,10 @@ export default function TrybeVideoIdeas({ brandId, name, plan: initial, canRead,
             </div>
           )}
           <div>
-            <p className="text-[11px] font-bold uppercase tracking-wider" style={soft}>One body, many hooks{plan.product ? `: ${plan.product}` : ''}</p>
-            <p className="mt-1 text-[13px]">{plan.body}</p>
+            {!scripted && <>
+              <p className="text-[11px] font-bold uppercase tracking-wider" style={soft}>One body, many hooks{plan.product ? `: ${plan.product}` : ''}</p>
+              <p className="mt-1 text-[13px]">{plan.body}</p>
+            </>}
             {plan.onSale && plan.onSale.length > 0
               ? <p className="mt-1" style={{ color: GREEN }}>On sale on their store now: {plan.onSale.slice(0, 3).join(', ')}</p>
               : <p className="mt-1" style={soft}>Nothing marked down on their store right now, so no sale line is offered.</p>}
@@ -543,22 +565,22 @@ export default function TrybeVideoIdeas({ brandId, name, plan: initial, canRead,
               ))}
             </ol>
           </div>}
-          {plan.ctas.length > 0 && (
+          {!scripted && plan.ctas.length > 0 && (
             <div>
               <p className="text-[11px] font-bold uppercase tracking-wider" style={soft}>Calls to action</p>
               <ul className="mt-1 space-y-0.5">{plan.ctas.map((c, i) => <li key={i}>{c.line}</li>)}</ul>
             </div>
           )}
-          <div>
+          {!scripted && (plan.funnel.top || plan.funnel.middle || plan.funnel.bottom) && <div>
             <p className="text-[11px] font-bold uppercase tracking-wider" style={soft}>One video per stage</p>
             <ul className="mt-1 space-y-0.5">
               {plan.funnel.top && <li><b>New to the problem:</b> {plan.funnel.top}</li>}
               {plan.funnel.middle && <li><b>Comparing:</b> {plan.funnel.middle}</li>}
               {plan.funnel.bottom && <li><b>Ready to buy:</b> {plan.funnel.bottom}</li>}
             </ul>
-          </div>
+          </div>}
           <button onClick={() => (sampleId ? void makePlan() : void startPick())} disabled={planning} className={btn} style={{ border: '1px solid var(--border)' }}>
-            {planning ? <Loader2 size={12} className="animate-spin" /> : <RotateCcw size={12} />} New ideas{winnerWords.length ? ' from their winners' : ''}
+            {planning ? <Loader2 size={12} className="animate-spin" /> : <RotateCcw size={12} />} New scripts{winnerWords.length ? ' from their winners' : ''}
           </button>
         </div>
       )}

@@ -56,7 +56,11 @@ export default function TrybeTopHooks() {
                 </li>
               ))}
             </ol>
-            <p className="mt-1.5 text-[11px]" style={soft}>Your video ideas already learn from these: the question, the claim, the problem shown first.</p>
+            {/* Scripts use openings read in the last 10 days (the video_plan
+                route); older ones are shown but say they are not used. */}
+            {data.at && Date.now() - Date.parse(data.at) < 10 * 86_400_000
+              ? <p className="mt-1.5 text-[11px]" style={soft}>New scripts learn from these: the question, the claim, the problem shown first.</p>
+              : <p className="mt-1.5 text-[11px]" style={{ color: '#B45309' }}>These were read over 10 days ago, so new scripts do not use them until MVP reads the Top 100 again.</p>}
           </>)}
         </div>
       )}

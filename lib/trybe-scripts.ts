@@ -132,11 +132,13 @@ export function examplesBlock(rows: Array<Pick<TopScript, 'brand_name' | 'best_r
   const lines = rows.map((r, i) => {
     let t = String(r.script || '').replace(/\s+/g, ' ').trim().slice(0, 450)
     if (r.brand_name && r.brand_name.trim().toLowerCase() !== own) t = t.replace(new RegExp(r.brand_name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), 'the brand')
-    const tag = [r.best_rank ? `#${r.best_rank} in the Top 100` : 'in the Top 100', r.category || ''].filter(Boolean).join(', ')
+    // A video filed from a brand's own TRYBE page has no Top 100 place, and is
+    // never said to have one.
+    const tag = [r.best_rank ? `#${r.best_rank} in the Top 100` : 'a top video on its brand’s TRYBE page', r.category || ''].filter(Boolean).join(', ')
     return `Ad ${i + 1} (${tag}): ${t}`
   })
   return [
-    'WINNING TRYBE ADS RIGHT NOW (the full words of videos in TRYBE’s Top 100, the ads brands are paying to run). Learn how they are built: the opening line, how fast the product shows up, the problem, the proof, the ask. Never copy their sentences, never name another brand, and never borrow their numbers, prices or results.',
+    'WINNING TRYBE ADS RIGHT NOW (the full words of videos in TRYBE’s Top 100, the ads brands are paying to run, and of top videos on brands’ own TRYBE pages). Learn how they are built: the opening line, how fast the product shows up, the problem, the proof, the ask. Never copy their sentences, never name another brand, and never borrow their numbers, prices or results.',
     ...lines,
   ].join('\n')
 }

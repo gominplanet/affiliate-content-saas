@@ -199,8 +199,11 @@ export default function TrybeUpload() {
       } })
       const items = (made.json.items ?? []) as Array<{ id: string; position: number }>
       if (!made.ok || !items.length) {
+        // Nothing reached TRYBE: the videos go back to ready, saying why, so
+        // Send is there to press again (a failed card with no record had no
+        // way to be sent).
         const why = String(made.json.error || 'MVP could not keep the record of this send.')
-        for (const v of go) mark(v.key, { stage: 'failed', step: null, note: why })
+        for (const v of go) mark(v.key, { stage: 'ready', step: null, note: `Not sent yet: ${why}` })
         toast.error(why, { duration: 12000 })
         return
       }
@@ -214,6 +217,14 @@ export default function TrybeUpload() {
         if (!v) continue
         await sendOne({ ...v, itemId: m.id })
       }
+    } catch (e) {
+      // The record call itself threw: anything still "sending" never left.
+      const why = e instanceof Error ? e.message : 'The send stopped.'
+      for (const v of go) {
+        const now = vidsRef.current.find((x) => x.key === v.key)
+        if (now?.stage === 'sending' && !now.itemId) mark(v.key, { stage: 'ready', step: null, note: `Not sent yet: ${why}` })
+      }
+      toast.error(why, { duration: 12000 })
     } finally {
       setSending(false)
     }
@@ -323,6 +334,7 @@ export default function TrybeUpload() {
             {v.stage === 'ready' && (
               <div className="mt-3">
                 <DropTrybePicker brands={brands} brandsError={brandsError} value={v.choice} onChange={(c) => mark(v.key, { choice: c })} />
+                {v.note && <p className="text-[12.5px] mt-2 inline-flex items-start gap-1.5" style={{ color: '#B45309' }}><AlertTriangle size={13} className="mt-0.5 flex-shrink-0" /> <span>{v.note}</span></p>}
                 <p className="text-[12px] mt-2" style={soft}>{blocker ? `${blocker} before this one can go.` : 'Ready to send.'}</p>
               </div>
             )}

@@ -156,7 +156,8 @@ export function renderSamplesPdf(r: SamplesReport, assets: BrandAssets = {}): Ar
     if (g.brandPage) { k.font(9, 'bold'); k.color(BRAND.indigo); doc.textWithLink('Brand page on TRYBE', W - M, y + 15, { url: g.brandPage, align: 'right' }) }
     y += 44
     const rows: Cell[][] = g.lines.map((l) => [
-      { text: l.product, bold: true },
+      // How many videos the creator planned for it, worked out and now shown.
+      { text: l.videos && l.stage !== 'done' ? `${l.product} (${l.videos} video${l.videos === 1 ? '' : 's'} planned)` : l.product, bold: true },
       { text: l.chase ? `Late: ${l.waiting} days` : l.waiting != null ? `On the way: ${l.waiting} day${l.waiting === 1 ? '' : 's'}` : STAGE_WORDS[l.stage], tone: l.chase ? 'red' : STAGE_TONE[l.stage] },
       { text: l.asked },
       { text: l.here || '-' },
@@ -172,7 +173,7 @@ export function renderSamplesPdf(r: SamplesReport, assets: BrandAssets = {}): Ar
       const note = k.lines(`You already filmed ${withAmazon.map((l) => l.product).join(', ')} on Amazon. Submit ${withAmazon.length === 1 ? 'that video' : 'those videos'} on TRYBE too, if ${withAmazon.length === 1 ? 'it fits' : 'they fit'} the brief.`, W - 2 * M - w - 90)
       note.forEach((l, i) => doc.text(l, M + w + 8, y + 9 + i * 12))
       // The video itself, one click away.
-      k.font(9, 'bold'); k.color(BRAND.indigo); doc.textWithLink(withAmazon.length === 1 ? 'Watch it' : 'Watch the first', W - M, y + 9, { url: withAmazon[0].amazonVideo as string, align: 'right' })
+      k.font(9, 'bold'); k.color(BRAND.indigo); doc.textWithLink(withAmazon.length === 1 ? 'Watch it on Amazon' : 'Watch the first on Amazon', W - M, y + 9, { url: withAmazon[0].amazonVideo as string, align: 'right' })
       y += Math.max(24, note.length * 12 + 12)
     }
     y += 14

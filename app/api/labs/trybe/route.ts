@@ -1218,9 +1218,16 @@ export async function POST(request: Request) {
       : lookupId ? await admin.from('trybe_directory').select(DIR_COLS).eq('brand_id', lookupId).maybeSingle()
       : sample ? await admin.from('trybe_directory').select(DIR_COLS).ilike('name', String(sample.brand_name).replace(/[%_]/g, '')).limit(1).maybeSingle()
       : { data: null }
-    // A sample from a brand MVP has never seen is planned from its product.
-    const row = own || dir || (sample ? { name: String(sample.brand_name), website: null, categories: [], about: null, pay_text: null, site_summary: null, site_products: [String(sample.product)] } : null)
-    if (!row) return NextResponse.json({ error: 'MVP does not know this brand yet. Collect the TRYBE brand list in Find brands first.' }, { status: 404 })
+    // A sample from a brand MVP has never seen is planned from its product; a
+    // brand not collected yet, from what its TRYBE page said (name, website,
+    // products), read by the creator's own page.
+    const givenName = typeof body.brandName === 'string' ? body.brandName.trim().slice(0, 120) : ''
+    const givenSite = typeof body.website === 'string' && /^https?:\/\//i.test(body.website) ? body.website.slice(0, 300) : null
+    const givenProducts = (Array.isArray(body.knownProducts) ? body.knownProducts : []).filter((x: unknown): x is string => typeof x === 'string' && !!x.trim()).map((x: string) => x.trim().slice(0, 140)).slice(0, 15)
+    const row = own || dir
+      || (sample ? { name: String(sample.brand_name), website: givenSite, categories: [], about: null, pay_text: null, site_summary: null, site_products: [String(sample.product), ...givenProducts] } : null)
+      || (givenName ? { name: givenName, website: givenSite, categories: [], about: null, pay_text: null, site_summary: null, site_products: givenProducts } : null)
+    if (!row) return NextResponse.json({ error: 'MVP could not tell which brand this is. Open the brand on TRYBE once with SCOUT on, then try again.' }, { status: 404 })
     const spend = await spendGate(userId, tier)
     if (spend) return spend
     // COPY WHAT WINS: the words of the brand's own best videos on TRYBE.
@@ -1229,11 +1236,13 @@ export async function POST(request: Request) {
     const products = site?.products?.length ? site.products : (Array.isArray(row.site_products) ? row.site_products : [])
     const onSale = site?.onSale || []
     const summary = site?.summary || row.site_summary || ''
-    if (!products.length && !summary && !row.about) return NextResponse.json({ error: 'MVP could not read what this brand sells (its website did not answer), so it cannot plan videos for it yet.' }, { status: 422 })
     const product = sample ? String(sample.product).slice(0, 140) : typeof body.product === 'string' ? body.product.slice(0, 140) : ''
     // THE BRAND'S CREATIVE BRIEF, read on TRYBE through SCOUT by the page.
     // What the page could not read is said, never guessed.
     const briefText = typeof body.brief === 'string' ? body.brief.replace(/\s+\n/g, '\n').trim().slice(0, 4000) : ''
+    // The product in hand or the brief is enough to plan from when the
+    // website did not answer.
+    if (!products.length && !summary && !row.about && !product && !briefText) return NextResponse.json({ error: 'MVP could not read what this brand sells (its website did not answer), so it cannot plan videos for it yet. Pick the product you have and try again.' }, { status: 422 })
     const briefState: 'text' | 'link_only' | 'none' | undefined = briefText ? 'text' : body.briefState === 'link_only' ? 'link_only' : body.briefState === 'none' ? 'none' : undefined
     // HOOKS WINNING ON TRYBE THIS WEEK, when MVP read them in the last 10 days.
     const topHooks = await readTopHookList(admin).catch(() => null)
@@ -1245,7 +1254,10 @@ export async function POST(request: Request) {
     let examples: ReturnType<typeof pickExamples<Pick<TopScript, 'brand_id' | 'brand_name' | 'best_rank' | 'category' | 'script' | 'state'>>> = []
     try {
       const { data: ex } = await admin.from('trybe_top_scripts').select('brand_id,brand_name,best_rank,category,script,state').eq('state', 'ready').order('best_rank', { ascending: true }).limit(400)
-      examples = pickExamples((ex ?? []) as Array<Pick<TopScript, 'brand_id' | 'brand_name' | 'best_rank' | 'category' | 'script' | 'state'>>, { id: lookupId || null, name: String(row.name || ''), categories: Array.isArray(row.categories) ? row.categories as string[] : [] }, 6)
+      // The brand's own videos are read on their own: unranked ones (filed
+      // from its TRYBE page) sort last and would fall outside the first 400.
+      const { data: mine } = lookupId ? await admin.from('trybe_top_scripts').select('brand_id,brand_name,best_rank,category,script,state').eq('state', 'ready').eq('brand_id', lookupId).limit(20) : { data: null }
+      examples = pickExamples([...(mine ?? []), ...(ex ?? [])] as Array<Pick<TopScript, 'brand_id' | 'brand_name' | 'best_rank' | 'category' | 'script' | 'state'>>, { id: lookupId || null, name: String(row.name || ''), categories: Array.isArray(row.categories) ? row.categories as string[] : [] }, 6)
     } catch { examples = [] }
     const examplesText = examplesBlock(examples, String(row.name || ''))
     try {
@@ -1265,7 +1277,7 @@ export async function POST(request: Request) {
           const { error: smUp } = await admin.from('trybe_samples').update({ ideas: { ...plan, onSale, products: products.slice(0, 15) }, ideas_at: now, updated_at: now }).eq('user_id', ownerId).eq('id', sampleId)
           if (smUp) kept = false
         } catch { kept = false }
-        return NextResponse.json({ ok: true, plan, onSale, products: products.slice(0, 15), saved: kept, onList: true, fromWinners: winners.length, fromTop100: examples.length })
+        return NextResponse.json({ ok: true, plan, onSale, products: products.slice(0, 15), saved: kept, onList: true, fromWinners: winners.length, fromTop100: examples.length, fromRanked: examples.filter((x) => x.best_rank != null).length })
       }
       // KEPT FOR EVERY BRAND (migration 429): a brand joined on TRYBE directly
       // has no row on the MVP list, and its ideas used to be lost.
@@ -1282,7 +1294,7 @@ export async function POST(request: Request) {
           if (upErr) saved = false
         } catch { saved = false }
       }
-      return NextResponse.json({ ok: true, plan, onSale, products: products.slice(0, 15), saved: saved || ideasKept, onList: !!own || ideasKept, fromWinners: winners.length, fromTop100: examples.length })
+      return NextResponse.json({ ok: true, plan, onSale, products: products.slice(0, 15), saved: saved || ideasKept, onList: !!own || ideasKept, fromWinners: winners.length, fromTop100: examples.length, fromRanked: examples.filter((x) => x.best_rank != null).length })
     } catch (e) {
       return NextResponse.json({ error: e instanceof Error ? `MVP could not plan the videos: ${e.message}` : 'MVP could not plan the videos.' }, { status: 502 })
     }
@@ -2216,8 +2228,10 @@ export async function POST(request: Request) {
       try { const u = usageFromAnthropic(msg); recordUsage({ userId, tier, feature: 'trybe_hook_fix', model: FIT_MODEL, input: u.input, output: u.output }) } catch { /* best-effort */ }
       const raw = scrubBanned((msg.content as Array<{ type: string; text?: string }>).map(b => b.type === 'text' ? b.text || '' : '').join(''))
       const lines = raw.split('\n').map(l => l.replace(/^\s*(?:\d+[.)]|[-*•])\s*/, '').replace(/^["“]|["”]$/g, '').replace(/\s*[–—]\s*/g, ', ').trim()).filter(Boolean).slice(0, 3)
-      const kept = lines.filter(l => !checkHook(l, brandName).notes.some(n => n.tone === 'bad'))
-      if (!kept.length) return NextResponse.json({ error: 'The new openings did not pass the check. Try again.' }, { status: 502 })
+      // Clean by every rule the page shows, warnings included: an opening that
+      // names the brand or starts with "I" is the problem it was asked to fix.
+      const kept = lines.filter(l => checkHook(l, brandName).ok)
+      if (!kept.length) return NextResponse.json({ error: 'None of the new openings passed every check (no brand name, about the viewer, short). Try again.' }, { status: 502 })
       return NextResponse.json({ ok: true, lines: kept, dropped: lines.length - kept.length })
     } catch (e) {
       return NextResponse.json({ error: e instanceof Error ? `MVP could not rewrite it: ${e.message}` : 'MVP could not rewrite it.' }, { status: 502 })

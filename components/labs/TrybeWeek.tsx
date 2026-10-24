@@ -88,12 +88,15 @@ export default function TrybeWeek({ knownBrands, canRead, isAdmin = false }: {
   }, [])
   useEffect(() => { void load() }, [load])
 
-  // The brands you joined on TRYBE, for the brand box. Best effort.
+  // The brands you joined on TRYBE, for the brand box. A read that failed
+  // is said as one, never as "no brand has accepted you".
+  const [joinedErr, setJoinedErr] = useState<string | null>(null)
   useEffect(() => {
     if (!canRead || joined) return
     void requestTrybeApi('GET', '/backend/api/creator/v2/brands/stats?period=all').then((r) => {
-      setJoined(r.ok ? readBrandStats(r.json) : [])
-    }).catch(() => setJoined([]))
+      if (r.ok) { setJoined(readBrandStats(r.json)); setJoinedErr(null) }
+      else { setJoined([]); setJoinedErr(`MVP could not read the brands you work with on TRYBE${r.status ? ` (TRYBE answered ${r.status})` : ''}. Are you signed in to TRYBE in this Chrome?`) }
+    }).catch(() => { setJoined([]); setJoinedErr('SCOUT did not answer, so MVP could not read the brands you work with on TRYBE.') })
   }, [canRead, joined])
 
   useEffect(() => {
@@ -148,28 +151,45 @@ export default function TrybeWeek({ knownBrands, canRead, isAdmin = false }: {
   // 2026-10-13): each request not on this list is added, delivered ones
   // ticked Received; one on the list TRYBE now says was delivered is ticked.
   // Declined or cancelled ones are left out. Said in a line, never silently.
-  const [synced, setSynced] = useState<string | null>(null)
+  const [synced, setSynced] = useState<{ text: string; ok: boolean } | null>(null)
   const syncTried = useRef(false)
   useEffect(() => {
     if (!canRead || !rows || joined === null || syncTried.current) return
     syncTried.current = true
     void (async () => {
       const r = await requestTrybeApi('GET', '/backend/api/creator/sample-requests?limit=100').catch(() => null)
-      if (!r || !r.ok) { if (r?.error === 'not-allowed') setSynced('Update SCOUT to 1.46.5 and your TRYBE sample requests come in here by themselves.'); return }
+      if (!r || !r.ok) {
+        // Said either way: a sync that failed is not "nothing new on TRYBE".
+        setSynced({ ok: false, text: r?.error === 'not-allowed'
+          ? 'Update SCOUT to 1.46.5 and your TRYBE sample requests come in here by themselves.'
+          : `MVP could not read your sample requests on TRYBE${r?.status ? ` (TRYBE answered ${r.status})` : ''}, so this list may be behind. It tries again next visit.` })
+        return
+      }
       const key = (b: string, p: string) => `${b.trim().toLowerCase()}|${p.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()}`
       const have = new Map((rows || []).map((x) => [key(x.brand_name, x.product), x]))
-      let added = 0, ticked = 0
+      let added = 0, ticked = 0, dropped = 0
       for (const q of readSampleRequests(r.json)) {
         const stage = sampleStage(q.status)
-        if (stage === 'no') continue
         const brandName = q.brand || (joined || []).find((b) => b.id === q.brandId)?.name
         if (!brandName) continue
         const cur = have.get(key(brandName, q.product))
         try {
+          // CANCELLED OR DECLINED ON TRYBE: a sample brought in from TRYBE
+          // and never received comes off the list, or it stays "on the way"
+          // and keeps asking when it ships. One the creator ticked stays.
+          if (stage === 'no') {
+            if (cur && cur.requested_at && !cur.received_at) {
+              const res = await fetch('/api/labs/trybe/samples', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'remove', id: cur.id }), signal: AbortSignal.timeout(30_000) })
+              if (res.ok) { setRows((xs) => (xs || []).filter((x) => x.id !== cur.id)); have.delete(key(brandName, q.product)); dropped++ }
+            }
+            continue
+          }
           if (!cur) {
             const res = await fetch('/api/labs/trybe/samples', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'add', brandName, brandId: q.brandId, product: q.product, received: stage === 'here', requestedAt: q.at }), signal: AbortSignal.timeout(30_000) })
             const d = await res.json().catch(() => ({}))
-            if (res.ok && d.sample) { setRows((xs) => [d.sample as Row, ...(xs || [])]); have.set(key(brandName, q.product), d.sample as Row); added++ }
+            // `existing`: the server matched a row already listed under another
+            // spelling; it is shown once, not twice.
+            if (res.ok && d.sample) { setRows((xs) => [d.sample as Row, ...(xs || []).filter((x) => x.id !== (d.sample as Row).id)]); have.set(key(brandName, q.product), d.sample as Row); if (!d.existing) added++ }
           } else if (stage === 'here' && !cur.received_at) {
             const res = await fetch('/api/labs/trybe/samples', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'tick', id: cur.id, field: 'received', on: true }), signal: AbortSignal.timeout(30_000) })
             const d = await res.json().catch(() => ({}))
@@ -177,17 +197,22 @@ export default function TrybeWeek({ knownBrands, canRead, isAdmin = false }: {
           }
         } catch { /* the next visit tries again */ }
       }
-      if (added || ticked) setSynced(`From your TRYBE sample requests: ${added ? `${added} added` : ''}${added && ticked ? ', ' : ''}${ticked ? `${ticked} ticked Received (TRYBE says delivered)` : ''}.`)
+      const said = [added ? `${added} added` : '', ticked ? `${ticked} ticked Received (TRYBE says delivered)` : '', dropped ? `${dropped} taken off (TRYBE says cancelled or declined)` : ''].filter(Boolean)
+      if (said.length) setSynced({ ok: true, text: `From your TRYBE sample requests: ${said.join(', ')}.` })
     })()
   }, [canRead, rows, joined])
 
+  // Brands you joined first, A to Z, then the ones still to answer in the
+  // order Outreach gave them (accepted first). One sort over both used to put
+  // a pending brand above an accepted one.
   const suggestions = useMemo(() => {
     const seen = new Set<string>()
-    return [...(joined || []), ...knownBrands].filter((b) => {
+    const once = (b: { id: string; name: string }) => {
       const k = b.name.trim().toLowerCase()
       if (!k || seen.has(k)) return false
       seen.add(k); return true
-    }).sort(byBrandName)
+    }
+    return [...[...(joined || [])].sort(byBrandName).filter(once), ...knownBrands.filter(once)]
   }, [joined, knownBrands])
 
   const samples: Sample[] = useMemo(() => (rows || []).map((r) => ({ ...r, has_ideas: !!r.ideas })), [rows])
@@ -202,9 +227,10 @@ export default function TrybeWeek({ knownBrands, canRead, isAdmin = false }: {
     setAdding(true)
     try {
       const d = await call({ action: 'add', brandName: name, brandId: match?.id, product: product.trim(), videosPlanned: count, received: here })
-      setRows((xs) => [d.sample as Row, ...(xs || [])])
+      setRows((xs) => [d.sample as Row, ...(xs || []).filter((x) => x.id !== (d.sample as Row).id)])
       setProduct(''); setHere(false)
-      toast.success(`${product.trim()} from ${name} added`)
+      if (d.existing) toast.success(`${product.trim()} from ${name} was already on your list${here ? ', now ticked Received' : ''}`)
+      else toast.success(`${product.trim()} from ${name} added`)
     } catch (e) { toast.error(e instanceof Error ? e.message : 'Could not add it.') }
     finally { setAdding(false) }
   }
@@ -266,15 +292,29 @@ export default function TrybeWeek({ knownBrands, canRead, isAdmin = false }: {
         const s = onHand[i]
         const brandId = s.brand_id || list.find((b) => b.name.trim().toLowerCase() === s.brand_name.trim().toLowerCase())?.id || ''
         setExporting(`Planning ${s.product} (${i + 1} of ${onHand.length})`)
+        const key = (n: string) => n.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
         let plan = (s.ideas as VideoPlan | null) || null
         let ideasNote: string | null = null
+        // THE SCRIPTS THE CREATOR ALREADY HAS FIRST. Make videos keeps its
+        // scripts per brand and product; the planner used to write a fresh,
+        // different set, at AI cost, that matched nothing they had printed.
+        if (!plan?.videos?.length && brandId) {
+          const kept = await post({ action: 'ideas', brandId }).then((d) => (d.plans || []) as Array<{ product: string | null; plan: VideoPlan }>).catch(() => [])
+          const same = kept.find((k) => key(k.product || '') === key(s.product))
+          if (same?.plan?.videos?.length) plan = same.plan
+        }
+        // The brand's page before any writing, so new guidelines follow its
+        // brief the way Make videos' do, and say so when they could not.
+        const page = brandId && canRead ? await loadBrandPage(brandId).catch(() => null) : null
         if (!plan?.videos?.length) {
           setExporting(`Writing video guidelines for ${s.product} (${i + 1} of ${onHand.length}). About a minute.`)
-          try { const d = await post({ action: 'video_plan', brandId, sampleId: s.id }, 240_000); plan = d.plan as VideoPlan; setRows((xs) => (xs || []).map((x) => (x.id === s.id ? { ...x, ideas: d.plan } : x))) }
+          try {
+            const d = await post({ action: 'video_plan', brandId, sampleId: s.id, ...(page?.brief ? { brief: page.brief } : page && page.state !== 'unread' ? { briefState: page.state } : {}) }, 240_000)
+            plan = d.plan as VideoPlan
+            setRows((xs) => (xs || []).map((x) => (x.id === s.id ? { ...x, ideas: d.plan } : x)))
+          }
           catch (e) { ideasNote = `MVP could not write the guidelines: ${e instanceof Error ? e.message : 'error'}. Plan them in Make videos.` }
         }
-        const page = brandId && canRead ? await loadBrandPage(brandId).catch(() => null) : null
-        const key = (n: string) => n.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
         const match = page?.products.find((p) => key(p.name) === key(s.product)) || page?.products.find((p) => key(p.name).includes(key(s.product)) || key(s.product).includes(key(p.name)))
         let viral: PlannerProduct['viral'] = []
         let viralNote: string | null = null
@@ -298,7 +338,7 @@ export default function TrybeWeek({ knownBrands, canRead, isAdmin = false }: {
       }
 
       setExporting('Drawing your planner')
-      const model = buildPlanner({ now: Date.now(), samples, brands: filled, subs, verdicts, pooled, months, focusIds, target, perDay, products })
+      const model = buildPlanner({ now: Date.now(), samples, brands: filled, subs, verdicts, pooled, months, focusIds, target, perDay, products, trybeRead: canRead && !joinedErr && joined !== null })
       const QR = (await import('qrcode')).default
       const qrs: Record<string, string> = {}
       for (const p of products) for (const v of p.viral) if (!qrs[v.url]) qrs[v.url] = await QR.toDataURL(v.url, { margin: 0, width: 160 })
@@ -408,7 +448,7 @@ export default function TrybeWeek({ knownBrands, canRead, isAdmin = false }: {
         </div>
         {st !== 'done' && (
           <button onClick={() => setOpen((o) => (o === r.id ? null : r.id))} className="mt-1.5 inline-flex items-center gap-1 text-[12px] font-semibold" style={{ color: PURPLE }}>
-            {r.ideas ? 'Video ideas for this sample' : 'Plan videos for this sample'} {open === r.id ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+            {r.ideas ? 'Scripts for this sample' : 'Write scripts for this sample'} {open === r.id ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
           </button>
         )}
         {open === r.id && (
@@ -456,7 +496,7 @@ export default function TrybeWeek({ knownBrands, canRead, isAdmin = false }: {
         ) : joined === null ? (
           <p className="text-[13px] inline-flex items-center gap-1.5" style={soft}><Loader2 size={13} className="animate-spin" /> Reading the brands you work with on TRYBE...</p>
         ) : joined.length === 0 ? (
-          <p className="text-[13px]" style={soft}>No brand has accepted you on TRYBE yet. Once one does, set your monthly target here.</p>
+          <p className="text-[13px]" style={joinedErr ? { color: AMBER } : soft}>{joinedErr || 'No brand has accepted you on TRYBE yet. Once one does, set your monthly target here.'}</p>
         ) : (<>
           {focusIds.length === 0 && <p className="text-[13px] mb-2" style={soft}>Pick the 1 or 2 brands you are building with. On TRYBE the top creators make about 90% of their money from 1 or 2 brands.</p>}
           <ul className="space-y-2.5">
@@ -564,7 +604,8 @@ export default function TrybeWeek({ knownBrands, canRead, isAdmin = false }: {
       {/* The samples, with their boxes. */}
       <div className={card} style={cardStyle}>
         <p className="text-[15px] font-semibold inline-flex items-center gap-1.5 mb-1"><Package size={16} style={{ color: PURPLE }} /> Samples</p>
-        {synced && <p className="text-[12.5px] mb-2 font-semibold" style={{ color: GREEN }}>{synced}</p>}
+        {synced && <p className="text-[12.5px] mb-2 font-semibold" style={{ color: synced.ok ? GREEN : AMBER }}>{synced.text}</p>}
+        {amz.error && <p className="text-[12.5px] mb-2" style={{ color: AMBER }}>{amz.error.replace(/\.$/, '')}. Your Amazon videos of these products may be missing below.</p>}
         <p className="text-[12.5px] mb-3" style={soft}>Your TRYBE sample requests come in here by themselves. You can also add a sample by hand. Tick Received when it arrives, Filmed when the videos are shot, Submitted when they are on TRYBE.</p>
         <div className="flex flex-wrap items-end gap-2 mb-4">
           <label className="flex flex-col gap-1 text-[12px] min-w-[160px] flex-1" style={soft}>Brand

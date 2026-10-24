@@ -111,8 +111,14 @@ check('the plan asks for ten videos across Cole\'s styles and never invents a sa
   const sys = VIDEO_PLAN_SYSTEM('')
   check('the prompt asks for spoken lines of 4 to 10 words, never directions, modelled on the winners', /"say": \["THE SCRIPT: the exact words the creator says, in order, 4 to 7 lines/.test(sys) && /4 to 10 words, said in one breath/.test(sys) && /THE SCRIPT IS WORDS TO SAY, NOT DIRECTIONS/.test(sys) && /the way the WINNING VIDEOS and WINNING TRYBE ADS below talk/.test(sys) && /"broll": \["4 to 6 B-roll shots/.test(sys))
   const ui = read('components/labs/TrybeVideoIdeas.tsx')
-  check('the page shows the lines to say one by one, the B-roll, and says when a plan is from before scripts', /Say, one line at a time/.test(ui) && /B-roll to film/.test(ui) && /These ideas are from before scripts\. Press New ideas/.test(ui))
-  check('the planner PDF prints the words to say and the B-roll', /const script = v\.say\?\.length \? v\.say\.slice\(0, 7\) : null/.test(read('lib/trybe-planner-pdf.ts')) && /B-roll: \$\{broll\.join/.test(read('lib/trybe-planner-pdf.ts')))
+  check('the page shows the lines to say one by one, the B-roll, and says when a plan is from before scripts', /Say, one line at a time/.test(ui) && /B-roll to film/.test(ui) && /These ideas are from before scripts\. Press New scripts/.test(ui))
+  // Every line is scrubbed, whatever the model sent.
+  const dirty = parseVideoPlan(JSON.stringify({ product: 'Vest', body: 'It fits \u2014 really.', videos: [0, 1, 2].map((i) => ({ angle: `A${i}`, style: 'negative', hook: `Honestly \u2014 I hated it ${i}`, say: ['Honestly \u2014 I hated it', 'Then it clicked', 'I deal with back pain', 'No big deal'], broll: ['Pour \u2013 slide'], cta: 'Grab one' })), ctas: [{ kind: 'urgency', line: 'Try it' }], funnel: {} }))
+  const lines = dirty ? [dirty.body, ...(dirty.videos || []).flatMap((v) => [v.hook, v.cta, ...(v.say || []), ...(v.broll || [])])].join(' | ') : ''
+  check('a plan line never keeps a dash or "honest", even when the model sent one', !!dirty && !/[–—]|honest/i.test(lines))
+  check('"deal with" and "no big deal" are no sale promise and keep their lines', !!dirty && (honestCtas(dirty, []).videos?.[0].say || []).some((l) => /deal with back pain/.test(l)) && (honestCtas(dirty, []).videos?.[0].say || []).some((l) => /big deal/.test(l)))
+  check('the video prompt never asks for an "honest" anything', !/honest/i.test(VIDEO_PLAN_SYSTEM('')) && !/honest/i.test(KICKOFF_SYSTEM('')))
+  check('the planner PDF prints the words to say and the B-roll', /const script = v\.say\?\.length \? v\.say\.slice\(0, 8\) : null/.test(read('lib/trybe-planner-pdf.ts')) && /B-roll: \$\{broll\.join/.test(read('lib/trybe-planner-pdf.ts')))
 }
 check('a broken answer gives no plan rather than an empty one', parseVideoPlan('sorry') === null && parseVideoPlan('{"body":"x","hooks":[]}') === null)
 
