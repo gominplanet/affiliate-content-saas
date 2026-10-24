@@ -25,8 +25,10 @@ export const QUIET_JOBS: Array<{ id: QuietJob; label: string; what: string; test
   { id: 'studio', label: 'YouTube Studio', what: 'Uploads through Studio (Bulk Amazon upload) and the Studio steps after Co-Pilot.', test: 'Upload one video with Bulk Amazon upload and check its title, tags, thumbnail and schedule in Studio.' },
 ]
 
-/** Quiet for every member. Turn a job on only after admin has tried it. */
-export const QUIET_FOR_EVERYONE: Record<QuietJob, boolean> = { pin: false, cc: false, amazon: false, studio: false }
+/** Quiet for every member. Turn a job on only after admin has tried it.
+ *  studio: Seb tried Bulk Amazon upload out of sight, 2026-10-24: "tested
+ *  this and it worked". */
+export const QUIET_FOR_EVERYONE: Record<QuietJob, boolean> = { pin: false, cc: false, amazon: false, studio: true }
 
 /** Admin's own tries, in this browser only. */
 export const QUIET_TEST_KEY = 'mvp_scout_quiet_test'
