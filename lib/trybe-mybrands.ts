@@ -211,11 +211,15 @@ export function judgeBrands(list: MyBrand[], now = Date.now()): Judged[] {
     const perVideo = b.earnings != null && b.approved ? b.earnings / b.approved : null
     const days = b.enrolledAt ? (now - Date.parse(b.enrolledAt)) / 86_400_000 : null
     const decided = r.decided ?? 0
-    if (decided >= 4 && r.rate != null && r.rate < 0.34) {
+    // DROP ONLY ON WHAT WAS READ (review 2026-10-24): a rate built from
+    // everything sent counts videos still in review as not approved, so it
+    // never drops a brand; and the 30 day rule counts decided videos, not
+    // videos sent yesterday that are still waiting.
+    if (r.exact && decided >= 4 && r.rate != null && r.rate < 0.34) {
       return { brand: b, verdict: 'drop' as const, why: `Approves ${Math.round(r.rate * 100)}% of your videos (${b.approved} of ${decided}). Your time pays better elsewhere.`, rate: r.rate, exactRate: r.exact, perVideo }
     }
-    if ((b.submitted ?? 0) >= 5 && !b.earnings && !b.approved && days != null && days >= 30) {
-      return { brand: b, verdict: 'drop' as const, why: `${b.submitted} videos in ${Math.round(days)} days and nothing approved or paid yet.`, rate: r.rate, exactRate: r.exact, perVideo }
+    if (r.exact && decided >= 5 && !b.earnings && !b.approved && days != null && days >= 30) {
+      return { brand: b, verdict: 'drop' as const, why: `${decided} videos decided in ${Math.round(days)} days and none approved or paid yet.`, rate: r.rate, exactRate: r.exact, perVideo }
     }
     if (decided < MIN_DECIDED && !b.earnings) {
       return { brand: b, verdict: 'early' as const, why: decided ? `Only ${decided} video${decided === 1 ? '' : 's'} decided so far: too early to judge.` : 'No video decided yet: too early to judge.', rate: r.rate, exactRate: r.exact, perVideo }

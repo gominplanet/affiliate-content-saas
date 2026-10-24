@@ -69,7 +69,10 @@ export default function TrybeAds({ canRead, isAdmin, onPlan }: { canRead: boolea
   if (!canRead) return null
   const full = read?.source === 'full'
   const one = brand && read ? brandAdTotals(read.videos, brand) : null
-  const t = one ? one.totals : read?.totals
+  // One brand's earnings are what TRYBE says it paid in the period, not only
+  // what its ad videos add up to (a flat fee has no ad row).
+  const oneEarned = brand ? subs.read?.brands.find((b) => b.id === brand.id)?.earned ?? null : null
+  const t = one ? { ...one.totals, earned: oneEarned ?? one.totals.earned } : read?.totals
   const shownVideos = one ? one.videos : (read?.videos || [])
   const pace = brand ? null : paceOf(week?.earned ?? null, month?.earned ?? null)
   const brands = full && read && !brand ? adBrands(read.videos) : []
@@ -80,9 +83,12 @@ export default function TrybeAds({ canRead, isAdmin, onPlan }: { canRead: boolea
   const nothingRead = full && !brand && t && Object.values(t).every((v) => v == null)
   // All: TRYBE's own totals when its analytics answer carried them; one
   // brand: that brand's totals for the period (useTrybeSubmissions).
+  const oneSubs = brand && subs.read ? subs.read.brands.find((b) => b.id === brand.id) ?? null : null
   const counts = subs.read
-    ? (brand ? (subs.read.brands.find((b) => b.id === brand.id)?.counts ?? { ...NO_COUNTS }) : subs.read.all)
+    ? (brand ? (oneSubs?.counts ?? { ...NO_COUNTS }) : subs.read.all)
     : { ...NO_COUNTS }
+  // One brand whose list could not be read is "not read", never 0.
+  const oneUnread = !!brand && (!oneSubs || !oneSubs.read)
   const rate = approvalRateOf(counts)
 
   return (
@@ -125,12 +131,12 @@ export default function TrybeAds({ canRead, isAdmin, onPlan }: { canRead: boolea
         <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
           <div>
             <p className="text-[10.5px] font-bold uppercase tracking-wider" style={soft}>Total submissions{brand ? `, ${brand.name}` : ''}</p>
-            {subs.read
+            {subs.read && !oneUnread
               ? <p className="text-[24px] font-extrabold tabular-nums leading-tight">{counts.total}</p>
               : <p className="text-[13px] font-semibold" style={soft}>{subs.loading ? 'Reading...' : 'not read'}</p>}
-            {subs.read && <p className="text-[11.5px]" style={soft}>Approval rate <b style={{ color: rate ? GREEN : 'var(--text-2)' }}>{rate == null ? 'none yet' : `${Math.round(rate * 100)}%`}</b></p>}
+            {subs.read && !oneUnread && <p className="text-[11.5px]" style={soft}>Approval rate (approved out of all sent): <b style={{ color: rate ? GREEN : 'var(--text-2)' }}>{rate == null ? 'none yet' : `${Math.round(rate * 100)}%`}</b></p>}
           </div>
-          {subs.read && (
+          {subs.read && !oneUnread && (
             <ul className="flex flex-wrap gap-x-5 gap-y-1">
               {SUB_ROWS.map((r) => (
                 <li key={r.key} className="inline-flex items-center gap-1.5 text-[12.5px]">
@@ -143,6 +149,9 @@ export default function TrybeAds({ canRead, isAdmin, onPlan }: { canRead: boolea
           )}
         </div>
         {subs.error && <p className="text-[12px] mt-1.5" style={{ color: RED }}>{subs.error}</p>}
+        {subs.read && (subs.read.partial ?? 0) > 0 && (
+          <p className="text-[12px] mt-1.5" style={soft}>{subs.read.partial} brand{subs.read.partial === 1 ? '' : 's'} counted in the total but not split by status: MVP reads 25 brand lists at a time.</p>
+        )}
         {subs.read && subs.read.notRead > 0 && (
           <p className="text-[12px] mt-1.5" style={{ color: AMBER }}>{subs.read.notRead} brand{subs.read.notRead === 1 ? '' : 's'} could not be read, so these counts may be low. Press Read again.</p>
         )}
@@ -193,8 +202,14 @@ export default function TrybeAds({ canRead, isAdmin, onPlan }: { canRead: boolea
         </p>
       )}
 
-      {full && read && read.videos.length === 0 && !nothingRead && (
+      {full && read && read.videos.length === 0 && !nothingRead && read.videosRead !== false && (
         <p className="text-[12px] mt-3" style={soft}>No videos ran as ads in the last {days} days. Once a brand runs one, it shows here with its hook rate and clicks.</p>
+      )}
+      {full && read && read.videosRead === false && (
+        <p className="text-[12px] mt-3" style={{ color: AMBER }}>MVP could not read your ad videos from TRYBE just now, so they are not listed here. Press Read again.</p>
+      )}
+      {full && read && read.totalsRead === false && read.videosRead !== false && (
+        <p className="text-[12px] mt-1.5" style={{ color: AMBER }}>TRYBE&rsquo;s totals did not answer, so the numbers above are added up from up to 100 of your videos and may be low.</p>
       )}
 
       {winners.length > 0 && (

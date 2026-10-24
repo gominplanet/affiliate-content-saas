@@ -21,6 +21,8 @@ import TrybeBrandPeek, { type PeekActions } from '@/components/labs/TrybeBrandPe
 import TrybeActive from '@/components/labs/TrybeActive'
 import TrybeOffDiscover from '@/components/labs/TrybeOffDiscover'
 import { changeLine, changeDay, changeDays, CHANGE_WORDS, CHANGE_ORDER, type ChangeKind } from '@/lib/trybe-changes'
+import { bucketDollars } from '@/lib/trybe-pick'
+import { readPay } from '@/lib/trybe-outreach'
 import { readJoinedBrandIds } from '@/lib/trybe-joined'
 
 const PURPLE = '#7C3AED'
@@ -34,6 +36,21 @@ export interface ChangesRead { changes: ChangeRow[]; lastCollectedAt: string | n
   healed?: number }
 
 const TONE: Record<ChangeKind, string> = { new: PURPLE, pay: GREEN, tier: GREEN, ads: GREEN, top100: GREEN, back: PURPLE, left: RED }
+
+/** A pay or tier change is green only when it went up: a cut is amber
+ *  (review 2026-10-24: every pay change was drawn green). Pure. */
+export function changeTone(c: { kind: ChangeKind; before: string | null; after: string | null }): string {
+  if (c.kind === 'tier') {
+    const a = bucketDollars(c.after), b = bucketDollars(c.before)
+    return a != null && b != null && a < b ? AMBER : TONE.tier
+  }
+  if (c.kind === 'pay') {
+    const a = readPay(c.after), b = readPay(c.before)
+    const down = (a.dollars != null && b.dollars != null && a.dollars < b.dollars) || (a.dollars == null && b.dollars == null && a.percent != null && b.percent != null && a.percent < b.percent)
+    return down ? AMBER : TONE.pay
+  }
+  return TONE[c.kind]
+}
 
 export async function fetchChanges(days = 7, scoutOpens = false): Promise<ChangesRead> {
   // Your joined brands, read live, clear any false "left" before the list is read.
@@ -51,8 +68,10 @@ export function changesSummary(c: ChangesRead | null): string | null {
   if (!c) return null
   const yours = new Set(c.changes.filter((x) => x.yours).map((x) => x.brand_id)).size
   const fresh = c.changes.filter((x) => x.kind === 'new').length
-  const pay = c.changes.filter((x) => x.kind === 'pay' || x.kind === 'tier').length
-  return [yours ? `${yours} of your brands changed` : null, fresh ? `${fresh} new on TRYBE` : null, pay ? `${pay} pay change${pay === 1 ? '' : 's'}` : null].filter(Boolean).join(' · ') || null
+  // Pay terms and TRYBE's payout tier are different things, said apart.
+  const pay = c.changes.filter((x) => x.kind === 'pay').length
+  const tier = c.changes.filter((x) => x.kind === 'tier').length
+  return [yours ? `${yours} of your brands changed` : null, fresh ? `${fresh} new on TRYBE` : null, pay ? `${pay} pay change${pay === 1 ? '' : 's'}` : null, tier ? `${tier} payout tier change${tier === 1 ? '' : 's'}` : null].filter(Boolean).join(' · ') || null
 }
 
 export default function TrybeChanges({ scoutOpens, initial, onRead, onSeeNew, actions }: { scoutOpens: boolean; initial?: ChangesRead | null; onRead?: (c: ChangesRead) => void; onSeeNew?: () => void; actions?: PeekActions }) {
@@ -85,7 +104,8 @@ export default function TrybeChanges({ scoutOpens, initial, onRead, onSeeNew, ac
     for (const c of data?.changes || []) if ((who === 'all' || c.yours) && onDay(c)) m.set(c.kind, (m.get(c.kind) || 0) + 1)
     return m
   }, [data, who, onDay])
-  const yoursCount = useMemo(() => (data?.changes || []).filter((c) => c.yours && onDay(c)).length, [data, onDay])
+  // Brands, not changes: the same number the summary and the menu say.
+  const yoursCount = useMemo(() => new Set((data?.changes || []).filter((c) => c.yours && onDay(c)).map((c) => c.brand_id)).size, [data, onDay])
   const shown = useMemo(() => (data?.changes || []).filter((c) => (who === 'all' || c.yours) && (kind === 'any' || c.kind === kind) && onDay(c)), [data, who, kind, onDay])
   const byDay = useMemo(() => {
     const out: Array<{ day: string; list: ChangeRow[] }> = []
@@ -196,7 +216,7 @@ export default function TrybeChanges({ scoutOpens, initial, onRead, onSeeNew, ac
                   return (
                   <li key={k} className="px-4 py-2.5" style={{ borderColor: 'var(--border)' }}>
                     <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                      <span className="w-2 h-2 rounded-full shrink-0" style={{ background: TONE[c.kind] }} aria-hidden />
+                      <span className="w-2 h-2 rounded-full shrink-0" style={{ background: changeTone(c) }} aria-hidden />
                       <span className="min-w-0 flex-1">
                         <span className="text-[13.5px] font-semibold">{c.name || 'A brand MVP no longer lists'}</span>
                         {c.yours && <span className="ml-2 text-[10.5px] font-bold rounded-full px-1.5 py-0.5 align-middle" style={{ background: 'rgba(124,58,237,0.10)', color: PURPLE }}>Yours</span>}

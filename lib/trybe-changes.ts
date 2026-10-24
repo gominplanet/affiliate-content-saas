@@ -115,17 +115,29 @@ export interface Pooled {
   why: string | null
 }
 
-const middle = (xs: number[]) => { const s = [...xs].sort((a, b) => a - b); return s.length % 2 ? s[(s.length - 1) / 2] : (s[s.length / 2 - 1] + s[s.length / 2]) / 2 }
+/** The mean once the lowest and highest are set aside (with 5 or more), so
+ *  no one member's figure is the one shown. */
+const trimmedMean = (xs: number[]) => { const s = [...xs].sort((a, b) => a - b); const t = s.length >= 5 ? s.slice(1, -1) : s; return t.reduce((n, x) => n + x, 0) / t.length }
+/** Rounded so a figure cannot be worked back to one member's (review
+ *  2026-10-24): rates to 5 points, pay to $5, days to whole days. */
+const to5pts = (x: number) => Math.round(x * 20) / 20
+const to5usd = (x: number) => Math.max(5, Math.round(x / 5) * 5)
 
 /** Combines members' rows for each brand. A figure shows only with at least
- *  POOL_MIN members in it and no one member more than POOL_MAX_SHARE of it.
- *  Pure. */
-export function poolBrands(rows: MemberRow[]): Map<string, Pooled> {
+ *  POOL_MIN members in it and no one member more than POOL_MAX_SHARE of it,
+ *  rounded, and never with the asking member's own row in it (`exclude`), so
+ *  changing one's own numbers cannot reveal anyone else's. An approval rate
+ *  counts only members whose approved AND rejected videos were read: a
+ *  rejected count not read is not zero. Pure. */
+export function poolBrands(rows: MemberRow[], opts: { exclude?: string | null } = {}): Map<string, Pooled> {
   const by = new Map<string, MemberRow[]>()
-  for (const r of rows) { const l = by.get(r.brand_id) || []; l.push(r); by.set(r.brand_id, l) }
+  for (const r of rows) {
+    if (opts.exclude && r.user_id === opts.exclude) continue
+    const l = by.get(r.brand_id) || []; l.push(r); by.set(r.brand_id, l)
+  }
   const out = new Map<string, Pooled>()
   for (const [id, list] of by) {
-    const decided = list.map((r) => ({ a: Math.max(0, r.approved ?? 0), d: Math.max(0, r.approved ?? 0) + Math.max(0, r.rejected ?? 0) })).filter((x) => x.d > 0)
+    const decided = list.filter((r) => r.approved != null && r.rejected != null).map((r) => ({ a: Math.max(0, r.approved as number), d: Math.max(0, r.approved as number) + Math.max(0, r.rejected as number) })).filter((x) => x.d > 0)
     const totalD = decided.reduce((n, x) => n + x.d, 0)
     const rateOk = decided.length >= POOL_MIN && totalD > 0 && decided.every((x) => x.d / totalD <= POOL_MAX_SHARE)
     const paid = list.filter((r) => (r.approved ?? 0) > 0 && r.earnings != null && r.earnings >= 0)
@@ -141,13 +153,14 @@ export function poolBrands(rows: MemberRow[]): Map<string, Pooled> {
     const totalR = waited.reduce((n, r) => n + (r.recent as number), 0)
     const slowOk = waited.length >= POOL_MIN && totalR > 0 && waited.every((r) => (r.recent as number) / totalR <= POOL_MAX_SHARE)
     out.set(id, {
-      reviewDays: reviewOk ? Math.round(middle(timed.map((r) => r.review_days as number)) * 10) / 10 : null,
-      slowShare: slowOk ? waited.reduce((n, r) => n + Math.min(r.slow as number, r.recent as number), 0) / totalR : null,
-      members: decided.length,
-      approvalRate: rateOk ? decided.reduce((n, x) => n + x.a, 0) / totalD : null,
-      payPerApproved: payOk ? totalE / totalA : null,
+      reviewDays: reviewOk ? Math.round(trimmedMean(timed.map((r) => r.review_days as number))) : null,
+      slowShare: slowOk ? to5pts(waited.reduce((n, r) => n + Math.min(r.slow as number, r.recent as number), 0) / totalR) : null,
+      // How many: only "at least POOL_MIN" once it shows, never the exact count.
+      members: Math.min(decided.length, POOL_MIN),
+      approvalRate: rateOk ? to5pts(decided.reduce((n, x) => n + x.a, 0) / totalD) : null,
+      payPerApproved: payOk ? to5usd(totalE / totalA) : null,
       why: rateOk || payOk ? null
-        : decided.length < POOL_MIN ? `Shown once ${POOL_MIN} MVP members have results for this brand (${decided.length} so far).`
+        : decided.length < POOL_MIN ? `Shown once ${POOL_MIN} MVP members have results for this brand.`
         : 'Not shown yet: one member is most of this brand’s results.',
     })
   }

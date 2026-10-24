@@ -350,7 +350,7 @@ const TABS: Array<{ id: Tab; label: string; icon: LucideIcon; group: TabGroup; s
   // at the top of My brands, where it was not found.
   { id: 'analytics', label: 'Analytics', icon: BarChart3, group: 'track', says: 'Your submissions, earnings and how your videos do as ads, for all your brands or one, like TRYBE\u2019s Analytics.' },
   { id: 'brands', label: 'My brands', icon: Star, group: 'track', says: 'What each brand paid you and approved, which to focus on, and what MVP members see together.' },
-  { id: 'changes', label: 'What changed', icon: Bell, group: 'track', says: 'What changed on TRYBE this week: new brands, pay changes, more Meta ads, the Top 100. Your brands first.' },
+  { id: 'changes', label: 'What changed', icon: Bell, group: 'track', says: 'What changed on TRYBE this week: new brands, pay changes, more Meta ads, the Top 100, with yours marked.' },
 ]
 
 /** THE MENU AS TILES (Seb, 2026-10-20: "a lot more modern looking, a lot
@@ -411,7 +411,7 @@ export function TrybeMenu({ tab, lockedTab, preview, queue, history, unread, cha
             {TILES.filter((t) => t.group === g.id).map((tile) => {
               const { id: tileId, label, icon: Icon, color } = tile
               // Something waiting on you is filled; a running total is quiet.
-              const countOf = (id: Tab) => preview ? 0 : id === 'queue' ? queue.length : id === 'sent' ? history.length : id === 'inbox' ? unread : id === 'changes' ? (changes?.changes.filter((c) => c.yours).length ?? 0) : 0
+              const countOf = (id: Tab) => preview ? 0 : id === 'queue' ? queue.length : id === 'sent' ? history.length : id === 'inbox' ? unread : id === 'changes' ? new Set((changes?.changes || []).filter((c) => c.yours).map((c) => c.brand_id)).size : 0
               const n = countOf(tile.tabs[0])
               const on = tile.tabs.includes(lockedTab ?? tab)
               const locked = preview && !tile.tabs.includes('find')

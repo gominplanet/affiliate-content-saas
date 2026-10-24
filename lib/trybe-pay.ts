@@ -120,7 +120,16 @@ export function readTerm(text: string): PayTerm | null {
 /** Every pay line read; the ones MVP could not place are kept as words. Pure. */
 export function readTerms(lines: string[]): { terms: PayTerm[]; unread: string[] } {
   const terms: PayTerm[] = [], unread: string[] = []
-  for (const l of lines) { const t = readTerm(l); if (t) terms.push(t); else if (/\d/.test(l)) unread.push(l) }
+  for (const line of lines) {
+    // "$25 per approved video plus 5% of sales" is two terms: read as one, the
+    // percent hid the flat fee (review 2026-10-24). A line with a dollar
+    // figure and a percent is split where it says plus, +, and, "&", a middle
+    // dot or a semicolon.
+    const parts = /\$\s*\d/.test(line) && /\d\s*%/.test(line) && !/guarantee|retainer|up to|max|capped|cap of|no more than/i.test(line)
+      ? line.split(/\s+(?:\+|plus|and|&)\s+|\s*[\u00b7;]\s*/i).filter((x) => x.trim())
+      : [line]
+    for (const l of parts.length > 1 ? parts : [line]) { const t = readTerm(l); if (t) terms.push(t); else if (/\d/.test(l)) unread.push(l) }
+  }
   return { terms, unread }
 }
 

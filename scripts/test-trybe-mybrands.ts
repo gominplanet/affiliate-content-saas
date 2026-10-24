@@ -83,7 +83,9 @@ check('a brand that rejects most videos is dropped, with the numbers in the reas
 check('a brand with one video is too early to judge, not dropped', v('Fresh One') === 'early')
 check('every verdict says why', judged.every(j => j.why.length > 10))
 check('a sixth paying brand is kept, not focused', judged.filter(j => j.brand.name.startsWith('Paying') && j.verdict === 'keep').length >= 2)
-check('30 days, 5 videos and nothing approved is dropped', judgeBrands([{ id: 'zz123456', name: 'Silent', logo: null, earnings: 0, submitted: 6, approved: 0, pending: 6, rejected: 0, enrolledAt: new Date(NOW - 40 * day).toISOString(), programs: [] }], NOW)[0].verdict === 'drop')
+check('30 days and 5 videos decided with nothing approved is dropped', judgeBrands([{ id: 'zz123456', name: 'Silent', logo: null, earnings: 0, submitted: 6, approved: 0, pending: 0, rejected: 6, enrolledAt: new Date(NOW - 40 * day).toISOString(), programs: [] }], NOW)[0].verdict === 'drop')
+check('5 videos still in review are never a reason to drop', judgeBrands([{ id: 'zz123457', name: 'Waiting', logo: null, earnings: 0, submitted: 6, approved: 0, pending: 6, rejected: 0, enrolledAt: new Date(NOW - 40 * day).toISOString(), programs: [] }], NOW)[0].verdict !== 'drop')
+check('a rate from everything sent (rejections not read) never drops a brand', judgeBrands([{ id: 'zz123458', name: 'Unread', logo: null, earnings: 0, submitted: 10, approved: 2, pending: null, rejected: null, enrolledAt: new Date(NOW - 40 * day).toISOString(), programs: [] }], NOW)[0].verdict !== 'drop')
 
 // The nudge.
 const nudge = nudgeText('Glow Co', stuck, NOW)

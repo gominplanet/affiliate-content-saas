@@ -119,6 +119,9 @@ export default function TrybeMyBrands({ canRead, canSend, convos, me, myName, is
   // combined figure comes back. Not read is said, never shown as nothing.
   const [pooled, setPooled] = useState<Record<string, Pooled> | null>(null)
   const [poolNote, setPoolNote] = useState<string | null>(null)
+  // Whether your own results were kept this time: a failed save is said next
+  // to the box that promises it, never silent.
+  const [myStatsNote, setMyStatsNote] = useState<string | null>(null)
   const sentFor = useRef<number | null>(null)
 
   useEffect(() => { setNudged(readNudged()) }, [])
@@ -187,8 +190,8 @@ export default function TrybeMyBrands({ canRead, canSend, convos, me, myName, is
       // How fast each brand decides your videos (reviewOf), from submissions
       // read in full only: a part read would make a brand look faster.
       const reviewFor = (id: string) => { const s = subs[id]; if (!s || !s.complete || s.error) return {}; const r = reviewOf(s.subs); return { review_days: r.days, review_n: r.n, slow: r.slow, recent: r.recent } }
-      if (!poolOptOut) try { await post({ action: 'my_stats', brands: filled.map(b => ({ id: b.id, name: b.name, submitted: b.submitted, approved: b.approved, rejected: b.rejected, earnings: b.earnings, ...reviewFor(b.id) })) }) }
-      catch { /* the combined numbers below still read */ }
+      if (!poolOptOut) try { await post({ action: 'my_stats', brands: filled.map(b => ({ id: b.id, name: b.name, submitted: b.submitted, approved: b.approved, rejected: b.rejected, earnings: b.earnings, ...reviewFor(b.id) })) }); setMyStatsNote(null) }
+      catch (e) { setMyStatsNote(`Your results were not added this time: ${e instanceof Error ? e.message.replace(/\.$/, '') : 'MVP did not answer'}. MVP tries again next time you open My brands.`) }
       try { const d = await post({ action: 'pooled', brandIds: filled.map(b => b.id) }); setPooled(d.pooled || {}); setPoolNote(null) }
       catch (e) { setPoolNote(e instanceof Error ? e.message : 'MVP could not read members\' combined numbers.') }
     })()
@@ -224,9 +227,12 @@ export default function TrybeMyBrands({ canRead, canSend, convos, me, myName, is
     const earned = filled.reduce((n, b) => n + (b.earnings ?? 0), 0)
     const approved = filled.reduce((n, b) => n + (b.approved ?? 0), 0)
     const submitted = filled.reduce((n, b) => n + (b.submitted ?? 0), 0)
+    // Brands TRYBE gave no figure for: said under the tile, never added as 0.
+    const earnedUnread = filled.filter(b => b.earnings == null).length
+    const countUnread = filled.filter(b => b.approved == null || b.submitted == null).length
     const focus = judged.filter(j => j.verdict === 'focus')
     const focusEarned = focus.reduce((n, j) => n + (j.brand.earnings ?? 0), 0)
-    return { earned, approved, submitted, focus, focusShare: earned > 0 ? focusEarned / earned : null }
+    return { earned, approved, submitted, earnedUnread, countUnread, focus, focusShare: earned > 0 ? focusEarned / earned : null }
   }, [filled, judged])
 
   const soft = { color: 'var(--text-soft)' }
@@ -248,7 +254,8 @@ export default function TrybeMyBrands({ canRead, canSend, convos, me, myName, is
         <p className="text-[13px] flex-1 min-w-[220px]" style={soft}>
           Read from your TRYBE account through SCOUT{readAt ? ` at ${new Date(readAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}` : ''}. Cole&rsquo;s rule: put your videos into the 4 or 5 brands that pay and approve, and stop filming for the ones that don&rsquo;t.
         </p>
-        <button onClick={() => void load()} disabled={loading} className="inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-[12px] font-semibold disabled:opacity-50" style={{ border: '1px solid var(--border)' }}>
+        {/* Read again reads the ad lines too: their error says to press it. */}
+        <button onClick={() => { ads.reload(); void load() }} disabled={loading} className="inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-[12px] font-semibold disabled:opacity-50" style={{ border: '1px solid var(--border)' }}>
           {loading ? <Loader2 size={12} className="animate-spin" /> : <RotateCcw size={12} />} Read again
         </button>
       </div>
@@ -268,8 +275,8 @@ export default function TrybeMyBrands({ canRead, canSend, convos, me, myName, is
 
       {brands && brands.length > 0 && (<>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-          <Tile label="Earned on TRYBE" value={money(totals.earned)} hint={`${brands.length} brand${brands.length === 1 ? '' : 's'}`} />
-          <Tile label="Approved" value={`${count(totals.approved)} of ${count(totals.submitted)}`} hint="videos sent" />
+          <Tile label="Earned on TRYBE, all time" value={money(totals.earned)} hint={totals.earnedUnread ? `${brands.length - totals.earnedUnread} of ${brands.length} brands read; TRYBE gave no figure for ${totals.earnedUnread}` : `${brands.length} brand${brands.length === 1 ? '' : 's'}`} tone={totals.earnedUnread ? AMBER : undefined} />
+          <Tile label="Approved, all time" value={`${count(totals.approved)} of ${count(totals.submitted)}`} hint={totals.countUnread ? `videos sent; not read for ${totals.countUnread} brand${totals.countUnread === 1 ? '' : 's'}` : 'videos sent'} tone={totals.countUnread ? AMBER : undefined} />
           <Tile label="Focus brands" value={String(totals.focus.length)} hint={totals.focusShare != null && totals.focus.length ? `${Math.round(totals.focusShare * 100)}% of what you earned` : 'none has paid yet'} tone={totals.focus.length ? GREEN : undefined} />
           <Tile label="Stuck in review" value={subProgress && subProgress.done < subProgress.of ? '…' : String(stuck.reduce((n, x) => n + x.list.length, 0))} hint={`over ${STUCK_DAYS} days`} tone={stuck.length ? AMBER : undefined} />
         </div>
@@ -347,14 +354,16 @@ export default function TrybeMyBrands({ canRead, canSend, convos, me, myName, is
                 <AmazonLine amazon={amz.brand(b.id)} className="mt-1.5 sm:ml-12" />
                 <AdsLine b={b} ads={ads.read} loading={ads.loading} problem={ads.problem?.text ?? null} />
                 <dl className="mt-2 grid grid-cols-3 sm:grid-cols-6 gap-x-3 gap-y-1 text-[12px] tabular-nums">
-                  <Num label="Earned" value={money(b.earnings)} />
+                  <Num label="Earned, all time" value={money(b.earnings)} />
                   <Num label="Sent" value={count(b.submitted)} />
                   <Num label="Approved" value={count(b.approved)} />
                   <Num label="In review" value={b.pending == null && !s && loading ? '…' : count(b.pending)} why={b.pending == null ? (s?.error ? 'Not read: ' + s.error : s && !s.complete ? `More than ${SUB_PAGES * SUB_LIMIT} videos: not all read` : 'Reading...') : undefined} />
                   <Num label="Rejected" value={count(b.rejected)} why={b.rejected == null ? 'Not read yet' : undefined} />
-                  <Num label="Approval" value={pct(j.rate)} why={j.rate != null && !j.exactRate ? 'Approved out of all sent, videos in review included' : undefined} />
+                  {/* Two kinds of rate, named: Analytics' is out of all sent, this one out of decided when TRYBE said how many it rejected. */}
+                  <Num label={j.rate != null && !j.exactRate ? 'Approved of sent' : 'Approved of decided'} value={pct(j.rate)} why={j.rate != null && !j.exactRate ? 'Approved out of all sent, videos in review included' : undefined} />
                 </dl>
-                <MembersLine p={pooled ? pooled[b.id] ?? null : undefined} note={poolNote} mine={j.rate} />
+                {/* Your rate is compared only when it is the same kind: out of decided videos. */}
+                <MembersLine p={pooled ? pooled[b.id] ?? null : undefined} note={poolNote} mine={j.exactRate ? j.rate : null} />
                 <button onClick={() => setOpen(isOpen ? null : b.id)} className="mt-2 inline-flex items-center gap-1 text-[12px] font-semibold" style={{ color: PURPLE }}>
                   {isOpen ? <ChevronUp size={12} /> : <ChevronDown size={12} />} {isOpen ? 'Hide' : 'Their best videos and video ideas'}
                 </button>
@@ -372,7 +381,8 @@ export default function TrybeMyBrands({ canRead, canSend, convos, me, myName, is
             <input type="checkbox" checked={!poolOptOut} disabled={poolSaving} onChange={(e) => void setPool(e.target.checked)} className="h-4 w-4 mt-0.5" style={{ accentColor: PURPLE }} />
             <span><b style={{ color: 'var(--text)' }}>Include my results in members&rsquo; combined numbers.</b> MVP shows a brand&rsquo;s approval rate and pay per approved video from members&rsquo; results only when at least {POOL_MIN} members have results for it and no one member is more than half. No member&rsquo;s own numbers are ever shown. Turning this off deletes what was kept.</span>
           </label>
-          Focus means one of your top {FOCUS_COUNT} by what it paid you. Drop means it approves fewer than 1 in 3 of your videos, or 30 days and 5 videos went by with nothing approved. Too early means fewer than 3 videos decided. Approval counts videos the brand decided on, not ones still in review.
+          {myStatsNote && <span className="block mb-2" style={{ color: AMBER }}>{myStatsNote}</span>}
+          Focus means one of your top {FOCUS_COUNT} by what it paid you. Drop means it approves fewer than 1 in 3 of the videos it decided, or it decided 5 in 30 days and approved none. Too early means fewer than 3 videos decided. Approval counts videos the brand decided on, not ones still in review; when TRYBE did not say how many it rejected, the rate is out of all sent, marked so, and never used to drop a brand. Earned and Approved are all time.
         </p>
         {/* Your brands' top videos, word for word (Seb, 2026-10-20). */}
         <TrybeBrandScripts brands={brands} isAdmin={isAdmin} />
@@ -391,6 +401,8 @@ function AdsLine({ b, ads, loading, problem }: { b: MyBrand; ads: AdsRead | null
   const soft = { color: 'var(--text-soft)' }
   if (!ads) return <p className="mt-1.5 text-[12px]" style={soft}>{loading ? 'Reading which of your videos run as ads…' : `Ads: ${problem || 'TRYBE’s ad numbers were not read.'}`}</p>
   if (ads.source !== 'full') return <p className="mt-1.5 text-[12px]" style={soft}>Ads: {problem || 'this SCOUT reads only what you earned, so MVP cannot say whether your videos run as ads.'}</p>
+  // The videos did not answer: not read, never "none running".
+  if (ads.videosRead === false) return <p className="mt-1.5 text-[12px]" style={{ color: AMBER }}>Ads: MVP could not read your ad videos from TRYBE just now. Press Read again.</p>
   const { totals, videos } = brandAdTotals(ads.videos, b)
   const live = videos.filter((v) => v.live === true)
   const ran = (totals.spend ?? 0) > 0 || (totals.impressions ?? 0) > 0
@@ -417,7 +429,7 @@ function MembersLine({ p, note, mine }: { p: Pooled | null | undefined; note: st
   const diff = p.approvalRate != null && mine != null ? Math.round((mine - p.approvalRate) * 100) : null
   return (
     <p className="mt-2 text-[12px] rounded-lg px-2.5 py-1.5" style={{ background: 'rgba(124,58,237,0.06)' }}>
-      <b>MVP members ({p.members}):</b>{' '}
+      <b>MVP members ({p.members >= POOL_MIN ? `${POOL_MIN}+` : p.members}):</b>{' '}
       {p.approvalRate != null && <>approve {Math.round(p.approvalRate * 100)}% of videos{diff != null && diff !== 0 ? <span style={{ color: diff > 0 ? GREEN : AMBER }}> (you: {diff > 0 ? `${diff} points above` : `${-diff} points below`})</span> : null}</>}
       {p.approvalRate != null && p.payPerApproved != null && ' · '}
       {p.payPerApproved != null && <>about {money(p.payPerApproved)} per approved video</>}

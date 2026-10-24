@@ -23,7 +23,12 @@ import { countSubmissions, readSubmissionTotals, brandCounts, addCounts, NO_COUN
 import { PERIOD_DAYS, type AdPeriod } from '@/lib/trybe-ads'
 
 export type SubsSource = 'analytics' | 'brand totals' | 'brand lists'
-export interface BrandSubs { id: string; name: string; logo: string | null; counts: SubmissionCounts; read: boolean }
+export interface BrandSubs { id: string; name: string; logo: string | null; counts: SubmissionCounts; read: boolean
+  /** What TRYBE says you earned with it in the period; null when not read
+   *  (or only all time was read). */
+  earned?: number | null
+  /** Its totals are counted but not split by status (past the lists read). */
+  partial?: boolean }
 export interface SubsRead {
   period: AdPeriod
   brands: BrandSubs[]
@@ -32,6 +37,8 @@ export interface SubsRead {
   all: SubmissionCounts
   source: SubsSource
   notRead: number
+  /** Brands whose totals count but are not split by status. */
+  partial?: number
   /** For an admin: what TRYBE's answers carried. */
   keys: string
   at: number
@@ -78,7 +85,7 @@ export async function readSubs(period: AdPeriod, fresh = false): Promise<{ read:
   const unsettled: MyBrand[] = []
   for (const b of brands) {
     const c = listed ? null : brandCounts(b)
-    if (settled(c)) out.push({ id: b.id, name: b.name, logo: b.logo, counts: c, read: true })
+    if (settled(c)) out.push({ id: b.id, name: b.name, logo: b.logo, counts: c, read: true, earned: listed ? null : b.earnings ?? null })
     else unsettled.push(b)
   }
   // Only where the totals leave a submission unplaced, or there are none:
@@ -90,17 +97,25 @@ export async function readSubs(period: AdPeriod, fresh = false): Promise<{ read:
     const part = await Promise.all(toList.slice(i, i + 4).map(async (b) => {
       const c = await listCounts(b.id, period).catch(() => null)
       const fallback = listed ? null : brandCounts(b)
-      return { id: b.id, name: b.name, logo: b.logo, read: c != null || fallback != null, counts: c ?? fallback ?? { ...NO_COUNTS } }
+      return { id: b.id, name: b.name, logo: b.logo, read: c != null || fallback != null, counts: c ?? fallback ?? { ...NO_COUNTS }, earned: listed ? null : b.earnings ?? null }
     }))
     out.push(...part)
   }
-  const notRead = out.filter((b) => !b.read).length + Math.max(0, unsettled.length - toList.length)
+  // Past the lists read: their totals still count (TRYBE gave them), only
+  // not split by status. They used to vanish from All, and "Press Read
+  // again" never brought them back (review 2026-10-24).
+  for (const b of unsettled.slice(MAX_LISTS)) {
+    const fallback = listed ? null : brandCounts(b)
+    out.push({ id: b.id, name: b.name, logo: b.logo, read: fallback != null, partial: fallback != null, counts: fallback ?? { ...NO_COUNTS }, earned: listed ? null : b.earnings ?? null })
+  }
+  const notRead = out.filter((b) => !b.read).length
   const summed = out.reduce((acc, b) => addCounts(acc, b.counts), { ...NO_COUNTS })
   const read: SubsRead = {
     period, brands: out,
     all: fromAnalytics ?? summed,
     source: fromAnalytics ? 'analytics' : listed || toList.length ? 'brand lists' : 'brand totals',
     notRead: fromAnalytics ? 0 : notRead,
+    partial: fromAnalytics ? 0 : out.filter((b) => b.partial).length,
     keys: `analytics: ${a.ok ? keysOf(a.json) : `not read (${a.status ?? a.error ?? '?'})`}; brand totals: ${s.ok ? keysOf(s.json) : `not read (${s.status ?? s.error ?? '?'})`}`,
     at: Date.now(),
   }

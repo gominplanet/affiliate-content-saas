@@ -416,9 +416,10 @@ async function crowdBaseline(admin: Db, today: string): Promise<{ snap: Snapshot
 async function recentTierChanges(admin: Db, sinceIso?: string): Promise<Map<string, { before: string | null; after: string | null; at: string; up: boolean }> | null> {
   try {
     const since = sinceIso || new Date(Date.now() - 30 * 86_400_000).toISOString()
-    const { data, error: e } = await admin.from('trybe_directory_changes').select('brand_id, before, after, at').eq('kind', 'tier').gte('at', since).order('at', { ascending: false }).limit(5000)
+    // Paged: one read stops at 1,000 rows.
+    const { rows, error: e } = await allRows<{ brand_id: string; before: string | null; after: string | null; at: string }>(() => admin.from('trybe_directory_changes').select('brand_id, before, after, at').eq('kind', 'tier').gte('at', since).order('at', { ascending: false }).order('brand_id', { ascending: true }), 5000)
     if (e) return null
-    return latestTierChanges((data || []) as Array<{ brand_id: string; before: string | null; after: string | null; at: string }>)
+    return latestTierChanges(rows)
   } catch { return null }
 }
 
@@ -507,7 +508,7 @@ async function payResults(admin: Db, ownerId: string, ids: string[]): Promise<{ 
   const review = new Map<string, { reviewDays: number | null; slowShare: number | null }>()
   const { rows, error: e } = await memberRows(admin, ids)
   if (e) return { members, yours, review }
-  for (const [id, p] of poolBrands(rows)) {
+  for (const [id, p] of poolBrands(rows, { exclude: ownerId })) {
     if (p.payPerApproved != null) members.set(id, p.payPerApproved)
     if (p.reviewDays != null || p.slowShare != null) review.set(id, { reviewDays: p.reviewDays ?? null, slowShare: p.slowShare ?? null })
   }
@@ -521,14 +522,17 @@ async function memberRows(admin: Db, ids: string[]): Promise<{ rows: MemberRow[]
   const rows: MemberRow[] = []
   let cols = 'user_id, brand_id, approved, rejected, earnings, review_days, review_n, slow, recent'
   for (let i = 0; i < ids.length; i += 200) {
-    let { data, error: e } = await admin.from('trybe_member_stats').select(cols).in('brand_id', ids.slice(i, i + 200))
+    // Paged: 200 brands can hold more than one read's 1,000 member rows.
+    const part = ids.slice(i, i + 200)
+    const read = () => allRows<Record<string, unknown>>(() => admin.from('trybe_member_stats').select(cols).in('brand_id', part).order('brand_id', { ascending: true }).order('user_id', { ascending: true }), 50000)
+    let { rows: data, error: e } = await read()
     if (e && /review_days|review_n|slow|recent/.test(e.message)) {
       cols = 'user_id, brand_id, approved, rejected, earnings'
-      ;({ data, error: e } = await admin.from('trybe_member_stats').select(cols).in('brand_id', ids.slice(i, i + 200)))
+      ;({ rows: data, error: e } = await read())
     }
     if (e) return { rows, error: e.message }
     const num = (v: unknown) => (v == null ? null : Number(v))
-    for (const r of (data || []) as unknown as Array<Record<string, unknown>>) {
+    for (const r of data) {
       rows.push({ user_id: String(r.user_id), brand_id: String(r.brand_id), approved: num(r.approved), rejected: num(r.rejected), earnings: num(r.earnings), review_days: num(r.review_days), review_n: num(r.review_n), slow: num(r.slow), recent: num(r.recent) })
     }
   }
@@ -819,21 +823,30 @@ export async function POST(request: Request) {
     // first, each with the brand's name and whether it is one of yours.
     const days = Math.max(1, Math.min(14, Number(body.days) || 7))
     const since = new Date(Date.now() - days * 86_400_000).toISOString()
-    // The viewer's live joined brands clear any false "left" first (healJoined).
-    const healed = await healJoined(admin, body.joined, now).catch(() => 0)
-    const { data: ch, error: chErr } = await admin.from('trybe_directory_changes').select('brand_id, kind, before, after, at').gte('at', since).order('at', { ascending: false }).limit(6000)
+    // The viewer's live joined brands clear a false "left" (healJoined): in
+    // the shared copy only from the MVP team's reads, in everyone else's view
+    // only (review 2026-10-24: any browser could clear "left" for everyone).
+    const joinedIds = new Set(Array.isArray(body.joined) ? (body.joined as unknown[]).map(v => String(v || '').slice(0, 80)) : [])
+    const healed = tier === 'admin' ? await healJoined(admin, body.joined, now).catch(() => 0) : 0
+    // Paged: a busy week has more than one read's 1,000 rows.
+    const { rows: ch, error: chErr } = await allRows<{ brand_id: string; kind: string; before: string | null; after: string | null; at: string }>(() => admin.from('trybe_directory_changes').select('brand_id, kind, before, after, at').gte('at', since).order('at', { ascending: false }).order('brand_id', { ascending: true }), 6000)
     if (chErr) return NextResponse.json({ error: /does not exist|schema cache/i.test(chErr.message) ? setupWords(tier, 'What changed needs migration 428 in Supabase first.') : chErr.message, needsMigration: /does not exist|schema cache/i.test(chErr.message) }, { status: 500 })
-    const list = (ch || []) as Array<{ brand_id: string; kind: string; before: string | null; after: string | null; at: string }>
+    const list = ch.filter(c => tier === 'admin' || !(c.kind === 'left' && joinedIds.has(c.brand_id)))
     const ids = Array.from(new Set(list.map(c => c.brand_id)))
     const names = new Map<string, { name: string; website: string | null; pay_text: string | null; categories: string[] | null }>()
     for (let i = 0; i < ids.length; i += 500) {
       const { data: d } = await admin.from('trybe_directory').select('brand_id, name, website, pay_text, categories').in('brand_id', ids.slice(i, i + 500))
       for (const r of (d || []) as Array<{ brand_id: string; name: string; website: string | null; pay_text: string | null; categories: string[] | null }>) names.set(r.brand_id, r)
     }
-    // Yours: on your MVP list, or a sample you logged.
-    const { data: mine } = await admin.from('trybe_brands').select('brand_id').eq('user_id', ownerId).in('brand_id', ids.length ? ids.slice(0, 1000) : ['-'])
+    // Yours: the brands you work with on TRYBE (read live), on your MVP list
+    // and not passed on or set aside, or a sample you logged.
+    const { data: mine } = await admin.from('trybe_brands').select('brand_id, status').eq('user_id', ownerId).in('brand_id', ids.length ? ids.slice(0, 1000) : ['-'])
     const { data: sam } = await admin.from('trybe_samples').select('brand_id').eq('user_id', ownerId).not('brand_id', 'is', null)
-    const yours = new Set([...((mine || []) as Array<{ brand_id: string }>), ...((sam || []) as Array<{ brand_id: string }>)].map(r => r.brand_id))
+    const yours = new Set([
+      ...((mine || []) as Array<{ brand_id: string; status: string }>).filter(r => !['passed', 'not_fit', 'removed', 'skipped'].includes(r.status)).map(r => r.brand_id),
+      ...((sam || []) as Array<{ brand_id: string }>).map(r => r.brand_id),
+      ...joinedIds,
+    ])
     const { data: col } = await admin.from('trybe_directory_meta').select('value').eq('key', 'collected').maybeSingle()
     return NextResponse.json({
       ok: true, days, healed,
@@ -859,8 +872,10 @@ export async function POST(request: Request) {
     // MVP's last whole read of TRYBE's list did not have (left_at), and brands
     // TRYBE itself marks as not listed (its isListed field). Nobody finds them
     // on Discover, so MVP's search leaves them out; here they are in one place.
-    // The viewer's live joined brands are on TRYBE: any false "left" goes first (healJoined).
-    const healed = await healJoined(admin, body.joined, now).catch(() => 0)
+    // The viewer's live joined brands are on TRYBE: a false "left" goes, from
+    // the shared copy on the MVP team's reads, from everyone else's view only.
+    const joinedOff = new Set(Array.isArray(body.joined) ? (body.joined as unknown[]).map(v => String(v || '').slice(0, 80)) : [])
+    const healed = tier === 'admin' ? await healJoined(admin, body.joined, now).catch(() => 0) : 0
     const OFF_COLS = 'brand_id, name, website, categories, pay_text, left_at, last_seen_at, total_creators'
     const left = await admin.from('trybe_directory').select(OFF_COLS, { count: 'exact' }).not('left_at', 'is', null).order('left_at', { ascending: false }).limit(300)
     if (left.error) {
@@ -873,7 +888,7 @@ export async function POST(request: Request) {
     const unlisted = await uq.order('last_seen_at', { ascending: false }).limit(200)
     type OffRow = Record<string, unknown> & { brand_id: string; reason: 'left' | 'unlisted' }
     const off: OffRow[] = [
-      ...((left.data || []) as Array<Record<string, unknown>>).map(r => ({ ...r, brand_id: String(r.brand_id), reason: 'left' as const })),
+      ...((left.data || []) as Array<Record<string, unknown>>).filter(r => tier === 'admin' || !joinedOff.has(String(r.brand_id))).map(r => ({ ...r, brand_id: String(r.brand_id), reason: 'left' as const })),
       ...(unlisted.error ? [] : (unlisted.data || []) as Array<Record<string, unknown>>).map(r => ({ ...r, brand_id: String(r.brand_id), reason: 'unlisted' as const })),
     ]
     const ids = off.map(r => String(r.brand_id))
@@ -944,8 +959,17 @@ export async function POST(request: Request) {
     // A member's own numbers per brand, as SCOUT read them from their TRYBE
     // (My brands). Kept only to combine with other members' (never shown one
     // member at a time), and not kept at all when they turned it off.
-    const settings = await readSettings(admin, ownerId)
-    if (settings.poolOptOut) return NextResponse.json({ ok: true, kept: 0, optedOut: true })
+    // THE OPT OUT, READ ON ITS OWN: a failed read is not "opted in", so
+    // nothing is kept until it can be read (review 2026-10-24).
+    const { data: os, error: osErr } = await admin.from('trybe_outreach_settings').select('pool_opt_out').eq('user_id', ownerId).maybeSingle()
+    if (osErr) return NextResponse.json({ error: /does not exist|schema cache/i.test(osErr.message) ? setupWords(tier, 'Members\' combined numbers need migration 428 in Supabase first.') : 'Your results were not saved: MVP could not read your setting just now.' }, { status: 500 })
+    if (os?.pool_opt_out === true) return NextResponse.json({ ok: true, kept: 0, optedOut: true })
+    // ONCE A DAY: a member's numbers are taken at most once a day, so
+    // sending different numbers in a row cannot be used to work out others'.
+    {
+      const { data: recent } = await admin.from('trybe_member_stats').select('updated_at').eq('user_id', ownerId).gte('updated_at', new Date(Date.now() - 20 * 3600_000).toISOString()).limit(1)
+      if ((recent || []).length) return NextResponse.json({ ok: true, kept: 0, today: true })
+    }
     const n = (v: unknown, max: number) => (typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= max ? v : null)
     const list = (Array.isArray(body.brands) ? body.brands : []).slice(0, 300) as Array<Record<string, unknown>>
     const rowsIn = list.map(b => ({
@@ -978,7 +1002,8 @@ export async function POST(request: Request) {
     if (!ids.length) return NextResponse.json({ ok: true, pooled: {} })
     const { rows: pr, error: prErr } = await memberRows(admin, ids)
     if (prErr) return NextResponse.json({ error: /does not exist|schema cache/i.test(prErr) ? setupWords(tier, 'Members\' combined numbers need migration 428 in Supabase first.') : prErr }, { status: 500 })
-    const pooled = poolBrands(pr)
+    // Never with the asker's own row in it (lib/trybe-changes poolBrands).
+    const pooled = poolBrands(pr, { exclude: ownerId })
     return NextResponse.json({ ok: true, pooled: Object.fromEntries(pooled) })
   }
 

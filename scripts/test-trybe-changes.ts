@@ -32,7 +32,7 @@ check('each change reads in plain words', /from 10% of sales to 15% of sales/.te
 // 2. Members together: never one member's numbers
 const row = (u: string, approved: number, rejected: number, earnings: number | null, brand = 'x') => ({ user_id: u, brand_id: brand, approved, rejected, earnings })
 const four = poolBrands([row('1', 5, 5, 100), row('2', 5, 5, 100), row('3', 5, 5, 100), row('4', 5, 5, 100)]).get('x')!
-check(`fewer than ${POOL_MIN} members shows nothing, and says why`, four.approvalRate == null && four.payPerApproved == null && /4 so far/.test(four.why || ''))
+check(`fewer than ${POOL_MIN} members shows nothing, and says why`, four.approvalRate == null && four.payPerApproved == null && /Shown once 5 MVP members/.test(four.why || ''))
 const five = poolBrands([row('1', 6, 4, 120), row('2', 5, 5, 100), row('3', 4, 6, 80), row('4', 5, 5, 100), row('5', 5, 5, 100)]).get('x')!
 check('five members show the approval rate and pay per approved video', five.members === 5 && Math.abs((five.approvalRate ?? 0) - 0.5) < 1e-9 && Math.abs((five.payPerApproved ?? 0) - 20) < 1e-9 && five.why === null)
 const big = poolBrands([row('1', 90, 10, 900), row('2', 5, 5, 50), row('3', 5, 5, 50), row('4', 5, 5, 50), row('5', 5, 5, 50)]).get('x')!
@@ -156,11 +156,11 @@ check('changes are logged where MVP\'s copy is written: directory, tiers, left, 
   check('joined brands are stamped seen before anything is marked left', /if \(joinedRead\) await healJoined\(admin, joined\.ids, now\)[\s\S]{0,800}if \(c\.complete === true && hasLeft && joinedRead\)/.test(route))
   check('a collection that could not read joined brands marks nothing as left', /c\.complete === true && hasLeft && joinedRead/.test(route) && /marks no brand as left TRYBE/.test(out))
   check('healing clears the left mark and the false left rows, and logs no "back"', /update\(\{ last_seen_at: now, left_at: null \}\)\.in\('brand_id', part\)/.test(route) && /from\('trybe_directory_changes'\)\.delete\(\)\.eq\('kind', 'left'\)\.in\('brand_id', part\)/.test(route))
-  check('What changed reads your joined brands first and says what it put right', /const joined = scoutOpens \? await readJoinedBrandIds\(\) : null/.test(ch) && /const healed = await healJoined\(admin, body\.joined, now\)/.test(route) && /Put right: \{data\.healed\}/.test(ch))
+  check('What changed reads your joined brands first and says what it put right', /const joined = scoutOpens \? await readJoinedBrandIds\(\) : null/.test(ch) && /const healed = tier === 'admin' \? await healJoined\(admin, body\.joined, now\)/.test(route) && /Put right: \{data\.healed\}/.test(ch))
   check('a joined read that failed is never taken as "joined nothing"', /if \(!r\.ok \|\| r\.json == null\) return null/.test(jn))
 }
 check('a database without migration 428 still saves the copy', /Without migration 428 there is no left_at/.test(route) && /the copy is saved either way/.test(route))
-check('a member who turned it off keeps nothing, and turning it off deletes what was kept', /if \(settings\.poolOptOut\) return NextResponse\.json\(\{ ok: true, kept: 0, optedOut: true \}\)/.test(route) && /from\('trybe_member_stats'\)\.delete\(\)\.eq\('user_id', ownerId\)/.test(route))
+check('a member who turned it off keeps nothing, and turning it off deletes what was kept', /if \(os\?\.pool_opt_out === true\) return NextResponse\.json\(\{ ok: true, kept: 0, optedOut: true \}\)/.test(route) && /from\('trybe_member_stats'\)\.delete\(\)\.eq\('user_id', ownerId\)/.test(route))
 check('the combined numbers come only from poolBrands', /const pooled = poolBrands\(/.test(route) && !/from\('trybe_member_stats'\)\.select\('\*'\)/.test(route))
 const mb = read('components/labs/TrybeMyBrands.tsx')
 check('My brands sends its numbers only when included, and shows members together', /if \(!poolOptOut\) try \{ await post\(\{ action: 'my_stats'/.test(mb) && /<MembersLine/.test(mb) && /Include my results in members/.test(mb))

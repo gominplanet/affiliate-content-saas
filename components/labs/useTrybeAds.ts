@@ -20,6 +20,11 @@ export interface AdsRead {
   /** 'full': SCOUT 1.47.0 read your ad results. 'earnings': an older SCOUT,
    *  so only what you earned per brand was read. */
   source: 'full' | 'earnings'
+  /** Which of TRYBE's two answers came back (review 2026-10-24): totals not
+   *  read are added up from the videos (at most 100) and said so; videos not
+   *  read are never "no videos ran as ads". Absent on older kept reads. */
+  totalsRead?: boolean
+  videosRead?: boolean
   /** For an admin when the answer had nothing MVP knows: its keys. */
   keys: string | null
   at: number
@@ -46,7 +51,7 @@ export async function readAds(period: AdPeriod, fresh = false): Promise<{ read: 
   if (t.ok || v.ok) {
     const videos = v.ok ? readAdVideos(v.json) : []
     const totals = fillTotals(t.ok ? readAdTotals(t.json) : { ...NO_TOTALS }, videos)
-    const read: AdsRead = { period, totals, videos, source: 'full', keys: readCount(totals) ? null : `analytics: ${t.ok ? keysOf(t.json) : 'not read'}; submissions: ${v.ok ? keysOf(v.json) : 'not read'}`, at: Date.now() }
+    const read: AdsRead = { period, totals, videos, source: 'full', totalsRead: t.ok, videosRead: v.ok, keys: readCount(totals) ? null : `analytics: ${t.ok ? keysOf(t.json) : 'not read'}; submissions: ${v.ok ? keysOf(v.json) : 'not read'}`, at: Date.now() }
     cache.set(period, read)
     return { read, problem: null }
   }
