@@ -206,7 +206,7 @@ export default function TrybeAds({ canRead, isAdmin, onPlan }: { canRead: boolea
         <p className="text-[12px] mt-3" style={soft}>No videos ran as ads in the last {days} days. Once a brand runs one, it shows here with its hook rate and clicks.</p>
       )}
       {full && read && read.videosRead === false && (
-        <p className="text-[12px] mt-3" style={{ color: AMBER }}>MVP could not read your ad videos from TRYBE just now, so they are not listed here. Press Read again.</p>
+        <p className="text-[12px] mt-3" style={{ color: AMBER }}>MVP could not read your ad videos from TRYBE just now, so they are not listed here{read.videosWhy ? ` (${read.videosWhy})` : ''}. The totals above did read. Press Read again.</p>
       )}
       {full && read && read.totalsRead === false && read.videosRead !== false && (
         <p className="text-[12px] mt-1.5" style={{ color: AMBER }}>TRYBE&rsquo;s totals did not answer, so the numbers above are added up from up to 100 of your videos and may be low.</p>

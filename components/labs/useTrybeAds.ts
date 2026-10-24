@@ -9,7 +9,7 @@
 // you earned per period is still read from your brand totals (SCOUT 1.46.0).
 
 import { useCallback, useEffect, useState } from 'react'
-import { requestTrybeApi } from '@/lib/extension-frame'
+import { requestTrybeApi, type TrybeApiResult } from '@/lib/extension-frame'
 import { readBrandStats, keysOf } from '@/lib/trybe-mybrands'
 import { readAdTotals, readAdVideos, fillTotals, readCount, adBrands, adWinners, NO_TOTALS, PERIOD_DAYS, type AdPeriod, type AdTotals, type AdVideo, type AdWinner } from '@/lib/trybe-ads'
 
@@ -25,6 +25,9 @@ export interface AdsRead {
    *  read are never "no videos ran as ads". Absent on older kept reads. */
   totalsRead?: boolean
   videosRead?: boolean
+  /** Why the videos did not read, in TRYBE's or SCOUT's own words (Seb,
+   *  2026-10-24: "not loading here", with no reason on screen). */
+  videosWhy?: string | null
   /** For an admin when the answer had nothing MVP knows: its keys. */
   keys: string | null
   at: number
@@ -40,18 +43,46 @@ const problemOf = (error: string | undefined, status?: number): AdsProblem =>
     : status === 401 || status === 403 ? { kind: 'signedout', text: 'TRYBE says you are signed out. Sign in to TRYBE in this browser, then press Read again.' }
       : { kind: 'failed', text: `MVP could not read your ad results from TRYBE just now${error ? ` (${error}${status ? `, TRYBE answered ${status}` : ''})` : ''}. Press Read again.` }
 
+/** What a refused request said: TRYBE's status and its own message, or SCOUT's. */
+function whyNot(r: TrybeApiResult): string {
+  const j = r.json as Record<string, unknown> | null | undefined
+  const said = j && typeof j === 'object' ? [j.message, j.error, j.detail].find((x) => typeof x === 'string' && x.trim()) as string | undefined : undefined
+  const words = (said || (r.text || '').replace(/<[^>]+>/g, ' ')).replace(/\s+/g, ' ').trim().slice(0, 140)
+  return r.status ? `TRYBE answered ${r.status}${words ? `: ${words}` : ''}` : (r.error || 'SCOUT did not answer')
+}
+
+/** THE AD VIDEOS, ASKED MORE THAN ONE WAY. The address comes from TRYBE's
+ *  page code and its limit was never confirmed: a page size TRYBE does not
+ *  take is refused (400 or 422) while the totals still read, and a busy
+ *  TRYBE (500s) or a slow tab answers the next time. So: 100, then 50, then
+ *  no page size, stopping at signed out or not found. */
+async function readVideos(period: AdPeriod): Promise<TrybeApiResult> {
+  const base = `/backend/api/creator/v2/analytics/submissions?period=${period}`
+  let last: TrybeApiResult = { ok: false, error: 'SCOUT did not answer.' }
+  for (const path of [`${base}&limit=100`, `${base}&limit=50`, base]) {
+    last = await requestTrybeApi('GET', path)
+    if (last.ok || last.status === 401 || last.status === 403 || last.status === 404) break
+  }
+  return last
+}
+
 /** One period, read: the ad results when SCOUT can, else what you earned. */
 export async function readAds(period: AdPeriod, fresh = false): Promise<{ read: AdsRead | null; problem: AdsProblem | null }> {
   const kept = cache.get(period)
   if (!fresh && kept && Date.now() - kept.at < TTL) return { read: kept, problem: null }
   const [t, v] = await Promise.all([
     requestTrybeApi('GET', `/backend/api/creator/v2/analytics?period=${period}`),
-    requestTrybeApi('GET', `/backend/api/creator/v2/analytics/submissions?period=${period}&limit=100`),
+    readVideos(period),
   ])
   if (t.ok || v.ok) {
-    const videos = v.ok ? readAdVideos(v.json) : []
+    // The totals answer carries a submissions entry: when it is the list of
+    // videos, it stands in for a videos answer that did not come. Only a list
+    // with videos in it counts, so an empty one is never "no ads ran".
+    const fromTotals = !v.ok && t.ok ? readAdVideos(t.json) : []
+    const videosRead = v.ok || fromTotals.length > 0
+    const videos = v.ok ? readAdVideos(v.json) : fromTotals
     const totals = fillTotals(t.ok ? readAdTotals(t.json) : { ...NO_TOTALS }, videos)
-    const read: AdsRead = { period, totals, videos, source: 'full', totalsRead: t.ok, videosRead: v.ok, keys: readCount(totals) ? null : `analytics: ${t.ok ? keysOf(t.json) : 'not read'}; submissions: ${v.ok ? keysOf(v.json) : 'not read'}`, at: Date.now() }
+    const read: AdsRead = { period, totals, videos, source: 'full', totalsRead: t.ok, videosRead, videosWhy: videosRead ? null : whyNot(v), keys: readCount(totals) ? null : `analytics: ${t.ok ? keysOf(t.json) : 'not read'}; submissions: ${v.ok ? keysOf(v.json) : 'not read'}`, at: Date.now() }
     cache.set(period, read)
     return { read, problem: null }
   }

@@ -322,6 +322,14 @@ export default function TrybeMyBrands({ canRead, canSend, convos, me, myName, is
           </p>
         )}
 
+        {/* Said once, with TRYBE's answer, not on every card (Seb, 2026-10-24). */}
+        {ads.read?.source === 'full' && ads.read.videosRead === false && (
+          <p className="text-[12px] inline-flex items-start gap-1.5" style={{ color: AMBER }}>
+            <AlertTriangle size={12} className="mt-0.5 shrink-0" />
+            MVP could not read your ad videos from TRYBE just now{ads.read.videosWhy ? ` (${ads.read.videosWhy})` : ''}, so no brand below says which of your videos run as ads. Press Read again.
+          </p>
+        )}
+
         <section className="space-y-2">
           {judged.map(j => {
             const b = j.brand
@@ -402,7 +410,7 @@ function AdsLine({ b, ads, loading, problem }: { b: MyBrand; ads: AdsRead | null
   if (!ads) return <p className="mt-1.5 text-[12px]" style={soft}>{loading ? 'Reading which of your videos run as ads…' : `Ads: ${problem || 'TRYBE’s ad numbers were not read.'}`}</p>
   if (ads.source !== 'full') return <p className="mt-1.5 text-[12px]" style={soft}>Ads: {problem || 'this SCOUT reads only what you earned, so MVP cannot say whether your videos run as ads.'}</p>
   // The videos did not answer: not read, never "none running".
-  if (ads.videosRead === false) return <p className="mt-1.5 text-[12px]" style={{ color: AMBER }}>Ads: MVP could not read your ad videos from TRYBE just now. Press Read again.</p>
+  if (ads.videosRead === false) return <p className="mt-1.5 text-[12px]" style={soft}>Ads: not read (see above).</p>
   const { totals, videos } = brandAdTotals(ads.videos, b)
   const live = videos.filter((v) => v.live === true)
   const ran = (totals.spend ?? 0) > 0 || (totals.impressions ?? 0) > 0
