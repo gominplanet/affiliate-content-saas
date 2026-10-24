@@ -34,8 +34,9 @@ check('SCOUT sending by itself does not lock the page', /const busy = !!finding 
 check('SCOUT not answering is said as that', /if \(res == null && !ask\) return \{ state: 'no-answer'/.test(read('lib/extension-frame.ts')) && /SCOUT did not answer just now, so MVP cannot tell whether it is allowed on TRYBE/.test(UI))
 check('SCOUT is ticked only at the version sending needs', /access !== 'old' && scoutAtLeast\(scoutVersion, SCOUT_TRYBE_OWN_TAB_MIN_VERSION\), title: 'SCOUT up to date'/.test(UI))
 check('team-only parts follow View as', /const isAdmin = realAdmin && \(viewTier === null \|\| viewTier === 'admin'\)/.test(UI))
-const notes = releasesFor((g) => g !== 'team').flatMap((r) => r.notes.map((n) => n.text))
-check('the intro video news is the team\'s until members have it', !notes.some((t) => /intro video goes with every request/.test(t)) && releasesFor(() => true).some((r) => r.notes.some((n) => /intro video/.test(n.text))))
+// The intro video opened to every Pro member (Seb, 2026-10-24), and its news with it.
+const notes = releasesFor((g) => g === 'trybe_outreach').flatMap((r) => r.notes.map((n) => n.text))
+check('the intro video news reaches every Pro member now that the video does', notes.some((t) => /intro video goes with every request/.test(t)))
 check('links name where they go and the referral is on the link', /Install SCOUT from the Chrome Web Store/.test(UI) && /Join free on TRYBE <span className="font-normal">\(MVP&rsquo;s referral link\)<\/span>/.test(UI) && !/href="\/earnings" className="font-semibold underline">Sync your Amazon videos<\/a>/.test(UI))
 check('See all new is not narrowed by a name search or pay filter', /setFilters\(\{ \.\.\.NO_FILTERS, newOnly: true \}\); setNameQ\(''\); setPayType\('any'\)/.test(UI))
 check('This week reads the accepted brands for its order', /tab === 'sent' \|\| tab === 'week'\) && !requests\) void loadRequests\(\)/.test(UI))

@@ -2017,9 +2017,9 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
       )}
 
       {tab === 'find' && !lockedTab && (<>
-        {/* The intro video for requests (lib/trybe-intro): admin only until SCOUT can attach it.
+        {/* The intro video for requests (lib/trybe-intro): every Pro member (Seb, 2026-10-24).
             The core message is the request itself, so the card says where it stands and opens it. */}
-        {isAdmin && <TrybeIntroVideo core={core} onWriteCore={() => { setEditingCore(true); window.setTimeout(() => document.getElementById('trybe-core-message')?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 50) }} />}
+        {!preview && <TrybeIntroVideo core={core} onWriteCore={() => { setEditingCore(true); window.setTimeout(() => document.getElementById('trybe-core-message')?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 50) }} />}
         {/* Your stage: volume first, then double down on winners (Seb, 2026-10-14). */}
         {!preview && <TrybeStage canRead={canMyBrands} onGo={go} />}
         {/* 1. Core message: a short preview once written, the box while editing. */}
@@ -2117,7 +2117,7 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
           {!preview && <div className="flex flex-wrap items-center gap-3 mt-5 pt-4 border-t" style={{ borderColor: 'var(--border)' }}>
             <label className="text-[13px] flex items-center gap-2">Daily cap
               <input type="number" min={1} max={MAX_DAILY_CAP} value={cap} onChange={e => setCap(Math.min(MAX_DAILY_CAP, Number(e.target.value)))} className="w-16 rounded border px-2 py-1" style={{ borderColor: 'var(--border)', background: 'transparent' }} />
-              <span className="text-[12px]" style={{ color: 'var(--text-faint)' }}>per rolling 24 hours (TRYBE allows up to {MAX_DAILY_CAP}; each send frees up 24 hours after it went)</span>
+              <span className="text-[12px]" style={{ color: 'var(--text-faint)' }}>per rolling 24 hours (up to {MAX_DAILY_CAP}; each send frees up 24 hours after it went)</span>
             </label>
             <label className="text-[13px] flex items-center gap-2">
               <input type="checkbox" checked={dailyFind} onChange={e => setDailyFind(e.target.checked)} className="accent-[#7C3AED]" />

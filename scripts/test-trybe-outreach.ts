@@ -33,9 +33,10 @@ check('default cap is 20', DEFAULT_DAILY_CAP === 20 && clampCap(undefined) === 2
   check('the next free slot is 24 hours after the oldest of the last cap sends', nextFreeAt(rows.slice(0, 2), 2, now) === '2026-10-10T09:00:00.000Z')
   const ui = readFileSync('components/labs/TrybeOutreach.tsx', 'utf8')
   check('no screen says the cap resets "today" or "tomorrow" as if at midnight', !/Today.s cap is used|waits for tomorrow/.test(ui))
-  check('the cap setting says TRYBE allows up to 80 in a rolling 24 hours', /rolling 24 hours \(TRYBE allows up to \{MAX_DAILY_CAP\}/.test(ui))
+  check('the cap setting says up to 60 in a rolling 24 hours', /rolling 24 hours \(up to \{MAX_DAILY_CAP\}/.test(ui))
 }
-check('cap is held to 1..80, TRYBE\'s own limit', clampCap(0) === 1 && clampCap(500) === 80 && clampCap(80) === 80 && clampCap(35) === 35)
+// Seb, 2026-10-24: 60 at most, under TRYBE's own 80.
+check('cap is held to 1..60', clampCap(0) === 1 && clampCap(500) === 60 && clampCap(80) === 60 && clampCap(60) === 60 && clampCap(35) === 35)
 const now = Date.parse('2026-10-06T12:00:00Z')
 check('a sent request from 23h ago counts', countsTowardCap({ status: 'sent', send_started_at: '2026-10-05T13:00:00Z' }, now))
 check('a sent request from 25h ago does not', !countsTowardCap({ status: 'sent', send_started_at: '2026-10-05T11:00:00Z' }, now))

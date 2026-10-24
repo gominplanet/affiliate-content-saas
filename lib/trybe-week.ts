@@ -172,8 +172,10 @@ export function goalOf(sent: number, goal = MONTHLY_GOAL): GoalRead {
 // see you as someone who asks and does not film. Before asking for more:
 // how many samples are here and not filmed, and how many are on the way. Pure.
 
-export const SAMPLE_GUARD_UNFILMED = 5
-export const SAMPLE_GUARD_OPEN = 10
+// Seb, 2026-10-24: warn at 3 samples here and not filmed (a creator should
+// start with 3 to 5 and film them before asking for more), stop at 6.
+export const SAMPLE_GUARD_UNFILMED = 3
+export const SAMPLE_GUARD_OPEN = 6
 
 export interface SampleGuard { unfilmed: number; onTheWay: number; filmed: number; level: 'ok' | 'warn' | 'stop'; says: string | null }
 

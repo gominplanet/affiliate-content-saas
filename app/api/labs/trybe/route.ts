@@ -572,11 +572,11 @@ export async function POST(request: Request) {
 
   // THE INTRO VIDEO FOR REQUESTS (lib/trybe-intro; Seb, 2026-10-20: "a
   // personal intro submission based on what MVP wants to recommend"). MVP
-  // writes the words, the creator uploads the one video, MVP keeps it. Admin
-  // only while SCOUT cannot yet attach it to a request: a member never sees
-  // an upload that does nothing.
+  // writes the words, the creator uploads the one video, MVP keeps it, and
+  // SCOUT 1.53.7 sends it with every request. Open to every Pro member (Seb,
+  // 2026-10-24: "make sure ... the pitch video ... is open to all users");
+  // the plan's preview is kept out by the preview gate above.
   if (action.startsWith('intro_')) {
-    if (tier !== 'admin') return NextResponse.json({ error: 'The intro video is not open yet.' }, { status: 403 })
     const INTRO_BUCKET = 'instagram-videos'
     const { data: srow, error: sErr } = await admin.from('trybe_outreach_settings').select('*').eq('user_id', ownerId).maybeSingle()
     const migrated = !sErr && (!srow || 'intro_video' in srow)

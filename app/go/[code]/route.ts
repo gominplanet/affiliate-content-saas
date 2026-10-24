@@ -17,6 +17,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { buildPassportDestination, parseUserAgent, normalizeCountry } from '@/lib/passport-links'
 import { linkIsLive } from '@/lib/passport-abuse'
 import { localAsinAvailable } from '@/lib/passport-marketplace'
+import { levantaAtClick, levantaLinkFor } from '@/lib/levanta-first'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -83,13 +84,21 @@ export async function GET(req: Request, ctx: { params: Promise<{ code: string }>
       // the account-wide integrations tag when the link isn't tied to a site.
       // The site and account reads are independent — run them together so a
       // site-tied click pays one round trip for both, not two.
-      const [siteRes, igRes] = await Promise.all([
+      // The creator's Levanta switch and saved Levanta answer for this
+      // product are read alongside, each on its own: a database without
+      // migration 455 errors on them alone, never on the tags (a named column
+      // PostgREST does not know fails the whole read).
+      const [siteRes, igRes, preferRes, levRes] = await Promise.all([
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         link.site_id
           ? (admin as any).from('wordpress_sites').select('amazon_associates_tag, amazon_country_tags').eq('id', link.site_id).maybeSingle()
           : Promise.resolve({ data: null }),
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (admin as any).from('integrations').select('amazon_associates_tag, amazon_country_tags').eq('user_id', link.user_id).maybeSingle(),
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (admin as any).from('integrations').select('prefer_levanta').eq('user_id', link.user_id).maybeSingle().then((r: any) => r, () => ({ data: null })),
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (admin as any).from('levanta_links').select('state, url, checked_at').eq('user_id', link.user_id).eq('asin', String(link.asin).toUpperCase()).maybeSingle().then((r: any) => r, () => ({ data: null })),
       ])
       const site = siteRes?.data
       const ig = igRes?.data
@@ -120,11 +129,30 @@ export async function GET(req: Request, ctx: { params: Promise<{ code: string }>
           marketplace = AMAZON_HOME_HOST
         }
       }
-      // Carry the explicit source to Amazon as ascsubtag so per-source (e.g. per
-      // video) earnings attribution survives the geo-redirect. Amazon caps it at
-      // 16 URL-safe chars; a referer-host source isn't ours to tag, so it's blank.
-      const asc = sParam.replace(/[^A-Za-z0-9._-]/g, '').slice(0, 16)
-      if (asc) finalUrl += `${finalUrl.includes('?') ? '&' : '?'}ascsubtag=${asc}`
+      // LEVANTA AT CLICK TIME (lib/levanta-first levantaAtClick; Seb,
+      // 2026-10-24): a visitor bound for amazon.com, on a creator who turned
+      // on "Use Levanta links when they pay more", goes to the product's
+      // Levanta link when Levanta has it and it pays more. Old links too, so
+      // a description written last year earns Levanta's rate today. A product
+      // never asked about, or asked about long ago, is asked after the
+      // redirect, never while the visitor waits.
+      const asinUp = String(link.asin).toUpperCase()
+      const lv = levantaAtClick({ prefer: preferRes?.data?.prefer_levanta === true, usStore: marketplace === AMAZON_HOME_HOST, row: levRes?.data ?? null })
+      if (lv.ask) after(async () => { try { await levantaLinkFor({ userId: String(link.user_id), asin: asinUp, prefer: true }) } catch { /* asked again on a later click */ } })
+      if (lv.url) {
+        finalUrl = lv.url
+        after(async () => {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          try { await (admin as any).from('levanta_links').update({ used_at: new Date().toISOString() }).eq('user_id', link.user_id).eq('asin', asinUp) } catch { /* the click still went */ }
+        })
+      } else {
+        // Carry the explicit source to Amazon as ascsubtag so per-source (e.g. per
+        // video) earnings attribution survives the geo-redirect. Amazon caps it at
+        // 16 URL-safe chars; a referer-host source isn't ours to tag, so it's blank.
+        // (Not on a Levanta link: it carries Levanta's own tracking instead.)
+        const asc = sParam.replace(/[^A-Za-z0-9._-]/g, '').slice(0, 16)
+        if (asc) finalUrl += `${finalUrl.includes('?') ? '&' : '?'}ascsubtag=${asc}`
+      }
     } else {
       // Plain destination link (any non-Amazon URL) — forward as pasted.
       finalUrl = String(link.destination_url)

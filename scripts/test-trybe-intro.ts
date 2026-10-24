@@ -4,7 +4,7 @@
 // personal intro submission based on what MVP wants to recommend"). The words
 // MVP writes stay personal and never talk money or name a brand; the video is
 // kept only when it arrived; and until SCOUT can attach it, the card says
-// requests still go without it, and only admin sees it.
+// requests still go without it, and every Pro member has it (Seb, 2026-10-24).
 import { readFileSync, existsSync } from 'node:fs'
 import { INTRO_GUIDE, introPrompt, introSystem, parseIntro, readIntroVideo, cleanInputs, introSuggest, introSample, isTrybeSampleUrl, WORDS_FOR, INTRO_TIPS } from '../lib/trybe-intro'
 
@@ -40,7 +40,8 @@ check('the form is filled in from the profile (the person\'s name, not the site\
 check('filming tips include no rates and links on screen', INTRO_TIPS.some((t) => /no rates or prices/.test(t)) && INTRO_TIPS.some((t) => /links and email as text on screen/.test(t)))
 
 const ROUTE = read('app/api/labs/trybe/route.ts')
-check('admin only while SCOUT cannot attach it', /if \(action\.startsWith\('intro_'\)\) \{\s*if \(tier !== 'admin'\)/.test(ROUTE))
+// Seb, 2026-10-24: "make sure ... the pitch video ... is open to all users, not just team".
+check('open to every Pro member: no team-only check on the intro actions', /if \(action\.startsWith\('intro_'\)\) \{\s*const INTRO_BUCKET/.test(ROUTE))
 check('a video is saved only when storage has it', /if \(!hit\) return NextResponse\.json\(\{ error: 'The upload did not arrive in MVP storage, so nothing was saved/.test(ROUTE))
 check('only the upload MVP opened, in the creator\'s own folder', /trybe-intro-\[0-9a-f-\]\{36\}/.test(ROUTE))
 check('the clean-up jobs never take it (not burner-, clip- or source-)', /\^\(burner\|clip\|source\)-/.test(read('app/api/cron/purge-shorts-sources/route.ts')))
@@ -60,7 +61,7 @@ check('MVP hands it to every send, and keeps whether it went', /sample \}\)$/m.t
 const BG = read('extension/background.js')
 check('SCOUT 1.53.7 sends it as TRYBE\'s button does, only a TRYBE cdn link', /sampleCreativeUrl: u, sampleCreativeMimeType: t/.test(BG) && /cdn\\\.jointrybe\\\.com\\\/creators/.test(BG) && /trybeSend\(\{ url: d\.url, name: d\.name, message: d\.message, sample: d\.sample \}\)/.test(BG) && /withVideo: !!res\.withVideo/.test(BG) && /\/\^\\\/backend\\\/api\\\/creator\\\/profile\\\/portfolio\\\/upload-url\$\//.test(BG))
 check('the run log says when a request went with the video', /Sent with your intro video\./.test(BG) && /Sent with your intro video\. /.test(read('components/labs/TrybeOutreach.tsx')))
-check('only admin sees it on Find brands', /\{isAdmin && <TrybeIntroVideo core=/.test(read('components/labs/TrybeOutreach.tsx')))
+check('every Pro member sees it on Find brands (not the plan\'s preview)', /\{!preview && <TrybeIntroVideo core=/.test(read('components/labs/TrybeOutreach.tsx')))
 check('optional: off sends the message only, as before, and the card shrinks to one line', /No thanks, message only/.test(CARD) && /Intro video off\.<\/b> Requests go with your message only, as before\./.test(CARD) && /action === 'intro_toggle'/.test(ROUTE) && /add column if not exists intro_off boolean not null default false/.test(read('supabase/migrations/450_trybe_intro.sql')))
 check('migration 450, safe to run twice', existsSync('supabase/migrations/450_trybe_intro.sql') && /add column if not exists intro_video jsonb/.test(read('supabase/migrations/450_trybe_intro.sql')))
 

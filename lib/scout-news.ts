@@ -58,8 +58,8 @@ export const SCOUT_RELEASES: ScoutRelease[] = [
     version: '1.53.7',
     date: '2026-10-21',
     notes: [
-      // Team only while the intro video is (the card and the server are admin only).
-      { text: 'TRYBE: your intro video goes with every request to join a brand. Optional.', href: '/trybe', gate: 'team' },
+      // Open to every Pro member since 2026-10-24.
+      { text: 'TRYBE: your intro video goes with every request to join a brand. Optional.', href: '/trybe', gate: 'trybe_outreach' },
     ],
   },
   {

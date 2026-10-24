@@ -99,6 +99,19 @@ function walk(dir: string, out: string[] = []): string[] {
   const MIG = read('supabase/migrations/455_levanta_first.sql')
   check('migration 455 is safe to run twice', /add column if not exists prefer_levanta boolean not null default false/.test(MIG) && /create table if not exists public\.levanta_links/.test(MIG) && /drop policy if exists "levanta_links_own_read"/.test(MIG))
 
+  // Passport at click time (Seb, 2026-10-24: "build the passport, click time Levanta switch").
+  const { levantaAtClick, LEVANTA_CLICK_MAX_MS } = await import('../lib/levanta-first')
+  const useRow = { state: 'use', url: 'https://www.amazon.com/dp/B000000000?maas=maas_adg_1', checked_at: '2026-10-22T12:00:00Z' }
+  check('a US-bound click on a creator with the switch on goes to the saved Levanta link', levantaAtClick({ prefer: true, usStore: true, row: useRow, now }).url === useRow.url)
+  check('switch off, or a visitor bound for another Amazon, keeps the Amazon link and asks nothing', levantaAtClick({ prefer: false, usStore: true, row: useRow, now }).url === null && levantaAtClick({ prefer: true, usStore: false, row: useRow, now }).url === null && !levantaAtClick({ prefer: true, usStore: false, row: null, now }).ask)
+  check('a product never asked about keeps the Amazon link now and is asked after the click', levantaAtClick({ prefer: true, usStore: true, row: null, now }).url === null && levantaAtClick({ prefer: true, usStore: true, row: null, now }).ask)
+  check('an answer of no Levanta, or a link over 30 days old, is not used', levantaAtClick({ prefer: true, usStore: true, row: { state: 'pays-less', url: null, checked_at: '2026-10-23T12:00:00Z' }, now }).url === null && levantaAtClick({ prefer: true, usStore: true, row: { ...useRow, checked_at: new Date(now - LEVANTA_CLICK_MAX_MS - 1).toISOString() }, now }).url === null)
+  check('a week old "use" still sends the click, and is asked again behind it', (() => { const r = levantaAtClick({ prefer: true, usStore: true, row: { ...useRow, checked_at: '2026-10-15T12:00:00Z' }, now }); return r.url === useRow.url && r.ask })())
+  const GO = read('app/go/[code]/route.ts')
+  check('the Passport redirect asks it, for amazon.com-bound clicks, asks Levanta only after the redirect, and skips ascsubtag on a Levanta link', /levantaAtClick\(\{ prefer: preferRes\?\.data\?\.prefer_levanta === true, usStore: marketplace === AMAZON_HOME_HOST/.test(GO) && /if \(lv\.ask\) after\(/.test(GO) && /if \(lv\.url\) \{\s*finalUrl = lv\.url/.test(GO))
+  check('the switch and the saved answer are read on their own, so the tags never fail with them', /select\('prefer_levanta'\)\.eq\('user_id', link\.user_id\)/.test(GO) && /select\('amazon_associates_tag, amazon_country_tags'\)\.eq\('user_id', link\.user_id\)/.test(GO))
+  check('the page says Passport links already published switch too, for amazon.com visitors only', /Passport links already published switch at the click, for visitors headed to amazon\.com only/.test(CARD))
+
   if (fails.length) { console.error('levanta-first failed:\n - ' + fails.join('\n - ')); process.exit(1) }
   console.log(`✅ levanta-first: Levanta links when they pay more, off by default at no cost, asked by all ${builders.length} link builders, Passport never rebuilding one`)
 })()

@@ -53,7 +53,7 @@ export default function LevantaFirst() {
         <div className="flex-1 min-w-[16rem]">
           <p className="text-[15px] font-semibold" style={{ color: 'var(--text)' }}>Use Levanta links when they pay more</p>
           <p className="text-[13px] mt-1" style={soft}>
-            Every Amazon link MVP makes for you (blog posts, comparisons, social posts, deals, Link in Bio, video descriptions, Instagram DMs) checks Levanta first. When Levanta has the product for you, MVP uses your Levanta link, in your link style.
+            Every Amazon link MVP makes for you (blog posts, comparisons, social posts, deals, Link in Bio, video descriptions, Instagram DMs) checks Levanta first. When Levanta has the product for you, MVP uses your Levanta link, in your link style. Your Passport links switch too, the ones already published included: a visitor headed to amazon.com is sent to the Levanta link at the moment of the click.
           </p>
         </div>
         {data && (
@@ -84,7 +84,7 @@ export default function LevantaFirst() {
         <ul className="mt-3 text-[12.5px] space-y-1 list-disc pl-5" style={soft}>
           <li>A product whose Creator Connections campaign pays as much or more keeps your Amazon link: a Levanta link earns no Associates commission and no campaign bonus.</li>
           <li>What a Levanta link gives up: Amazon pays on the whole cart for 24 hours after a click, Levanta pays on this product for 14 days. A Levanta link always goes to amazon.com, so visitors outside the US are not sent to their own Amazon the way Passport sends them.</li>
-          <li>Your link style still applies. Passport, Geniuslink or Bitly wraps the Levanta link and Levanta&rsquo;s tracking is kept. Links already published stay as they are.</li>
+          <li>Your link style still applies. Passport, Geniuslink or Bitly wraps the Levanta link and Levanta&rsquo;s tracking is kept. Passport links already published switch at the click, for visitors headed to amazon.com only: everyone else still goes to their own country&rsquo;s Amazon with your tag. Geniuslink and Bitly links already published stay as they are.</li>
         </ul>
       )}
 
@@ -107,7 +107,7 @@ export default function LevantaFirst() {
                   ? <Check size={13} className="shrink-0" style={{ color: '#16A34A' }} />
                   : <span className="w-[13px] shrink-0" aria-hidden="true" />}
                 <span className="font-mono" style={{ color: 'var(--text)' }}>{r.asin}</span>
-                <span className="flex-1 min-w-[12rem]" style={r.state === 'use' ? { color: '#16A34A' } : soft}>{r.words}</span>
+                <span className="flex-1 min-w-[12rem]" style={r.state === 'use' ? { color: '#16A34A' } : soft}>{r.words}{r.state === 'use' && r.usedAt ? <span style={soft}> &middot; last used {new Date(r.usedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</span> : null}</span>
                 <a href={`https://www.amazon.com/dp/${r.asin}`} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 font-semibold" style={{ color: CYAN }}>
                   See it on Amazon <ExternalLink size={11} />
                 </a>

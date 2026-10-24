@@ -73,6 +73,30 @@ export function levantaFresh(row: { state: string; checked_at: string } | null |
   return ttl != null && Number.isFinite(at) && now - at < ttl
 }
 
+/** How long a saved Levanta link keeps sending clicks while it is asked
+ *  about again in the background: a link that worked last week still works
+ *  today far more often than not, and a click never waits on Levanta. */
+export const LEVANTA_CLICK_MAX_MS = 30 * 86_400_000
+
+/** PASSPORT AT CLICK TIME (Seb, 2026-10-24, after McKay C's Geniuslink video:
+ *  "build the passport, click time Levanta switch"). For one click on a
+ *  Passport link to an Amazon product: the Levanta link to send this visitor
+ *  to, or null to keep the normal Amazon link; and whether Levanta should be
+ *  asked about the product again, in the background, after the redirect.
+ *    - only with the creator's switch on;
+ *    - only a visitor who would land on amazon.com anyway (a Levanta link is
+ *      for the US store; everyone else keeps their own Amazon and tag);
+ *    - only a saved answer of "use" (Levanta has it, the brand approved them,
+ *      and it pays more than the Creator Connections campaign), at most
+ *      LEVANTA_CLICK_MAX_MS old. Pure. */
+export function levantaAtClick(o: { prefer: boolean; usStore: boolean; row: { state: string; url?: string | null; checked_at: string } | null | undefined; now?: number }): { url: string | null; ask: boolean } {
+  if (!o.prefer || !o.usStore) return { url: null, ask: false }
+  const now = o.now ?? Date.now()
+  const at = o.row ? Date.parse(o.row.checked_at) : NaN
+  const url = o.row && o.row.state === 'use' && o.row.url && /^https?:\/\//i.test(o.row.url) && Number.isFinite(at) && now - at < LEVANTA_CLICK_MAX_MS ? String(o.row.url) : null
+  return { url, ask: !levantaFresh(o.row ?? null, now) }
+}
+
 /** A Levanta link: its short lvnta.com form, or an Amazon link carrying
  *  Amazon Attribution's tracking (maas). Never rebuilt from its ASIN, which
  *  would put the Associates tag back and drop Levanta's commission. Pure. */

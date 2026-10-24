@@ -52,9 +52,11 @@ check('no remix when one video is both', remixOf([v('1', 'A', 40, 2), v('2', 'B'
 const s = (received: boolean, filmed: boolean) => ({ received_at: received ? '2026-10-01' : null, filmed_at: filmed ? '2026-10-02' : null, submitted_at: null })
 const few = sampleGuard([s(true, false), s(false, false), s(true, true)])
 check('a few open samples say nothing', few.level === 'ok' && few.says === null)
-const heavy = sampleGuard([...Array(6).fill(s(true, false)), ...Array(3).fill(s(false, false))])
-check('5+ here and not filmed warns, with the counts', heavy.level === 'warn' && /6 samples here and not filmed, and 3 on the way/.test(heavy.says || ''))
-check('10+ unfilmed is sample jail', sampleGuard(Array(11).fill(s(true, false))).level === 'stop')
+// Seb, 2026-10-24: warn at 3 unfilmed, stop at 6.
+const heavy = sampleGuard([...Array(3).fill(s(true, false)), ...Array(2).fill(s(false, false))])
+check('3+ here and not filmed warns, with the counts', heavy.level === 'warn' && /3 samples here and not filmed, and 2 on the way/.test(heavy.says || ''))
+check('2 here and not filmed says nothing yet', sampleGuard(Array(2).fill(s(true, false))).level === 'ok')
+check('6+ unfilmed is sample jail', sampleGuard(Array(6).fill(s(true, false))).level === 'stop')
 check('This week and Find brands show it', /<TrybeSampleGuard samples=\{rows\} \/>/.test(read('components/labs/TrybeWeek.tsx')) && /<TrybeSampleGuard onFilm=/.test(read('components/labs/TrybeOutreach.tsx')))
 
 // ── 4. The rate lock watch ──

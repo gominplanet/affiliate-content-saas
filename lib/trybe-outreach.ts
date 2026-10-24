@@ -21,8 +21,10 @@
 export const MIN_SEND_GAP_MS = 8_000
 
 export const DEFAULT_DAILY_CAP = 20
-/** TRYBE's own ceiling: 80 requests in any 24 hours. */
-export const MAX_DAILY_CAP = 80
+/** The most join requests a creator can set for any 24 hours. TRYBE's own
+ *  ceiling was 80; MVP holds 60 (Seb, 2026-10-24), so a full day never runs
+ *  into TRYBE's limit or looks like a script. */
+export const MAX_DAILY_CAP = 60
 export const MIN_GAP_MS = 45_000
 export const MAX_GAP_MS = 120_000
 /** After this many sends in one run, one longer pause. */
