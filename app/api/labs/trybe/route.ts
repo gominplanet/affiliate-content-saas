@@ -29,7 +29,7 @@ import { payLines, payReadOf, estimatePay } from '@/lib/trybe-pay'
 import { readTopWords, firstHook, keepHooks, readHooksBody, hooksBlock, type TopHook } from '@/lib/trybe-hooks'
 import { readRetainers } from '@/lib/trybe-retainer'
 import { amazonVideoPage } from '@/lib/brand-content'
-import { pickVoice, readVoiceBody, voiceBlock, VOICE_RULE, type VoiceSample } from '@/lib/trybe-voice'
+import { pickVoice, readVoiceBody, voiceBlock, VOICE_RULE, DRAFT_VOICE_RULE, type VoiceSample } from '@/lib/trybe-voice'
 import { KICKOFF_SYSTEM, FOLLOWUP_SYSTEM, kickoffUserPrompt, brandBlock, VIDEO_PLAN_SYSTEM, parseVideoPlan, honestCtas } from '@/lib/trybe-playbook'
 import { winnersForPlan, winnersBlock, readScript } from '@/lib/trybe-mybrands'
 import { directoryChanges, adsChange, poolBrands, type Change, type MemberRow } from '@/lib/trybe-changes'
@@ -63,7 +63,7 @@ import {
   DRAFT_SYSTEM, draftUserPrompt, DEFAULT_DAILY_CAP, type ScannedBrand,
   cleanTerms, prefsKey, FIT_SYSTEM, fitUserPrompt, parseFit,
   readPay, payPasses, payRank, BROWSE_SORTS, PAY_TYPES, type BrowseSort, type PayType,
-  REPLY_SYSTEM, replyUserPrompt, replyBlanks, talksTerms,
+  REPLY_SYSTEM, replyUserPrompt, replyBlanks, talksTerms, MIN_SEND_GAP_MS,
   nextFreeAt, MAX_DAILY_CAP, readReplySteps, claimsUnticked, REPLY_STEPS } from '@/lib/trybe-outreach'
 
 export const runtime = 'nodejs'
@@ -661,9 +661,12 @@ export async function POST(request: Request) {
   }
 
   if (action === 'settings') {
-    const coreMessage = typeof body.coreMessage === 'string' ? body.coreMessage.trim().slice(0, 2000) : ''
-    const dailyCap = clampCap(body.dailyCap)
-    const row: Record<string, unknown> = { user_id: ownerId, core_message: coreMessage, daily_cap: dailyCap, updated_at: now }
+    // Only what the page sent is written: a save of the niche never touches
+    // the core message or the cap (review 2026-10-24).
+    const row: Record<string, unknown> = { user_id: ownerId, updated_at: now }
+    const coreMessage = typeof body.coreMessage === 'string' ? body.coreMessage.trim().slice(0, 2000) : null
+    if (coreMessage != null) row.core_message = coreMessage
+    if (body.dailyCap != null) row.daily_cap = clampCap(body.dailyCap)
     // Sent only when the page sends them, so an older page cannot wipe them.
     if (body.categories !== undefined) row.categories = cleanTerms(body.categories)
     if (body.keywords !== undefined) row.keywords = cleanTerms(body.keywords)
@@ -673,7 +676,10 @@ export async function POST(request: Request) {
       const missing = /column .* does not exist|schema cache/i.test(error.message)
       return NextResponse.json({ error: missing ? setupWords(tier, 'The niche settings need migration 416 in Supabase first.') : error.message }, { status: 500 })
     }
-    return NextResponse.json({ ok: true, settings: await readSettings(admin, ownerId) })
+    // A core message that talks pay is saved, and said: every message is
+    // written from it, and TRYBE messages never talk rates.
+    const warning = coreMessage && talksTerms(coreMessage, { adSpendQuestion: false }) ? 'Your core message talks about pay, rates or prices. TRYBE brands set the pay, so MVP will not send messages that mention it: take that part out.' : null
+    return NextResponse.json({ ok: true, settings: await readSettings(admin, ownerId), ...(warning ? { warning } : {}) })
   }
 
   if (action === 'found') {
@@ -1203,7 +1209,7 @@ export async function POST(request: Request) {
     const settings = await readSettings(admin, ownerId)
     const creator = await writerFacts(admin, ownerId)
     const f = await siteFacts(row)
-    const facts = { name: row.name, categories: row.categories || [], about: row.about, siteSummary: f.summary, products: f.products, payText: row.pay_text }
+    const facts = { name: row.name, categories: row.categories || [], about: row.about, siteSummary: f.summary, products: f.products }
     // The creator's own messages to brands, for their voice (lib/trybe-voice).
     const voice = readVoiceBody(body.voice)
     try {
@@ -1215,8 +1221,23 @@ export async function POST(request: Request) {
           : `CREATOR FACTS:\n${creator.join('\n') || '(none)'}\n\nBRAND:\n${brandBlock(facts)}`) + voiceBlock(voice) }],
       })
       try { const u = usageFromAnthropic(msg); recordUsage({ userId, tier, feature: 'trybe_outreach_kickoff', model: MODEL, input: u.input, output: u.output }) } catch { /* best-effort */ }
-      const text = tidyDraft(scrubBanned((msg.content as Array<{ type: string; text?: string }>).map(b => b.type === 'text' ? b.text || '' : '').join('')), 1500)
+      let text = tidyDraft(scrubBanned((msg.content as Array<{ type: string; text?: string }>).map(b => b.type === 'text' ? b.text || '' : '').join('')), 1500)
+      // NEVER RATES (house rule): a message that talks pay is written once
+      // more, then refused. The first message's ad spend question stays
+      // (Cole's call question) until Seb says otherwise.
+      const moneyOk = (t: string) => !talksTerms(t, { adSpendQuestion: action === 'kickoff' })
+      if (text && !moneyOk(text)) {
+        const again = await createAnthropicClient().messages.create({
+          model: MODEL, max_tokens: 500,
+          system: (action === 'kickoff' ? KICKOFF_SYSTEM(BANNED_RULE) : FOLLOWUP_SYSTEM(BANNED_RULE)) + (voice.length ? `\n${VOICE_RULE}` : ''),
+          messages: [{ role: 'user', content: (action === 'kickoff'
+            ? kickoffUserPrompt({ coreMessage: settings.coreMessage, creator, brand: facts })
+            : `CREATOR FACTS:\n${creator.join('\n') || '(none)'}\n\nBRAND:\n${brandBlock(facts)}`) + voiceBlock(voice) + '\n\n(Your last try talked about pay, rates or prices. On TRYBE the brand sets the pay and TRYBE pays the creator. Write it again without any of that.)' }],
+        })
+        text = tidyDraft(scrubBanned((again.content as Array<{ type: string; text?: string }>).map(b => b.type === 'text' ? b.text || '' : '').join('')), 1500)
+      }
       if (!text) return NextResponse.json({ error: 'The message came back empty. Try again.' }, { status: 502 })
+      if (!moneyOk(text)) return NextResponse.json({ error: 'The message kept talking about pay or rates, which TRYBE brands set themselves, so it is not shown. Press it again.' }, { status: 502 })
       // Kept so it is there next visit; before migration 425 it is only shown.
       try { await admin.from('trybe_brands').update({ kickoff_draft: text, updated_at: now }).eq('user_id', ownerId).eq('brand_id', brandId) } catch { /* shown either way */ }
       return NextResponse.json({ ok: true, text, researched: !!(f.summary || f.products.length) })
@@ -2165,18 +2186,24 @@ export async function POST(request: Request) {
       const sf = await siteFacts(r)
       const summary = sf.summary, products = sf.products, siteError = sf.siteError, fresh = sf.fresh
       try {
-        const msg = await client.messages.create({
-          model: MODEL,
-          max_tokens: 500,
-          system: DRAFT_SYSTEM(BANNED_RULE) + (draftVoice.length ? `\n${VOICE_RULE}` : ''),
-          messages: [{ role: 'user', content: draftUserPrompt({
-            coreMessage: settings.coreMessage, creator,
-            brand: { name: r.name, categories: r.categories || [], about: r.about, payText: r.pay_text, website: r.website, siteSummary: summary, siteProducts: products },
-          }) + voiceBlock(draftVoice) }],
-        })
-        try { const u = usageFromAnthropic(msg); recordUsage({ userId, tier, feature: 'trybe_outreach', model: MODEL, input: u.input, output: u.output }) } catch { /* best-effort */ }
-        const text = tidyDraft(scrubBanned((msg.content as Array<{ type: string; text?: string }>).map(b => b.type === 'text' ? b.text || '' : '').join('')))
+        const write = async (note = '') => {
+          const msg = await client.messages.create({
+            model: MODEL,
+            max_tokens: 500,
+            system: DRAFT_SYSTEM(BANNED_RULE) + (draftVoice.length ? `\n${DRAFT_VOICE_RULE}` : ''),
+            messages: [{ role: 'user', content: draftUserPrompt({
+              coreMessage: settings.coreMessage, creator,
+              brand: { name: r.name, categories: r.categories || [], about: r.about, payText: null, website: r.website, siteSummary: summary, siteProducts: products },
+            }) + voiceBlock(draftVoice) + note }],
+          })
+          try { const u = usageFromAnthropic(msg); recordUsage({ userId, tier, feature: 'trybe_outreach', model: MODEL, input: u.input, output: u.output }) } catch { /* best-effort */ }
+          return tidyDraft(scrubBanned((msg.content as Array<{ type: string; text?: string }>).map(b => b.type === 'text' ? b.text || '' : '').join('')))
+        }
+        let text = await write()
+        // NEVER RATES (house rule): once more, then refused, saying why.
+        if (text && talksTerms(text)) text = await write('\n\n(Your last try talked about pay, rates or prices. On TRYBE the brand sets the pay. Write it again without any of that.)')
         if (!text) throw new Error('The draft came back empty.')
+        if (talksTerms(text)) throw new Error(talksTerms(settings.coreMessage) ? 'Your core message talks about pay or rates, which TRYBE brands set themselves. Take that out of it and write again.' : 'The draft kept talking about pay or rates, which TRYBE brands set themselves, so it was not kept. Write it again.')
         const { data: saved, error: upErr } = await admin.from('trybe_brands').update({
           draft: text, drafted_at: new Date().toISOString(), status: 'drafted', error: null,
           site_summary: summary || null, site_products: products, site_error: siteError, site_fetched_at: fresh ? r.site_fetched_at : sf.fetchedAt,
@@ -2591,9 +2618,11 @@ export async function POST(request: Request) {
 
   if (action === 'edit') {
     const draft = typeof body.draft === 'string' ? body.draft.trim().slice(0, 2000) : ''
-    const { error } = await admin.from('trybe_brands').update({ draft, status: draft ? 'drafted' : 'new', updated_at: now })
-      .eq('user_id', ownerId).eq('brand_id', brandId).in('status', ['new', 'drafted', 'failed', 'skipped'])
+    const { data: changed, error } = await admin.from('trybe_brands').update({ draft, status: draft ? 'drafted' : 'new', updated_at: now })
+      .eq('user_id', ownerId).eq('brand_id', brandId).in('status', ['new', 'drafted', 'failed', 'skipped']).select('brand_id')
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    // Nothing changed: the brand is being sent or went, so the edit was not kept.
+    if (!(changed || []).length) return NextResponse.json({ error: 'Not saved: this brand is being sent or was sent, so its message cannot change now.' }, { status: 409 })
     return NextResponse.json({ ok: true })
   }
 
@@ -2647,10 +2676,16 @@ export async function POST(request: Request) {
     // A send MVP never heard back about. The creator checked TRYBE's Pending
     // Requests: it either went (sent) or it did not (back in the queue).
     const went = body.went === true
-    const { error } = await admin.from('trybe_brands').update(
+    // A send started under 4 minutes ago may still be going: it is not put
+    // back in the queue, or SCOUT's answer would find it gone and a request
+    // that went would stop counting toward the cap (review 2026-10-24).
+    let q = admin.from('trybe_brands').update(
       went ? { status: 'sent', sent_at: now, error: null, updated_at: now } : { status: 'drafted', send_started_at: null, error: null, updated_at: now },
     ).eq('user_id', ownerId).eq('brand_id', brandId).eq('status', 'sending')
+    if (!went) q = q.or(`send_started_at.is.null,send_started_at.lt.${new Date(Date.now() - 4 * 60_000).toISOString()}`)
+    const { data: changed, error } = await q.select('brand_id')
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (!went && !(changed || []).length) return NextResponse.json({ error: 'SCOUT started this one less than 4 minutes ago and may still be sending it. Check again in a few minutes.' }, { status: 409 })
     return NextResponse.json({ ok: true })
   }
 
@@ -2664,6 +2699,19 @@ export async function POST(request: Request) {
     if (!row) return NextResponse.json({ ok: false, error: 'Not found' }, { status: 404 })
     if (!row.draft || !['drafted', 'failed'].includes(row.status)) {
       return NextResponse.json({ ok: false, error: `Not in the queue (${row.status}).` }, { status: 409 })
+    }
+    // NEVER BACK TO BACK (review 2026-10-24): the page and SCOUT space their
+    // runs, but a second tab or quick presses of Send now did not. A request
+    // claimed within MIN_SEND_GAP_MS of the last one waits; the brand stays
+    // in Ready to send.
+    {
+      const { data: last } = await admin.from('trybe_brands').select('send_started_at').eq('user_id', ownerId).neq('brand_id', brandId)
+        .gte('send_started_at', new Date(Date.now() - MIN_SEND_GAP_MS).toISOString()).order('send_started_at', { ascending: false }).limit(1)
+      const at = last?.[0]?.send_started_at ? Date.parse(last[0].send_started_at) : NaN
+      if (Number.isFinite(at)) {
+        const wait = Math.max(1, Math.ceil((at + MIN_SEND_GAP_MS - Date.now()) / 1000))
+        return NextResponse.json({ ok: false, retryInMs: wait * 1000, error: `Another request went out just now. MVP keeps a few seconds between them: try again in ${wait} second${wait === 1 ? '' : 's'}` })
+      }
     }
     const { data: claimed, error: claimErr } = await admin.from('trybe_brands')
       .update({ status: 'sending', send_started_at: now, sent_message: row.draft, error: null, updated_at: now })

@@ -178,7 +178,7 @@ export default function TrybeAfterAccept({ b, chatId, lastAt, me, myName, canSen
             ? <AmazonFilmedList products={onAmz.products} title="Which ones" className="mt-1.5" />
             : onAmz.videoLinks.length > 0 && (
               <p className="mt-1 flex flex-wrap gap-x-3">
-                {onAmz.videoLinks.map((u, i) => <a key={u} href={u} target="_blank" rel="noopener noreferrer" className="font-semibold underline inline-flex items-center gap-0.5">Video {i + 1} <ExternalLink size={10} /></a>)}
+                {onAmz.videoLinks.map((u, i) => <a key={u} href={u} target="_blank" rel="noopener noreferrer" className="font-semibold underline inline-flex items-center gap-0.5">Video {i + 1} on Amazon <ExternalLink size={10} /></a>)}
               </p>
             )}
         </div>

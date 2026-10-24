@@ -518,11 +518,13 @@ export default function TrybeInbox({ scoutVersion, allowed, openRequest, onOpene
                 <p className="text-[11.5px] mt-1" style={{ color: 'var(--text-soft)' }}>The reply only says you did what is ticked here. Anything not ticked, it offers to do next. Remembered for this chat.</p>
               </fieldset>
               <div className="flex flex-wrap items-center gap-3 mt-2">
-                <button onClick={() => void suggestReply()} disabled={suggesting || sending || !msgs?.length || lastIsYours}
+                {/* Not in a group chat or TRYBE's community rooms: a "reply to the
+                    brand" there would go to every creator in the room. */}
+                {!/\(group\)/i.test(openConvo?.name || '') && <button onClick={() => void suggestReply()} disabled={suggesting || sending || !msgs?.length || lastIsYours}
                   className="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-[13px] font-semibold disabled:opacity-50" style={{ border: `1px solid ${PURPLE}`, color: PURPLE }}
                   title={lastIsYours ? 'The last message is yours. MVP suggests a reply once the brand answers.' : !msgs?.length ? 'Open a conversation with messages first.' : 'MVP writes a reply to the brand\u2019s latest message in your voice. You edit it, then send.'}>
                   {suggesting ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />} {beforeSuggest !== null ? 'Suggest another' : 'Suggest a reply'}
-                </button>
+                </button>}
                 {beforeSuggest !== null && (
                   <button onClick={() => { setReply(beforeSuggest); setBeforeSuggest(null); setBlanks([]) }} className="inline-flex items-center gap-1 text-[12px] font-semibold" style={{ color: 'var(--text-soft)' }}>
                     <Undo2 size={12} /> {beforeSuggest ? 'Back to what you wrote' : 'Clear'}

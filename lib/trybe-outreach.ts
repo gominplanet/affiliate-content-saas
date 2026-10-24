@@ -11,8 +11,14 @@
 //     never add up to twice the cap;
 //   - a send MVP started and never heard back about counts toward the cap, so
 //     a lost answer can only make it send fewer, never more;
-//   - a random wait of 45 to 120 seconds between two requests, with a longer
-//     pause every few, so the rhythm never looks like a script.
+//   - a wait between two requests: 10 seconds for a run under SHORT_RUN_UNDER
+//     (Seb's call, below), else a random 45 to 120 seconds with a longer
+//     pause every few; and MVP's server refuses a request claimed within
+//     MIN_SEND_GAP_MS of the last one, so two tabs or quick presses of Send
+//     now never go back to back.
+
+/** The least time between two join requests, held by the server's claim. */
+export const MIN_SEND_GAP_MS = 8_000
 
 export const DEFAULT_DAILY_CAP = 20
 /** TRYBE's own ceiling: 80 requests in any 24 hours. */
@@ -290,6 +296,8 @@ export function tidyDraft(text: string, max = 1000): string {
     .replace(/^["'\s]+|["'\s]+$/g, '')
     .replace(/[ \t]*[—–][ \t]*/g, ', ')
     .replace(/ +- +/g, ', ')
+    // "--" as a sentence break too (house rule: no dashes).
+    .replace(/[ \t]*--+[ \t]*/g, ', ')
     .replace(/[ \t]+\n/g, '\n')
     .replace(/\n{3,}/g, '\n\n')
     .trim()
@@ -352,7 +360,8 @@ export function draftUserPrompt(f: DraftFacts): string {
   const brandLines = [
     `Name: ${b.name}`,
     b.categories.length ? `TRYBE categories: ${b.categories.join(', ')}` : '',
-    b.payText ? `TRYBE pay: ${b.payText}` : '',
+    // The brand's pay is never given to a writer: what it is not told, it
+    // cannot repeat in a message (review 2026-10-24).
     b.about ? `TRYBE about: ${b.about.slice(0, 800)}` : '',
     b.website ? `Website: ${b.website}` : '',
     b.siteProducts.length ? `Some products on their website (only to know what kind of brand this is, never to list): ${b.siteProducts.slice(0, 8).join(' | ')}` : '',
@@ -389,8 +398,17 @@ Output ONLY the reply.`
 
 /** A reply that talks money or terms, which a TRYBE reply never should: the
  *  brand sets the pay on TRYBE (Seb, 2026-10-14). Pure. */
-export function talksTerms(text: string): boolean {
-  return /\b(our|my|your)\s+rates?\b|\brates?\s+(for|is|are|would|of)\b|\[your rate|\bpricing\b|\bprice list\b|\b(your|our|the) budget\b|\bbudget (for|is)\b|\bfees?\b|\binvoice|\bmedia kit\b|\bdeliverables\b|\busage rights\b|\b(content|video|creator) packages?\b|what a partnership could look like/i.test(text)
+export function talksTerms(text: string, o: { adSpendQuestion?: boolean } = {}): boolean {
+  // TRYBE MESSAGES NEVER TALK RATES (house rule). One broad check for every
+  // message MVP writes to a brand, the creator's core message and the voice
+  // samples (review 2026-10-24: "Love that you pay $50 per video", "Is
+  // payment handled through TRYBE?", "The 20% commission works great" and
+  // "We charge $150 per video" all went through the old one).
+  if (/\$\s?\d|\b(our|my|your)\s+rates?\b|\brates?\s+(for|is|are|would|of)\b|\[your rate|\bprices?\b|\bpricing\b|\bprice list\b|\bfees?\b|\binvoice|\bmedia kit\b|\bdeliverables\b|\busage rights\b|\b(content|video|creator) packages?\b|what a partnership could look like|\b(pay|pays|paid|paying|payment|payments|payout|payouts)\b|\bcommissions?\b|\bcompensat(e|ed|ion)\b|\bcharg(e|es|ed|ing)\b|\bper (video|post|piece|submission)\b/i.test(text)) return true
+  // A brand's ad budget: kept out everywhere except the one question the
+  // first message after a yes asks (Cole's call question, lib/trybe-playbook).
+  if (!o.adSpendQuestion && /\bbudgets?\b(?!-)|\bspend(s|ing)?\b[^.?!\n]{0,20}\bon ads\b|\bad spend\b/i.test(text)) return true
+  return false
 }
 
 /** A message about money the creator raised themselves (a retainer ask:

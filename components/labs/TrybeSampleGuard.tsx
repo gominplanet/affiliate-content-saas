@@ -15,13 +15,19 @@ type Row = Pick<Sample, 'received_at' | 'filmed_at' | 'submitted_at'>
 
 export default function TrybeSampleGuard({ samples, onFilm }: { samples?: Row[] | null; onFilm?: () => void }) {
   const [read, setRead] = useState<Row[] | null>(samples ?? null)
+  // A failed read is said, quietly: silence would look like "nothing to warn".
+  const [failed, setFailed] = useState(false)
   useEffect(() => { if (samples) setRead(samples) }, [samples])
   useEffect(() => {
     if (samples !== undefined) return
     let gone = false
-    fetch('/api/labs/trybe/samples', { signal: AbortSignal.timeout(20_000) }).then((r) => r.json()).then((d) => { if (!gone && Array.isArray(d.samples)) setRead(d.samples) }).catch(() => { /* nothing to warn about from a failed read */ })
+    fetch('/api/labs/trybe/samples', { signal: AbortSignal.timeout(20_000) })
+      .then(async (r) => { const d = await r.json().catch(() => ({})); if (!r.ok || !Array.isArray(d.samples)) throw new Error('not read'); return d })
+      .then((d) => { if (!gone) { setRead(d.samples); setFailed(false) } })
+      .catch(() => { if (!gone) setFailed(true) })
     return () => { gone = true }
   }, [samples])
+  if (!read && failed) return <p className="text-[12px] mb-3" style={{ color: '#B45309' }}>MVP could not check your samples just now, so a pile of samples to film would not show here.</p>
   if (!read) return null
   const g = sampleGuard(read)
   if (!g.says) return null

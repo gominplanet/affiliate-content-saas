@@ -10,7 +10,8 @@
 //   3. The brands that fit are listed, best first, with why. Tick and draft.
 //   Ready to send, its own tab: every day, when this page is opened, MVP and
 //   SCOUT find up to 20 new brands that fit and draft them. You skim and press
-//   Send all; SCOUT presses Request to Join for each, 45 to 120 seconds apart.
+//   Send all; SCOUT presses Request to Join for each, spaced out (lib/
+//   trybe-outreach nextGapMs: 10 seconds in a short run, else 45 to 120).
 //
 // What each row shows is what happened: "Sent" only when SCOUT saw TRYBE close
 // the request box, "Not confirmed" when Send Request was pressed and TRYBE did
@@ -30,7 +31,7 @@ import TrybeStarBrands from '@/components/labs/TrybeStarBrands'
 import { TRYBE_OPEN_URL, TRYBE_NOT_OPEN, TRYBE_NOT_OPEN_WORDS, trybeTabWords, type TrybeTabState } from '@/lib/trybe-tab'
 import { nextGapMs, prefsKey, CATEGORY_SUGGESTIONS, DAILY_FIND, SCAN_READ, SHORT_RUN_UNDER, SHORT_GAP_MS, MAX_DAILY_CAP } from '@/lib/trybe-outreach'
 import TrybeInbox, { fetchTrybeInbox, lastIsMine, type Conversation } from '@/components/labs/TrybeInbox'
-import { reportTrybeInbox } from '@/lib/trybe-alerts'
+import { reportTrybeInbox, inboxSnapshot } from '@/lib/trybe-alerts'
 import { readDiscoveryPage, requestState, acceptRate, type BrandFlags, type RequestState } from '@/lib/trybe-invites'
 import TrybeLink from '@/components/labs/TrybeLink'
 import { SCOUT_TRYBE_OWN_TAB_MIN_VERSION, SCOUT_TRYBE_TAB_OPEN_MIN_VERSION, SCOUT_TRYBE_FIND_MIN_VERSION, SCOUT_TRYBE_HARVEST_MIN_VERSION, SCOUT_TRYBE_BACKGROUND_SEND_MIN_VERSION, SCOUT_TRYBE_RUNNER_MIN_VERSION, SCOUT_TRYBE_HIDDEN_SEND_MIN_VERSION, SCOUT_TRYBE_INBOX_MIN_VERSION, SCOUT_TRYBE_OPEN_BRAND_MIN_VERSION, SCOUT_TRYBE_PLAYBOOK_MIN_VERSION, SCOUT_TRYBE_MYBRANDS_MIN_VERSION, SCOUT_STORE_LISTING_URL, scoutAtLeast } from '@/lib/scout-version'
@@ -298,8 +299,11 @@ function replyConvo(b: Brand, convos: Conversation[]): Conversation | null {
   if (!WENT.includes(b.status)) return null
   const c = convoFor(b.name, convos)
   if (!c) return null
+  // No send time (a request brought in from TRYBE): an older chat with the
+  // brand is no reply to it, so nothing is counted as one.
   const sentAt = Date.parse(b.send_started_at || b.sent_at || '')
-  return Number.isFinite(sentAt) && c.at > 0 && c.at < sentAt ? null : c
+  if (!Number.isFinite(sentAt)) return null
+  return c.at > 0 && c.at < sentAt ? null : c
 }
 
 /** One number tile. */
@@ -384,7 +388,7 @@ const DAILY_STYLE: Record<DailyStep['state'], { color: string; word: string }> =
 
 /** The menu (TILES in TAB_GROUPS), on its own so it can be looked at alone. */
 export function TrybeMenu({ tab, lockedTab, preview, queue, history, unread, changes, go }: {
-  tab: Tab; lockedTab: Tab | null; preview: boolean; queue: unknown[]; history: unknown[]; unread: number
+  tab: Tab; lockedTab: Tab | null; preview: boolean; queue: unknown[]; history: Array<{ status: Brand['status'] }>; unread: number
   changes: ChangesRead | null; go: (t: Tab) => void
 }) {
   return (
@@ -412,7 +416,12 @@ export function TrybeMenu({ tab, lockedTab, preview, queue, history, unread, cha
               const on = tile.tabs.includes(lockedTab ?? tab)
               const locked = preview && !tile.tabs.includes('find')
               const waiting = tileId === 'inbox' || tileId === 'outreach'
-              const line = tileId === 'outreach' && !preview && (queue.length || history.length) ? (queue.length ? `${queue.length} ready to send, ${history.length} sent` : `${history.length} sent, none waiting`) : tileId === 'inbox' && n ? `${n} waiting for a reply` : tile.line
+              const line = tileId === 'outreach' && !preview && (queue.length || history.length) ? (() => {
+                // Sent means it went: a request that failed is said apart.
+                const went = history.filter(b => WENT.includes(b.status)).length, notSent = history.length - went
+                const tail = `${went} sent${notSent ? `, ${notSent} not sent` : ''}`
+                return queue.length ? `${queue.length} ready to send, ${tail}` : `${tail}, none waiting`
+              })() : tileId === 'inbox' && n ? `${n} chat${n === 1 ? '' : 's'} with new messages` : tile.line
               return (
                 <button key={tileId} aria-current={on ? 'page' : undefined} title={locked ? 'On the Pro plan' : undefined}
                   onClick={() => go(tileId === 'outreach' ? (queue.length || preview ? 'queue' : 'sent') : tile.tabs[0])}
@@ -854,10 +863,15 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
 
   function patch(id: string, p: Partial<Brand>) { setBrands(bs => bs.map(b => b.brand_id === id ? { ...b, ...p } : b)) }
 
-  async function saveSettings(quiet = false) {
+  // WHAT A SAVE WRITES (review 2026-10-24): the niche always; the core
+  // message only from Save message; the cap and the daily box only from their
+  // own Save. Find, Write and Rewrite all used to save a half-typed core
+  // message on the way, and every draft was then written from it.
+  async function saveSettings(quiet = false, what: { core?: boolean; prefs?: boolean } = {}) {
     setSavingSettings(true)
     try {
-      const d = await api({ action: 'settings', coreMessage: core, dailyCap: cap, categories: cats, keywords: kws, dailyFind })
+      const d = await api({ action: 'settings', categories: cats, keywords: kws, ...(what.core ? { coreMessage: core } : {}), ...(what.prefs ? { dailyCap: cap, dailyFind } : {}) })
+      if (d.warning) toast.warning(d.warning, { duration: 12000 })
       setCap(d.settings.dailyCap)
       setSavedCap(d.settings.dailyCap)
       setSavedKey(prefsKey(d.settings.categories || [], d.settings.keywords || []))
@@ -868,6 +882,12 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
       return true
     } catch (e) { toast.error(e instanceof Error ? e.message : 'Save failed'); return false }
     finally { setSavingSettings(false) }
+  }
+
+  /** Messages are written from the SAVED core message: changes not saved
+   *  yet are said, never used quietly. */
+  function unsavedCoreSaid() {
+    if (saved && core.trim() !== (saved.core || '').trim()) toast.message('Your core message has changes you have not saved, so these are written from the saved one. Press Save message to use the new words.', { duration: 10000 })
   }
 
   async function allow() {
@@ -1148,6 +1168,7 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
     if (!ids.length) { toast.message('Tick the brands to draft first.'); return }
     if (!core.trim()) { toast.error('Write your core message first'); return }
     if (!(await saveSettings(true))) return
+    unsavedCoreSaid()
     try {
       setFinding({ stage: 'Putting the brands you picked on your list' })
       const a = await api({ action: 'adopt', brandIds: ids })
@@ -1430,6 +1451,7 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
     if (!ids.length) { toast.message('Tick the brands to draft first.'); return }
     if (!core.trim()) { toast.error('Write your core message first'); return }
     if (!(await saveSettings(true))) return
+    unsavedCoreSaid()
     const r = await draftIds(ids)
     setFinding(null)
     if (r.failed) toast.error(`${r.failed} draft${r.failed === 1 ? '' : 's'} could not be written`)
@@ -1462,7 +1484,9 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
   async function rewrite(list: Brand[]) {
     if (!list.length) return
     if (!core.trim()) { toast.error('Write your core message first'); return }
+    if (!window.confirm(`Write ${list.length === 1 ? 'this message' : `these ${list.length} messages`} again from your saved core message? Any edits you made to ${list.length === 1 ? 'it' : 'them'} are replaced.`)) return
     if (!(await saveSettings(true))) return
+    unsavedCoreSaid()
     const r = await draftIds(list.map(b => b.brand_id))
     setFinding(null)
     if (r.failed) toast.error(`${r.failed} could not be rewritten`)
@@ -1497,6 +1521,11 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
   async function sendAll() {
     const old = oldScoutWords()
     if (old) { toast.error('Update SCOUT first'); say('Send all', old, 'bad'); return }
+    // Edits still saving go first, so each message goes as last typed.
+    if (pendingSave.current.size) {
+      const saves = await Promise.all(Array.from(pendingSave.current.values()))
+      if (saves.some(ok => !ok)) { toast.error('An edited message could not be saved. Check it, then press Send all again.'); return }
+    }
     const list = queue.slice(0, remaining)
     if (usesRunner) { await startRunner(list, 'Send all'); return }
     await runSends(list, 'Send all')
@@ -1542,7 +1571,12 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
       for (let i = 0; i < list.length; i++) {
         if (stopRef.current) { say(label, 'Stopped.', 'warn'); break }
         const b = list[i]
-        const c = await api({ action: 'claim', brandId: b.brand_id }).catch(e => ({ ok: false, error: e.message }))
+        let c = await api({ action: 'claim', brandId: b.brand_id }).catch(e => ({ ok: false, error: e.message }))
+        // MVP's server keeps a few seconds between requests: wait and ask once more.
+        if (!c.ok && typeof c.retryInMs === 'number' && c.retryInMs <= 15_000) {
+          await new Promise(r => setTimeout(r, c.retryInMs + 300))
+          c = await api({ action: 'claim', brandId: b.brand_id }).catch(e => ({ ok: false, error: e.message }))
+        }
         if (c.capped) { setFreeAt(c.nextFreeAt ?? null); say(label, `All ${c.dailyCap} sends of the last 24 hours are used. ${opensWords(c.nextFreeAt ?? null)}`, 'warn'); toast.message('Daily cap reached'); break }
         if (!c.ok) { say(b.name, `Not started: ${c.error || 'MVP could not reserve it'}.`, 'bad'); toast.error(`${b.name}: ${c.error || 'could not start'}`); continue }
         setUsed(c.usedToday)
@@ -1624,7 +1658,8 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
     : ownTab && trybeTab === 'signed-out' ? 'Your TRYBE tab is signed out. Sign in there first.'
     : !remaining ? `All ${savedCap} sends of the last 24 hours are used. ${opensWords(freeAt)}` : !queue.length ? 'Nothing drafted yet.' : null
 
-  const unread = (inbox?.convos || []).reduce((n, c) => n + (c.unread > 0 ? c.unread : 0), 0)
+  // Chats with new messages, not messages, and no group chats (lib/trybe-alerts).
+  const unread = inboxSnapshot(inbox?.convos || []).unread
   const sentRows = history.map(b => {
     // The chat is shown for any brand; it counts as a reply only per replyConvo.
     const c = inbox ? convoFor(b.name, inbox.convos) : null
@@ -1697,7 +1732,7 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
       {preview && (
         <section className="rounded-2xl border p-4 flex flex-wrap items-center gap-3" style={{ borderColor: 'rgba(124,58,237,0.35)', background: 'rgba(124,58,237,0.05)' }}>
           <div className="flex-1 min-w-[16rem]">
-            <p className="text-[15px] font-bold">TRYBE preview on the Amazon plan</p>
+            <p className="text-[15px] font-bold">TRYBE preview on your plan</p>
             <p className="text-[13px] mt-0.5" style={{ color: 'var(--text-2)' }}>Find brands is open: see which TRYBE brands you already filmed on Amazon, rank them by what matters to you, filter, star and pass. Pro writes and sends your messages, plans your videos from each brand&rsquo;s brief, reads your inbox and tracks what each brand pays you.</p>
           </div>
           <a href="/billing" className="inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-[13px] font-semibold" style={{ background: PURPLE, color: '#fff' }}>See Pro <ArrowRight size={13} /></a>
@@ -1785,10 +1820,10 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
 
       {/* The numbers that matter today. */}
       {!preview && <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <Stat accent={PURPLE} label="Sent, last 24 hours" value={`${used} of ${savedCap}`} hint={remaining ? `${remaining} more can go now` : opensWords(freeAt)} onClick={() => setTab('sent')} />
+        <Stat accent={PURPLE} label="Used of your daily cap" value={`${used} of ${savedCap}`} hint={remaining ? `${remaining} more can go now` : opensWords(freeAt)} onClick={() => setTab('sent')} />
         <Stat accent="#0E7490" label="Ready to send" value={String(queue.length)} hint={queue.length ? 'Messages written' : 'Nothing written yet'} onClick={() => setTab('queue')} />
         <Stat accent={GREEN} label="Replied this week" value={inbox || repliedCount ? String(repliedWeek) : inboxError || !canInbox ? 'Not read' : '...'} hint={inbox || repliedCount ? `${repliedCount} of ${wentCount} sent have replied` : inboxError ? 'Could not read TRYBE' : canInbox ? 'Reading TRYBE...' : 'Needs SCOUT on TRYBE'} tone={repliedWeek ? GREEN : undefined} onClick={() => setTab('sent')} />
-        <Stat accent="#DB2777" label="Unread" value={inbox ? String(unread) : inboxError || !canInbox ? 'Not read' : '...'} hint={inbox ? (unread ? 'Waiting in your inbox' : 'All caught up') : inboxError ? 'Could not read TRYBE' : canInbox ? 'Reading TRYBE...' : 'Needs SCOUT on TRYBE'} tone={unread ? PURPLE : undefined} onClick={() => setTab('inbox')} />
+        <Stat accent="#DB2777" label="Unread chats" value={inbox ? String(unread) : inboxError || !canInbox ? 'Not read' : '...'} hint={inbox ? (unread ? 'With new messages, group chats left out' : 'All caught up') : inboxError ? 'Could not read TRYBE' : canInbox ? 'Reading TRYBE...' : 'Needs SCOUT on TRYBE'} tone={unread ? PURPLE : undefined} onClick={() => setTab('inbox')} />
       </div>}
       {/* The menu count and Today depend on this save: a failure is said here. */}
       {alertsError && <p className="text-[12px] -mt-2 mb-3 inline-flex items-center gap-1" style={{ color: AMBER }}><AlertTriangle size={12} /> The inbox was read, but the reply alert for the menu and Today could not be saved: {alertsError}</p>}
@@ -1859,7 +1894,7 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
       {lockedTab && (
         <section className="rounded-2xl border p-5" style={{ borderColor: 'var(--border-2)', background: 'var(--surface)' }}>
           <p className="text-[15px] font-bold inline-flex items-center gap-2"><Lock size={15} style={{ color: PURPLE }} /> {TABS.find((x) => x.id === lockedTab)?.label} is on the Pro plan</p>
-          <p className="text-[13px] mt-1 max-w-[62ch]" style={{ color: 'var(--text-2)' }}>{TABS.find((x) => x.id === lockedTab)?.says} On your Amazon plan, Find brands is open: see which TRYBE brands you already filmed on Amazon, and rank, filter and star them.</p>
+          <p className="text-[13px] mt-1 max-w-[62ch]" style={{ color: 'var(--text-2)' }}>{TABS.find((x) => x.id === lockedTab)?.says} On your plan, Find brands is open: see which TRYBE brands you already filmed on Amazon, and rank, filter and star them.</p>
           <div className="flex flex-wrap gap-2 mt-3">
             <a href="/billing" className="inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-[13px] font-semibold" style={{ background: PURPLE, color: '#fff' }}>See Pro <ArrowRight size={13} /></a>
             <button onClick={() => go('find')} className="rounded-lg px-4 py-2 text-[13px] font-semibold border" style={{ borderColor: 'var(--border-2)' }}>Back to Find brands</button>
@@ -1889,7 +1924,7 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
               className="w-full rounded-lg border p-3 text-[13px] whitespace-pre-wrap" style={{ borderColor: 'var(--border)', background: 'var(--bg, transparent)' }} />
             <div className="flex flex-wrap items-center gap-2 mt-2">
               {!core.trim() && <button onClick={() => setCore(STARTER)} className={btn} style={{ border: '1px solid var(--border)' }}>Use the starter</button>}
-              <button onClick={() => void saveSettings().then(ok => { if (ok && core.trim()) { setEditingCore(false); setSaved(sv => (sv ? { ...sv, core } : sv)) } })} disabled={savingSettings || !core.trim()} className={btn} style={{ background: PURPLE, color: '#fff' }}>
+              <button onClick={() => void saveSettings(false, { core: true }).then(ok => { if (ok && core.trim()) { setEditingCore(false); setSaved(sv => (sv ? { ...sv, core } : sv)) } })} disabled={savingSettings || !core.trim()} className={btn} style={{ background: PURPLE, color: '#fff' }}>
                 {savingSettings ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />} Save message
               </button>
               {saved?.core.trim() && <button onClick={() => { setCore(saved.core); setEditingCore(false) }} className="text-[12px] font-semibold" style={soft}>Cancel</button>}
@@ -1974,7 +2009,7 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
               <input type="checkbox" checked={dailyFind} onChange={e => setDailyFind(e.target.checked)} className="accent-[#7C3AED]" />
               Write messages to {DAILY_FIND} new brands every day when I open this page
             </label>
-            <button onClick={() => void saveSettings()} disabled={savingSettings} className={btn} style={{ background: PURPLE, color: '#fff' }}>{savingSettings ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />} Save</button>
+            <button onClick={() => void saveSettings(false, { prefs: true })} disabled={savingSettings} className={btn} style={{ background: PURPLE, color: '#fff' }}>{savingSettings ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />} Save</button>
             {unsavedNiche && <span className="text-[12px]" style={{ color: AMBER }}>The list below already uses these. Save keeps them for the daily messages.</span>}
           </div>}
         </div>
@@ -2370,7 +2405,7 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
           {scoutRun?.on && (
             <p className="text-[12px] mb-3" style={{ color: GREEN }}>
               SCOUT is sending these by itself, out of sight: {scoutRun.sent} sent, {Math.min(scoutRun.idx + (scoutRun.current ? 1 : 0), scoutRun.ids.length)} of {scoutRun.ids.length} done{scoutRun.current ? `, sending ${scoutRun.current.name} now` : ''}.
-              {' '}You can close this tab or keep working. Nothing takes your screen; a brand SCOUT cannot reach stays in Ready to send with the reason.
+              {' '}You can close this tab or keep working. Nothing takes your screen; a request that does not go moves to Sent as Not sent, with the reason and a Queue it again button.
             </p>
           )}
           {!scoutRun?.on && scoutRun?.ended && scoutRun.endedAt && Date.now() - scoutRun.endedAt < 6 * 3600_000 && (
@@ -2557,7 +2592,8 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
                         {!running && <button onClick={() => void remove(b)} className="underline">Remove</button>}
                       </span>
                     )}
-                    {b.status === 'sending' && current !== b.brand_id && (
+                    {/* Not while SCOUT itself is sending this one (its own run, after a reload). */}
+                    {b.status === 'sending' && current !== b.brand_id && scoutRun?.current?.id !== b.brand_id && (
                       <span className="inline-flex flex-wrap items-center gap-2" style={{ color: AMBER }}>
                         <AlertTriangle size={12} /> Not confirmed{b.error ? `: ${sendWords(b.error)}` : ''}. Is it in TRYBE&rsquo;s Pending Requests?
                         <button onClick={() => void settle(b, true)} className="underline">Yes, it went</button>

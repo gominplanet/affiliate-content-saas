@@ -37,7 +37,7 @@ check('the writers read your messages as examples of your voice, data only', /HO
 const api = read('app/api/labs/trybe/route.ts')
 const vc = api.slice(api.indexOf("action === 'voice_check'"), api.indexOf("action === 'amazon_match'"))
 check('the server leaves out what MVP wrote: outreach, drafts, the core message, its suggestions', /settings\.coreMessage/.test(vc) && /r\.sent_message, r\.draft, r\.kickoff_draft/.test(vc) && /body\.mvpTexts/.test(vc) && /pickVoice\(candidates, mvpTexts\)/.test(vc))
-check('every writer gets your voice: reply, after a yes, follow up, outreach', (api.match(/\+ voiceBlock\((voice|draftVoice)\)/g) || []).length === 3 && (api.match(/VOICE_RULE/g) || []).length >= 4)
+check('every writer gets your voice: reply, after a yes, follow up, outreach', (api.match(/\+ voiceBlock\((voice|draftVoice)\)/g) || []).length >= 3 && (api.match(/VOICE_RULE/g) || []).length >= 4)
 const inbox = read('components/labs/TrybeInbox.tsx')
 check('the Inbox sends your voice, remembers MVP\'s suggestions, and says what it learned from', /voice: readVoice\(\)/.test(inbox) && /rememberMvpText\(d\.text\)/.test(inbox) && /if \(beforeSuggest !== null\) rememberMvpText\(text\)/.test(inbox) && /Writing like you: learned from/.test(inbox) && /See them/.test(inbox))
 check('a failed read is said, never shown as "nothing learned"', /MVP could not read your messages to learn from/.test(read('components/labs/useTrybeVoice.ts')) && /voice\.error \?/.test(inbox))

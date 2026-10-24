@@ -114,7 +114,8 @@ export function brandBlock(b: BrandFacts): string {
     b.products.length ? `Products: ${b.products.slice(0, 12).join(' | ')}` : '',
     b.onSale?.length ? `On sale on their own store right now: ${b.onSale.join(' | ')}` : '',
     b.siteSummary ? `Their website: ${b.siteSummary.slice(0, 1200)}` : '',
-    b.payText ? `Pays: ${b.payText}` : '',
+    // Pay is never given to a writer (a message must not mention it, and a
+    // script has no use for it).
   ].filter(Boolean).join('\n')
 }
 

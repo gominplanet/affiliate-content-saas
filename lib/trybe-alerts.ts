@@ -24,11 +24,14 @@ export const TRYBE_ALERT_EVENT = 'mvp:trybe-alerts'
 
 export interface InboxSnapshot { unread: number; names: string[] }
 
-/** Unread messages across the inbox, and the conversations they are in. */
+/** Chats with unread messages, newest first, and who they are with. One
+ *  chat is one, however many messages it holds, and group chats and TRYBE's
+ *  community rooms are left out: nobody waits on a reply there (review
+ *  2026-10-24: the badge counted every message of a 400 creator room). */
 export function inboxSnapshot(convos: Array<{ name: string; unread: number; at: number }>): InboxSnapshot {
-  const waiting = convos.filter(c => c.unread > 0).sort((a, b) => b.at - a.at)
+  const waiting = convos.filter(c => c.unread > 0 && !/\(group\)/i.test(c.name)).sort((a, b) => b.at - a.at)
   return {
-    unread: waiting.reduce((n, c) => n + c.unread, 0),
+    unread: waiting.length,
     names: waiting.map(c => String(c.name || '').slice(0, 80)).filter(Boolean).slice(0, 10),
   }
 }
