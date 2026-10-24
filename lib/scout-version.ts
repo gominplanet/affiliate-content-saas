@@ -8,12 +8,12 @@
  *     store installs to "update" — isScoutOutdated survives only as a
  *     low-level helper, not a user-facing gate.
  */
-export const SCOUT_LATEST_VERSION = '1.53.7'
+export const SCOUT_LATEST_VERSION = '1.53.8'
 
 /** One-line "what's new". No longer shown in a nag (store installs auto-update);
  *  kept as a changelog note for whoever bumps the version. */
 export const SCOUT_WHATS_NEW =
-  'TRYBE: SCOUT puts your intro video in your TRYBE portfolio once and adds it to every request to join a brand, the way TRYBE\'s own Upload Preview does. Includes 1.53.6 (quiet Instagram tag counts).'
+  'Meta ads: SCOUT looks at up to 30 of each brand\'s ads in Meta\'s Ad Library and copies the 8 running longest into What\'s working. Includes 1.53.7 (the TRYBE intro video).'
 
 /** Canonical download for the latest SCOUT build (public/, rebuilt from
  *  extension/ on every version bump). Used by the EPC banner + the top-bar
@@ -119,6 +119,9 @@ export const SCOUT_QUIET_MIN_VERSION = '1.50.2'
 /** The oldest SCOUT that hands MVP the words of each Meta ad card with the
  *  count (What's working's ads gallery). */
 export const SCOUT_META_CARDS_MIN_VERSION = '1.51.0'
+/** The oldest SCOUT that looks past a brand's first 8 Meta ads and copies the
+ *  8 running longest (Seb, 2026-10-24). Older ones copy the first 8. */
+export const SCOUT_META_LONGEST_MIN_VERSION = '1.53.8'
 /** The oldest SCOUT that sends a video to a TRYBE brand (Send to TRYBE, Labs). */
 export const SCOUT_TRYBE_SUBMIT_MIN_VERSION = '1.52.0'
 /** 1.52.1: the Facebook tab can close once Post is pressed. A handed-off Reel

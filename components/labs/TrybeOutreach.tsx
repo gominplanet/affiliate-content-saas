@@ -1479,7 +1479,7 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
       // it asks again, until none are left or Stop. A brand Meta would not
       // show a count for is tried once a run, so the run always ends.
       step('meta', 'running', 'Finding the brands to count...')
-      const total: MetaAdsRun = { total: 0, read: 0, noCount: 0, couldNot: 0, late: 0, notEnglish: '', stopped: '', cardsAsked: true, cardsSent: false, galleryAds: 0, cardsMissed: 0, capped: 0, mixed: 0, doubled: 0, saved: 0, kept: 0 }
+      const total: MetaAdsRun = { total: 0, read: 0, noCount: 0, couldNot: 0, late: 0, notEnglish: '', stopped: '', cardsAsked: true, cardsSent: false, galleryAds: 0, cardsMissed: 0, looked: 0, picked: false, capped: 0, mixed: 0, doubled: 0, saved: 0, kept: 0 }
       const tried = new Set<string>()
       let left: number | null = null
       for (;;) {

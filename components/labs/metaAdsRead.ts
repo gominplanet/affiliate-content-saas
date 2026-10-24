@@ -23,6 +23,10 @@ export interface MetaAdsRun {
   cardsSent: boolean
   galleryAds: number
   cardsMissed: number
+  /** SCOUT 1.53.8: ads looked at across the brands, and whether SCOUT picked
+   *  the longest running (older ones send the first 8 Meta shows). */
+  looked: number
+  picked: boolean
   /** Counts that are not the brand's: at Meta's most, or mostly other advertisers' ads. */
   capped: number
   mixed: number
@@ -43,7 +47,7 @@ async function save(results: Array<{ brandId: string; name: string; count: numbe
 }
 
 export async function readMetaAds(brands: Array<{ brandId: string; name: string }>, opts: { cards?: boolean; onProgress?: (done: number, total: number) => void; gone?: () => boolean; stop?: () => boolean } = {}): Promise<MetaAdsRun> {
-  const run: MetaAdsRun = { total: brands.length, read: 0, noCount: 0, couldNot: 0, late: 0, notEnglish: '', stopped: '', cardsAsked: !!opts.cards, cardsSent: false, galleryAds: 0, cardsMissed: 0, capped: 0, mixed: 0, doubled: 0, saved: 0, kept: 0 }
+  const run: MetaAdsRun = { total: brands.length, read: 0, noCount: 0, couldNot: 0, late: 0, notEnglish: '', stopped: '', cardsAsked: !!opts.cards, cardsSent: false, galleryAds: 0, cardsMissed: 0, looked: 0, picked: false, capped: 0, mixed: 0, doubled: 0, saved: 0, kept: 0 }
   for (let i = 0; i < brands.length; i += 8) {
     if (opts.gone?.()) { run.stopped = 'You left the page.'; break }
     if (opts.stop?.()) { run.stopped = 'Stopped. Press again to carry on where it stopped.'; break }
@@ -62,6 +66,7 @@ export async function readMetaAds(brands: Array<{ brandId: string; name: string 
     let prevText: string | null = null
     for (const x of r.results || []) {
       if (Array.isArray(x.cards)) run.cardsSent = true
+      if (typeof x.cardsSeen === 'number') { run.looked += x.cardsSeen; run.picked = true }
       const count = x.text ? readAdLibraryCount(x.text) : null
       const check = Array.isArray(x.cards) ? metaOwnOf(x.cards as Array<{ text?: unknown }>, x.name) : null
       const doubled = sameAsBefore(prevText, x.text, count)
@@ -94,12 +99,13 @@ export async function readMetaAds(brands: Array<{ brandId: string; name: string 
  *  read. A stop, a page left or a SCOUT that cannot go on ends it; what was
  *  counted is kept. */
 export async function readMetaAdsAll(brands: Array<{ brandId: string; name: string }>, opts: { cards?: boolean; onProgress?: (done: number, total: number) => void; gone?: () => boolean; stop?: () => boolean; onChunk?: () => Promise<void> | void } = {}): Promise<MetaAdsRun> {
-  const all: MetaAdsRun = { total: brands.length, read: 0, noCount: 0, couldNot: 0, late: 0, notEnglish: '', stopped: '', cardsAsked: !!opts.cards, cardsSent: false, galleryAds: 0, cardsMissed: 0, capped: 0, mixed: 0, doubled: 0, saved: 0, kept: 0 }
+  const all: MetaAdsRun = { total: brands.length, read: 0, noCount: 0, couldNot: 0, late: 0, notEnglish: '', stopped: '', cardsAsked: !!opts.cards, cardsSent: false, galleryAds: 0, cardsMissed: 0, looked: 0, picked: false, capped: 0, mixed: 0, doubled: 0, saved: 0, kept: 0 }
   const CHUNK = 40
   for (let i = 0; i < brands.length; i += CHUNK) {
     const r = await readMetaAds(brands.slice(i, i + CHUNK), { cards: opts.cards, gone: opts.gone, stop: opts.stop, onProgress: (done) => opts.onProgress?.(Math.min(brands.length, i + done), brands.length) })
-    for (const k of ['read', 'noCount', 'couldNot', 'late', 'galleryAds', 'cardsMissed', 'capped', 'mixed', 'doubled', 'saved', 'kept'] as const) all[k] += r[k]
+    for (const k of ['read', 'noCount', 'couldNot', 'late', 'galleryAds', 'cardsMissed', 'looked', 'capped', 'mixed', 'doubled', 'saved', 'kept'] as const) all[k] += r[k]
     all.cardsSent = all.cardsSent || r.cardsSent
+    all.picked = all.picked || r.picked
     all.notEnglish = all.notEnglish || r.notEnglish
     if (r.stopped || r.notEnglish) { all.stopped = r.stopped; break }
     await opts.onChunk?.()
@@ -119,6 +125,8 @@ export function metaAdsWords(run: MetaAdsRun, scoutVersion?: string | null): { t
   if (run.cardsAsked && run.read) {
     if (!run.cardsSent) parts.push(`Your SCOUT${scoutVersion ? ` (${scoutVersion})` : ''} only reads the counts: SCOUT 1.51.0 also copies the ads themselves into What's working.`)
     else parts.push(run.galleryAds ? `${run.galleryAds} ad${run.galleryAds === 1 ? '' : 's'} copied into What's working's ads gallery.` : 'No ad cards to copy into the gallery.')
+    // Which ads were copied: the longest running of more, or the first 8 Meta showed.
+    if (run.cardsSent) parts.push(run.picked ? `SCOUT looked at ${run.looked} ad${run.looked === 1 ? '' : 's'} and copied each brand\u2019s longest running.` : `Your SCOUT${scoutVersion ? ` (${scoutVersion})` : ''} copies the first 8 ads Meta shows for each brand: SCOUT 1.53.8 looks at up to 30 and copies the 8 running longest.`)
     if (run.cardsMissed) parts.push(`For ${run.cardsMissed}, Meta showed ads but SCOUT could not read their cards, so ${run.cardsMissed === 1 ? 'its' : 'their'} earlier ads stay.`)
   }
   if (run.stopped) parts.push(run.stopped)

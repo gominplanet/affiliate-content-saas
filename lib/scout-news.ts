@@ -55,6 +55,14 @@ export type ScoutRelease = { version: string; date: string; notes: ScoutNote[] }
  *  manual: at most 110 characters), plain words, no dashes. */
 export const SCOUT_RELEASES: ScoutRelease[] = [
   {
+    version: '1.53.8',
+    date: '2026-10-24',
+    notes: [
+      // Only the MVP team's SCOUT reads the gallery; members see the result.
+      { text: 'Meta ads: SCOUT looks at up to 30 of a brand\u2019s ads and copies the 8 running longest.', href: '/trybe?tab=working', gate: 'team' },
+    ],
+  },
+  {
     version: '1.53.7',
     date: '2026-10-21',
     notes: [

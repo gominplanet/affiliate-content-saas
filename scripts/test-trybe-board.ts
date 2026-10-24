@@ -120,6 +120,15 @@ check('days running are counted to the read, never past it', ranDays({ started: 
   check('a clip is said as a clip, never as the video', /TRYBE shares only the first \{Math\.round\(len as number\)\} seconds of this video/.test(W))
   check('kept reads from before are read again', /mvp\.trybe\.working\.v3/.test(W))
 }
+// SCOUT 1.53.8: the longest running of up to 30 per brand, not the first 8.
+{
+  const BG = read('extension/background.js')
+  check('SCOUT scrolls for more of a brand\'s ads and sends the 8 that started earliest', /const LOOK = 30, KEEP = 8/.test(BG) && /window\.scrollTo\(0, document\.body\.scrollHeight\)/.test(BG) && /sort\(\(a, b\) => a\.t - b\.t \|\| a\.i - b\.i\)\.slice\(0, KEEP\)/.test(BG) && /cardsSeen: seen/.test(BG))
+  const many = Array.from({ length: 12 }, (_, k) => mk(`m${k}`, 'b7', '2026-10-20T00:00:00Z', `2026-0${1 + (k % 9)}-01`))
+  check('MVP keeps a brand\'s longest running too, whatever SCOUT sent', mergeGallery(null, 'b7', 'B7', many, 12, '2026-10-20T00:00:00Z').ads.every((a) => a.started! <= '2026-08-01'))
+  const MR = read('components/labs/metaAdsRead.ts')
+  check('the team\'s read says which ads were copied', /SCOUT looked at \$\{run\.looked\}/.test(MR) && /copies the first 8 ads Meta shows for each brand/.test(MR))
+}
 check('days running from the start date', adDays('2026-10-07', nowT) === 10 && adDays(null, nowT) === null)
 
 // ── 7. Payouts and TikTok Shop in Find brands ───────────────────────────────
@@ -180,7 +189,7 @@ check('the gallery says who reads it and when nothing was copied', /only an admi
 
 // ── SCOUT 1.51.0 ─────────────────────────────────────────────────────────────
 const bg = read('extension/background.js')
-check('SCOUT copies the words of up to 8 ad cards when asked', /async function metaAdsReadInPage\(withCards\)/.test(bg) && /Library ID:/.test(bg) && /if \(out\.length >= 8\) break/.test(bg) && /args: \[cards === true\]/.test(bg) && /cards: msg\.cards === true/.test(bg))
+check('SCOUT copies the words of up to 8 ad cards when asked (the 8 running longest since 1.53.8)', /async function metaAdsReadInPage\(withCards\)/.test(bg) && /Library ID:/.test(bg) && /if \(out\.length >= max\) break/.test(bg) && /const LOOK = 30, KEEP = 8/.test(bg) && /args: \[cards === true\]/.test(bg) && /cards: msg\.cards === true/.test(bg))
 check('MVP asks for the cards, and an older SCOUT is said as one', /\.\.\.\(cards \? \{ cards: true \} : \{\}\)/.test(read('lib/extension-frame.ts')) && /only reads the counts: SCOUT 1\.51\.0/.test(read('components/labs/metaAdsRead.ts')))
 check('SCOUT copies ad cards from 1.51.0', /SCOUT_META_CARDS_MIN_VERSION = '1\.51\.0'/.test(read('lib/scout-version.ts')))
 

@@ -13,7 +13,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Loader2, AlertTriangle, ExternalLink, Play, Handshake, RotateCcw } from 'lucide-react'
 import { galleryStats, sortAds, ranDays, closingLine, adUrl, nextToRead, LONG_RUN_DAYS, type MetaAd, type AdSort } from '@/lib/trybe-adsgallery'
 import { readMetaAds, metaAdsWords } from '@/components/labs/metaAdsRead'
-import { SCOUT_META_CARDS_MIN_VERSION, scoutAtLeast } from '@/lib/scout-version'
+import { SCOUT_META_CARDS_MIN_VERSION, SCOUT_META_LONGEST_MIN_VERSION, scoutAtLeast } from '@/lib/scout-version'
 
 const PURPLE = '#7C3AED'
 const GREEN = '#16A34A'
@@ -126,6 +126,7 @@ export default function TrybeAdsGallery({ isAdmin, scoutVersion, canRead, topBra
               ? `Of ${pool.length} in the Top 100${fromSaved && data?.top?.at ? ` (as saved ${new Date(data.top.at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })})` : ''}, the ones read longest ago first. Daily refresh and Find brands’ “Check for Meta ads” add to this too.`
               : 'Daily refresh and Find brands’ “Check for Meta ads” add to this too.'}
           </span>
+          {canCards && !scoutAtLeast(scoutVersion, SCOUT_META_LONGEST_MIN_VERSION) && <span className="basis-full" style={{ color: AMBER }}>Your SCOUT ({scoutVersion || 'unknown'}) copies the first 8 ads Meta shows for each brand. SCOUT {SCOUT_META_LONGEST_MIN_VERSION} looks at up to 30 and copies the 8 running longest; Chrome brings it once the Web Store has it.</span>}
           {note && <span className="basis-full" style={{ color: note.tone === 'ok' ? GREEN : note.tone === 'warn' ? AMBER : RED }}>{note.text}</span>}
         </div>
       )}

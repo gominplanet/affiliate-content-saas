@@ -135,7 +135,8 @@ export function mergeGallery(had: Gallery | null | undefined, brandId: string, b
   const nowT = Date.parse(now)
   const fresh = (a: MetaAd) => !Number.isFinite(nowT) || !Number.isFinite(Date.parse(a.readAt)) || nowT - Date.parse(a.readAt) < GALLERY_FRESH_DAYS * 86_400_000
   const keep = (had?.ads || []).filter((a) => a.brandId !== brandId && fresh(a))
-  const mine = Array.from(new Map(ads.filter((a) => a.brandId === brandId).map((a) => [a.id, a])).values()).slice(0, ADS_PER_BRAND)
+  const mine = Array.from(new Map(ads.filter((a) => a.brandId === brandId).map((a) => [a.id, a])).values())
+    .sort((a, b) => (ranDays(b) ?? -1) - (ranDays(a) ?? -1)).slice(0, ADS_PER_BRAND)
   const all = [...mine, ...keep].sort((a, b) => (ranDays(b) ?? -1) - (ranDays(a) ?? -1) || b.readAt.localeCompare(a.readAt)).slice(0, GALLERY_MAX)
   const brands = { ...(had?.brands || {}), [brandId]: { name: brandName, at: now, count } }
   return { at: now, brands, ads: all }

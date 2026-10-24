@@ -15303,6 +15303,11 @@ function metaAdsUrl(name) {
 // 1.51.0: with `withCards`, the words of up to 8 ad cards too, whether each
 // plays a video, and its preview picture (MVP's ads gallery). MVP reads the
 // words into ads; SCOUT only copies what the page shows.
+// 1.53.8 THE LONGEST RUNNING (Seb, 2026-10-24: "brands running the longest
+// ad on meta means the video is working and the hook and cta is selling").
+// Meta does not list a brand's ads by how long they have run, so the first 8
+// were any 8. SCOUT scrolls the results to load more, looks at up to 30, and
+// hands back the 8 that started running earliest, with how many it looked at.
 async function metaAdsReadInPage(withCards) {
   // Facebook in another language words the count differently ("Ergebnisse",
   // "resultados"): said so at once instead of waiting for English words.
@@ -15317,7 +15322,7 @@ async function metaAdsReadInPage(withCards) {
   }
   // A clock deadline, not a count of tries: a minimized window runs timers
   // slowly, and 40 tries could take far longer than 20 seconds.
-  const readCards = () => {
+  const readCards = (max) => {
     const out = []
     const seen = {}
     const nodes = Array.from(document.querySelectorAll('div, span')).filter((el) => el.childElementCount === 0 && /^\s*Library ID:\s*\d{6,}/.test(el.textContent || ''))
@@ -15339,19 +15344,38 @@ async function metaAdsReadInPage(withCards) {
         preview = imgs.length ? imgs[0].src : null
       }
       out.push({ text: String(card.innerText || '').slice(0, 2500), video: !!video, preview: preview ? String(preview).slice(0, 1500) : null })
-      if (out.length >= 8) break
+      if (out.length >= max) break
     }
     return out
   }
+  // When an ad started running, from its card ("Started running on Sep 12,
+  // 2025"); an ad with no date sorts last.
+  const startedOf = (text) => {
+    const m = String(text || '').match(/Started running on\s+([A-Za-z]{3,9}\.?\s+\d{1,2},?\s+\d{4}|\d{1,2}\s+[A-Za-z]{3,9}\.?,?\s+\d{4})/i)
+    const t = m ? Date.parse(m[1].replace(/\./g, '').replace(/^Sept\b/i, 'Sep').replace(/\s+Sept\b/i, ' Sep')) : NaN
+    return Number.isFinite(t) ? t : Infinity
+  }
+  const LOOK = 30, KEEP = 8
   const until = Date.now() + 15000
   while (Date.now() < until) {
     const got = find()
     if (got && withCards && !/no ads match/i.test(got)) {
       // The cards draw a moment after the count: a few seconds, then what is there.
       const cardsUntil = Date.now() + 5000
-      let cards = readCards()
-      while (!cards.length && Date.now() < cardsUntil) { await new Promise((r) => setTimeout(r, 400)); cards = readCards() }
-      return { text: got, cards }
+      let cards = readCards(LOOK)
+      while (!cards.length && Date.now() < cardsUntil) { await new Promise((r) => setTimeout(r, 400)); cards = readCards(LOOK) }
+      // More of the brand's ads: scroll to the end, up to three times, while
+      // each scroll brings new cards.
+      for (let round = 0; round < 3 && cards.length && cards.length < LOOK; round++) {
+        const before = cards.length
+        try { window.scrollTo(0, document.body.scrollHeight) } catch (e) {}
+        const moreUntil = Date.now() + 2500
+        while (Date.now() < moreUntil) { await new Promise((r) => setTimeout(r, 400)); cards = readCards(LOOK); if (cards.length > before) break }
+        if (cards.length <= before) break
+      }
+      const seen = cards.length
+      const kept = cards.map((c, i) => ({ c, i, t: startedOf(c.text) })).sort((a, b) => a.t - b.t || a.i - b.i).slice(0, KEEP).map((x) => x.c)
+      return { text: got, cards: kept, cardsSeen: seen }
     }
     if (got) return { text: got, cards: withCards ? [] : undefined }
     if (!english && Date.now() > until - 12000) return { text: null, lang }
@@ -15397,7 +15421,7 @@ async function metaAdsCounts({ brands, endsAt, cards }) {
         const why = got && got.text ? null
           : got && got.lang && !/^en/.test(got.lang) ? 'not-english (' + got.lang + ')'
             : 'count-not-shown' + (got && got.title ? ' (' + got.title + ')' : '')
-        results.push({ brandId: b.brandId, name: b.name, text: got && got.text ? got.text : null, error: why, ...(cards === true ? { cards: got && Array.isArray(got.cards) ? got.cards : [] } : {}) })
+        results.push({ brandId: b.brandId, name: b.name, text: got && got.text ? got.text : null, error: why, ...(cards === true ? { cards: got && Array.isArray(got.cards) ? got.cards : [], cardsSeen: got && typeof got.cardsSeen === 'number' ? got.cardsSeen : null } : {}) })
       } catch (e) {
         results.push({ brandId: b.brandId, name: b.name, text: null, error: 'could-not-open: ' + (e && e.message ? e.message : 'error') })
       }
