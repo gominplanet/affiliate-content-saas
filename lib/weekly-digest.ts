@@ -10,7 +10,7 @@ import { containsPriceClaim } from '@/lib/product-signals-brief'
 import { createGeniuslinkService } from '@/services/geniuslink'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { passportLinkForUser } from '@/lib/passport-links'
-import { getLinkStyle, resolveShowcaseLink, type LinkStyleConfig } from '@/lib/link-cloak'
+import { getLinkStyle, resolveShowcaseLink, type LinkStyleConfig, resolveLevantaLink } from '@/lib/link-cloak'
 import { shortenBitly } from '@/lib/bitly'
 import { scrubBanned, scrubTitle } from '@/lib/scrub'
 import { planProductDepth } from '@/lib/product-depth'
@@ -134,6 +134,9 @@ export async function resolveAffiliateUrl(
   // creator's own shop. Null on an Amazon account.
   const showcase = await resolveShowcaseLink(createAdminClient(), userId, cfg, { label: title, source: 'digest' })
   if (showcase) return showcase
+  // LEVANTA WHEN IT PAYS MORE (lib/levanta-first): null unless turned on.
+  const lv = await resolveLevantaLink(createAdminClient(), userId, cfg, asin, { source: 'digest', channel: 'blog', label: title })
+  if (lv) return lv.url
   switch (cfg.style) {
     case 'passport': {
       try {

@@ -45,7 +45,7 @@ import { firstProductUrl, resolveFinalUrl, asinFromAmazonUrl, isAmazonNonProduct
 import { leadingWalmartLink } from '@/lib/store-link'
 import { createGeniuslinkService } from '@/services/geniuslink'
 import { passportLinkForUser, passportLinkForDestination, isSafePassportDestination } from '@/lib/passport-links'
-import { getLinkStyle, cloakFallbackNote } from '@/lib/link-cloak'
+import { getLinkStyle, cloakFallbackNote, resolveLevantaLink } from '@/lib/link-cloak'
 import { showcaseOverrideFor } from '@/lib/post-destination'
 import { stripTitleYear } from '@/lib/title-year'
 import { geniuslinkCreds, styleOfUrl } from '@/lib/link-style'
@@ -865,6 +865,9 @@ async function handleGenerate(request: Request) {
     // because the ASIN must NOT reach Passport: it would geo-route every click
     // to Amazon on a post that reads as a shop post.
     const blogShowcase = showcaseOverrideFor(blogLinkStyle)
+    // LEVANTA WHEN IT PAYS MORE (lib/levanta-first): null unless the creator
+    // turned it on and Levanta has this product for them at a better rate.
+    const blogLevanta = blogShowcase ? null : await resolveLevantaLink(supabase, ownerId, blogLinkStyle, blogAsin, { source: 'blog', channel: 'blog', label: rawTitle, destination })
     if (blogShowcase) {
       if (blogShowcase.style === 'passport') {
         const p = await passportLinkForDestination(supabase, ownerId, blogShowcase.url, { source: 'blog', title: rawTitle })
@@ -874,6 +877,8 @@ async function handleGenerate(request: Request) {
       } else {
         affiliateUrlOverride = blogShowcase.url
       }
+    } else if (blogLevanta) {
+      affiliateUrlOverride = blogLevanta.url
     } else if (blogLinkStyle.style === 'passport') {
       // Passport cloaks ANY affiliate destination, not just Amazon ASINs.
       //   1) Amazon: geo-route by ASIN. Recover the ASIN when it's a direct /dp

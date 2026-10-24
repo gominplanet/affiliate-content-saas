@@ -15,6 +15,7 @@
 // a TikTok Showcase account, whose tiktok.com link is not a redirect. Returns
 // null when there's no product to link to (the modal then disables the
 // Product option and the pin stays on the blog link).
+import { levantaLinkFor } from '@/lib/levanta-first'
 import { asinFromAmazonUrl, firstProductUrl } from '@/lib/product-link'
 import { isSafePassportDestination } from '@/lib/passport-links'
 import { resolveTrueDestination } from '@/lib/affiliate-resolve'
@@ -109,6 +110,12 @@ export async function resolvePinProduct(
   const cfg = await getLinkStyle(supabase, userId)
   const showcase = await resolveShowcaseLink(supabase, userId, cfg, { source: 'pinterest' })
   if (showcase) return { url: showcase, asin: asin || null, title }
+  // LEVANTA WHEN IT PAYS MORE (lib/levanta-first): null unless turned on. The
+  // full Levanta link, never a short one: a pin takes no short link.
+  if (asin && cfg.preferLevanta) {
+    const lv = await levantaLinkFor({ userId, asin, prefer: true, destination: dest })
+    if (lv) return { url: lv.url, asin, title }
+  }
   // Last guard: a stored short link that could not be unwrapped is not sent.
   return { url: isBlockedPinLink(dest) ? null : dest, asin: asin || null, title }
 }

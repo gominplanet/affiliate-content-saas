@@ -37,7 +37,7 @@ import { pingIndexNowForUrl } from '@/lib/seo-on-publish'
 import { NO_BRAND_IMAGE_CLAUSE } from '@/lib/image-guard'
 import { getWordPressCredentials } from '@/lib/wordpress-sites'
 import { passportLinkForUser } from '@/lib/passport-links'
-import { getLinkStyle, resolveShowcaseLink, resolveProductShopLink } from '@/lib/link-cloak'
+import { getLinkStyle, resolveShowcaseLink, resolveProductShopLink, resolveLevantaLink } from '@/lib/link-cloak'
 import { SHOWCASE_DISCLAIMER } from '@/lib/post-destination'
 import { upgradeTikTokImage } from '@/lib/tiktok-product'
 import { normalizeOwnership, ownershipDisclosure, ownershipVoiceRule, hasHandsOn, tiktokProductFacts } from '@/lib/product-ownership'
@@ -302,8 +302,11 @@ export async function POST(req: Request) {
       bullets = p.bullets || []
       productImageUrl = p.imageUrl || p.images?.[0] || null
     } catch { /* fall back to research / provided name */ }
+    // LEVANTA WHEN IT PAYS MORE (lib/levanta-first): null unless turned on.
+    const flLevanta = await resolveLevantaLink(supabase, ownerId, flStyle, asin, { source: 'blog', channel: 'blog', label: productName || 'product', destination: finalUrl })
+    if (flLevanta) affiliateUrl = flLevanta.url
     // Passport Links (geo-routing) wins WHEN ON; else Geniuslink, else tag.
-    const passport = await passportLinkForUser(supabase, ownerId, asin, { source: 'blog', title: productName || 'product' })
+    const passport = affiliateUrl ? null : await passportLinkForUser(supabase, ownerId, asin, { source: 'blog', title: productName || 'product' })
     if (passport) affiliateUrl = passport
     if (!affiliateUrl && genius) {
       try { affiliateUrl = (await genius.createAsinLinkWithCode(asin, productName || 'product')).url } catch { /* ignore */ }

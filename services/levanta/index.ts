@@ -115,17 +115,20 @@ export async function listLevantaBrands(
 /** List products for one or more brands (cursor pagination). */
 export async function listLevantaProducts(
   token: string,
-  opts: { brandIds?: string; asins?: string; cursor?: string; limit?: number; access?: boolean; inStock?: boolean; marketplace?: string } = {},
+  opts: { brandIds?: string; asins?: string; cursor?: string; limit?: number; access?: boolean; inStock?: boolean; marketplace?: string; timeoutMs?: number } = {},
 ): Promise<{ products: LevantaProduct[]; cursor: string | null }> {
   const qs = new URLSearchParams()
   qs.set('limit', String(Math.min(Math.max(opts.limit ?? 100, 1), 500)))
   if (opts.cursor) qs.set('cursor', opts.cursor)
   if (opts.brandIds) qs.set('brand_ids', opts.brandIds)
-  if (opts.asins) qs.set('asins', opts.asins)
+  // Levanta's filter is product_ids (each product's primary ID, its ASIN on
+  // Amazon), per its v2 OpenAPI spec; `asins` was never a parameter and was
+  // ignored, which returned the first page of every product instead.
+  if (opts.asins) qs.set('product_ids', opts.asins)
   if (opts.marketplace) qs.set('marketplace', opts.marketplace)
   if (opts.access != null) qs.set('access', String(opts.access))
   if (opts.inStock != null) qs.set('in_stock', String(opts.inStock))
-  const json = await levantaFetch(`/products?${qs.toString()}`, token)
+  const json = await levantaFetch(`/products?${qs.toString()}`, token, undefined, opts.timeoutMs)
   const list = Array.isArray(json?.products) ? json.products : []
   return {
     // Defensive field reads — tolerate doc/live key drift (same reason as brands).
@@ -167,7 +170,7 @@ export async function listLevantaProducts(
  */
 export async function createLevantaLink(
   token: string,
-  opts: { asin: string; marketplace?: string; subid1?: string },
+  opts: { asin: string; marketplace?: string; subid1?: string; timeoutMs?: number },
 ): Promise<{ url: string; mobileUrl: string | null }> {
   const json = await levantaFetch('/links', token, {
     method: 'POST',
@@ -175,6 +178,6 @@ export async function createLevantaLink(
       product: { primary_id: opts.asin, marketplace: opts.marketplace || 'amazon.com' },
       ...(opts.subid1 ? { subid1: opts.subid1.slice(0, 256) } : {}),
     }),
-  })
+  }, opts.timeoutMs)
   return { url: json?.url ?? '', mobileUrl: json?.mobileOptimizedUrl ?? null }
 }

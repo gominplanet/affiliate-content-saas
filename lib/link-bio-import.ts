@@ -16,7 +16,7 @@
  * was added, false otherwise (opted out, no page, no product, already present).
  */
 import { resolveAffiliateUrl } from '@/lib/weekly-digest'
-import { getLinkStyle } from '@/lib/link-cloak'
+import { getLinkStyle, resolveLevantaLink } from '@/lib/link-cloak'
 import { passportLinkForUser } from '@/lib/passport-links'
 import { asinFromAmazonUrl } from '@/lib/product-link'
 import { decryptIntegrationRow } from '@/lib/integration-secrets'
@@ -79,9 +79,11 @@ async function appendProductToBio(
   const tag = ((intRow?.amazon_associates_tag as string | null) || '').trim() || null
   const gKey = ((intRow?.geniuslink_api_key as string | null) || '').trim() || null
   const gSecret = ((intRow?.geniuslink_api_secret as string | null) || '').trim() || null
-  let url = await passportLinkForUser(sb, userId, asinU, { source: 'linkbio', title })
+  const linkCfg = await getLinkStyle(sb, userId)
+  // LEVANTA WHEN IT PAYS MORE (lib/levanta-first): null unless turned on.
+  let url = (await resolveLevantaLink(sb, userId, linkCfg, asinU, { source: 'linkbio', channel: 'linkbio', label: title }))?.url
+    ?? await passportLinkForUser(sb, userId, asinU, { source: 'linkbio', title })
   if (!url) {
-    const linkCfg = await getLinkStyle(sb, userId)
     url = await resolveAffiliateUrl(asinU, title, tag, gKey, gSecret, userId, linkCfg)
       || (tag ? `https://www.amazon.com/dp/${asinU}?tag=${encodeURIComponent(tag)}` : `https://www.amazon.com/dp/${asinU}`)
   }

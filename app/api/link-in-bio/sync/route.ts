@@ -15,7 +15,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { normalizeTier, type Tier } from '@/lib/tier'
 import { canUseDealRadar } from '@/lib/feature-access'
 import { resolveAffiliateUrl } from '@/lib/weekly-digest'
-import { getLinkStyle } from '@/lib/link-cloak'
+import { getLinkStyle, resolveLevantaLink } from '@/lib/link-cloak'
 import { passportLinkForUser } from '@/lib/passport-links'
 import { asinFromAmazonUrl } from '@/lib/product-link'
 import { decryptIntegrationRow } from '@/lib/integration-secrets'
@@ -215,8 +215,16 @@ export async function POST() {
       // user.id): Passport geo-routes, Bitly shortens, Geniuslink wraps, Direct
       // is the tagged link. The time budget keeps a slow Geniuslink batch from
       // running past the request window (Direct/Bitly return fast).
-      const passport = await passportLinkForUser(sb, user.id, asinU, { source: 'linkbio', title })
-      if (passport) {
+      // LEVANTA WHEN IT PAYS MORE (lib/levanta-first): null unless turned on,
+      // and not asked once the sync is running long (a first ask can take a
+      // few seconds a product; the tile then keeps its Amazon link).
+      const lvTile = Date.now() - started < 30_000
+        ? await resolveLevantaLink(sb, user.id, linkCfg, asinU, { source: 'linkbio', channel: 'linkbio', label: title })
+        : null
+      const passport = lvTile ? null : await passportLinkForUser(sb, user.id, asinU, { source: 'linkbio', title })
+      if (lvTile) {
+        url = lvTile.url
+      } else if (passport) {
         url = passport
       } else if (Date.now() - started < 45_000) {
         url = await resolveAffiliateUrl(asinU, title, tag, gKey, gSecret, user.id, linkCfg)

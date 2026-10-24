@@ -15,7 +15,7 @@ import { getOrCreateAmazonGeniuslink } from '@/lib/geniuslink-cache'
 import { resolveGeniuslinkChannelGroupId } from '@/lib/geniuslink-group'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { passportLinkForUserDetailed, passportFallbackNote, getOrCreatePassportLink, passportLinkUrl } from '@/lib/passport-links'
-import { getLinkStyle } from '@/lib/link-cloak'
+import { getLinkStyle, resolveLevantaLink } from '@/lib/link-cloak'
 import { geniuslinkCreds } from '@/lib/link-style'
 import { resolvePostDestination, styleForDestination, styleSwapNote } from '@/lib/post-destination'
 import { shortenBitly } from '@/lib/bitly'
@@ -161,6 +161,11 @@ export async function resolveAffiliateLink(opts: {
   // happened. That is the same shape as the geni.us-over-Passport bug: the screen
   // reported the setting, not the link. Now the substitution carries a sentence.
   let passportNote: string | null = null
+  // LEVANTA WHEN IT PAYS MORE (lib/levanta-first): null unless turned on.
+  if (asin) {
+    const lv = await resolveLevantaLink(createAdminClient(), opts.userId, cfg, asin, { source: opts.channel || 'social', channel: opts.channel || 'social', label: opts.productTitle || null })
+    if (lv) return { linkUrl: lv.url, asin, note: null }
+  }
   if (asin) {
     const p = await passportLinkForUserDetailed(createAdminClient(), opts.userId, asin, { source: opts.channel || 'social', title: opts.productTitle || null })
     if (p.url) return { linkUrl: p.url, asin, note: null }

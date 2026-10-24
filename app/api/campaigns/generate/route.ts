@@ -21,7 +21,7 @@ import { postTags } from '@/lib/post-tags'
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { passportLinkForUser } from '@/lib/passport-links'
-import { getLinkStyle, resolveShowcaseLink } from '@/lib/link-cloak'
+import { getLinkStyle, resolveShowcaseLink, resolveLevantaLink } from '@/lib/link-cloak'
 import { geniuslinkCreds } from '@/lib/link-style'
 import { shortenBitly } from '@/lib/bitly'
 import { createAdminClient } from '@/lib/supabase/admin'
@@ -404,8 +404,14 @@ export async function POST(request: Request) {
     const ccStyle = await getLinkStyle(supabase, user.id)
     // Showcase account (migration 333): the whole campaign points at the shop.
     const ccShowcase = await resolveShowcaseLink(supabase, user.id, ccStyle, { label: product?.title || asin, source: 'blog' })
+    // LEVANTA WHEN IT PAYS MORE (lib/levanta-first): null unless turned on, and
+    // a Creator Connections post keeps its Amazon link unless Levanta pays more
+    // than the campaign it was written for.
+    const ccLevanta = ccShowcase ? null : await resolveLevantaLink(supabase, user.id, ccStyle, asin, { source: 'blog', channel: 'blog', label: product?.title || asin })
     if (ccShowcase) {
       affiliateUrl = ccShowcase
+    } else if (ccLevanta) {
+      affiliateUrl = ccLevanta.url
     } else if (ccStyle.style === 'passport') {
       const passportCc = await passportLinkForUser(supabase, user.id, asin, { source: 'blog', title: product?.title || asin })
       if (passportCc) affiliateUrl = passportCc

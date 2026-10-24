@@ -36,7 +36,7 @@ import { NO_BRAND_IMAGE_CLAUSE } from '@/lib/image-guard'
 import { composeWithGptImage, composeWithNanoBanana, rehostToFal, GPT_IMAGE_COMPOSE_COST_MODEL, NANO_BANANA_COST_MODEL } from '@/lib/thumbnail-generators'
 import { getWordPressCredentials } from '@/lib/wordpress-sites'
 import { passportLinkForUser } from '@/lib/passport-links'
-import { getLinkStyle, resolveShowcaseLink } from '@/lib/link-cloak'
+import { getLinkStyle, resolveShowcaseLink, resolveLevantaLink } from '@/lib/link-cloak'
 import { geniuslinkCreds } from '@/lib/link-style'
 import { shortenBitly } from '@/lib/bitly'
 import { preflightWpPublish } from '@/lib/wp-preflight'
@@ -513,8 +513,11 @@ export async function POST(request: Request) {
             }
           } catch { /* skip unreadable product */ }
           if (matched) {
+            // LEVANTA WHEN IT PAYS MORE (lib/levanta-first): null unless turned on.
+            const cmpLevanta = await resolveLevantaLink(supabase, ownerId, cmpStyle, asin, { source: 'blog', channel: 'blog', label: productName })
+            if (cmpLevanta) affiliateUrl = cmpLevanta.url
             // Passport Links (geo-routing) wins WHEN ON; else Geniuslink, else tag.
-            const passport = await passportLinkForUser(supabase, ownerId, asin!, { source: 'blog', title: productName })
+            const passport = affiliateUrl ? null : await passportLinkForUser(supabase, ownerId, asin!, { source: 'blog', title: productName })
             if (passport) affiliateUrl = passport
             if (!affiliateUrl && genius) {
               try { affiliateUrl = (await genius.createAsinLinkWithCode(asin!, productName)).url } catch { /* ignore */ }
@@ -562,7 +565,9 @@ export async function POST(request: Request) {
       // USER's Geniuslink. If nothing resolved but the video TITLE carries an
       // ASIN, cloak that (a real product).
       if (!affiliateUrl && titleAsin) {
-        const passport = await passportLinkForUser(supabase, ownerId, titleAsin, { source: 'blog', title: productName })
+        const titleLevanta = await resolveLevantaLink(supabase, ownerId, cmpStyle, titleAsin, { source: 'blog', channel: 'blog', label: productName })
+        if (titleLevanta) affiliateUrl = titleLevanta.url
+        const passport = affiliateUrl ? null : await passportLinkForUser(supabase, ownerId, titleAsin, { source: 'blog', title: productName })
         if (passport) affiliateUrl = passport
         if (!affiliateUrl && genius) {
           try { affiliateUrl = (await genius.createAsinLinkWithCode(titleAsin, productName)).url } catch { /* fall through */ }

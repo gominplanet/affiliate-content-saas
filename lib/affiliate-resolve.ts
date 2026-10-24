@@ -16,7 +16,7 @@ import { createGeniuslinkService } from '@/services/geniuslink'
 import { appendAmazonSubtag } from '@/lib/geniuslink-group'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { passportLinkForUser, passportLinkForDestination, isSafePassportDestination } from '@/lib/passport-links'
-import { getLinkStyle } from '@/lib/link-cloak'
+import { getLinkStyle, resolveLevantaLink } from '@/lib/link-cloak'
 import { shortenBitly } from '@/lib/bitly'
 
 const GENIUSLINK = /(?:geni\.us|\bgnz\.)/i
@@ -194,9 +194,13 @@ export async function resolveAffiliateUrl(opts: AffiliateResolveOpts): Promise<A
       : subtaggedDestination
 
   const cfg = await getLinkStyle(createAdminClient(), userId)
+  // LEVANTA WHEN IT PAYS MORE (lib/levanta-first): null unless turned on.
+  const lvVideo = asin ? await resolveLevantaLink(createAdminClient(), userId, cfg, asin, { source: videoId || 'video', channel: 'youtube', label: title, destination }) : null
 
   let affiliateUrl: string
-  if (cfg.style === 'passport' && asin) {
+  if (lvVideo) {
+    affiliateUrl = lvVideo.url
+  } else if (cfg.style === 'passport' && asin) {
     // Geo-routing link; if minting fails, fall back to the plain tagged link
     // (never Geniuslink — the creator didn't pick it).
     const passport = await passportLinkForUser(createAdminClient(), userId, asin, { source: videoId || 'video', title })

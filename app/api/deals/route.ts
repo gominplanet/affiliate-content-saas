@@ -50,7 +50,7 @@ import { fetchKeepaProductStats, buildPriceContext, buildPriceSnapshotHtml } fro
 import { resolveFinalUrl } from '@/lib/product-link'
 import { createGeniuslinkService } from '@/services/geniuslink'
 import { passportLinkForUser, getOrCreatePassportLink, passportLinkUrl } from '@/lib/passport-links'
-import { getLinkStyle } from '@/lib/link-cloak'
+import { getLinkStyle, resolveLevantaLink } from '@/lib/link-cloak'
 import { geniuslinkCreds } from '@/lib/link-style'
 import { shortenBitly } from '@/lib/bitly'
 import { composeWithGptImage, composeWithNanoBanana, rehostToFal, GPT_IMAGE_COMPOSE_LOW_COST_MODEL } from '@/lib/thumbnail-generators'
@@ -772,7 +772,11 @@ export async function POST(req: Request) {
   const dealStyle = { ...rawDealStyle, style: dealStyled.style }
   const dealDestinationNote = dealDestination.note || styleSwapNote(dealStyled.changedFrom, dealStyled.style)
   let dealAffiliateUrl = dealTagged
-  if (dealStyle.style === 'passport') {
+  // LEVANTA WHEN IT PAYS MORE (lib/levanta-first): null unless turned on.
+  const dealLevanta = dealDestination.kind === 'showcase' ? null : await resolveLevantaLink(supabase, user.id, rawDealStyle, product.asin, { source: 'blog', channel: 'blog', label: product.title || null, destination: dealTagged })
+  if (dealLevanta) {
+    dealAffiliateUrl = dealLevanta.url
+  } else if (dealStyle.style === 'passport') {
     // A showcase destination must NOT be minted from the ASIN: passportLinkForUser
     // geo-routes it to the reader's local Amazon, so the post would read as a
     // showcase post and send every click to Amazon anyway.

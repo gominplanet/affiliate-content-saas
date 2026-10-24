@@ -8,7 +8,8 @@
 
 import { createGeniuslinkService } from '@/services/geniuslink'
 import { shortenBitly } from '@/lib/bitly'
-import { getLinkStyle } from '@/lib/link-cloak'
+import { isLevantaUrl } from '@/lib/levanta-first'
+import { getLinkStyle, resolveLevantaLink } from '@/lib/link-cloak'
 import { geniuslinkCreds } from '@/lib/link-style'
 import { resolveGeniuslinkGroupId } from '@/lib/geniuslink-group'
 import { passportLinkForUser, passportLinkForDestination, isSafePassportDestination, passportCodeFromUrl, passportTargetForCode } from '@/lib/passport-links'
@@ -58,6 +59,22 @@ export async function ensureAffiliateShareLink(
 
   const cfg = await getLinkStyle(supabase, userId)
 
+  // LEVANTA (lib/levanta-first). A Levanta link is passed on as it is, never
+  // rebuilt from its ASIN, which would drop Levanta's tracking. With "Use
+  // Levanta links when they pay more" on, a product Levanta has gets its
+  // Levanta link here too.
+  const levantaLink = isLevantaUrl(link)
+  // A Passport link in hand is read first: its product comes from its target
+  // (below), not from unwrapping it.
+  const heldCode = passportCodeFromUrl(link)
+  if (!levantaLink && cfg.preferLevanta) {
+    const lvAsin = heldCode
+      ? (await passportTargetForCode(userId, heldCode))?.asin || null
+      : link.match(/\/dp\/([A-Z0-9]{10})/i)?.[1]?.toUpperCase() || asinFromAmazonUrl(link) || null
+    const lv = lvAsin ? await resolveLevantaLink(supabase, userId, cfg, lvAsin, { source: opts.source || 'social', channel: 'facebook', label: title }) : null
+    if (lv) return lv.url
+  }
+
   // Passport cloaks the CTA regardless of what the stored link is — INCLUDING an
   // existing geni.us (converting geni.us → Passport is the upgrade the creator
   // chose). Recover an ASIN (direct, or by unwrapping a geni.us / short link via
@@ -86,9 +103,9 @@ export async function ensureAffiliateShareLink(
             : null
         return reminted || link
       }
-      let asin = link.match(/\/dp\/([A-Z0-9]{10})/i)?.[1]?.toUpperCase() || asinFromAmazonUrl(link) || null
-      let dest: string | null = null
-      if (!asin && /(?:geni\.us|\bgnz\.|amzn\.to|a\.co|bit\.ly|tinyurl\.com|rebrand\.ly)/i.test(link)) {
+      let asin = levantaLink ? null : link.match(/\/dp\/([A-Z0-9]{10})/i)?.[1]?.toUpperCase() || asinFromAmazonUrl(link) || null
+      let dest: string | null = levantaLink && isSafePassportDestination(link) ? link : null
+      if (levantaLink) { /* forwarded as it is */ } else if (!asin && /(?:geni\.us|\bgnz\.|amzn\.to|a\.co|bit\.ly|tinyurl\.com|rebrand\.ly)/i.test(link)) {
         const finalUrl = await resolveTrueDestination(link)
         asin = asinFromAmazonUrl(finalUrl)
         if (!asin && !/amazon\.[a-z.]+/i.test(finalUrl) && isSafePassportDestination(finalUrl)) dest = finalUrl

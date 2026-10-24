@@ -15,6 +15,7 @@ import PageHero from '@/components/layout/PageHero'
 import { LevantaGuide } from '@/components/guide/tool-guides'
 import ExternalKeyConnect from '@/components/integrations/ExternalKeyConnect'
 import LevantaFinder from '@/components/levanta/LevantaFinder'
+import LevantaFirst from '@/components/levanta/LevantaFirst'
 import LevantaSaved from '@/components/levanta/LevantaSaved'
 import GenerateOptionsModal, { type GenerateOptions } from '@/components/content/GenerateOptionsModal'
 import FeatureLockedCard from '@/components/ui/FeatureLockedCard'
@@ -52,6 +53,7 @@ export default function LevantaPage() {
   const [publishLive, setPublishLive] = useState(false)
 
   const [savedReloadKey, setSavedReloadKey] = useState(0)
+  const [keyTick, setKeyTick] = useState(0)
   const [openBrand, setOpenBrand] = useState<string | null>(null)
   const [products, setProducts] = useState<Record<string, Product[]>>({})
   const [prodErr, setProdErr] = useState<Record<string, string>>({})
@@ -185,7 +187,11 @@ export default function LevantaPage() {
       <>
       {/* Connect your Levanta API key — inline panel, collapses once saved.
           Refreshes the brand list on connect/disconnect. */}
-      <ExternalKeyConnect provider="levanta" onConnected={load} />
+      <ExternalKeyConnect provider="levanta" onConnected={() => { void load(); setKeyTick((t) => t + 1) }} />
+
+      {/* LEVANTA LINKS WHEN THEY PAY MORE (lib/levanta-first). Remounted when
+          the key is saved, so the switch can be turned on straight away. */}
+      <LevantaFirst key={keyTick} />
 
       {/* How to set up & use — full Levanta onboarding (collapsible, open by default). */}
       <details open className="rounded-xl border mb-5"

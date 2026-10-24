@@ -20,6 +20,9 @@ import { passportLinkForUser, getOrCreatePassportLink, passportLinkUrl } from '@
 import { channelWrapLink, channelWrapLinkDetailed } from '@/lib/channel-share-url'
 import { shortenBitly } from '@/lib/bitly'
 import { getDefaultSite } from '@/lib/wordpress-sites'
+import { levantaLinkFor } from '@/lib/levanta-first'
+import { asinFromAmazonUrl } from '@/lib/asin'
+import { rememberLinkDestination } from '@/lib/social-disclaimer'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Db = any
@@ -60,6 +63,10 @@ export interface LinkStyleConfig {
   destinationDefault: 'amazon' | 'showcase'
   /** Their saved TikTok Shop showcase link, or null. */
   showcaseUrl: string | null
+  /** "Use Levanta links when they pay more" (lib/levanta-first, migration
+   *  455). Read here for the same reason as the showcase: every link path
+   *  already reads this, so every path inherits the switch. */
+  preferLevanta: boolean
 }
 
 /**
@@ -70,7 +77,7 @@ export interface LinkStyleConfig {
 export async function getLinkStyle(supabase: Db, userId: string): Promise<LinkStyleConfig> {
   const empty: LinkStyleConfig = {
     style: 'direct', tier: null, bitlyToken: null, geniuslinkKey: null, geniuslinkSecret: null,
-    downgradedFrom: null, destinationDefault: 'amazon', showcaseUrl: null,
+    downgradedFrom: null, destinationDefault: 'amazon', showcaseUrl: null, preferLevanta: false,
   }
   try {
     // select('*'), NOT a named column list, and this is the whole reason the
@@ -130,6 +137,7 @@ export async function getLinkStyle(supabase: Db, userId: string): Promise<LinkSt
       style: picked.style, downgradedFrom: picked.downgradedFrom, tier,
       bitlyToken, geniuslinkKey, geniuslinkSecret,
       destinationDefault, showcaseUrl,
+      preferLevanta: ig.prefer_levanta === true,
     }
   } catch {
     return empty
@@ -193,6 +201,9 @@ export interface CloakResult {
   reason: CloakReason
   /** false = a PLAIN, uncloaked link is about to be published. */
   cloaked: boolean
+  /** Set when this is the creator's Levanta link (lib/levanta-first), with
+   *  Levanta's commission, so a screen can say so rather than "Amazon link". */
+  levanta?: { commission: number | null }
 }
 
 /**
@@ -239,6 +250,15 @@ export async function resolveCloakedLinkDetailed(opts: CloakOpts): Promise<Cloak
     dest = cfg.showcaseUrl
     asin = ''
     style = styleForShowcase(cfg.style, cfg.style === 'passport').style
+  }
+  // LEVANTA WHEN IT PAYS MORE (lib/levanta-first). Off unless the creator
+  // turned it on, and then only for a product Levanta has for them that its
+  // Creator Connections campaign does not beat. Otherwise nothing changes.
+  if (!(useShowcase && cfg.showcaseUrl) && cfg.preferLevanta) {
+    const lv = await resolveLevantaLink(opts.supabase, opts.userId, cfg, asin || asinInUrl(dest), {
+      channel: opts.channel, source: opts.source, label: opts.label, destination: dest,
+    })
+    if (lv) return { url: lv.url, reason: 'ok', cloaked: true, levanta: { commission: lv.commission } }
   }
   const hasAsin = /^[A-Z0-9]{10}$/.test(asin)
 
@@ -321,6 +341,90 @@ export function cloakFallbackNote(r: CloakResult): string | null {
       return 'Bitly is your link style, but Bitly did not return a short link, so this went out with your plain Amazon link.'
     default:
       return 'This went out with your plain Amazon link rather than your chosen link style.'
+  }
+}
+
+/** The ASIN in an Amazon product address, or ''. */
+function asinInUrl(url: string): string {
+  return asinFromAmazonUrl(String(url || '')) || ''
+}
+
+/**
+ * The creator's Levanta link for this product, in their link style, or null
+ * to keep the Amazon link (lib/levanta-first: off unless the creator turned
+ * "Use Levanta links when they pay more" on, and then only when Levanta has
+ * the product for them and its Creator Connections campaign does not pay as
+ * much).
+ *
+ * resolveCloakedLinkDetailed asks this itself. The paths that hand-roll their
+ * own Passport / Geniuslink / Bitly chain make ONE call, after the showcase:
+ *
+ *     const lv = await resolveLevantaLink(db, userId, cfg, asin, { source: 'blog' })
+ *     if (lv) return lv.url
+ *
+ * Null with the switch off costs nothing, so the Amazon path is untouched for
+ * every creator who has not turned it on.
+ *
+ * NO ASIN is passed to Passport: Passport would rebuild an Amazon link with
+ * the creator's Associates tag and Levanta's tracking would be gone. A
+ * Passport forwarder sends the click to the Levanta link as it is, and still
+ * counts it.
+ */
+export async function resolveLevantaLink(
+  supabase: Db,
+  userId: string,
+  config: LinkStyleConfig | undefined,
+  asin: string | null | undefined,
+  opts?: { channel?: string | null; source?: string | null; label?: string | null; destination?: string | null },
+): Promise<{ url: string; commission: number | null; ccCommission: number | null } | null> {
+  try {
+    const cfg = config ?? (await getLinkStyle(supabase, userId))
+    if (!cfg.preferLevanta) return null
+    const pick = await levantaLinkFor({ userId, asin, prefer: true, destination: opts?.destination ?? null })
+    if (!pick) return null
+    const url = await cloakLevantaUrl(supabase, userId, cfg, pick.url, opts)
+    // Where it goes, for every caption and button that names the store.
+    rememberLinkDestination(pick.url, 'amazon')
+    rememberLinkDestination(url, 'amazon')
+    return { url, commission: pick.commission, ccCommission: pick.ccCommission }
+  } catch {
+    return null
+  }
+}
+
+/** A Levanta link in the creator's link style. Any failure keeps the Levanta
+ *  link itself: the commission is the point, the short link is not. */
+async function cloakLevantaUrl(
+  supabase: Db,
+  userId: string,
+  cfg: LinkStyleConfig,
+  dest: string,
+  opts?: { channel?: string | null; source?: string | null; label?: string | null },
+): Promise<string> {
+  try {
+    switch (cfg.style) {
+      case 'passport': {
+        const site = await getDefaultSite(supabase, userId)
+        const siteId = site && site.id !== 'legacy' ? (site.id as string) : null
+        const code = await getOrCreatePassportLink(supabase, userId, siteId, {
+          destinationUrl: dest, label: opts?.label ?? null, source: opts?.source ?? opts?.channel ?? null,
+        })
+        return code ? passportLinkUrl(code) : dest
+      }
+      case 'geniuslink': {
+        const w = await channelWrapLinkDetailed({
+          supabase, destination: dest, channel: opts?.channel || 'blog',
+          userId, apiKey: cfg.geniuslinkKey, apiSecret: cfg.geniuslinkSecret, label: opts?.label ?? undefined,
+        })
+        return w.reason === 'ok' || w.reason === 'already-wrapped' ? w.url : dest
+      }
+      case 'bitly':
+        return cfg.bitlyToken ? (await shortenBitly(cfg.bitlyToken, dest)) || dest : dest
+      default:
+        return dest
+    }
+  } catch {
+    return dest
   }
 }
 
