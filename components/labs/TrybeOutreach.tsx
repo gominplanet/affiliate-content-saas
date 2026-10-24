@@ -31,7 +31,7 @@ import { readMetaAds, readMetaAdsAll, metaAdsWords, type MetaAdsRun } from '@/co
 import TrybeTabGate from '@/components/labs/TrybeTabGate'
 import TrybeStarBrands from '@/components/labs/TrybeStarBrands'
 import { TRYBE_OPEN_URL, TRYBE_NOT_OPEN, TRYBE_NOT_OPEN_WORDS, trybeTabWords, type TrybeTabState } from '@/lib/trybe-tab'
-import { nextGapMs, prefsKey, CATEGORY_SUGGESTIONS, DAILY_FIND, SCAN_READ, SHORT_RUN_UNDER, SHORT_GAP_MS, MAX_DAILY_CAP, termsHit } from '@/lib/trybe-outreach'
+import { nextGapMs, prefsKey, CATEGORY_SUGGESTIONS, DAILY_FIND, SCAN_READ, SHORT_RUN_UNDER, SHORT_GAP_MS, MAX_DAILY_CAP, termsHits, quoteHits } from '@/lib/trybe-outreach'
 import TrybeInbox, { fetchTrybeInbox, lastIsMine, type Conversation } from '@/components/labs/TrybeInbox'
 import { reportTrybeInbox, inboxSnapshot } from '@/lib/trybe-alerts'
 import { readDiscoveryPage, requestState, acceptRate, type BrandFlags, type RequestState } from '@/lib/trybe-invites'
@@ -1742,7 +1742,7 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
   // message that talks pay, and names the same words (lib/trybe-outreach).
   // A plain call, never a hook: this is below the loading return, and a hook
   // here crashed the page (2026-10-24).
-  const coreHit = termsHit(core)
+  const coreHits = termsHits(core)
   // WHAT CHANGED CAN MESSAGE TOO (Seb, 2026-10-16): the same draft and send
   // steps as Find brands and Ready to send, handed to the brand details there.
   // Not on the Amazon plan's preview, which only shows the details.
@@ -2058,7 +2058,7 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
               {saved?.core.trim() && <button onClick={() => { setCore(saved.core); setEditingCore(false) }} className="text-[12px] font-semibold" style={soft}>Cancel</button>}
             </div>
           </>)}
-          {coreHit && <p className="text-[12px] mt-2 font-semibold" style={{ color: '#B45309' }}>Your core message says &ldquo;{coreHit}&rdquo;, which reads as talk about pay or rates. TRYBE brands set the pay, so MVP will not write requests from it until that part is out.</p>}
+          {coreHits.length > 0 && <p className="text-[12px] mt-2 font-semibold" style={{ color: '#B45309' }}>Your core message says {quoteHits(coreHits)}, which reads as talk about pay or rates. TRYBE brands set the pay, so MVP will not write requests from it until {coreHits.length === 1 ? 'that part is' : 'those parts are'} out.</p>}
         </div>}
 
         {/* 2. Find brands. Seb, 2026-10-07: one click on a niche shows its

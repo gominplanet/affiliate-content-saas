@@ -63,7 +63,7 @@ import {
   DRAFT_SYSTEM, draftUserPrompt, DEFAULT_DAILY_CAP, type ScannedBrand,
   cleanTerms, prefsKey, FIT_SYSTEM, fitUserPrompt, parseFit,
   readPay, payPasses, payRank, BROWSE_SORTS, PAY_TYPES, type BrowseSort, type PayType,
-  REPLY_SYSTEM, replyUserPrompt, replyBlanks, talksTerms, termsHit, MIN_SEND_GAP_MS,
+  REPLY_SYSTEM, replyUserPrompt, replyBlanks, talksTerms, termsHit, termsHits, quoteHits, MIN_SEND_GAP_MS,
   nextFreeAt, MAX_DAILY_CAP, readReplySteps, claimsUnticked, REPLY_STEPS } from '@/lib/trybe-outreach'
 
 export const runtime = 'nodejs'
@@ -689,8 +689,8 @@ export async function POST(request: Request) {
     if (coreChanged) { try { await admin.from('trybe_outreach_settings').update({ core_saved_at: now }).eq('user_id', ownerId) } catch { /* before 457: no drafts are marked */ } }
     // A core message that talks pay is saved, and said: every message is
     // written from it, and TRYBE messages never talk rates.
-    const coreHit = coreMessage ? termsHit(coreMessage) : null
-    const warning = coreHit ? `Your core message says “${coreHit}”, which reads as talk about pay, rates or prices. TRYBE brands set the pay, so MVP will not write requests from it until that part is out.` : null
+    const coreHits = coreMessage ? termsHits(coreMessage) : []
+    const warning = coreHits.length ? `Your core message says ${quoteHits(coreHits)}, which reads as talk about pay, rates or prices. TRYBE brands set the pay, so MVP will not write requests from it until ${coreHits.length === 1 ? 'that part is' : 'those parts are'} out.` : null
     return NextResponse.json({ ok: true, settings: await readSettings(admin, ownerId), ...(warning ? { warning } : {}) })
   }
 
@@ -2228,8 +2228,8 @@ export async function POST(request: Request) {
     // that talks pay makes every request fail: said once, up front, naming the
     // words, before anything is written (Seb, 2026-10-24: "draft could not be
     // written", with no reason).
-    const coreHit = termsHit(settings.coreMessage)
-    if (coreHit) return NextResponse.json({ error: `Your core message says “${coreHit}”, which reads as talk about pay or rates. TRYBE brands set the pay, so no request was written. Take that part out of your core message, press Save message, and write again.` }, { status: 400 })
+    const coreHits = termsHits(settings.coreMessage)
+    if (coreHits.length) return NextResponse.json({ error: `Your core message says ${quoteHits(coreHits)}, which reads as talk about pay or rates. TRYBE brands set the pay, so no request was written. Take ${coreHits.length === 1 ? 'that part' : 'those parts'} out of your core message, press Save message, and write again.` }, { status: 400 })
     const spend = await spendGate(userId, tier)
     if (spend) return spend
     const creator = await writerFacts(admin, ownerId)

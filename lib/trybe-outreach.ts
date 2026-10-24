@@ -406,7 +406,10 @@ const NOT_TERMS: RegExp[] = [
   /\bpaid\s+(ads?|social|media|campaigns?|traffic|advertising|search|placements?|channels?)\b/gi,
   /\bpa(y|ys|id|ying)\s+(close\s+)?attention\b/gi,
   /\bpa(ys|id)\s+off\b/gi,
-  /\$\s?\d[\d,.]*\s*(k|m|mm|million|thousand)?\+?\s+(in|of)\s+([a-z]+\s+){0,2}(sales|revenue|gmv)\b/gi,
+  // A sales result or the size of the creator's business: "$250K in Amazon
+  // sales", "a $3.5 Million/Year business" (Seb's own core message,
+  // 2026-10-24). A rate names what it is paid for ("$50 per video"), never these.
+  /\$\s?\d[\d,.]*\s*(k|m|mm|b|bn|million|billion|thousand)?\+?(\s*(\/|a|per)\s*(year|yr|month|mo))?\s+((in|of)\s+)?([a-z-]+\s+){0,2}(sales|revenue|gmv|business|businesses|company|companies)\b/gi,
   /\b(fast|wireless|quick|rapid|magnetic|solar)\s+charging\b/gi,
   /\bcharging\s+(cables?|cases?|stations?|ports?|pads?|speeds?|docks?|stands?|bricks?|times?)\b/gi,
   /\bin charge of\b/gi,
@@ -422,18 +425,40 @@ const TERMS = /\$\s?\d|\b(our|my|your)\s+rates?\b|\brates?\s+(for|is|are|would|o
 // A brand's ad budget: kept out everywhere except where a caller allows it.
 const BUDGET = /\bbudgets?\b(?!-)|\bspend(s|ing)?\b[^.?!\n]{0,20}\bon ads\b|\bad spend\b/i
 
-/** The words that make a message talk pay or terms, with a word or two
- *  around them so a person can find them, or null when it does not. Said in
- *  every refusal, so "could not be written" always says what to change. Pure. */
-export function termsHit(text: string, o: { adSpendQuestion?: boolean } = {}): string | null {
+/** Every place a message talks pay or terms, each with a word or two
+ *  around it so a person can find it, in order, at most `max`. The core
+ *  message check lists them all, so a creator fixes them in one go instead
+ *  of one refusal at a time. Pure. */
+export function termsHits(text: string, o: { adSpendQuestion?: boolean; max?: number } = {}): string[] {
   const src = String(text || '')
   let t = src
   for (const re of NOT_TERMS) t = t.replace(re, (m) => ' '.repeat(m.length))
-  const m = TERMS.exec(t) || (!o.adSpendQuestion ? BUDGET.exec(t) : null)
-  if (!m) return null
-  const before = src.slice(0, m.index).match(/(\S+\s+){0,2}$/)?.[0] || ''
-  const after = src.slice(m.index + m[0].length).match(/^\S*(\s+\S+){0,2}/)?.[0] || ''
-  return (before + src.slice(m.index, m.index + m[0].length) + after).replace(/\s+/g, ' ').trim().slice(0, 80)
+  const found: Array<{ at: number; len: number }> = []
+  for (const m of t.matchAll(new RegExp(TERMS.source, 'gi'))) found.push({ at: m.index ?? 0, len: m[0].length })
+  if (!o.adSpendQuestion) for (const m of t.matchAll(new RegExp(BUDGET.source, 'gi'))) found.push({ at: m.index ?? 0, len: m[0].length })
+  // One phrase per place: a word before and two after, never past the end of
+  // a sentence, and catches that touch ("rate is $50 per video") merged.
+  const spans: Array<[number, number]> = []
+  for (const f of found.sort((a, b) => a.at - b.at)) {
+    const pre = src.slice(0, f.at).match(/([^\s.!?]+\s+)?$/)?.[0] || ''
+    const post = (src.slice(f.at + f.len).match(/^\S*(\s+\S+){0,2}/)?.[0] || '').replace(/([.!?])(\s[\s\S]*)?$/, '$1')
+    const a = f.at - pre.length, b = f.at + f.len + post.length
+    const last = spans[spans.length - 1]
+    if (last && a <= last[1]) last[1] = Math.max(last[1], b)
+    else spans.push([a, b])
+  }
+  return spans.slice(0, o.max ?? 5).map(([a, b]) => src.slice(a, b).replace(/\s+/g, ' ').trim().slice(0, 100))
+}
+
+/** The first place a message talks pay or terms, or null. Pure. */
+export function termsHit(text: string, o: { adSpendQuestion?: boolean } = {}): string | null {
+  return termsHits(text, { ...o, max: 1 })[0] ?? null
+}
+
+/** Phrases for a sentence: “a”, “b” and “c”. Pure. */
+export function quoteHits(hits: string[]): string {
+  const q = hits.map((h) => `\u201c${h}\u201d`)
+  return q.length <= 1 ? (q[0] || '') : `${q.slice(0, -1).join(', ')} and ${q[q.length - 1]}`
 }
 
 /** A reply that talks money or terms, which a TRYBE reply never should: the

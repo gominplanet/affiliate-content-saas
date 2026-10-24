@@ -17,7 +17,7 @@
 //     changed nothing says so, and Send all waits for edits;
 //   - links name where they go, no dashes, no plan that does not exist.
 import { readFileSync } from 'node:fs'
-import { talksTerms, termsHit, asksMoney, tidyDraft } from '../lib/trybe-outreach'
+import { talksTerms, termsHit, termsHits, quoteHits, asksMoney, tidyDraft } from '../lib/trybe-outreach'
 import { inboxSnapshot } from '../lib/trybe-alerts'
 
 const fails: string[] = []
@@ -33,19 +33,21 @@ for (const t of ['Love that you pay $50 per video', 'Is payment handled through 
 check('a voice sample that talks pay is never learned', asksMoney('We charge $150 per video'))
 check('budget-friendly is not money talk', !talksTerms('Budget-friendly and sturdy.'))
 check('kickoff, follow up and join requests are checked, written once more, then refused, with no exception', /const moneyOk = \(t: string\) => !talksTerms\(t\)/.test(ROUTE) && /The message kept saying \u201c\$\{termsHit\(text\)\}\u201d/.test(ROUTE) && /if \(firstHit\) text = await write\(/.test(ROUTE) && /The draft kept saying \u201c\$\{lastHit\}\u201d/.test(ROUTE))
-check('a core message that talks pay is said on save', /const coreHit = coreMessage \? termsHit\(coreMessage\) : null/.test(ROUTE) && /if \(d\.warning\) toast\.warning\(d\.warning/.test(UI))
+check('a core message that talks pay is said on save', /const coreHits = coreMessage \? termsHits\(coreMessage\) : \[\]/.test(ROUTE) && /if \(d\.warning\) toast\.warning\(d\.warning/.test(UI))
 
 // WHY A REQUEST WAS NOT WRITTEN (Seb, 2026-10-24: "draft could not be
 // written", with no reason). Every refusal names the words it caught, the
 // core message is checked before anything is written, and the page shows the
 // server's reason instead of a bare count.
-check('the refusal names the words it caught, with a word or two around them', termsHit('Love that you pay $50 per video') === 'that you pay $50 per' && termsHit('Hi Haus, so glad to have found you here.') === null)
-for (const t of ['Our videos are built to run as paid ads on Meta and TikTok.', 'We have driven $250K+ in Amazon sales with our reviews.', 'Your fast charging power banks look great.', 'We pay close attention to lighting.', 'Our approval rate is high.']) check(`"${t}" is not pay talk`, !talksTerms(t))
-check('a core message that talks pay stops the requests before any writing, naming the words', /const coreHit = termsHit\(settings\.coreMessage\)\n    if \(coreHit\) return NextResponse\.json\(\{ error: `Your core message says/.test(ROUTE) && ROUTE.indexOf('const coreHit = termsHit(settings.coreMessage)') < ROUTE.indexOf("if (action === 'ideas')") && ROUTE.indexOf('const coreHit = termsHit(settings.coreMessage)') > ROUTE.indexOf("if (action === 'draft')"))
+for (const t of ['I have done $500 brand deals', 'We charge $150 a video', 'Our rate is $50 per video', '$1,000 per month for 4 videos']) check(`"${t}" is still pay talk`, talksTerms(t))
+check('the refusal names the words it caught, with a word or two around them', termsHit('Love that you pay $50 per video') === 'you pay $50 per video' && termsHit('Hi Haus, so glad to have found you here.') === null)
+for (const t of ['Our videos are built to run as paid ads on Meta and TikTok.', 'We have driven $250K+ in Amazon sales with our reviews.', 'We run a $3.5 Million/Year business reviewing products.', 'a $2M ecommerce company', 'Your fast charging power banks look great.', 'We pay close attention to lighting.', 'Our approval rate is high.']) check(`"${t}" is not pay talk`, !talksTerms(t))
+check('a core message that talks pay stops the requests before any writing, naming every phrase at once', /const coreHits = termsHits\(settings\.coreMessage\)\n    if \(coreHits\.length\) return NextResponse\.json\(\{ error: `Your core message says \$\{quoteHits\(coreHits\)\}/.test(ROUTE) && ROUTE.indexOf('const coreHits = termsHits(settings.coreMessage)') < ROUTE.indexOf("if (action === 'ideas')") && ROUTE.indexOf('const coreHits = termsHits(settings.coreMessage)') > ROUTE.indexOf("if (action === 'draft')"))
+check('every phrase is listed once, in order', JSON.stringify(termsHits('We pay attention. Our rate is $50 per video. Thanks for reading this far, we love it. Payment goes through PayPal.')) === JSON.stringify(['Our rate is $50 per video.', 'Payment goes through']) && quoteHits(['a', 'b', 'c']) === '\u201ca\u201d, \u201cb\u201d and \u201cc\u201d')
 check('the writer is told which words to take out', /Your last try said \u201c\$\{firstHit\}\u201d/.test(ROUTE))
 check('a brand that is not on the list is said, not dropped', /That brand is not on your list, so it was not written/.test(ROUTE))
 check('the page shows the server\'s reason with the count', /reasons\.push\(r\.error\)/.test(UI) && /function notWritten\(/.test(UI) && (UI.match(/notWritten\(r\.failed, r\.reasons/g) || []).length === 4 && !/could not be written`\)/.test(UI))
-check('the core message card warns while you type', /const coreHit = termsHit\(core\)/.test(UI) && /\{coreHit && <p/.test(UI))
+check('the core message card warns while you type, naming every phrase', /const coreHits = termsHits\(core\)/.test(UI) && /\{coreHits\.length > 0 && <p/.test(UI))
 // NO HOOK BELOW AN EARLY RETURN. A useMemo put under "if (loading) return"
 // crashed the TRYBE page for everyone (2026-10-24): the loading render ran
 // one hook fewer than the next one.
