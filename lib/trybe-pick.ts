@@ -63,7 +63,7 @@ export interface PickInput {
  *  Blue video: "build all 4"). Each part of the score belongs to one. */
 export type Factor = 'competition' | 'adSpend' | 'perVideo' | 'percent' | 'paysCreators' | 'samples' | 'newBrand' | 'amazon' | 'program' | 'statics'
 export const FACTORS: Array<{ id: Factor; label: string; says: string }> = [
-  { id: 'competition', label: 'Few creators', says: 'Fewer creators means more of the budget for you. Not on TikTok Shop counts here too.' },
+  { id: 'competition', label: 'Less competition', says: 'Fewer creators and not on TikTok Shop means more of the budget for you. While TRYBE gives no creator counts, only TikTok Shop is weighed.' },
   { id: 'adSpend', label: 'Spends on ads', says: 'Meta ads running now and videos in TRYBE\u2019s Top 100.' },
   { id: 'perVideo', label: 'Pay per video', says: 'A flat fee for each approved video.' },
   { id: 'percent', label: '% of sales', says: 'A share of every sale your videos make.' },

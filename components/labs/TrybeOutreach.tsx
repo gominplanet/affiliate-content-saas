@@ -62,6 +62,9 @@ import { DEFAULT_PRIORITIES, adLibraryUrl, type Priorities } from '@/lib/trybe-p
 import { type FinderFilters, type FilterId, type DirStats, type CrowdRead, type SpendRead } from '@/lib/trybe-finder'
 import type { SellsRead } from '@/lib/trybe-sells'
 
+/** A website link names where it goes: its address, not "Website". */
+const siteName = (url: string) => { try { return new URL(/^https?:\/\//i.test(url) ? url : `https://${url}`).hostname.replace(/^www\./, '') } catch { return 'Their website' } }
+
 const PURPLE = '#7C3AED'
 /** Where to join TRYBE, free (MVP's referral link). */
 const TRYBE_JOIN_URL = 'https://jointrybe.com/r/HTLEJE47'
@@ -158,7 +161,7 @@ type LiveSort = 'match' | 'picks' | 'pay' | 'spend' | 'payouts' | 'creators' | '
 type LivePay = 'any' | 'flat' | 'percent' | 'both' | 'adspend' | 'guaranteed'
 const SORTS: Array<{ id: LiveSort; label: string; says: string }> = [
   { id: 'match', label: 'Best match', says: 'Best matches first.' },
-  { id: 'picks', label: 'Best bets', says: 'Best bets first, ranked by Your priorities: few creators, real ad spend (Meta ads, TRYBE\u2019s Top 100), pay, samples, and brands you already filmed on Amazon.' },
+  { id: 'picks', label: 'Best bets', says: 'Best bets first, ranked by Your priorities: less competition, real ad spend (Meta ads, TRYBE\u2019s Top 100), pay, samples, and brands you already filmed on Amazon.' },
   { id: 'pay', label: 'Highest pay', says: 'Highest pay first: what a video pays (your results, members\u2019 results, or its flat fee and retainer), then % of sales.' },
   { id: 'spend', label: 'Pays creators most', says: 'Most paid to TRYBE creators a month first, estimated: its videos approved in the last 30 days times its pay per video. Brands MVP cannot estimate come after.' },
   { id: 'payouts', label: 'Highest total payouts', says: 'Most paid out to creators on TRYBE first, by TRYBE\u2019s own payout range ($200K+, $50K+...), then most creators. Brands TRYBE gives no range for come after.' },
@@ -334,7 +337,7 @@ const TABS: Array<{ id: Tab; label: string; icon: LucideIcon; group: TabGroup; s
   { id: 'find', label: 'Find brands', icon: Search, group: 'brands', says: 'Brands that fit your channel, and a first message to each, in your words.' },
   // STAR BRANDS (Seb, 2026-10-21: "a fourth button that basically has a new
   // page ... find the next big opportunity, MVP's star brand of the week").
-  { id: 'stars', label: 'Star brands', icon: Rocket, group: 'brands', says: 'The next big opportunity: top rated TRYBE brands with the most Meta ads for each creator, and how known each one is.' },
+  { id: 'stars', label: 'Star brands', icon: Rocket, group: 'brands', says: 'The next big opportunity: top rated TRYBE brands running the most Meta ads per review, and how known each one is.' },
   { id: 'queue', label: 'Ready to send', icon: Send, group: 'brands', says: 'Messages written and waiting. SCOUT sends them slowly, under your daily limit.' },
   { id: 'sent', label: 'Sent', icon: Check, group: 'brands', says: 'Who you asked, who answered, and what to do next with each brand.' },
   { id: 'inbox', label: 'Inbox', icon: Inbox, group: 'brands', says: 'Your TRYBE chats, each with a suggested reply.' },
@@ -360,7 +363,7 @@ const TILES: Tile[] = [
   { id: 'week', label: 'This week', icon: CalendarDays, group: 'create', color: '#EA580C', line: 'Your samples and a 7 day plan', tabs: ['week'] },
   { id: 'working', label: 'What\u2019s working', icon: Lightbulb, group: 'create', color: '#D97706', line: 'Your hook next to the Top 100', tabs: ['working'] },
   { id: 'find', label: 'Find brands', icon: Search, group: 'brands', color: '#7C3AED', line: 'Brands that fit, first message written', tabs: ['find'] },
-  { id: 'stars', label: 'Star brands', icon: Rocket, group: 'brands', color: '#C026D3', line: 'Big ad budgets, few creators', tabs: ['stars'] },
+  { id: 'stars', label: 'Star brands', icon: Rocket, group: 'brands', color: '#C026D3', line: 'Top rated, most Meta ads per review', tabs: ['stars'] },
   { id: 'outreach', label: 'Outreach', icon: Send, group: 'brands', color: '#4F46E5', line: 'Ready to send and sent, in one place', tabs: ['queue', 'sent'] },
   { id: 'inbox', label: 'Inbox', icon: Inbox, group: 'brands', color: '#9333EA', line: 'Brand chats, a reply suggested', tabs: ['inbox'] },
   { id: 'earnings', label: 'Earnings', icon: BarChart3, group: 'track', color: '#059669', line: 'Pay, approvals and ads, by brand', tabs: ['analytics', 'brands'] },
@@ -980,7 +983,7 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
     const sl = await api({ action: 'shortlist', limit: SCAN_READ })
     notes.push(hasNiche
       ? (sl.added ? `MVP searched its copy of TRYBE for your niche and took the best ${sl.added} brands you have not seen to the fit check.` : 'MVP searched its copy of TRYBE and found no new brands matching your niche. Try more keywords or categories.')
-      : `${sl.added} brands taken, highest TRYBE score first. Pick a niche to search by it.`)
+      : `${sl.added} brands taken, rated on TRYBE, in its Top 100 and running Meta ads first. Pick a niche to search by it.`)
     return true
   }
 
@@ -1152,7 +1155,7 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
       const r = ready.length ? await draftIds(ready) : { ok: 0, failed: 0 }
       if (r.failed) toast.error(`${r.failed} draft${r.failed === 1 ? '' : 's'} could not be written`)
       if (r.ok) { toast.success(`${r.ok} added to Ready to send`); if (!only) setTab('queue') }
-      if (!ready.length) toast.message(only ? 'That brand is already in Ready to send or sent.' : 'None of those could be drafted: they are already in your queue or sent.')
+      if (!ready.length) toast.message(only?.length === 1 ? 'That brand is already in Ready to send or sent.' : 'None of those could be drafted: they are already in your queue or sent.')
       if (!only) setLivePick(new Set())
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Drafting failed')
@@ -1352,7 +1355,7 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
       // it asks again, until none are left or Stop. A brand Meta would not
       // show a count for is tried once a run, so the run always ends.
       step('meta', 'running', 'Finding the brands to count...')
-      const total: MetaAdsRun = { total: 0, read: 0, noCount: 0, couldNot: 0, late: 0, notEnglish: '', stopped: '', cardsAsked: true, cardsSent: false, galleryAds: 0, cardsMissed: 0, capped: 0, mixed: 0, doubled: 0 }
+      const total: MetaAdsRun = { total: 0, read: 0, noCount: 0, couldNot: 0, late: 0, notEnglish: '', stopped: '', cardsAsked: true, cardsSent: false, galleryAds: 0, cardsMissed: 0, capped: 0, mixed: 0, doubled: 0, saved: 0, kept: 0 }
       const tried = new Set<string>()
       let left: number | null = null
       for (;;) {
@@ -1372,16 +1375,21 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
           },
         })
         total.total += run.total
-        for (const k of ['read', 'noCount', 'couldNot', 'late', 'galleryAds', 'cardsMissed', 'capped', 'mixed', 'doubled'] as const) total[k] += run[k]
+        for (const k of ['read', 'noCount', 'couldNot', 'late', 'galleryAds', 'cardsMissed', 'capped', 'mixed', 'doubled', 'saved', 'kept'] as const) total[k] += run[k]
         total.cardsSent = total.cardsSent || run.cardsSent
         if (run.notEnglish) { total.notEnglish = run.notEnglish; break }
         if (run.stopped) { total.stopped = /left the page/i.test(run.stopped) ? run.stopped : 'Stopped. Press Daily refresh to carry on: it picks up the brands not counted yet.'; break }
         setLiveNonce((n) => n + 1)
       }
+      // "Every brand" only when the server says none is left: a run that
+      // ends because nothing more was offered is not a run that counted all.
       const w = metaAdsWords(total, scoutVersion)
       const done = !total.stopped && !total.notEnglish
-      step('meta', w.tone === 'ok' ? 'done' : w.tone === 'warn' ? 'warn' : 'failed',
-        total.total ? `${w.text}${done ? ' Every brand on TRYBE now has a count from this week.' : ''}` : 'Every brand on TRYBE already has a Meta ad count from this week.')
+      const allDone = done && left === 0
+      const leftWords = done && left ? ` ${left.toLocaleString()} brand${left === 1 ? ' still has' : 's still have'} no count from this week (Meta showed none for some). Daily refresh tries ${left === 1 ? 'it' : 'them'} again next time.` : ''
+      step('meta', w.tone === 'bad' ? 'failed' : w.tone === 'ok' && !leftWords ? 'done' : 'warn',
+        total.total ? `${w.text}${allDone ? ' Every brand on TRYBE now has a count from this week.' : leftWords}`
+          : allDone ? 'Every brand on TRYBE already has a Meta ad count from this week.' : `MVP found no brands to count this run.${leftWords}`)
     } catch (e) {
       const x = steps.find((y) => y.state === 'running')
       if (x) { x.state = 'failed'; x.text = e instanceof Error ? e.message : 'It stopped with an error.' }
@@ -1401,7 +1409,7 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
   async function checkMetaAds() {
     const shown = live?.brands || []
     // By ads per creator the brands with no count sink below the ones shown,
-    // so the server names them (metaTodo), in TRYBE score order.
+    // so the server names them (metaTodo), never counted and oldest first.
     const todo = sortBy === 'adsPerCreator' && live?.metaTodo
       ? live.metaTodo.slice(0, 25).map(t => ({ brand_id: t.brand_id, name: t.name }))
       : shown.filter(b => !b.meta_ads_checked_at || Date.now() - Date.parse(b.meta_ads_checked_at) > META_ADS_FRESH_MS).slice(0, 25)
@@ -2028,7 +2036,7 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
               return (
                 <>
                   <FinderToolbar filters={filters} onFilters={setFilters} name={nameQ} onName={setNameQ}
-                    sort={sortBy} sorts={SORTS.filter(s => !preview || s.id !== 'fit').map(s => live?.creatorsKnown !== false ? s : s.id === 'creators' ? { ...s, label: 'Fewest creators (no counts yet)' } : s.id === 'adsPerCreator' ? { ...s, label: 'Most ads per review' } : s)} onSort={v => setSortBy(v as LiveSort)}
+                    sort={sortBy} sorts={SORTS.filter(s => (!preview || s.id !== 'fit') && (live?.creatorsKnown !== false || s.id !== 'creators' || sortBy === 'creators')).map(s => live?.creatorsKnown !== false ? s : s.id === 'creators' ? { ...s, label: 'Fewest creators (no counts yet)' } : s.id === 'adsPerCreator' ? { ...s, label: 'Most ads per review' } : s)} onSort={v => setSortBy(v as LiveSort)}
                     noCreators={live?.creatorsKnown === false}
                     pay={payType} pays={PAYS.map(p => ({ ...p, label: p.id === 'any' ? 'Any' : p.label, says: PAY_SAYS[p.id] }))} onPay={v => setPayType(v as LivePay)}
                     panelExtra={sortBy === 'picks' ? undefined : priorityBox} />
@@ -2053,7 +2061,7 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
               if (!picksHelp) {
                 return (
                   <p className="text-[12px] mb-3" style={soft}>
-                    Best bets ranks brands the way top TRYBE creators pick them: few creators, real ad spend, not on TikTok Shop. Each brand says why it ranks where it does.{' '}
+                    Best bets ranks brands the way top TRYBE creators pick them: less competition (not on TikTok Shop), real ad spend. Each brand says why it ranks where it does.{' '}
                     <button onClick={() => setPicksHelp(true)} className="font-semibold underline" style={{ color: PURPLE }}>What it reads</button>
                     {canPlaybook && todoMeta > 0 && (
                       <>{' '}<button onClick={() => void checkMetaAds()} disabled={metaRun != null} className="inline-flex items-center gap-1 font-semibold underline disabled:opacity-50" style={{ color: PURPLE }}>
@@ -2170,7 +2178,7 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
                         {where && <span className="text-[11px] font-semibold rounded-full px-2 py-0.5" style={{ background: 'rgba(124,58,237,0.10)', color: PURPLE }}>{where}</span>}
                         <TrybeLink brandId={b.brand_id} name={b.name} scout={scoutOpens} />
                         <a href={adLibraryUrl(b.name)} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} className="text-[12px] inline-flex items-center gap-0.5" style={soft} title="Its ads in Meta's Ad Library">Meta ads <ExternalLink size={10} /></a>
-                        {b.website && <a href={b.website} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} className="text-[12px] inline-flex items-center gap-0.5" style={soft}><Globe size={11} /> Website <ExternalLink size={10} /></a>}
+                        {b.website && <a href={b.website} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} className="text-[12px] inline-flex items-center gap-0.5" style={soft}><Globe size={11} /> {siteName(b.website)} <ExternalLink size={10} /></a>}
                       </span>
                       <span className="flex flex-wrap items-center gap-1.5 mt-1.5">
                         <NewChip on={b.is_new} />
@@ -2301,7 +2309,7 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
                     {promotes(b) && <span className="text-[11px] rounded px-1.5 py-0.5" style={{ background: 'rgba(22,163,74,0.12)', color: GREEN }}>You already promote them</span>}
                     {b.pay_text && <span className="text-[12px]" style={{ color: PURPLE }}>{b.pay_text}</span>}
                     {b.trybe_score != null && <span className="text-[12px] inline-flex items-center gap-0.5" style={soft}><Star size={11} /> Score {b.trybe_score}</span>}
-                    {b.website && <a href={b.website} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} className="text-[12px] inline-flex items-center gap-0.5" style={soft}><Globe size={11} /> Website <ExternalLink size={10} /></a>}
+                    {b.website && <a href={b.website} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} className="text-[12px] inline-flex items-center gap-0.5" style={soft}><Globe size={11} /> {siteName(b.website)} <ExternalLink size={10} /></a>}
                   </span>
                   <AmazonLine amazon={amz.brand(b.brand_id)} className="mt-1" />
                   {b.fit_reason && <span className="block text-[12px] mt-0.5">{b.fit_reason}</span>}
@@ -2610,7 +2618,7 @@ function QueueRow({ b, busy, disabled, onSave, onRemove, onRewrite, rewriting, o
             {b.pay_text && <span className="text-[11px] font-semibold rounded-md px-2 py-0.5" style={{ background: 'rgba(22,163,74,0.10)', color: GREEN }}>{b.pay_text}</span>}
             {b.left_trybe_at && <span className="text-[11px] font-semibold rounded-full px-2 py-0.5" style={{ background: 'rgba(217,119,6,0.12)', color: AMBER }} title={`MVP's last full read of TRYBE's list (${new Date(b.left_trybe_at).toLocaleDateString()}) did not have this brand. It may have left TRYBE, or stopped taking creators. Open it on TRYBE to check before sending.`}>Not in TRYBE&rsquo;s list lately</span>}
             <TrybeLink brandId={b.brand_id} name={b.name} scout={scoutOpens} />
-            {b.website && <a href={b.website} target="_blank" rel="noopener noreferrer" className="text-[12px] inline-flex items-center gap-0.5" style={soft}><Globe size={11} /> Website <ExternalLink size={10} /></a>}
+            {b.website && <a href={b.website} target="_blank" rel="noopener noreferrer" className="text-[12px] inline-flex items-center gap-0.5" style={soft}><Globe size={11} /> {siteName(b.website)} <ExternalLink size={10} /></a>}
             {busy && <span className="text-[11px] font-semibold inline-flex items-center gap-1" style={{ color: PURPLE }}><Loader2 size={11} className="animate-spin" /> Sending now</span>}
           </div>
           <AmazonLine amazon={amazon} className="mt-1" />

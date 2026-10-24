@@ -249,6 +249,32 @@ async function listedSince(admin: Db): Promise<string | null> {
   } catch { return null }
 }
 
+/** THE DIRECTORY SEARCH, RANKED (migration 456): ties broken by rated, Top
+ *  100, Meta ads and newest instead of brand id, brands TRYBE dropped left out
+ *  before the limit, and paged past PostgREST's 1,000 rows. Before 456 is run
+ *  the old search (418) answers, in its old order. `got` is how many the
+ *  search returned before any other filter, so "more exist" is told from the
+ *  search's own limit. */
+async function rankDirectory(admin: Db, o: { words: string[]; user: string | null; limit: number; sort: string; since: string | null }): Promise<{ ids: string[]; got: number; error: string | null }> {
+  const ids: string[] = []
+  for (let from = 0; from < o.limit; from += 1000) {
+    const r = await admin.rpc('trybe_directory_rank', { p_words: o.words, p_user: o.user, p_limit: o.limit, p_sort: o.sort, p_since: o.since }).range(from, Math.min(o.limit, from + 1000) - 1)
+    if (r.error) {
+      if (from === 0 && /could not find the function|does not exist|schema cache/i.test(r.error.message)) {
+        const old = await admin.rpc('trybe_directory_search', { p_words: o.words, p_user: o.user, p_limit: o.limit })
+        if (old.error) return { ids: [], got: 0, error: old.error.message }
+        const list = ((old.data || []) as Array<{ brand_id: string }>).map(x => x.brand_id)
+        return { ids: list, got: list.length, error: null }
+      }
+      return { ids: [], got: ids.length, error: r.error.message }
+    }
+    const page = ((r.data || []) as Array<{ brand_id: string }>).map(x => x.brand_id)
+    ids.push(...page)
+    if (page.length < 1000) break
+  }
+  return { ids, got: ids.length, error: null }
+}
+
 /** YOUR JOINED BRANDS ARE STILL ON TRYBE (Seb, 2026-10-16: "MVP is showing
  *  me that these brands have left ... NOBL, Ridge, NeuroGum, Innovation
  *  Laboratories, they're all still on TRYBE"). SCOUT collects the creator's
@@ -346,9 +372,11 @@ async function amazonContext(admin: Db, ownerId: string, names: string[]): Promi
   const notes: string[] = []
   let videos: AmazonVideoProduct[] = []
   {
-    const { data, error: e } = await admin.from('amazon_video_products').select('aci, asin, title').eq('user_id', ownerId).limit(20000)
+    // Paged: one read stops at 1,000 rows, and a creator with more videos
+    // lost the rest without a word.
+    const { rows, error: e } = await allRows<AmazonVideoProduct>(() => admin.from('amazon_video_products').select('aci, asin, title').eq('user_id', ownerId).order('aci', { ascending: true }).order('asin', { ascending: true }), 20000)
     if (e) notes.push('Your Amazon videos could not be read just now.')
-    else videos = (data || []) as AmazonVideoProduct[]
+    videos = rows
   }
   const storefront = new Map<string, number>()
   try { for (const [k, v] of await getWorkedWithBrands(admin as Db, ownerId)) if (v.amazon > 0) storefront.set(k, v.amazon) } catch { notes.push('Your Amazon storefront could not be read just now.') }
@@ -1100,26 +1128,37 @@ export async function POST(request: Request) {
     // Library in the creator's own Chrome. Shared; a count kept less than six
     // days is not replaced, so one member cannot rewrite every brand's count.
     const list = (Array.isArray(body.results) ? body.results : []).slice(0, 40) as Array<{ brandId?: unknown; count?: unknown; name?: unknown; cards?: unknown; own?: unknown; sample?: unknown }>
-    let saved = 0
+    // saved: counts written; kept: counted this week already, so the older
+    // count stays (the page says so, never "read" as if it was saved).
+    let saved = 0, kept = 0
     for (const x of list) {
       const id = typeof x.brandId === 'string' ? x.brandId.slice(0, 80) : ''
       const n = typeof x.count === 'number' && Number.isFinite(x.count) && x.count >= 0 && x.count <= 1_000_000 ? Math.round(x.count) : null
       if (!id || n == null) continue
       const stale = new Date(Date.now() - 6 * 86_400_000).toISOString()
-      const { data: before } = await admin.from('trybe_directory').select('meta_ads, meta_ads_checked_at').eq('brand_id', id).maybeSingle()
+      // meta_ads_sample is read when migration 453 has added it.
+      let { data: before, error: beforeErr } = await admin.from('trybe_directory').select('meta_ads, meta_ads_checked_at, meta_ads_sample').eq('brand_id', id).maybeSingle()
+      if (beforeErr) ({ data: before } = await admin.from('trybe_directory').select('meta_ads, meta_ads_checked_at').eq('brand_id', id).maybeSingle())
       // A member fills a count nobody read this week; an admin may correct one.
       let q = admin.from('trybe_directory').update({ meta_ads: n, meta_ads_checked_at: now }).eq('brand_id', id)
       if (tier !== 'admin') q = q.or(`meta_ads_checked_at.is.null,meta_ads_checked_at.lt.${stale}`)
       const { data: up, error: upErr } = await q.select('brand_id')
       if (upErr) return NextResponse.json({ error: /does not exist|schema cache/i.test(upErr.message) ? setupWords(tier, 'Meta ad counts need migration 425 in Supabase first.') : upErr.message }, { status: 500 })
-      if ((up || []).length) {
-        saved++
-        // IS IT THE BRAND'S (migration 453, lib/trybe-pick metaOwnOf): how
-        // many of the ads SCOUT saw its own page runs. Saved on its own, so a
-        // database without the columns never costs the count.
-        const whole = (v: unknown) => typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= 500 ? Math.round(v) : null
-        const sample = whole(x.sample), own = whole(x.own)
-        if (sample != null && own != null && own <= sample) await admin.from('trybe_directory').update({ meta_ads_own: own, meta_ads_sample: sample }).eq('brand_id', id)
+      const wrote = (up || []).length > 0
+      if (wrote) saved++
+      else kept++
+      // IS IT THE BRAND'S (migration 453, lib/trybe-pick metaOwnOf): how many
+      // of the ads SCOUT saw its own page runs. Saved on its own, so a
+      // database without the columns never costs the count. Kept too when
+      // the count was too recent to replace but was never checked, and a
+      // sample of 0 (no ad cards readable) marks it tried: either way the
+      // same brand is not offered again on every "Count the next 40".
+      const whole = (v: unknown) => typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= 500 ? Math.round(v) : null
+      const sample = whole(x.sample), own = whole(x.own)
+      if (sample != null && own != null && own <= sample && (wrote || (before && 'meta_ads_sample' in before && before.meta_ads_sample == null))) {
+        await admin.from('trybe_directory').update({ meta_ads_own: own, meta_ads_sample: sample }).eq('brand_id', id)
+      }
+      if (wrote) {
         // Only against a count read before: a first read is not "more ads".
         const was = before?.meta_ads_checked_at ? (before.meta_ads as number | null) : undefined
         if (was !== undefined && adsChange(was, n)) await logChanges(admin, [{ brand_id: id, kind: 'ads', before: String(was ?? 0), after: String(n) }])
@@ -1150,7 +1189,7 @@ export async function POST(request: Request) {
         if (changed && g) await admin.from('trybe_directory_meta').upsert({ key: GALLERY_KEY, value: g, updated_at: now })
       } catch { /* the counts are saved either way */ }
     }
-    return NextResponse.json({ ok: true, saved, galleryAds, cardsMissed, galleryKept: tier === 'admin' })
+    return NextResponse.json({ ok: true, saved, kept, galleryAds, cardsMissed, galleryKept: tier === 'admin' })
   }
 
   if (action === 'kickoff' || action === 'followup') {
@@ -1354,20 +1393,58 @@ export async function POST(request: Request) {
     // fewest creators.
     const starPool = !direct && !words.length && sort === 'adsPerCreator'
     let metaLeft: number | null = null
-    const rpc = direct || starPool ? { data: null, error: null } : await admin.rpc('trybe_directory_search', { p_words: words, p_user: null, p_limit: pool })
+    let starTodo: Array<{ brand_id: string; name: string }> | null = null
     // Only brands TRYBE still lists: one it dropped cannot be messaged.
     const since = await listedSince(admin)
+    const searched = direct || starPool ? { ids: [], got: 0, error: null } : await rankDirectory(admin, { words, user: null, limit: pool, sort, since })
+    const rpc = { error: searched.error }
     if (starPool) {
       const fresh = new Date(Date.now() - 4 * META_ADS_FRESH_MS).toISOString()
-      let counted = admin.from('trybe_directory').select(COLS).gte('meta_ads_checked_at', fresh)
-      if (since) counted = counted.gte('last_seen_at', since)
-      const { data: a, error: e1 } = await counted.limit(1500)
+      // The counted brands to rank, most ads first, two pages.
+      const { rows: a, error: e1 } = await allRows<Record<string, any>>(() => { // eslint-disable-line @typescript-eslint/no-explicit-any
+        let q = admin.from('trybe_directory').select(COLS).gte('meta_ads_checked_at', fresh)
+        if (since) q = q.gte('last_seen_at', since)
+        return q.order('meta_ads', { ascending: false, nullsFirst: false }).order('brand_id', { ascending: true })
+      }, 2000)
       if (e1) return NextResponse.json({ error: e1.message }, { status: 500 })
+      // WHAT TO COUNT NEXT, read on its own and light (no website text), over
+      // all of TRYBE: never counted or counted over a week ago, oldest first,
+      // and counts never checked as the brand's own. The daily refresh used
+      // to pick from the ranked rows only, so brands past them were never
+      // offered again, and it then said every brand was counted.
+      {
+        const LIGHT = 'brand_id, name, meta_ads, meta_ads_checked_at, top100_hits, rating:raw->>reviewRating'
+        const weekAgo = new Date(Date.now() - META_ADS_FRESH_MS).toISOString()
+        const stale = await allRows<Record<string, any>>(() => { // eslint-disable-line @typescript-eslint/no-explicit-any
+          let q = admin.from('trybe_directory').select(LIGHT).or(`meta_ads_checked_at.is.null,meta_ads_checked_at.lt.${weekAgo}`)
+          if (since) q = q.gte('last_seen_at', since)
+          return q.order('meta_ads_checked_at', { ascending: true, nullsFirst: true }).order('brand_id', { ascending: true })
+        }, 3000)
+        let unchecked: Array<Record<string, any>> = [] // eslint-disable-line @typescript-eslint/no-explicit-any
+        if (COLS.includes('meta_ads_sample')) {
+          let q = admin.from('trybe_directory').select(LIGHT + ', meta_ads_sample').is('meta_ads_sample', null).gt('meta_ads', 0).gte('meta_ads_checked_at', weekAgo)
+          if (since) q = q.gte('last_seen_at', since)
+          const { data: u } = await q.order('meta_ads', { ascending: false }).limit(1000)
+          unchecked = (u || []) as Array<Record<string, any>> // eslint-disable-line @typescript-eslint/no-explicit-any
+        }
+        if (!stale.error) {
+          const seenT = new Set<string>()
+          const rated = (r: Record<string, any>) => (r.rating != null && r.rating !== '' ? 1 : 0) // eslint-disable-line @typescript-eslint/no-explicit-any
+          starTodo = [
+            ...unchecked.sort((x, y) => rated(y) - rated(x)),
+            ...stale.rows.sort((x, y) => (x.meta_ads_checked_at ? 1 : 0) - (y.meta_ads_checked_at ? 1 : 0) || rated(y) - rated(x) || (Date.parse(x.meta_ads_checked_at) || 0) - (Date.parse(y.meta_ads_checked_at) || 0) || (y.top100_hits ?? 0) - (x.top100_hits ?? 0)),
+          ].filter(r => !seenT.has(r.brand_id) && !!seenT.add(r.brand_id)).slice(0, 3000).map(r => ({ brand_id: String(r.brand_id), name: String(r.name || '') }))
+        }
+      }
+      // Then the next to count: never counted first, then the oldest count,
+      // then the ones in TRYBE's Top 100 (trybe_score is empty for every brand,
+      // so it orders nothing).
       const next = (withTop: boolean) => {
         let q = admin.from('trybe_directory').select(COLS).or(`meta_ads_checked_at.is.null,meta_ads_checked_at.lt.${fresh}`)
         if (since) q = q.gte('last_seen_at', since)
+        q = q.order('meta_ads_checked_at', { ascending: true, nullsFirst: true })
         if (withTop) q = q.order('top100_hits', { ascending: false, nullsFirst: false })
-        return q.order('trybe_score', { ascending: false, nullsFirst: false }).order('total_creators', { ascending: true, nullsFirst: false }).limit(600)
+        return q.order('first_seen_at', { ascending: false, nullsFirst: false }).limit(1000)
       }
       let b = await next(true)
       if (b.error && /does not exist|schema cache/i.test(b.error.message)) b = await next(false)
@@ -1378,11 +1455,13 @@ export async function POST(request: Request) {
       // (the daily refresh has no rating filter).
       let rated: Array<Record<string, any>> = [] // eslint-disable-line @typescript-eslint/no-explicit-any
       {
-        let q = admin.from('trybe_directory').select(COLS).not('raw->>reviewRating', 'is', null)
-        if (since) q = q.gte('last_seen_at', since)
-        const { data: c, error: e3 } = await q.limit(1500)
+        const { rows: c, error: e3 } = await allRows<Record<string, any>>(() => { // eslint-disable-line @typescript-eslint/no-explicit-any
+          let q = admin.from('trybe_directory').select(COLS).not('raw->>reviewRating', 'is', null)
+          if (since) q = q.gte('last_seen_at', since)
+          return q.order('brand_id', { ascending: true })
+        }, 3000)
         if (e3) return NextResponse.json({ error: e3.message }, { status: 500 })
-        rated = (c || []) as Array<Record<string, any>> // eslint-disable-line @typescript-eslint/no-explicit-any
+        rated = c
       }
       // HOW MANY ARE LEFT TO COUNT across all of TRYBE (Seb, 2026-10-21: "keep
       // it running until everything is counted"): never counted, or counted
@@ -1394,18 +1473,24 @@ export async function POST(request: Request) {
         metaLeft = typeof count === 'number' ? count : null
       }
       const seen = new Set<string>()
-      rows = [...((a || []) as Array<Record<string, any>>), ...rated, ...((b.data || []) as Array<Record<string, any>>)].filter(r => !seen.has(r.brand_id) && !!seen.add(r.brand_id)) // eslint-disable-line @typescript-eslint/no-explicit-any
+      rows = [...a, ...rated, ...((b.data || []) as Array<Record<string, any>>)].filter(r => !seen.has(r.brand_id) && !!seen.add(r.brand_id)) // eslint-disable-line @typescript-eslint/no-explicit-any
     } else if (direct) {
-      let q = admin.from('trybe_directory').select(COLS)
-      if (filters.starred) q = q.in('brand_id', Array.from(starredIds).slice(0, 500))
-      if (idsQ.length) q = q.in('brand_id', idsQ)
-      if (nameQ.length >= 2) q = q.ilike('name', `%${nameQ}%`)
-      if (since) q = q.gte('last_seen_at', since)
-      const { data, error: e } = filters.starred && !starredIds.size ? { data: [], error: null } : await q.limit(400)
-      if (e) return NextResponse.json({ error: e.message }, { status: 500 })
-      rows = (data || []) as Array<Record<string, any>> // eslint-disable-line @typescript-eslint/no-explicit-any
+      // Starred ids go 150 at a time: hundreds of ids in one address go past
+      // the URL limit.
+      const starList = Array.from(starredIds).slice(0, 500)
+      const chunks = filters.starred ? Array.from({ length: Math.ceil(starList.length / 150) }, (_, i) => starList.slice(i * 150, i * 150 + 150)) : [null]
+      for (const chunk of chunks) {
+        let q = admin.from('trybe_directory').select(COLS)
+        if (chunk) q = q.in('brand_id', chunk)
+        if (idsQ.length) q = q.in('brand_id', idsQ)
+        if (nameQ.length >= 2) q = q.ilike('name', `%${nameQ}%`)
+        if (since) q = q.gte('last_seen_at', since)
+        const { data, error: e } = await q.limit(400)
+        if (e) return NextResponse.json({ error: e.message }, { status: 500 })
+        rows.push(...((data || []) as Array<Record<string, any>>)) // eslint-disable-line @typescript-eslint/no-explicit-any
+      }
     } else if (!rpc.error) {
-      const ids = ((rpc.data || []) as Array<{ brand_id: string }>).map(r => r.brand_id)
+      const ids = searched.ids
       for (let i = 0; i < ids.length; i += 200) {
         let q = admin.from('trybe_directory').select(COLS).in('brand_id', ids.slice(i, i + 200))
         if (since) q = q.gte('last_seen_at', since)
@@ -1527,7 +1612,7 @@ export async function POST(request: Request) {
     const unknownBy: Partial<Record<FilterId, number>> = {}
     const unknownOf = new Map<string, number>()
     const matched = matchedAll.filter(x => {
-      const c = filterCheck({ perVideo: estBy.get(x.r.brand_id)?.dollars ?? null, creators: typeof x.r.total_creators === 'number' ? x.r.total_creators : null, stats: statsBy.get(x.r.brand_id)!, earningsBucket: x.r.earnings_bucket ?? null, amazon: amazonBy.get(x.r.brand_id) ?? null, starred: starredIds.has(x.r.brand_id), crowd: crowdBy.get(x.r.brand_id)?.level ?? null,
+      const c = filterCheck({ perVideo: estBy.get(x.r.brand_id)?.dollars ?? null, creators: typeof x.r.total_creators === 'number' ? x.r.total_creators : null, stats: statsBy.get(x.r.brand_id)!, earningsBucket: x.r.earnings_bucket ?? null, amazon: amazonBy.get(x.r.brand_id) ?? null, amazonUnknown: amazonNotes.length > 0, starred: starredIds.has(x.r.brand_id), crowd: crowdBy.get(x.r.brand_id)?.level ?? null,
         spending: spendingOf(x.r), isNew: newBy.get(x.r.brand_id), reviewDays: results.review.get(x.r.brand_id)?.reviewDays ?? null, sells: sellsBy.get(x.r.brand_id) ?? null, spend: spendBy.get(x.r.brand_id)?.dollars ?? null,
         tiktokShop: tiktokShopOf(x.r), tierUp: tierLog ? !!tierLog.get(x.r.brand_id)?.up : null,
         rating: ratingOf(x.r)?.stars ?? null }, filters)
@@ -1543,9 +1628,12 @@ export async function POST(request: Request) {
     // ones that match (Seb, 2026-10-12, "this is confusing": TRYBE's list
     // gives no pay for most brands, so "% of sales" hid all 1,000 and the
     // page asked for a keyword).
-    const payUnknown = payType === 'any' ? 0 : matched.filter(x => x.pay.kind == null).length
-    const payOther = payType === 'any' ? 0 : matched.filter(x => x.pay.kind != null && !payPasses(x.pay, payType)).length
-    const ranked = matched.filter(x => payPasses(x.pay, payType) || (payType !== 'any' && x.pay.kind == null))
+    const payUnknown = payType === 'any' ? 0 : matched.filter(x => x.pay.kind == null && !x.pay.kinds?.length).length
+    // Pay read but of another kind (a % of ad spend alone has no kind of
+    // its own) is "other", never "not known".
+    const payRead = (x: typeof matched[number]) => x.pay.kind != null || !!x.pay.kinds?.length
+    const payOther = payType === 'any' ? 0 : matched.filter(x => payRead(x) && !payPasses(x.pay, payType)).length
+    const ranked = matched.filter(x => payPasses(x.pay, payType) || (payType !== 'any' && !payRead(x)))
     const payKnownFirst = (a: typeof ranked[number], b: typeof ranked[number]) => payType === 'any' ? 0 : Number(a.pay.kind == null) - Number(b.pay.kind == null)
     // DONE BRANDS LEAVE THE LIST (Seb, 2026-10-07: "these should be gone, no?
     // I changed keywords ... and i'm still seeing these"). A brand already
@@ -1655,8 +1743,8 @@ export async function POST(request: Request) {
     // them all, for Count all and the daily refresh.
     const todoRank = (r: Record<string, any>) => r.meta_ads_checked_at && COLS.includes('meta_ads_sample') && r.meta_ads_sample == null && (r.meta_ads ?? 0) > 0 ? 0 : !r.meta_ads_checked_at ? 1 : Date.now() - Date.parse(r.meta_ads_checked_at) > META_ADS_FRESH_MS ? 2 : -1 // eslint-disable-line @typescript-eslint/no-explicit-any
     const metaTodo = sort === 'adsPerCreator'
-      ? shown.filter(x => todoRank(x.r) >= 0)
-        .sort((a, b) => todoRank(a.r) - todoRank(b.r) || stars(b) - stars(a) || (b.r.top100_hits ?? 0) - (a.r.top100_hits ?? 0) || (a.r.total_creators ?? Infinity) - (b.r.total_creators ?? Infinity))
+      ? starTodo ?? shown.filter(x => todoRank(x.r) >= 0)
+        .sort((a, b) => todoRank(a.r) - todoRank(b.r) || stars(b) - stars(a) || (Date.parse(a.r.meta_ads_checked_at) || 0) - (Date.parse(b.r.meta_ads_checked_at) || 0) || (b.r.top100_hits ?? 0) - (a.r.top100_hits ?? 0))
         .slice(0, starPool ? 3000 : 120).map(x => ({ brand_id: x.r.brand_id, name: x.r.name }))
       : undefined
     return NextResponse.json({
@@ -1671,7 +1759,9 @@ export async function POST(request: Request) {
       payOther,
       sort,
       payType,
-      capped: !direct && !starPool && rows.length >= (rpc.error ? 800 : pool),
+      // More brands matched than were ranked: told from the search's own
+      // count, since rows can be fewer after brands TRYBE dropped are left out.
+      capped: !direct && !starPool && (rpc.error ? rows.length >= 800 : searched.got >= pool),
       hiddenBy, blankBy, unknownBy, amazonNotes,
       amazonVideos: videos.length,
       // YOUR MIX: the brands you asked, by size (lib/trybe-finder mixOf).
@@ -1792,6 +1882,10 @@ export async function POST(request: Request) {
 
   if (action === 'star') {
     if (!/^[A-Za-z0-9-]{6,80}$/.test(brandId)) return NextResponse.json({ error: 'No brand given' }, { status: 400 })
+    // One statement (migration 456), so two quick stars never lose one.
+    const atomic = await admin.rpc('trybe_star', { p_user: ownerId, p_brand: brandId, p_on: body.on !== false })
+    if (!atomic.error) return NextResponse.json({ ok: true, starred: Array.isArray(atomic.data) ? (atomic.data as string[]).includes(brandId) : body.on !== false })
+    if (!/could not find the function|does not exist|schema cache/i.test(atomic.error.message)) return NextResponse.json({ error: dbWords(atomic.error.message) }, { status: 500 })
     const settings = await readSettings(admin, ownerId)
     if (settings.starred == null) return NextResponse.json({ error: setupWords(tier, 'Stars need migration 430 in Supabase first.') }, { status: 500 })
     const set = new Set(settings.starred)
@@ -1877,11 +1971,12 @@ export async function POST(request: Request) {
     // THE DATABASE NARROWS IT (migration 418): only the best few hundred
     // brands not already on this creator's list come back, then they are
     // ranked finely here.
-    const rpc = await admin.rpc('trybe_directory_search', { p_words: words, p_user: ownerId, p_limit: 300 })
     // Only brands TRYBE still lists: one it dropped cannot be messaged.
     const since = await listedSince(admin)
+    const ranked = await rankDirectory(admin, { words, user: ownerId, limit: 300, sort: 'match', since })
+    const rpc = { error: ranked.error }
     if (!rpc.error) {
-      const ids = ((rpc.data || []) as Array<{ brand_id: string }>).map(r => r.brand_id)
+      const ids = ranked.ids
       for (let i = 0; i < ids.length && !error; i += 150) {
         let q = admin.from('trybe_directory').select(COLS).in('brand_id', ids.slice(i, i + 150))
         if (since) q = q.gte('last_seen_at', since)

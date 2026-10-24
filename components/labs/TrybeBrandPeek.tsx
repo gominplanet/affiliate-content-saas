@@ -19,6 +19,9 @@ import { BrandExtras, PayChip, CrowdChip, NewChip, StaticsChip, SellsChip, Verdi
 import { adLibraryUrl, type PickReason } from '@/lib/trybe-pick'
 import type { DirStats, CrowdRead } from '@/lib/trybe-finder'
 
+/** A website link names where it goes: its address, not "Website". */
+const siteName = (url: string) => { try { return new URL(/^https?:\/\//i.test(url) ? url : `https://${url}`).hostname.replace(/^www\./, '') } catch { return 'Their website' } }
+
 const PURPLE = '#7C3AED'
 const GREEN = '#16A34A'
 const AMBER = '#B45309'
@@ -149,7 +152,7 @@ export default function TrybeBrandPeek({ brandId, name, actions }: { brandId: st
       {brand.categories.length > 0 && <p className="text-[11.5px]" style={soft}>{brand.categories.join(' • ')}</p>}
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
         <a href={adLibraryUrl(brand.name)} target="_blank" rel="noopener noreferrer" className="text-[12px] inline-flex items-center gap-0.5" style={soft} title="Its ads in Meta's Ad Library">Meta ads <ExternalLink size={10} /></a>
-        {brand.website && <a href={brand.website} target="_blank" rel="noopener noreferrer" className="text-[12px] inline-flex items-center gap-0.5" style={soft}><Globe size={11} /> Website <ExternalLink size={10} /></a>}
+        {brand.website && <a href={brand.website} target="_blank" rel="noopener noreferrer" className="text-[12px] inline-flex items-center gap-0.5" style={soft}><Globe size={11} /> {siteName(brand.website)} <ExternalLink size={10} /></a>}
       </div>
 
       {/* Where it stands, and the one next step from here. */}

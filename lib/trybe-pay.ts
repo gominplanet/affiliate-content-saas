@@ -203,7 +203,10 @@ export function payReadOf(lines: string[]): PayRead {
   const { terms } = readTerms(lines)
   if (!terms.length) return { ...readPay(lines.join(' · ')), kinds: [] }
   const est = estimatePay({ lines })
-  const pcts = terms.filter((t) => t.kind === 'gmv' || t.kind === 'adSpend').map((t) => t.amount)
+  // A percent of SALES only: a percent of ad spend is another kind of pay
+  // (kinds has 'adSpend', the Pay filter's own choice), and counting it here
+  // passed "% of sales" and read "Pays 3% of sales" for a brand paying none.
+  const pcts = terms.filter((t) => t.kind === 'gmv').map((t) => t.amount)
   const dollars = est.basis === 'terms' ? est.dollars : null
   const percent = pcts.length ? Math.max(...pcts) : null
   const kind = dollars != null && percent != null ? 'both' : dollars != null ? 'flat' : percent != null ? 'percent' : null

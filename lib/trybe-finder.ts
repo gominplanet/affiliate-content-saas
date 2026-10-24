@@ -22,7 +22,7 @@
 
 import { readSells, type Sells, type SellsRead } from '@/lib/trybe-sells'
 import { brandKey } from '@/lib/brand-normalize'
-import { metaUsable } from '@/lib/trybe-pick'
+import { metaUsable, META_ADS_FRESH_MS } from '@/lib/trybe-pick'
 import type { Judged } from '@/lib/trybe-mybrands'
 
 type Obj = Record<string, unknown>
@@ -142,14 +142,25 @@ export interface CrowdRead {
 
 export const CROWD_WORDS: Record<Crowd, string> = { open: 'OPEN', filling: 'FILLING', crowded: 'CROWDED' }
 
-/** How crowded a brand is. A brand with no creator count is not judged. Pure. */
+/** How crowded a brand is, from its creators and recent videos, or its
+ *  videos alone when TRYBE gives no creator count. Pure. */
 export function crowdOf(input: { creators: number | null; recent30?: number | null; then?: [number | null, number | null] | null; videosNow?: number | null; days?: number | null }): CrowdRead {
   const c = input.creators
   const days = input.then && input.days ? input.days : input.recent30 != null ? 30 : null
   const newCreators = input.then && c != null && input.then[0] != null ? Math.max(0, c - input.then[0]) : null
   const newVideos = input.recent30 != null ? input.recent30
     : input.then && input.videosNow != null && input.then[1] != null ? Math.max(0, input.videosNow - input.then[1]) : null
-  if (c == null) return { level: null, newCreators, newVideos, days, why: 'TRYBE’s list gives no creator count for it.' }
+  // TRYBE's list gives no creator count for any brand now, so a brand is
+  // judged by its videos alone when they are known: Open only used to call
+  // every brand "not known" and hide nothing.
+  if (c == null) {
+    const nv0 = newVideos == null || !days ? null : (newVideos * 30) / days
+    if (nv0 == null) return { level: null, newCreators, newVideos, days, why: 'TRYBE gives no creator count and no recent videos for it.' }
+    const vw = `${newVideos!.toLocaleString('en-US')} video${newVideos === 1 ? '' : 's'} in ${days} days (TRYBE gives no creator count)`
+    if (nv0 >= 400) return { level: 'crowded', newCreators, newVideos, days, why: `${vw}: the budget is split many ways.` }
+    if (nv0 >= 100) return { level: 'filling', newCreators, newVideos, days, why: `${vw}: creators are finding it, so ask soon.` }
+    return { level: 'open', newCreators, newVideos, days, why: `${vw}: room for you.` }
+  }
   // Per 30 days, so a 12 day window is not read as a quiet month.
   const per30 = (n: number | null) => (n == null || !days ? null : (n * 30) / days)
   const nc = per30(newCreators), nv = per30(newVideos)
@@ -423,10 +434,13 @@ export interface FinderFilters {
  *  Top 100 can only say yes. A no takes a Meta Ad Library read that found no
  *  ads; anything else is not known, and is listed after the brands that pass.
  *  Pure. */
-export function spendingOf(r: { meta_ads?: unknown; meta_ads_checked_at?: unknown; meta_ads_own?: unknown; meta_ads_sample?: unknown; top100_hits?: unknown; top100_checked_at?: unknown }): boolean | null {
+export function spendingOf(r: { meta_ads?: unknown; meta_ads_checked_at?: unknown; meta_ads_own?: unknown; meta_ads_sample?: unknown; top100_hits?: unknown; top100_checked_at?: unknown }, now = Date.now()): boolean | null {
   // A count that is not the brand's (a common-word name, lib/trybe-pick
-  // metaUsable) says nothing either way.
-  const ads = r.meta_ads_checked_at ? metaUsable(r) : null
+  // metaUsable) says nothing either way, and neither does one over four
+  // weeks old: the window Best bets and Star brands use, so a brand is never
+  // "spending" on one page and "too little read" on the next.
+  const at = typeof r.meta_ads_checked_at === 'string' ? Date.parse(r.meta_ads_checked_at) : NaN
+  const ads = Number.isFinite(at) && now - at < 4 * META_ADS_FRESH_MS ? metaUsable(r) : null
   const top = r.top100_checked_at && typeof r.top100_hits === 'number' ? r.top100_hits : null
   if ((ads ?? 0) > 0 || (top ?? 0) > 0) return true
   return ads === 0 ? false : null
@@ -467,6 +481,8 @@ export interface FilterRow {
   stats: DirStats
   earningsBucket: string | null
   amazon: AmazonOf | null
+  /** A read behind the Amazon match failed: a brand not found is not known. */
+  amazonUnknown?: boolean
   starred: boolean
   crowd?: Crowd | null
   /** Meta ads or Top 100 read: true spending, false not, null not read. */
@@ -504,8 +520,9 @@ export function filterCheck(r: FilterRow, f: FinderFilters): { pass: boolean; un
   if (f.maxVideos) judge('maxVideos', r.stats.videosApproved == null ? null : r.stats.videosApproved <= f.maxVideos)
   if (f.paidCreators) judge('paidCreators', r.stats.paidOut != null ? r.stats.paidOut > 0 : r.earningsBucket ? true : null)
   if (f.samples) judge('samples', r.stats.samples)
-  // Not found on Amazon is a no: MVP looked (its catalog, your videos).
-  if (f.onAmazon) judge('onAmazon', onAmazon(r.amazon))
+  // Not found on Amazon is a no when MVP looked (its catalog, your videos);
+  // when one of those reads failed, a brand not found is not known.
+  if (f.onAmazon) judge('onAmazon', onAmazon(r.amazon) ? true : r.amazonUnknown ? null : false)
   if (f.starred) judge('starred', r.starred)
   if (f.openOnly) judge('openOnly', r.crowd == null ? null : r.crowd === 'open')
   if (f.spending) judge('spending', r.spending ?? null)

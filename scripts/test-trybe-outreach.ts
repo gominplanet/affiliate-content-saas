@@ -150,7 +150,7 @@ check('Check them now never leaves the page stuck', /judge\(unjudged\)\.finally\
 // should change"). MVP's copy is searched on every change, nothing fetched.
 check('the live list searches MVP\'s copy as categories and keywords change', /\[hasDirectory, catsKey, kwsKey, liveNonce, showMine, sortBy, payType[,\]]/.test(UI) && /action: 'browse', categories: cats, keywords: kws/.test(UI) && /setTimeout\(async \(\) => \{/.test(UI))
 check('an older search never overwrites a newer one', /if \(id !== liveReq\.current\) return/.test(UI))
-check('browse leaves nothing out, so a brand on the list shows where it stands', /rpc\('trybe_directory_search', \{ p_words: words, p_user: null/.test(ROUTE) && /status: m\?\.status \?\? null/.test(ROUTE))
+check('browse leaves nothing out, so a brand on the list shows where it stands', /rankDirectory\(admin, \{ words, user: null, limit: pool, sort, since \}\)/.test(ROUTE) && /status: m\?\.status \?\? null/.test(ROUTE))
 check('browse never asks SCOUT, TRYBE or a website', (() => { const b = ROUTE.slice(ROUTE.indexOf("action === 'browse'"), ROUTE.indexOf("action === 'adopt'")); return !/researchBrandSite|siteFacts|fetch\(/.test(b) })())
 check('queued or sent brands cannot be picked again', /const TAKEN: Array<Brand\['status'\]> = \['drafted', 'sending', 'sent', 'already', 'failed'\]/.test(UI) && /disabled=\{taken\}/.test(UI))
 check('a picked brand is put on the list, then drafted', /action: 'adopt', brandIds: ids/.test(UI) && /const r = ready\.length \? await draftIds\(ready\)/.test(UI))
@@ -189,7 +189,7 @@ check('an unreadable answer says what TRYBE sent', /TRYBE sent: \$\{shapeOf\(r\.
 {
   const R = readFileSync('app/api/labs/trybe/route.ts', 'utf8')
   check('brands TRYBE no longer lists are counted apart and left out of matches',
-    /async function listedSince\(admin: Db\)/.test(R) && (R.match(/if \(since\) q = q\.gte\('last_seen_at', since\)/g) || []).length === 10 && /if \(since\) counted = counted\.gte\('last_seen_at', since\)/.test(R)
+    /async function listedSince\(admin: Db\)/.test(R) && (R.match(/if \(since\) q = q\.gte\('last_seen_at', since\)/g) || []).length >= 12 && /p_since: o\.since/.test(R)
     && /listed: listed && !listed\.error \? listed\.count/.test(R) && (UI.match(/On TRYBE now: <b>/g) || []).length === 2)
   check('the brands new on TRYBE since the first count are counted from when each was first seen',
     /\.gte\('first_seen_at', newSinceCut\)/.test(R) && (UI.match(/New on TRYBE since MVP&rsquo;s first count/g) || []).length === 2)

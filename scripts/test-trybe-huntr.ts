@@ -48,7 +48,7 @@ check('spending, new and fast deciders filter; not read is listed after, never h
   && !filterCheck({ ...base, spending: false, isNew: true, reviewDays: 2 }, f).pass && filterCheck({ ...base, spending: null, isNew: true, reviewDays: null }, f).unknown.length === 2
   && !filterCheck({ ...base, spending: true, isNew: false, reviewDays: 2 }, f).pass)
 const C = read('components/labs/TrybeFinderControls.tsx')
-check('the lists: Untapped, New this week, Big spenders, Fast deciders, Pays $25+', ['Untapped', 'New this week', 'Big spenders', 'Fast deciders', 'Pays $25+ a video'].every(l => C.includes(`label: '${l}'`)))
+check('the lists: Untapped, New on TRYBE, Big spenders, Fast deciders, Pays $25+', ['Untapped', 'New on TRYBE', 'Big spenders', 'Fast deciders', 'Pays $25+ a video'].every(l => C.includes(`label: '${l}'`)))
 
 // ── 3. The best new brands ──
 const R = read('app/api/labs/trybe/route.ts')

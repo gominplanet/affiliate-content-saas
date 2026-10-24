@@ -65,6 +65,7 @@ check('creators joining fast is FILLING, with why', filling.level === 'filling' 
 check('many creators, or many videos a month, is CROWDED', crowdOf({ creators: 400 }).level === 'crowded' && crowdOf({ creators: 60, recent30: 900 }).level === 'crowded')
 check('a short window is scaled to a month, not read as a quiet one', crowdOf({ creators: 20, then: [15, null], days: 10 }).level === 'filling')
 check('no creator count is not judged', crowdOf({ creators: null }).level === null)
+check('no creator count but recent videos is judged by the videos (TRYBE gives no creator counts now)', crowdOf({ creators: null, recent30: 500 }).level === 'crowded' && crowdOf({ creators: null, recent30: 150 }).level === 'filling' && crowdOf({ creators: null, recent30: 12 }).level === 'open' && /TRYBE gives no creator count/.test(crowdOf({ creators: null, recent30: 12 }).why))
 check('30 day videos come from TRYBE\'s entry when it sends them', readDirStats({ brandId: 'abc12345', videosLast30Days: 44 }).videos30d === 44)
 const snap = mergeSnapshot({ a: [1, 2] }, [{ brand_id: 'a', total_creators: 9, raw: {} }, { brand_id: 'b', total_creators: 3, raw: { approvedVideos: 7 } }], false)
 check('a member\'s collection fills the day\'s snapshot, never rewrites it', snap.a[0] === 1 && snap.b[0] === 3 && snap.b[1] === 7 && mergeSnapshot({ a: [1, 2] }, [{ brand_id: 'a', total_creators: 9, raw: {} }], true).a[0] === 9)

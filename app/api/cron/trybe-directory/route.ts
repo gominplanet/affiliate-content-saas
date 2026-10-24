@@ -6,7 +6,8 @@
 // So a creator's keywords can match what a brand actually sells ("bible"
 // finds a brand through its product "Bible Journaling Kit"), each brand's
 // website is read once: its home page text and, for most of these stores,
-// Shopify's public product list. Highest TRYBE score first. A site that could
+// Shopify's public product list. Brands in TRYBE's Top 100 first, then the
+// newest (TRYBE gives no score to order by). A site that could
 // not be read is stamped with why and not asked again for a month.
 //
 // HOW KNOWN EACH BRAND IS (migration 452, lib/brand-popularity; Seb,
@@ -58,7 +59,7 @@ async function popularityPass(sb: any, started: number): Promise<PopRun> {
   const run: PopRun = { web: { read: 0, notRanked: 0, shared: 0, missed: 0 }, google: { read: 0, missed: 0 } }
   const until = started + POP_BUDGET_MS
   const stale = new Date(Date.now() - POPULARITY_FRESH_MS).toISOString()
-  // Never read first (highest TRYBE score first), then the oldest reads.
+  // Never read first (Top 100 brands, then the newest), then the oldest reads.
   // Brands creators rated on TRYBE first (Star brands lists them; Seb's
   // test 2026-10-21 showed 5 of its 405 read): TRYBE's list has no score to
   // order by, so trybe_score put them anywhere.
@@ -69,7 +70,7 @@ async function popularityPass(sb: any, started: number): Promise<PopRun> {
     let rows = (rated || []) as PopRow[]
     if (rows.length < POP_PER_RUN) {
       const { data: rest } = await sb.from('trybe_directory').select('brand_id, name, website').is(col, null)
-        .order('trybe_score', { ascending: false, nullsFirst: false }).limit(POP_PER_RUN - rows.length)
+        .order('top100_hits', { ascending: false, nullsFirst: false }).order('first_seen_at', { ascending: false, nullsFirst: false }).limit(POP_PER_RUN - rows.length)
       rows = rows.concat((rest || []) as PopRow[])
     }
     if (rows.length < POP_PER_RUN) {
@@ -130,7 +131,7 @@ export async function GET(request: Request) {
   const { data: fresh, error } = await sb.from('trybe_directory')
     .select('brand_id, website')
     .is('site_fetched_at', null).not('website', 'is', null)
-    .order('trybe_score', { ascending: false, nullsFirst: false })
+    .order('top100_hits', { ascending: false, nullsFirst: false }).order('first_seen_at', { ascending: false, nullsFirst: false })
     .limit(PER_RUN)
   if (error) {
     // Before migration 417 there is nothing to read: said, not thrown.
@@ -180,7 +181,7 @@ export async function GET(request: Request) {
     const { data: older } = await sb.from('trybe_directory')
       .select('brand_id, website')
       .is('socials_checked_at', null).not('site_fetched_at', 'is', null).is('site_error', null).not('website', 'is', null)
-      .order('trybe_score', { ascending: false, nullsFirst: false })
+      .order('top100_hits', { ascending: false, nullsFirst: false }).order('first_seen_at', { ascending: false, nullsFirst: false })
       .limit(SOCIALS_PER_RUN)
     const list = (older || []) as Array<{ brand_id: string; website: string }>
     for (let i = 0; i < list.length && Date.now() - started < BUDGET_MS; i += AT_ONCE) {

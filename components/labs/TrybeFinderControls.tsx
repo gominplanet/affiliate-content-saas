@@ -161,9 +161,10 @@ export function FinderToolbar({ filters, onFilters, name, onName, sort, sorts, o
               {toggle('tierUp', <TrendingUp size={12} />, 'TRYBE\u2019s payout tier for it went up in the last 30 days, in MVP\u2019s daily log of TRYBE: it is paying creators more.')}
             </>)}
             {group('Room for you', <>
-              {toggle('openOnly', <Users size={12} />, 'Brands with room for you: few creators, and few joining or posting in the last 30 days.')}
+              {toggle('openOnly', <Users size={12} />, noCreators ? 'Brands with room for you: few videos posted in the last 30 days (TRYBE gives no creator counts yet).' : 'Brands with room for you: few creators, and few joining or posting in the last 30 days.')}
               {toggle('newOnly', <Sparkles size={12} />, 'New on TRYBE: joined in the last 30 days, or MVP first saw it in the last 14.')}
-              {numberBox('maxCreators', 'Up to', noCreators ? 'creators (no counts from TRYBE yet)' : 'creators', noCreators ? 'TRYBE\u2019s brand list does not say how many creators each brand has, so this cannot narrow the list yet.' : 'Fewer creators means more of the budget for you.')}
+              {/* No creator counts from TRYBE: a limit that narrows nothing is not offered. */}
+              {!noCreators && numberBox('maxCreators', 'Up to', 'creators', 'Fewer creators means more of the budget for you.')}
               {numberBox('maxVideos', 'Up to', 'videos approved', 'Few videos approved so far: room for you.')}
             </>)}
             {group('The brand', <>
@@ -226,15 +227,28 @@ export function FinderFilterNote({ hiddenBy, blankBy, unknownBy }: { hiddenBy?: 
     }
     return `${n.toLocaleString()} by ${FILTER_WORDS[f]}`
   }
-  // AD SPEND IS NOT TRYBE'S TO GIVE: it comes from Meta's Ad Library, read
-  // by SCOUT, so its "not known" says that, apart from TRYBE's own blanks.
-  const spendUnknown = unk.find(([f]) => f === 'spending')?.[1] ?? 0
-  const trybeUnk = unk.filter(([f]) => f !== 'spending')
+  // EACH "NOT KNOWN" NAMES WHERE IT COMES FROM (TRYBE review, 2026-10-24):
+  // ad spend from Meta's Ad Library, TikTok Shop from the brand's website,
+  // how fast it decides from members' results, the payout tier from MVP's
+  // log. Only TRYBE's own blanks are TRYBE's, and only those are checked by
+  // opening the brand on TRYBE.
+  const brands = (n: number) => `${n.toLocaleString()} brand${n === 1 ? '' : 's'}`
+  const SOURCE: Partial<Record<FilterId, (n: number) => string>> = {
+    spending: (n) => `MVP has not counted Meta ads for ${brands(n)} yet.`,
+    tiktokShop: (n) => `MVP has not read the website of ${brands(n)} yet, which is where TikTok Shop shows.`,
+    fastReview: (n) => `No MVP member has had videos decided by ${brands(n)} yet, so how fast they decide is not known.`,
+    tierUp: (n) => `MVP\u2019s log of TRYBE\u2019s payout tiers could not be read for ${brands(n)}.`,
+    onAmazon: (n) => `Your Amazon videos or Creator Connections could not be read just now, so ${brands(n)} not found there may still be on Amazon.`,
+    openOnly: (n) => `TRYBE gives no creator count and no recent videos for ${brands(n)}, so how crowded they are is not known.`,
+  }
+  const sourced = unk.filter(([f]) => SOURCE[f])
+  const trybeUnk = unk.filter(([f]) => !SOURCE[f])
   return (
     <p className="text-[12px] mt-3" style={soft}>
       {hid.length > 0 && <>Hidden by your filters: {hid.map(hidWords).join(', ')}. </>}
-      {spendUnknown > 0 && <>MVP has not counted Meta ads for {spendUnknown.toLocaleString()} brand{spendUnknown === 1 ? '' : 's'} yet, so {spendUnknown === 1 ? 'it is' : 'they are'} listed after the ones it knows are spending. </>}
-      {trybeUnk.length > 0 && <>TRYBE&rsquo;s list does not give {trybeUnk.map(([f, n]) => `the ${FILTER_WORDS[f]} of ${n.toLocaleString()} brand${n === 1 ? '' : 's'}`).join(', ')}, so {trybeUnk.length === 1 && trybeUnk[0][1] === 1 ? 'it is' : 'they are'} listed after the ones that pass. Open a brand on TRYBE to check.</>}
+      {sourced.map(([f, n]) => <span key={f}>{SOURCE[f]!(n)} </span>)}
+      {trybeUnk.length > 0 && <>TRYBE&rsquo;s list does not give {trybeUnk.map(([f, n]) => `${FILTER_WORDS[f]} for ${brands(n)}`).join(', ')}. Open a brand on TRYBE to check. </>}
+      {unk.length > 0 && <>Brands not known for a filter are listed after the ones that pass.</>}
     </p>
   )
 }
@@ -641,7 +655,7 @@ export function StaticsChip({ on }: { on: boolean | null | undefined }) {
 export type PresetId = 'untapped' | 'new' | 'spenders' | 'fast' | 'pays' | 'budgets'
 export const PRESETS: Array<{ id: PresetId; label: string; says: string; filters: FinderFilters; sort: 'picks' | 'pay' | 'spend' }> = [
   { id: 'untapped', label: 'Untapped', says: 'Spending on ads (Meta ads or TRYBE’s Top 100) with 30 creators or fewer: the budget is there and few creators share it.', filters: { ...NO_FILTERS, spending: true, maxCreators: 30 }, sort: 'picks' },
-  { id: 'new', label: 'New this week', says: 'New on TRYBE, best bets first. Get in early and become one of their top creators.', filters: { ...NO_FILTERS, newOnly: true }, sort: 'picks' },
+  { id: 'new', label: 'New on TRYBE', says: 'Joined TRYBE in the last 30 days, or new to MVP in the last 14, best bets first. Get in early and become one of their top creators.', filters: { ...NO_FILTERS, newOnly: true }, sort: 'picks' },
   { id: 'spenders', label: 'Big spenders', says: 'Every brand spending on ads now, best bets first.', filters: { ...NO_FILTERS, spending: true }, sort: 'picks' },
   { id: 'fast', label: 'Fast deciders', says: 'Brands that decide videos in 5 days or less, from MVP members’ results.', filters: { ...NO_FILTERS, fastReview: true }, sort: 'picks' },
   { id: 'pays', label: 'Pays $25+ a video', says: 'At least $25 per approved video, from your results, members’ results or its fee. A brand with no pay figure is left out. Highest first.', filters: { ...NO_FILTERS, minPerVideo: 25 }, sort: 'pay' },
@@ -655,7 +669,9 @@ export function FinderPresets({ filters, sort, onPick, noCreators = false }: { f
   return (
     <div className="flex flex-wrap items-center gap-1.5 mb-2.5" role="group" aria-label="Quick lists">
       <span className="text-[12px] mr-1" style={soft}>Quick lists</span>
-      {PRESETS.map((p) => (
+      {/* Untapped is Big spenders plus a creator limit: with no creator
+          counts from TRYBE it would list the same brands, so it is not offered. */}
+      {PRESETS.filter((p) => !(noCreators && p.filters.maxCreators)).map((p) => (
         <button key={p.id} onClick={() => onPick(on === p.id ? null : p)} aria-pressed={on === p.id} title={noCreators && p.filters.maxCreators ? `${p.says} TRYBE\u2019s brand list gives no creator counts yet, so the creator limit cannot narrow it.` : p.says}
           className={chip} style={on === p.id ? { background: GREEN, borderColor: GREEN, color: '#fff' } : { borderColor: 'var(--border-2)' }}>{p.label}</button>
       ))}

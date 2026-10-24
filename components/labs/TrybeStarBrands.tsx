@@ -94,10 +94,15 @@ export default function TrybeStarBrands({ canCount, cards, scoutVersion, hasCore
   const left = useRef(false)
   useEffect(() => () => { left.current = true }, [])
 
+  // Only the newest load lands: an older answer for a filter already
+  // changed is dropped, the way Find brands' live list does it.
+  const reqId = useRef(0)
   const load = useCallback(async () => {
+    const id = ++reqId.current
     setLoading(true); setError(null)
     try {
       const d = await api({ action: 'browse', categories: [], keywords: [], limit: 40, sort: 'adsPerCreator', payType: 'any', includeMine: false, filters: { ...NO_FILTERS, minRating, maxCreators } })
+      if (id !== reqId.current) return
       const a = d as Answer
       if (minRating && a.readCounts && a.readCounts.ratingKnown === 0 && (a.readCounts.looked ?? 0) > 0) {
         setRatingMissing(a.readCounts.looked ?? 0)
@@ -105,9 +110,12 @@ export default function TrybeStarBrands({ canCount, cards, scoutVersion, hasCore
         return
       }
       setData(a)
-    } catch (e) { setError(e instanceof Error ? e.message : 'The list could not be read.') }
-    finally { setLoading(false) }
+    } catch (e) { if (id === reqId.current) setError(e instanceof Error ? e.message : 'The list could not be read.') }
+    finally { if (id === reqId.current) setLoading(false) }
   }, [minRating, maxCreators])
+  // Count all reloads through this, so a filter changed mid-run is used.
+  const loadRef = useRef(load)
+  loadRef.current = load
   useEffect(() => { const t = window.setTimeout(() => void load(), 350); return () => window.clearTimeout(t) }, [load])
 
   async function countMeta(all = false) {
@@ -119,9 +127,9 @@ export default function TrybeStarBrands({ canCount, cards, scoutVersion, hasCore
     stopRef.current = false
     setNote(null); setCounting({ done: 0, total: todo.length, all })
     try {
-      const run = await readMetaAdsAll(todo.map((b) => ({ brandId: b.brand_id, name: b.name })), { cards, onProgress: (done, total) => setCounting({ done, total, all }), gone: () => left.current, stop: () => stopRef.current, onChunk: all ? () => load() : undefined })
+      const run = await readMetaAdsAll(todo.map((b) => ({ brandId: b.brand_id, name: b.name })), { cards, onProgress: (done, total) => setCounting({ done, total, all }), gone: () => left.current, stop: () => stopRef.current, onChunk: all ? () => loadRef.current() : undefined })
       setNote(metaAdsWords(run, scoutVersion))
-      await load()
+      await loadRef.current()
     } catch (e) {
       setNote({ tone: 'bad', text: e instanceof Error ? e.message : 'The Meta ad counts could not be saved.' })
     } finally { setCounting(null) }
@@ -211,7 +219,7 @@ export default function TrybeStarBrands({ canCount, cards, scoutVersion, hasCore
                       {todo > COUNT_PER_PRESS && <button onClick={() => void countMeta(true)} className={btn} style={{ border: `1px solid ${COLOR}`, color: COLOR }}>Count all {todo.toLocaleString()} (about {Math.ceil((todo * 10) / 60)} min)</button>}
                     </>
                 : <span style={soft}>SCOUT counts Meta ads in this Chrome. Allow SCOUT on TRYBE (top of this page) to count the rest.</span>}
-              <span className="text-[12px]" style={soft}>Counts are kept for every MVP member for a week.</span>
+              <span className="text-[12px]" style={soft}>Each count is shared with every MVP member, counted again after a week, and used for up to four weeks.</span>
             </div>
           )}
           {note && <p style={{ color: note.tone === 'ok' ? GREEN : note.tone === 'warn' ? AMBER : RED }}>{note.text}</p>}
@@ -264,7 +272,7 @@ export default function TrybeStarBrands({ canCount, cards, scoutVersion, hasCore
                             ? <><span className="text-[20px] font-extrabold tabular-nums" style={{ color: ratio >= 5 ? GREEN : 'var(--text)' }}>{ratio.toLocaleString('en-US')}</span><span className="text-[12.5px]" style={{ color: 'var(--text-2)' }}>Meta ads per creator</span></>
                             : perRev != null
                               ? <><span className="text-[20px] font-extrabold tabular-nums" style={{ color: perRev >= 5 ? GREEN : 'var(--text)' }}>{perRev.toLocaleString('en-US')}</span><span className="text-[12.5px]" style={{ color: 'var(--text-2)' }}>Meta ads per review</span></>
-                              : <><span className="text-[20px] font-extrabold tabular-nums" style={{ color: (b.meta_ads ?? 0) >= 50 ? GREEN : 'var(--text)' }}>{(b.meta_ads ?? 0).toLocaleString('en-US')}</span><span className="text-[12.5px]" style={{ color: 'var(--text-2)' }}>Meta ad{b.meta_ads === 1 ? '' : 's'} running now, no reviews yet</span></>}
+                              : <><span className="text-[20px] font-extrabold tabular-nums" style={{ color: (b.meta_ads ?? 0) >= 50 ? GREEN : 'var(--text)' }}>{(b.meta_ads ?? 0).toLocaleString('en-US')}</span><span className="text-[12.5px]" style={{ color: 'var(--text-2)' }}>Meta ad{b.meta_ads === 1 ? '' : 's'} running when counted, no reviews yet</span></>}
                         <span className="text-[12.5px] inline-flex items-center gap-1" style={soft}>
                           {known && !notOwn && (ratio != null || perRev != null) ? `${(b.meta_ads ?? 0).toLocaleString('en-US')} ads running \u00b7 ` : ''}
                           {b.total_creators != null
