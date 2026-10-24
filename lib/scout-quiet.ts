@@ -27,8 +27,9 @@ export const QUIET_JOBS: Array<{ id: QuietJob; label: string; what: string; test
 
 /** Quiet for every member. Turn a job on only after admin has tried it.
  *  studio: Seb tried Bulk Amazon upload out of sight, 2026-10-24: "tested
- *  this and it worked". */
-export const QUIET_FOR_EVERYONE: Record<QuietJob, boolean> = { pin: false, cc: false, amazon: false, studio: true }
+ *  this and it worked". pin: Seb tried a comment pin out of sight on SCOUT
+ *  1.53.7, 2026-10-24: "this was tested and it works". */
+export const QUIET_FOR_EVERYONE: Record<QuietJob, boolean> = { pin: true, cc: false, amazon: false, studio: true }
 
 /** Admin's own tries, in this browser only. */
 export const QUIET_TEST_KEY = 'mvp_scout_quiet_test'
