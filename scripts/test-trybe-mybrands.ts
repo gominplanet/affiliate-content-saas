@@ -140,7 +140,7 @@ check('the plan route uses the winners and says when a plan is not kept', /winne
 {
   const MB = read('components/labs/TrybeMyBrands.tsx')
   check('each brand links to its Meta Ad Library, named as such', /href=\{adLibraryUrl\(b\.name\)\}/.test(MB) && />Meta Ad Library <ExternalLink/.test(MB))
-  check('each brand says from TRYBE whether your videos run as ads, and what was spent', /<AdsLine b=\{b\} ads=\{ads\.read\}/.test(MB) && /const \{ totals, videos \} = brandAdTotals\(ads\.videos, b\)/.test(MB) && /videos\.filter\(\(v\) => v\.live === true\)/.test(MB) && /useTrybeAds\(canRead, '30d'\)/.test(MB))
+  check('each brand says from TRYBE whether your videos run as ads, and what was spent', /<AdsLine b=\{b\} ads=\{ads\.read\}/.test(MB) && /const \{ totals, videos \} = brandAdTotals\(ads\.videos, b\)/.test(MB) && /videos\.filter\(\(v\) => v\.live === true\)/.test(MB) && /useTrybeAds\(canRead && readAt != null, '30d'\)/.test(MB))
   check('a read it could not do says so, never "none"', /TRYBE’s ad numbers were not read\./.test(MB) && /cannot say whether your videos run as ads/.test(MB))
 }
 

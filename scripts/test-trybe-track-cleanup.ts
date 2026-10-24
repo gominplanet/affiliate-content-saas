@@ -90,5 +90,22 @@ check('only the MVP team clears "left" for everyone', /const healed = tier === '
 // Pay.
 check('a flat fee plus a percent on one line is two terms', JSON.stringify(readTerms(['$25 per approved video plus 5% of sales']).terms.map((t) => t.kind)) === '["flat","gmv"]')
 
+// MY BRANDS LOADS (Seb, 2026-10-24: "MVP could not read your brands on
+// TRYBE: timeout" ... "i also do not have cole's rule being stated like
+// this"). TRYBE reads go a few at a time and are shared, the brand list comes
+// before the ad numbers, a timeout is said in words, and no member screen
+// names Cole: his advice is said in MVP's own voice.
+{
+  const EF = read('lib/extension-frame.ts')
+  check('TRYBE reads go a few at a time, shared, asked once more on a timeout', /const TRYBE_READS_AT_ONCE = 3/.test(EF) && /const kept = trybeInFlight\.get\(path\)/.test(EF) && /return !r\.ok && TRYBE_ASK_AGAIN\(r\) \? once\(\) : r/.test(EF))
+  check('a write is never queued or repeated, and ends sharing of earlier reads', /if \(method !== 'GET'\) \{ trybeInFlight\.clear\(\); return once\(\) \}/.test(EF))
+  check('My brands reads the ad numbers after the brand list', /useTrybeAds\(canRead && readAt != null, '30d'\)/.test(MB))
+  check('a timeout is said in words', /e === 'timeout' \? 'TRYBE did not answer within 75 seconds, asked twice/.test(MB))
+  const { readdirSync, statSync } = require('node:fs') as typeof import('node:fs')
+  const walk = (d: string): string[] => readdirSync(d).flatMap((f) => { const p = `${d}/${f}`; return statSync(p).isDirectory() ? walk(p) : /\.tsx$/.test(f) ? [p] : [] })
+  const named = [...walk('components'), ...walk('app')].flatMap((f) => read(f).split('\n').filter((l) => /\bCole\b/.test(l) && !/^\s*(\/\/|\*|\/\*|\{\/\*)/.test(l)).map((l) => `${f}: ${l.trim().slice(0, 60)}`))
+  check(`no member screen names Cole${named.length ? `: ${named.join(' | ')}` : ''}`, named.length === 0)
+}
+
 if (fails.length) { console.error('trybe-track-cleanup failed:\n - ' + fails.join('\n - ')); process.exit(1) }
 console.log('✅ trybe-track-cleanup: members\' numbers stay private and honest, unread is never zero, Drop rests on read numbers')

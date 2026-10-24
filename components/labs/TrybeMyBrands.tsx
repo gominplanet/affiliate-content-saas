@@ -46,6 +46,9 @@ interface SubRead { subs: Submission[]; error: string | null; complete: boolean 
 const apiWords = (e: string | undefined, status?: number) =>
   e === 'not-allowed' ? 'This needs SCOUT 1.46.0 or newer. Update SCOUT, then reload this page.'
     : status === 401 || status === 403 ? 'TRYBE says you are signed out. Sign in to TRYBE in this browser, then press Read again.'
+    // SCOUT's own word for a read that ran past 75 seconds, asked twice.
+    : e === 'timeout' ? 'TRYBE did not answer within 75 seconds, asked twice. Press Read again; if it keeps happening, reload your TRYBE tab.'
+    : e === 'no-answer-from-page' ? 'your TRYBE tab did not answer. Reload your TRYBE tab, then press Read again.'
       : `${e || 'SCOUT did not answer.'}${status ? ` (TRYBE answered ${status})` : ''}`
 
 export async function readBrandSubs(brandId: string): Promise<SubRead> {
@@ -174,7 +177,9 @@ export default function TrybeMyBrands({ canRead, canSend, convos, me, myName, is
   const amz = useTrybeAmazon(amzBrands, [], amzBrands.length > 0)
   // TRYBE's own numbers for each of your videos, the last 30 days: which run
   // as ads, and what the brand spent on them (the AdsLine on each brand).
-  const ads = useTrybeAds(canRead, '30d')
+  // Read after your brand list, not alongside it: the list is what the page
+  // waits on, and the ad numbers are several reads of their own.
+  const ads = useTrybeAds(canRead && readAt != null, '30d')
 
   useEffect(() => {
     if (!readAt || loading || !filled.length || sentFor.current === readAt) return
@@ -252,7 +257,7 @@ export default function TrybeMyBrands({ canRead, canSend, convos, me, myName, is
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
         <p className="text-[13px] flex-1 min-w-[220px]" style={soft}>
-          Read from your TRYBE account through SCOUT{readAt ? ` at ${new Date(readAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}` : ''}. Cole&rsquo;s rule: put your videos into the 4 or 5 brands that pay and approve, and stop filming for the ones that don&rsquo;t.
+          Read from your TRYBE account through SCOUT{readAt ? ` at ${new Date(readAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}` : ''}. Put your videos into the 4 or 5 brands that pay you and approve them, and stop filming for the ones that don&rsquo;t.
         </p>
         {/* Read again reads the ad lines too: their error says to press it. */}
         <button onClick={() => { ads.reload(); void load() }} disabled={loading} className="inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-[12px] font-semibold disabled:opacity-50" style={{ border: '1px solid var(--border)' }}>

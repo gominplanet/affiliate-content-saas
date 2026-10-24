@@ -1216,8 +1216,42 @@ export interface TrybeApiResult { ok: boolean; status?: number; json?: unknown; 
  *  addresses, reading, posting a message or marking read. Resolves, never
  *  throws. */
 export async function requestTrybeApi(method: 'GET' | 'POST' | 'DELETE', path: string, body?: unknown): Promise<TrybeApiResult> {
-  const res = await sendToExtension<TrybeApiResult>({ type: 'MVP_TRYBE_API', method, path, body: body === undefined ? null : body }, 85_000)
-  return res ? { ...res, error: trybeTabError(res.error) } : { ok: false, error: 'SCOUT did not answer.' }
+  const once = async (): Promise<TrybeApiResult> => {
+    const res = await sendToExtension<TrybeApiResult>({ type: 'MVP_TRYBE_API', method, path, body: body === undefined ? null : body }, 85_000)
+    return res ? { ...res, error: trybeTabError(res.error) } : { ok: false, error: 'SCOUT did not answer.' }
+  }
+  // Writes are never queued, shared or repeated, and a read that started
+  // before a write is never handed to a read after it (a reply, then the
+  // conversation read again to confirm it).
+  if (method !== 'GET') { trybeInFlight.clear(); return once() }
+  const kept = trybeInFlight.get(path)
+  if (kept) return kept
+  const p: Promise<TrybeApiResult> = trybeSlot(async () => {
+    const r = await once()
+    return !r.ok && TRYBE_ASK_AGAIN(r) ? once() : r
+  }).finally(() => { if (trybeInFlight.get(path) === p) trybeInFlight.delete(path) })
+  trybeInFlight.set(path, p)
+  return p
+}
+
+// THE PAGE'S TRYBE READS, QUEUED (Seb, 2026-10-24: "MVP could not read your
+// brands on TRYBE: timeout"). My brands opened with up to eight reads at once
+// through one TRYBE tab (the brand list, the same 30 days for Retainers and
+// the monthly goal, the ad numbers for two periods), and the list everything
+// waits on ran past SCOUT's 75 seconds. Reads now go a few at a time, a read
+// already on its way is shared instead of sent twice, and one that timed out,
+// got no answer from the page or met a busy TRYBE is asked once more.
+const TRYBE_READS_AT_ONCE = 3
+let trybeReading = 0
+const trybeWaiting: Array<() => void> = []
+const trybeInFlight = new Map<string, Promise<TrybeApiResult>>()
+const TRYBE_ASK_AGAIN = (r: TrybeApiResult) => r.error === 'timeout' || r.error === 'no-answer-from-page' || r.status === 502 || r.status === 503 || r.status === 504
+/** One read at a time per slot; a finished read hands its slot straight to
+ *  the next one waiting, so no more than TRYBE_READS_AT_ONCE ever run. */
+async function trybeSlot<T>(run: () => Promise<T>): Promise<T> {
+  if (trybeReading < TRYBE_READS_AT_ONCE) trybeReading++
+  else await new Promise<void>((r) => trybeWaiting.push(r))
+  try { return await run() } finally { const next = trybeWaiting.shift(); if (next) next(); else trybeReading-- }
 }
 
 export interface TrybePutResult { ok: boolean; status?: number; etag?: string | null; bytes?: number; error?: string | null; detail?: string }

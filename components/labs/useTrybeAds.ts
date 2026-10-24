@@ -48,7 +48,9 @@ function whyNot(r: TrybeApiResult): string {
   const j = r.json as Record<string, unknown> | null | undefined
   const said = j && typeof j === 'object' ? [j.message, j.error, j.detail].find((x) => typeof x === 'string' && x.trim()) as string | undefined : undefined
   const words = (said || (r.text || '').replace(/<[^>]+>/g, ' ')).replace(/\s+/g, ' ').trim().slice(0, 140)
-  return r.status ? `TRYBE answered ${r.status}${words ? `: ${words}` : ''}` : (r.error || 'SCOUT did not answer')
+  return r.status ? `TRYBE answered ${r.status}${words ? `: ${words}` : ''}`
+    : r.error === 'timeout' ? 'TRYBE did not answer within 75 seconds, asked twice'
+    : (r.error || 'SCOUT did not answer')
 }
 
 /** THE AD VIDEOS, ASKED MORE THAN ONE WAY. TRYBE needs a sort: it answered
