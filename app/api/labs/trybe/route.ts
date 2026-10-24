@@ -35,7 +35,7 @@ import { winnersForPlan, winnersBlock, readScript } from '@/lib/trybe-mybrands'
 import { directoryChanges, adsChange, poolBrands, type Change, type MemberRow } from '@/lib/trybe-changes'
 import { topDayKey, topDayOf, TOP_DAYS_KEEP } from '@/lib/trybe-topdays'
 import { activeKeys, activeRows, activeBy, rankActive, categoryCounts, latestTierChanges, type ActiveBy, type ActiveRow } from '@/lib/trybe-active'
-import { GALLERY_KEY, readCardsBody, readAdCard, mergeGallery, type Gallery, type MetaAd, brandsWithAds, GALLERY_MAX } from '@/lib/trybe-adsgallery'
+import { GALLERY_KEY, readCardsBody, readAdCard, mergeGallery, type Gallery, type MetaAd, brandsWithAds, GALLERY_MAX, ownAd } from '@/lib/trybe-adsgallery'
 import {
   cleanScript, toTranscribe, coverageWords, openingOf, bestRank, whyNoWords, noWordsSentence, pickExamples, examplesBlock, type TopScript,
 } from '@/lib/trybe-scripts'
@@ -919,7 +919,11 @@ export async function POST(request: Request) {
     const { data: gRow, error: gErr } = await admin.from('trybe_directory_meta').select('value').eq('key', GALLERY_KEY).maybeSingle()
     if (gErr) return NextResponse.json({ error: gErr.message }, { status: 500 })
     const g = (gRow?.value || null) as Gallery | null
-    const ads = Array.isArray(g?.ads) ? g!.ads : []
+    // Only the brand's own ads (lib/trybe-adsgallery ownAd): ads by other
+    // advertisers that mention its name were kept before 2026-10-24, and are
+    // left out here, counted, until the next read replaces them.
+    const kept = Array.isArray(g?.ads) ? g!.ads : []
+    const ads = kept.filter(a => ownAd(a, a.brand))
     const ids = Array.from(new Set(ads.map(a => a.brandId))).slice(0, 500)
     const cats: Record<string, string[]> = {}
     for (let i = 0; i < ids.length; i += 200) {
@@ -947,7 +951,7 @@ export async function POST(request: Request) {
       // Every brand read on Meta, and how many of those had ads running: the
       // gallery keeps only the newest GALLERY_MAX cards, so the two differ.
       brandsRead: g ? Object.keys(g.brands || {}).length : 0, brandsWithAds: brandsWithAds(g), keepMax: GALLERY_MAX,
-      ads, categories: cats, top,
+      ads, categories: cats, top, notOwn: kept.length - ads.length,
     })
   }
 
@@ -1225,6 +1229,7 @@ export async function POST(request: Request) {
     // running whose cards SCOUT could not read keeps the ads kept before; a
     // brand running none has its old ones taken off.
     let galleryAds = 0, cardsMissed = 0
+    let notOwnAds = 0
     const withCards = list.filter(x => Array.isArray(x.cards))
     if (tier === 'admin' && withCards.length) {
       try {
@@ -1239,13 +1244,15 @@ export async function POST(request: Request) {
           const ads = readCardsBody(x.cards).map(c => readAdCard(c, id, nm, now)).filter((a): a is MetaAd => !!a)
           if (!ads.length && n !== 0) { cardsMissed++; continue }
           g = mergeGallery(g, id, nm, ads, n, now)
-          galleryAds += ads.length
+          // Only the brand's own go in (lib/trybe-adsgallery ownAd).
+          const own = ads.filter(a => ownAd(a, nm)).length
+          galleryAds += own; notOwnAds += ads.length - own
           changed = true
         }
         if (changed && g) await admin.from('trybe_directory_meta').upsert({ key: GALLERY_KEY, value: g, updated_at: now })
       } catch { /* the counts are saved either way */ }
     }
-    return NextResponse.json({ ok: true, saved, kept, galleryAds, cardsMissed, galleryKept: tier === 'admin' })
+    return NextResponse.json({ ok: true, saved, kept, galleryAds, notOwnAds, cardsMissed, galleryKept: tier === 'admin' })
   }
 
   if (action === 'kickoff' || action === 'followup') {

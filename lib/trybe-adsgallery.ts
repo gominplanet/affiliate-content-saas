@@ -12,6 +12,7 @@
 // (scripts/test-trybe-board.ts).
 
 import { openingLine } from '@/lib/trybe-working'
+import { brandKey } from '@/lib/brand-normalize'
 
 /** The meta table row the gallery lives in. */
 export const GALLERY_KEY = 'meta_gallery'
@@ -47,6 +48,8 @@ export interface MetaAd {
    *  wrote it. Absent on ads read before 2026-10-24. */
   cta?: string | null
   link?: string | null
+  /** The brand named in "Paid partnership with ...", for a creator's ad. */
+  partner?: string | null
 }
 
 export interface Gallery {
@@ -58,6 +61,8 @@ export interface Gallery {
 
 const BOILER = /^(active|inactive|platforms|see ad details|see summary details|open drop-?down|this ad has multiple versions|sponsored|library id:.*|started running on.*|total active time.*|\d+ ads? use this creative and text\.?|eu transparency.*|see ad|ad details)$/i
 const CTA = /^(shop now|learn more|sign up|order now|get offer|buy now|book now|download|watch more|send message|subscribe|contact us|apply now|see menu|get quote|install now|play game|listen now|get started|donate now|see more|get directions|call now|request time|use app|send whatsapp message)$/i
+/** The video player's clock in a card's words ("0:00 / 0:43"), never the ad's. */
+const PLAYER_CLOCK = /\s*\b\d{1,2}:\d{2}(?::\d{2})?\s*\/\s*\d{1,2}:\d{2}(?::\d{2})?\b/g
 /** Meta writes a link's domain in capitals ("HUMEHEALTH.COM"). */
 const DOMAIN = /^[A-Z0-9][A-Z0-9.-]*\.[A-Z]{2,}(\/\S*)?$/
 
@@ -99,7 +104,7 @@ export function adDate(text: string | null | undefined): string | null {
 
 /** One ad from the words of its card. Null when the card has no Library ID. Pure. */
 export function readAdCard(c: AdCardIn, brandId: string, brand: string, now: string): MetaAd | null {
-  const lines = String(c.text || '').split('\n').map((l) => l.replace(/\s+/g, ' ').trim()).filter(Boolean)
+  const lines = String(c.text || '').split('\n').map((l) => l.replace(PLAYER_CLOCK, '').replace(/\s+/g, ' ').trim()).filter(Boolean)
   const id = lines.map((l) => l.match(/^Library ID:\s*(\d{6,})/i)?.[1]).find(Boolean)
   if (!id) return null
   const startedText = lines.map((l) => l.match(/^Started running on\s+(.+?)(?:\s+[·•-]\s+.*)?$/i)?.[1]).find(Boolean) ?? null
@@ -124,7 +129,38 @@ export function readAdCard(c: AdCardIn, brandId: string, brand: string, now: str
     paid: /paid partnership/i.test(c.text), video: c.video === true, versions: /multiple versions/i.test(c.text),
     preview: c.preview ? safePreview(c.preview) : null, readAt: now,
     cta: cta ? cta.slice(0, 40) : null, link: link ? link.slice(0, 80) : null,
+    partner: lines.map((l) => l.match(/^paid partnership with\s+(.+)$/i)?.[1]).find(Boolean)?.slice(0, 120) ?? null,
   }
+}
+
+// THE BRAND'S OWN ADS ONLY (Seb, 2026-10-24: "are these brands on trybe? how
+// does mvp check?"). The brands come from TRYBE's own Top 100, but SCOUT finds
+// their ads by searching Meta's Ad Library for the name as words, so a brand
+// called Newly, Ridge or Fuego brought in a health club's, a boutique's and a
+// skate shop's ads. An ad is the brand's when the page running it starts with
+// the brand's name ("GloMelanin", "BYLT Basics"; not "Blue Ridge Bakery" for
+// Ridge), when its site is the brand's ("humehealth.com"), or when a creator
+// runs it in paid partnership with the brand. Anything else is left out.
+
+/** Whether these words start with the brand's name, in whole words ("The" aside). Pure. */
+export function startsWithBrand(text: string | null | undefined, brand: string): boolean {
+  const key = brandKey(brand).replace(/^the(?=.{3})/, '')
+  if (key.length < 3) return false
+  const tokens = String(text || '').toLowerCase().split(/[^a-z0-9]+/).filter(Boolean)
+  if (tokens[0] === 'the') tokens.shift()
+  let acc = ''
+  for (const t of tokens) { acc += t; if (acc === key) return true; if (acc.length >= key.length) return false }
+  return false
+}
+
+/** The ad is the brand's own: its page, its site, or a creator's paid partnership with it. Pure. */
+export function ownAd(a: Pick<MetaAd, 'page' | 'link' | 'partner'>, brand: string): boolean {
+  if (startsWithBrand(a.page, brand)) return true
+  if (a.partner && startsWithBrand(a.partner, brand)) return true
+  const site = String(a.link || '').toLowerCase().replace(/^https?:\/\//, '').replace(/^www\./, '').split(/[/?#]/)[0]
+  const base = site.split('.').slice(0, -1).join('')
+  const key = brandKey(brand)
+  return key.length >= 3 && !!base && (base === key || base === `${key}shop` || base === `shop${key}` || base === `get${key}` || base === `try${key}`)
 }
 
 /** The gallery with this brand's ads read now in place of its older ones.
@@ -134,8 +170,8 @@ export function readAdCard(c: AdCardIn, brandId: string, brand: string, now: str
 export function mergeGallery(had: Gallery | null | undefined, brandId: string, brandName: string, ads: MetaAd[], count: number | null, now: string): Gallery {
   const nowT = Date.parse(now)
   const fresh = (a: MetaAd) => !Number.isFinite(nowT) || !Number.isFinite(Date.parse(a.readAt)) || nowT - Date.parse(a.readAt) < GALLERY_FRESH_DAYS * 86_400_000
-  const keep = (had?.ads || []).filter((a) => a.brandId !== brandId && fresh(a))
-  const mine = Array.from(new Map(ads.filter((a) => a.brandId === brandId).map((a) => [a.id, a])).values())
+  const keep = (had?.ads || []).filter((a) => a.brandId !== brandId && fresh(a) && ownAd(a, a.brand))
+  const mine = Array.from(new Map(ads.filter((a) => a.brandId === brandId && ownAd(a, a.brand || brandName)).map((a) => [a.id, a])).values())
     .sort((a, b) => (ranDays(b) ?? -1) - (ranDays(a) ?? -1)).slice(0, ADS_PER_BRAND)
   const all = [...mine, ...keep].sort((a, b) => (ranDays(b) ?? -1) - (ranDays(a) ?? -1) || b.readAt.localeCompare(a.readAt)).slice(0, GALLERY_MAX)
   const brands = { ...(had?.brands || {}), [brandId]: { name: brandName, at: now, count } }
@@ -158,7 +194,9 @@ export function ranDays(a: Pick<MetaAd, 'started' | 'readAt'>, now = Date.now())
 /** The ad's closing sentence, often its offer or call to action, when it is
  *  not also its opening. Pure. */
 export function closingLine(body: string): string | null {
-  const parts = String(body || '').replace(/\s+/g, ' ').trim().match(/[^.!?]+[.!?]*/g) || []
+  // Sentences end at . ! or ? before a space, so "straye.com" stays one word;
+  // the player's clock ("0:00 / 0:43") is never part of the ad.
+  const parts = String(body || '').replace(PLAYER_CLOCK, '').replace(/\s+/g, ' ').trim().split(/(?<=[.!?])\s+/).filter(Boolean)
   const last = (parts[parts.length - 1] || '').trim()
   return parts.length > 1 && last.length > 3 ? last.slice(0, 160) : null
 }

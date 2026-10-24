@@ -27,6 +27,8 @@ export interface MetaAdsRun {
    *  the longest running (older ones send the first 8 Meta shows). */
   looked: number
   picked: boolean
+  /** Ads SCOUT copied that another advertiser ran, mentioning the brand's name: left out. */
+  notOwn: number
   /** Counts that are not the brand's: at Meta's most, or mostly other advertisers' ads. */
   capped: number
   mixed: number
@@ -38,16 +40,16 @@ export interface MetaAdsRun {
   kept: number
 }
 
-async function save(results: Array<{ brandId: string; name: string; count: number; cards?: unknown; own?: number; sample?: number }>): Promise<{ galleryAds: number; cardsMissed: number; saved: number; kept: number }> {
+async function save(results: Array<{ brandId: string; name: string; count: number; cards?: unknown; own?: number; sample?: number }>): Promise<{ galleryAds: number; cardsMissed: number; saved: number; kept: number; notOwn: number }> {
   const r = await fetch('/api/labs/trybe', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'meta_ads', results }), signal: AbortSignal.timeout(60_000) })
   const d = await r.json().catch(() => ({}))
   if (!r.ok) throw new Error(d.error || `Saving the Meta ad counts failed (${r.status})`)
   // An older server says nothing of saved: every count it took is saved.
-  return { galleryAds: Number(d.galleryAds) || 0, cardsMissed: Number(d.cardsMissed) || 0, saved: typeof d.saved === 'number' ? d.saved : results.length, kept: Number(d.kept) || 0 }
+  return { galleryAds: Number(d.galleryAds) || 0, cardsMissed: Number(d.cardsMissed) || 0, saved: typeof d.saved === 'number' ? d.saved : results.length, kept: Number(d.kept) || 0, notOwn: Number(d.notOwnAds) || 0 }
 }
 
 export async function readMetaAds(brands: Array<{ brandId: string; name: string }>, opts: { cards?: boolean; onProgress?: (done: number, total: number) => void; gone?: () => boolean; stop?: () => boolean } = {}): Promise<MetaAdsRun> {
-  const run: MetaAdsRun = { total: brands.length, read: 0, noCount: 0, couldNot: 0, late: 0, notEnglish: '', stopped: '', cardsAsked: !!opts.cards, cardsSent: false, galleryAds: 0, cardsMissed: 0, looked: 0, picked: false, capped: 0, mixed: 0, doubled: 0, saved: 0, kept: 0 }
+  const run: MetaAdsRun = { total: brands.length, read: 0, noCount: 0, couldNot: 0, late: 0, notEnglish: '', stopped: '', cardsAsked: !!opts.cards, cardsSent: false, galleryAds: 0, cardsMissed: 0, looked: 0, picked: false, notOwn: 0, capped: 0, mixed: 0, doubled: 0, saved: 0, kept: 0 }
   for (let i = 0; i < brands.length; i += 8) {
     if (opts.gone?.()) { run.stopped = 'You left the page.'; break }
     if (opts.stop?.()) { run.stopped = 'Stopped. Press again to carry on where it stopped.'; break }
@@ -84,7 +86,7 @@ export async function readMetaAds(brands: Array<{ brandId: string; name: string 
       else if (/^could-not-open/.test(x.error || '')) run.couldNot++
       else run.noCount++
     }
-    if (ok.length) { const s = await save(ok); run.galleryAds += s.galleryAds; run.cardsMissed += s.cardsMissed; run.saved += s.saved; run.kept += s.kept }
+    if (ok.length) { const s = await save(ok); run.galleryAds += s.galleryAds; run.cardsMissed += s.cardsMissed; run.saved += s.saved; run.kept += s.kept; run.notOwn += s.notOwn }
     run.read += ok.length
     run.late += (r.notReached || []).length
     opts.onProgress?.(Math.min(brands.length, i + 8), brands.length)
@@ -99,11 +101,11 @@ export async function readMetaAds(brands: Array<{ brandId: string; name: string 
  *  read. A stop, a page left or a SCOUT that cannot go on ends it; what was
  *  counted is kept. */
 export async function readMetaAdsAll(brands: Array<{ brandId: string; name: string }>, opts: { cards?: boolean; onProgress?: (done: number, total: number) => void; gone?: () => boolean; stop?: () => boolean; onChunk?: () => Promise<void> | void } = {}): Promise<MetaAdsRun> {
-  const all: MetaAdsRun = { total: brands.length, read: 0, noCount: 0, couldNot: 0, late: 0, notEnglish: '', stopped: '', cardsAsked: !!opts.cards, cardsSent: false, galleryAds: 0, cardsMissed: 0, looked: 0, picked: false, capped: 0, mixed: 0, doubled: 0, saved: 0, kept: 0 }
+  const all: MetaAdsRun = { total: brands.length, read: 0, noCount: 0, couldNot: 0, late: 0, notEnglish: '', stopped: '', cardsAsked: !!opts.cards, cardsSent: false, galleryAds: 0, cardsMissed: 0, looked: 0, picked: false, notOwn: 0, capped: 0, mixed: 0, doubled: 0, saved: 0, kept: 0 }
   const CHUNK = 40
   for (let i = 0; i < brands.length; i += CHUNK) {
     const r = await readMetaAds(brands.slice(i, i + CHUNK), { cards: opts.cards, gone: opts.gone, stop: opts.stop, onProgress: (done) => opts.onProgress?.(Math.min(brands.length, i + done), brands.length) })
-    for (const k of ['read', 'noCount', 'couldNot', 'late', 'galleryAds', 'cardsMissed', 'looked', 'capped', 'mixed', 'doubled', 'saved', 'kept'] as const) all[k] += r[k]
+    for (const k of ['read', 'noCount', 'couldNot', 'late', 'galleryAds', 'cardsMissed', 'looked', 'notOwn', 'capped', 'mixed', 'doubled', 'saved', 'kept'] as const) all[k] += r[k]
     all.cardsSent = all.cardsSent || r.cardsSent
     all.picked = all.picked || r.picked
     all.notEnglish = all.notEnglish || r.notEnglish
@@ -125,6 +127,7 @@ export function metaAdsWords(run: MetaAdsRun, scoutVersion?: string | null): { t
   if (run.cardsAsked && run.read) {
     if (!run.cardsSent) parts.push(`Your SCOUT${scoutVersion ? ` (${scoutVersion})` : ''} only reads the counts: SCOUT 1.51.0 also copies the ads themselves into What's working.`)
     else parts.push(run.galleryAds ? `${run.galleryAds} ad${run.galleryAds === 1 ? '' : 's'} copied into What's working's ads gallery.` : 'No ad cards to copy into the gallery.')
+    if (run.notOwn) parts.push(`${run.notOwn} ad${run.notOwn === 1 ? '' : 's'} run by other advertisers that only mention a brand\u2019s name ${run.notOwn === 1 ? 'was' : 'were'} left out.`)
     // Which ads were copied: the longest running of more, or the first 8 Meta showed.
     if (run.cardsSent) parts.push(run.picked ? `SCOUT looked at ${run.looked} ad${run.looked === 1 ? '' : 's'} and copied each brand\u2019s longest running.` : `Your SCOUT${scoutVersion ? ` (${scoutVersion})` : ''} copies the first 8 ads Meta shows for each brand: SCOUT 1.53.8 looks at up to 30 and copies the 8 running longest.`)
     if (run.cardsMissed) parts.push(`For ${run.cardsMissed}, Meta showed ads but SCOUT could not read their cards, so ${run.cardsMissed === 1 ? 'its' : 'their'} earlier ads stay.`)

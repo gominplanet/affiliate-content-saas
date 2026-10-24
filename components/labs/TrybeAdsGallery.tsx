@@ -29,6 +29,8 @@ interface GalleryRead {
   withAds: number
   /** The most ad cards MVP keeps (the newest read). */
   keepMax: number
+  /** Ads by other advertisers that mention a brand's name, left out. */
+  notOwn: number
   ads: MetaAd[]
   categories: Record<string, string[]>
   /** When each Top 100 brand's ads were last read, for reading the oldest first. */
@@ -69,7 +71,7 @@ export default function TrybeAdsGallery({ isAdmin, scoutVersion, canRead, topBra
       const readAt: Record<string, { at: string }> = {}
       for (const b of (d.top?.brands || []) as Array<{ brandId: string; readAt: string | null }>) if (b.readAt) readAt[b.brandId] = { at: b.readAt }
       setData({
-        at: d.at ?? null, brandsRead: Number(d.brandsRead) || 0, withAds: Number(d.brandsWithAds) || 0, keepMax: Number(d.keepMax) || 0,
+        at: d.at ?? null, brandsRead: Number(d.brandsRead) || 0, withAds: Number(d.brandsWithAds) || 0, keepMax: Number(d.keepMax) || 0, notOwn: Number(d.notOwn) || 0,
         ads, categories: d.categories || {}, readAt, top: d.top && Array.isArray(d.top.brands) ? d.top : null,
       }); setError(null)
     } catch (e) { setError(e instanceof Error ? e.message : 'MVP could not read the ads gallery.') }
@@ -111,7 +113,7 @@ export default function TrybeAdsGallery({ isAdmin, scoutVersion, canRead, topBra
         {data && data.ads.length > 0 && <span className="text-[12px] font-semibold rounded-full px-2 py-0.5" style={{ background: 'rgba(219,39,119,0.10)', color: PINK }}>{inCat.length} ad cards</span>}
         {data?.at && <span className="text-[12px] font-semibold rounded-full px-2 py-0.5" style={{ background: 'var(--surface-2)', color: 'var(--text-2)' }}>Read {new Date(data.at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</span>}
       </div>
-      <p className="text-[13px]" style={soft}>A brand keeps paying for an ad that sells, so the longer an ad runs, the better its video, its hook and its call to action are working. These are the ads TRYBE brands run on Facebook and Instagram, longest running first, copied from Meta&rsquo;s public Ad Library by the MVP team&rsquo;s SCOUT. Days are counted to when MVP read each ad. Each card links to the ad on Meta.</p>
+      <p className="text-[13px]" style={soft}>A brand keeps paying for an ad that sells, so the longer an ad runs, the better its video, its hook and its call to action are working. These are the ads TRYBE brands run on Facebook and Instagram, longest running first, copied from Meta&rsquo;s public Ad Library by the MVP team&rsquo;s SCOUT. Only ads the brand runs itself, or a creator runs in paid partnership with it, are shown. Days are counted to when MVP read each ad. Each card links to the ad on Meta.</p>
 
       {isAdmin && (
         <div className="rounded-xl border border-dashed px-3 py-2.5 text-[12.5px] flex flex-wrap items-center gap-2" style={{ borderColor: 'var(--border)' }}>
@@ -127,6 +129,7 @@ export default function TrybeAdsGallery({ isAdmin, scoutVersion, canRead, topBra
               : 'Daily refresh and Find brands’ “Check for Meta ads” add to this too.'}
           </span>
           {canCards && !scoutAtLeast(scoutVersion, SCOUT_META_LONGEST_MIN_VERSION) && <span className="basis-full" style={{ color: AMBER }}>Your SCOUT ({scoutVersion || 'unknown'}) copies the first 8 ads Meta shows for each brand. SCOUT {SCOUT_META_LONGEST_MIN_VERSION} looks at up to 30 and copies the 8 running longest; Chrome brings it once the Web Store has it.</span>}
+          {data && data.notOwn > 0 && <span className="basis-full" style={soft}>{data.notOwn.toLocaleString()} ad{data.notOwn === 1 ? '' : 's'} kept from earlier reads {data.notOwn === 1 ? 'was' : 'were'} run by other advertisers that only mention a brand&rsquo;s name, so {data.notOwn === 1 ? 'it is' : 'they are'} left out. The next read of those brands replaces them.</span>}
           {note && <span className="basis-full" style={{ color: note.tone === 'ok' ? GREEN : note.tone === 'warn' ? AMBER : RED }}>{note.text}</span>}
         </div>
       )}

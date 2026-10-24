@@ -10,7 +10,7 @@ import { readFileSync } from 'node:fs'
 import { activeKeys, activeRows, activeBy, rankActive, categoryCounts, tierWentUp, latestTierChanges, VIDEOS_LEAD_MIN } from '../lib/trybe-active'
 import { topCreators } from '../lib/trybe-creators'
 import { readTopEntries } from '../lib/trybe-working'
-import { readAdCard, readCardsBody, adDate, safePreview, mergeGallery, galleryStats, sortAds, adDays, ranDays, closingLine, GALLERY_MAX, GALLERY_FRESH_DAYS, ADS_PER_BRAND, brandsWithAds, nextToRead, type MetaAd } from '../lib/trybe-adsgallery'
+import { readAdCard, readCardsBody, adDate, safePreview, mergeGallery, galleryStats, sortAds, adDays, ranDays, closingLine, ownAd, GALLERY_MAX, GALLERY_FRESH_DAYS, ADS_PER_BRAND, brandsWithAds, nextToRead, type MetaAd } from '../lib/trybe-adsgallery'
 import { compareRows } from '../lib/trybe-compare'
 import { filterCheck, readFilters, FILTER_WORDS, readDirStats } from '../lib/trybe-finder'
 import { BROWSE_SORTS } from '../lib/trybe-outreach'
@@ -74,7 +74,7 @@ check('a card without a Library ID is not kept', readAdCard({ text: 'Sponsored\n
 check('dates in both orders, and September written out', adDate('Sep 12, 2026') === '2026-09-12' && adDate('12 Sep 2026') === '2026-09-12' && adDate('September 2, 2026') === '2026-09-02' && adDate('soon') === null)
 check('only Meta’s own image servers are shown', !!safePreview('https://scontent.xx.fbcdn.net/a.jpg') && safePreview('https://evil.example/a.jpg') === null && safePreview('http://scontent.xx.fbcdn.net/a.jpg') === null)
 check('cards from SCOUT are read safely and capped', readCardsBody([{ text: 'x', preview: 'https://evil.example/p.jpg' }, { text: '' }, 5, null]).length === 1 && readCardsBody([{ text: 'x', preview: 'https://evil.example/p.jpg' }])[0].preview === null && readCardsBody(Array.from({ length: 40 }, () => ({ text: 'x' }))).length === ADS_PER_BRAND * 2)
-const mk = (id: string, brandId: string, readAt: string, started: string | null = '2026-10-01', extra: Partial<MetaAd> = {}): MetaAd => ({ id, brandId, brand: brandId, page: null, startedText: null, started, body: 'b', opening: 'o', paid: false, video: false, versions: false, preview: null, readAt, ...extra })
+const mk = (id: string, brandId: string, readAt: string, started: string | null = '2026-10-01', extra: Partial<MetaAd> = {}): MetaAd => ({ id, brandId, brand: `Acme ${brandId}`, page: `Acme ${brandId}`, startedText: null, started, body: 'b', opening: 'o', paid: false, video: false, versions: false, preview: null, readAt, ...extra })
 const g1 = mergeGallery(null, 'b1', 'B1', [mk('1', 'b1', '2026-10-16'), mk('2', 'b1', '2026-10-16')], 2, '2026-10-16')
 const g2 = mergeGallery(g1, 'b1', 'B1', [mk('3', 'b1', '2026-10-17')], 1, '2026-10-17')
 check('a brand read again has its ads replaced, not added to', g2.ads.length === 1 && g2.ads[0].id === '3' && g2.brands.b1.count === 1)
@@ -101,7 +101,7 @@ check('days running are counted to the read, never past it', ranDays({ started: 
   const stale = mergeGallery({ at: '', brands: {}, ads: [mk('old', 'b1', '2026-07-01T00:00:00Z', '2026-01-01')] }, 'b3', 'B3', [], 0, '2026-10-21T00:00:00Z')
   check(`an ad not read again in ${GALLERY_FRESH_DAYS} days is let go`, stale.ads.length === 0)
   const st2 = galleryStats([long, short], 2, Date.parse('2026-10-24T00:00:00Z'))
-  check('the tiles count the ads that ran 30 days or more and name the longest', st2.longRun === 1 && st2.longest?.days === 233 && st2.longest?.brand === 'b1')
+  check('the tiles count the ads that ran 30 days or more and name the longest', st2.longRun === 1 && st2.longest?.days === 233 && st2.longest?.brand === 'Acme b1')
 }
 {
   const gal = read('components/labs/TrybeAdsGallery.tsx')
@@ -128,6 +128,19 @@ check('days running are counted to the read, never past it', ranDays({ started: 
   check('MVP keeps a brand\'s longest running too, whatever SCOUT sent', mergeGallery(null, 'b7', 'B7', many, 12, '2026-10-20T00:00:00Z').ads.every((a) => a.started! <= '2026-08-01'))
   const MR = read('components/labs/metaAdsRead.ts')
   check('the team\'s read says which ads were copied', /SCOUT looked at \$\{run\.looked\}/.test(MR) && /copies the first 8 ads Meta shows for each brand/.test(MR))
+}
+// THE BRAND'S OWN ADS ONLY (Seb, 2026-10-24: "are these brands on trybe? how
+// does mvp check?"): Newly, Sene, Fuego, Ridge, Reference and Best Day Ever
+// showed other advertisers' ads that only used the word.
+{
+  const own = (page: string | null, brand: string, x: Partial<MetaAd> = {}) => ownAd({ page, link: x.link ?? null, partner: x.partner ?? null }, brand)
+  check('another advertiser using the word is not the brand', !own('Fitness Factory Health Club - Somerset', 'Newly') && !own('Nettekurs', 'Sene') && !own('STRAYE', 'Fuego') && !own('Beauty and the Boutique', 'Ridge') && !own('Blue Ridge Bakery', 'Ridge') && !own('Setgraph', 'Reference'))
+  check('the brand\'s page, its site, or a creator\'s paid partnership with it is', own('GloMelanin', 'Glo Melanin') && own('BYLT Basics', 'BYLT') && own('Hume', 'Hume Health', { link: 'humehealth.com' }) && own('Jess Reviews', 'Hume Health', { partner: 'Hume Health' }) && own('Normal Brand', 'The Normal Brand'))
+  check('the partner is read from the card', paid.partner === 'Hume Health')
+  check('only the brand\'s own go into the gallery, and earlier ones by others are let go', mergeGallery({ at: '', brands: {}, ads: [mk('x', 'b5', '2026-10-20T00:00:00Z', '2026-01-01', { page: 'Someone Else' })] }, 'b6', 'Acme b6', [mk('y', 'b6', '2026-10-21T00:00:00Z', '2026-02-01', { page: 'Other Page' }), mk('z', 'b6', '2026-10-21T00:00:00Z')], 2, '2026-10-21T00:00:00Z').ads.map((a) => a.id).join(',') === 'z')
+  check('the player\'s clock is never the ad\'s ending', closingLine('Shop now. With Love, The Glo Melanin Team 0:00 / 0:43') === 'With Love, The Glo Melanin Team' && closingLine('only at the straye.com 🔥 - #straye 0:00 / 0:04') === null && !/0:00/.test(readAdCard({ text: 'Library ID: 1234567\nGlo\nSponsored\nHi there. Bye now 0:00 / 0:43\nShop now', video: true, preview: null }, 'g', 'Glo', '2026-10-24')!.body))
+  const R = read('app/api/labs/trybe/route.ts')
+  check('the gallery sends only the brand\'s own ads and says how many were left out', /const ads = kept\.filter\(a => ownAd\(a, a\.brand\)\)/.test(R) && /notOwn: kept\.length - ads\.length/.test(R) && /galleryAds \+= own; notOwnAds \+= ads\.length - own/.test(R))
 }
 check('days running from the start date', adDays('2026-10-07', nowT) === 10 && adDays(null, nowT) === null)
 
