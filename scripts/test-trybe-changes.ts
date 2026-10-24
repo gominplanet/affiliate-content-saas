@@ -6,7 +6,6 @@
 import { readFileSync } from 'node:fs'
 import { directoryChanges, adsChange, poolBrands, changeLine, POOL_MIN } from '../lib/trybe-changes'
 import { readTopEntries, hookType, hookCounts, openingLine, middleHalf } from '../lib/trybe-working'
-import { checkHook } from '../lib/trybe-hook'
 import { pickScore, creatorProgramOf } from '../lib/trybe-pick'
 import { planWeek, perDayNeeded, MONTHLY_TARGET } from '../lib/trybe-week'
 import { VIDEO_PLAN_SYSTEM } from '../lib/trybe-playbook'
@@ -76,19 +75,9 @@ check('the middle half needs 4 lengths', middleHalf([10, 20, 30]) === null && JS
   const low = pickScore({ totalCreators: 30, metaAds: null, top100Hits: null, tiktokShop: null, commissionPct: 3, program: null })
   check('Best bets ranks up 10% or more and a brand that invests, down a low commission', good.score > low.score && good.reasons.some((r) => /Pays 12% of sales/.test(r.text)) && good.reasons.some((r) => /retainers/.test(r.text)) && good.reasons.some((r) => /Discord/.test(r.text)) && low.reasons.some((r) => r.tone === 'bad' && /3% of sales/.test(r.text)))
 
-  const greet = checkHook('Hey guys, so today I want to show you my favourite shirt.')
-  check('a greeting opening is flagged', greet.notes.some((n) => n.tone === 'bad' && /greeting/.test(n.text)))
-  const me = checkHook('I love wearing this to the gym. I wear it every day and I think it is my favourite. My friends love it.')
-  check('an "I" opening is flagged, with the counts', me.notes.some((n) => /about you \(I, me, my\)/.test(n.text)) && me.iCount >= 4 && me.youCount === 0)
-  const ad = checkHook('Introducing the new Oink vest, link in bio.', 'Oink')
-  check('an ad-like opening and the brand in the first line are flagged', ad.notes.some((n) => n.tone === 'bad' && /sounds like an ad/.test(n.text)) && ad.notes.some((n) => /Oink is named in the first line/.test(n.text)))
-  const clean = checkHook('If you hate a hot gym, you need to feel this fabric.')
-  check('a clean opening says so', clean.ok && clean.notes.length === 1 && clean.notes[0].tone === 'good')
-  check('a long first sentence is flagged', checkHook('This is the shirt that you will want to wear every single day of the week because it is just so very comfortable and cool.').notes.some((n) => /words\. Hooks that stop the scroll/.test(n.text)))
-  const r = read('app/api/labs/trybe/route.ts')
-  check('new openings are checked by the same rules before they are offered', /action === 'hook_fix'/.test(r) && /const kept = lines\.filter\(l => checkHook\(l, brandName\)\.ok\)/.test(r) && /commissionPct: payBy\.get\(r\.brand_id\)\?\.percent \?\? null/.test(r))
   const ui = read('components/labs/TrybeOutreach.tsx')
-  check('the hook check is on What\'s working, and Best bets shows up to 6 reasons', /tab === 'working' && <TrybeHookCheck \/>/.test(ui) && /slice\(0, 6\)\.map\(r =>/.test(ui))
+  // Check my hook was taken off What's working (Seb, 2026-10-24: "no need for this hook check").
+  check('no hook check on What\'s working, and Best bets shows up to 6 reasons', !/TrybeHookCheck/.test(ui) && /slice\(0, 6\)\.map\(r =>/.test(ui))
   const wkUi = read('components/labs/TrybeWeek.tsx')
   check('This week shows the month per focus brand, read from TRYBE, and says when it could not', /Your month/.test(wkUi) && /readBrandSubs\(id\)/.test(wkUi) && /could not read: /.test(wkUi) && /planWeek\(samples, \{ perDay, pace \}\)/.test(wkUi))
 }

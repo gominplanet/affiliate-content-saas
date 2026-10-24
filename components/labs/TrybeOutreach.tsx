@@ -48,7 +48,6 @@ import TrybeChanges, { fetchChanges, changesSummary, type ChangesRead } from '@/
 import { readJoinedBrandIds } from '@/lib/trybe-joined'
 import { type PeekActions } from '@/components/labs/TrybeBrandPeek'
 import TrybeWorking from '@/components/labs/TrybeWorking'
-import TrybeHookCheck from '@/components/labs/TrybeHookCheck'
 import TrybeCreate from '@/components/labs/TrybeCreate'
 import TrybeStage from '@/components/labs/TrybeStage'
 import TrybeAds from '@/components/labs/TrybeAds'
@@ -2019,7 +2018,6 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
       )}
 
 
-      {tab === 'working' && <TrybeHookCheck />}
       {tab === 'working' && (
         <TrybeWorking canRead={canMyBrands} isAdmin={isAdmin} scoutVersion={scoutVersion}
           newToTop={changes ? Array.from(new Map(changes.changes.filter((c) => c.kind === 'top100').map((c) => [c.brand_id, { id: c.brand_id, name: c.name || 'A brand' }])).values()) : null} />

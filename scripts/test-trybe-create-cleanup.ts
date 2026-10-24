@@ -59,7 +59,6 @@ check('brand videos MVP could not listen to say why', /couldNotHear\(r\.detail\)
 check('a brand scripts read that failed is not marked done for the day', /if \(!failed\) markRead\(\)/.test(read('components/labs/TrybeBrandScripts.tsx')) && /could not keep their videos/.test(read('components/labs/TrybeBrandScripts.tsx')))
 
 // Hooks.
-check('new openings pass every rule, warnings included', /const kept = lines\.filter\(l => checkHook\(l, brandName\)\.ok\)/.test(ROUTE) && /never start with "I", "me" or "my"/.test(read('lib/trybe-hook.ts')))
 
 // Amazon.
 check('a failed Amazon match is said in Make videos and This week', /\{amz\.error && </.test(CREATE) && /\{amz\.error && </.test(WEEK))

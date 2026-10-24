@@ -36,7 +36,6 @@ import { directoryChanges, adsChange, poolBrands, type Change, type MemberRow } 
 import { topDayKey, topDayOf, TOP_DAYS_KEEP } from '@/lib/trybe-topdays'
 import { activeKeys, activeRows, activeBy, rankActive, categoryCounts, latestTierChanges, type ActiveBy, type ActiveRow } from '@/lib/trybe-active'
 import { GALLERY_KEY, readCardsBody, readAdCard, mergeGallery, type Gallery, type MetaAd, brandsWithAds, GALLERY_MAX } from '@/lib/trybe-adsgallery'
-import { HOOK_FIX_SYSTEM, checkHook } from '@/lib/trybe-hook'
 import {
   cleanScript, toTranscribe, coverageWords, openingOf, bestRank, whyNoWords, noWordsSentence, pickExamples, examplesBlock, type TopScript,
 } from '@/lib/trybe-scripts'
@@ -2393,33 +2392,6 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: true, ...out })
     } catch (e) {
       return NextResponse.json({ ok: true, text: null, why: `MVP could not open the brief link (${e instanceof Error ? e.message : 'error'}). Open it to read it.` })
-    }
-  }
-
-  if (action === 'hook_fix') {
-    // Three new opening lines for a pasted script (lib/trybe-hook). Each one
-    // is checked by the same rules the page shows, and one that still fails
-    // them is left out rather than offered.
-    const script = typeof body.script === 'string' ? body.script.replace(/\s+/g, ' ').trim().slice(0, 3000) : ''
-    if (script.length < 12) return NextResponse.json({ error: 'Paste the words of your video first.' }, { status: 400 })
-    const brandName = typeof body.brandName === 'string' ? body.brandName.slice(0, 120) : ''
-    const spend = await spendGate(userId, tier)
-    if (spend) return spend
-    try {
-      const msg = await createAnthropicClient().messages.create({
-        model: FIT_MODEL, max_tokens: 300, system: HOOK_FIX_SYSTEM(BANNED_RULE),
-        messages: [{ role: 'user', content: `SCRIPT:\n${script}` }],
-      })
-      try { const u = usageFromAnthropic(msg); recordUsage({ userId, tier, feature: 'trybe_hook_fix', model: FIT_MODEL, input: u.input, output: u.output }) } catch { /* best-effort */ }
-      const raw = scrubBanned((msg.content as Array<{ type: string; text?: string }>).map(b => b.type === 'text' ? b.text || '' : '').join(''))
-      const lines = raw.split('\n').map(l => l.replace(/^\s*(?:\d+[.)]|[-*•])\s*/, '').replace(/^["“]|["”]$/g, '').replace(/\s*[–—]\s*/g, ', ').trim()).filter(Boolean).slice(0, 3)
-      // Clean by every rule the page shows, warnings included: an opening that
-      // names the brand or starts with "I" is the problem it was asked to fix.
-      const kept = lines.filter(l => checkHook(l, brandName).ok)
-      if (!kept.length) return NextResponse.json({ error: 'None of the new openings passed every check (no brand name, about the viewer, short). Try again.' }, { status: 502 })
-      return NextResponse.json({ ok: true, lines: kept, dropped: lines.length - kept.length })
-    } catch (e) {
-      return NextResponse.json({ error: e instanceof Error ? `MVP could not rewrite it: ${e.message}` : 'MVP could not rewrite it.' }, { status: 502 })
     }
   }
 
