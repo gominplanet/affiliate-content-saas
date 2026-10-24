@@ -64,7 +64,7 @@ async function api(body: Record<string, unknown>) {
   return d
 }
 
-export default function TrybeStarBrands({ canCount, cards, scoutVersion, hasCore, onWrite, scoutOpens = false }: {
+export default function TrybeStarBrands({ canCount, cards, scoutVersion, hasCore, onWrite, onOpenQueue, scoutOpens = false }: {
   /** SCOUT can read Meta's Ad Library here (allowed on TRYBE, recent enough). */
   canCount: boolean
   /** The MVP team: the ads themselves are copied for What's working too. */
@@ -72,8 +72,11 @@ export default function TrybeStarBrands({ canCount, cards, scoutVersion, hasCore
   scoutVersion: string | null
   /** The creator has a core message, so requests can be written. */
   hasCore: boolean
-  /** Put these brands on the creator's list and write their requests. */
-  onWrite: (ids: string[]) => Promise<void>
+  /** Put these brands on the creator's list and write their requests; the
+   *  ids written come back, since those leave this list. */
+  onWrite: (ids: string[]) => Promise<string[] | void>
+  /** Open Ready to send, where a written brand went. */
+  onOpenQueue?: () => void
   /** SCOUT can open a brand on TRYBE itself (1.41.8+). */
   scoutOpens?: boolean
 }) {
@@ -88,6 +91,10 @@ export default function TrybeStarBrands({ canCount, cards, scoutVersion, hasCore
   const stopRef = useRef(false)
   const [note, setNote] = useState<{ tone: 'ok' | 'warn' | 'bad'; text: string } | null>(null)
   const [writing, setWriting] = useState(false)
+  // WHERE A WRITTEN BRAND WENT (Seb, 2026-10-24: "Haus disappeared from that
+  // list strangely"). A brand in Ready to send leaves this list, so the list
+  // names it and opens Ready to send instead of letting it vanish.
+  const [moved, setMoved] = useState<string[]>([])
   // NO RATING IN MVP'S COPY: the rating filter could only empty the list, so
   // it is taken off and the page says why, instead of "no brand matches".
   const [ratingMissing, setRatingMissing] = useState<number | null>(null)
@@ -147,7 +154,12 @@ export default function TrybeStarBrands({ canCount, cards, scoutVersion, hasCore
   async function write(ids: string[]) {
     if (!ids.length) return
     setWriting(true)
-    try { await onWrite(ids); setPicked(new Set()); await load() } finally { setWriting(false) }
+    const names = new Map(brands.map((b) => [b.brand_id, b.name]))
+    try {
+      const done = (await onWrite(ids)) || []
+      setMoved(done.map((id) => names.get(id) || 'A brand'))
+      setPicked(new Set()); await load()
+    } finally { setWriting(false) }
   }
 
   const c = data?.readCounts
@@ -195,7 +207,7 @@ export default function TrybeStarBrands({ canCount, cards, scoutVersion, hasCore
         <div className="rounded-xl border px-4 py-3 text-[13px] space-y-1.5" style={{ borderColor: 'var(--border)' }}>
           <p>
             <b>{c.total.toLocaleString()} brand{c.total === 1 ? '' : 's'}</b>{minRating ? ` rated ${minRating} stars or more by creators on TRYBE` : ' on TRYBE'}{maxCreators ? ` with ${maxCreators.toLocaleString()} creators or fewer` : ''}
-            {data && data.hiddenMine > 0 ? <span style={soft}> ({data.hiddenMine.toLocaleString()} more already on your list)</span> : null}.
+            {data && data.hiddenMine > 0 ? <span style={soft}> ({data.hiddenMine.toLocaleString()} more you already wrote to, sent or passed on are left out)</span> : null}.
             {minRating ? <span style={soft}> Only brands creators have reviewed on TRYBE have a rating, about 600 of TRYBE&rsquo;s brands.</span> : null}
           </p>
           <p style={{ color: c.meta < c.total ? AMBER : GREEN }}>
@@ -237,8 +249,14 @@ export default function TrybeStarBrands({ canCount, cards, scoutVersion, hasCore
             <button onClick={() => void write(pickedIds)} disabled={writing || !pickedIds.length || !hasCore} className={btn} style={{ background: COLOR, color: '#fff' }}>
               {writing ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />} Write {pickedIds.length || ''} request{pickedIds.length === 1 ? '' : 's'}
             </button>
-            <span className="text-[12px]" style={soft}>{hasCore ? 'Tick the brands you want: MVP writes each one a request from your core message, into Ready to send.' : 'Write your core message in Find brands first: every request starts from it.'} The star keeps a brand on your Starred list: Find brands, Filters, Starred.</span>
+            <span className="text-[12px]" style={soft}>{hasCore ? 'Tick the brands you want: MVP writes each one a request from your core message, into Ready to send, and it leaves this list.' : 'Write your core message in Find brands first: every request starts from it.'} The star keeps a brand on your Starred list: Find brands, Filters, Starred.</span>
           </div>
+          {moved.length > 0 && (
+            <p className="text-[12px] font-semibold" style={{ color: '#15803D' }}>
+              {moved.length <= 3 ? moved.join(', ') : `${moved.slice(0, 3).join(', ')} and ${moved.length - 3} more`} {moved.length === 1 ? 'is' : 'are'} in Ready to send now, so {moved.length === 1 ? 'it is' : 'they are'} no longer on this list.
+              {onOpenQueue && <> <button onClick={onOpenQueue} className="underline">Open Ready to send</button></>}
+            </p>
+          )}
           <ol className="space-y-2">
             {brands.map((b, i) => {
               const ratio = b.ads_per_creator

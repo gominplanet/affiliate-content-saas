@@ -47,6 +47,15 @@ check('every phrase is listed once, in order', JSON.stringify(termsHits('We pay 
 check('the writer is told which words to take out', /Your last try said \u201c\$\{firstHit\}\u201d/.test(ROUTE))
 check('a brand that is not on the list is said, not dropped', /That brand is not on your list, so it was not written/.test(ROUTE))
 check('the page shows the server\'s reason with the count', /reasons\.push\(r\.error\)/.test(UI) && /function notWritten\(/.test(UI) && (UI.match(/notWritten\(r\.failed, r\.reasons/g) || []).length === 4 && !/could not be written`\)/.test(UI))
+// WHERE A WRITTEN BRAND WENT (Seb, 2026-10-24: "Haus disappeared from that
+// list strangely"): Star brands leaves out what is in Ready to send, so it
+// says which brands moved there and opens it, and the toast does too.
+{
+  const STAR = read('components/labs/TrybeStarBrands.tsx')
+  check('Star brands names the brands that moved to Ready to send, with a way there', /setMoved\(done\.map\(\(id\) => names\.get\(id\)/.test(STAR) && /in Ready to send now, so/.test(STAR) && /<button onClick=\{onOpenQueue\}/.test(STAR) && /onOpenQueue=\{\(\) => setTab\('queue'\)\}/.test(UI))
+  check('a request written from a list that stays open says where it went', /action: \{ label: 'Open Ready to send', onClick: \(\) => setTab\('queue'\) \}/.test(UI) && /return written\n  \}/.test(UI))
+  check('the left-out count says what it holds', /more you already wrote to, sent or passed on are left out/.test(STAR) && !/more already on your list/.test(STAR))
+}
 check('the core message card warns while you type, naming every phrase', /const coreHits = termsHits\(core\)/.test(UI) && /\{coreHits\.length > 0 && <p/.test(UI))
 // NO HOOK BELOW AN EARLY RETURN. A useMemo put under "if (loading) return"
 // crashed the TRYBE page for everyone (2026-10-24): the loading render ran

@@ -978,21 +978,21 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
   /** Draft these brands into Ready to send, four at a time. Each failure
    *  keeps the server's reason, so "could not be written" always says why
    *  (Seb, 2026-10-24: a bare "draft could not be written"). */
-  async function draftIds(ids: string[]): Promise<{ ok: number; failed: number; reasons: string[] }> {
+  async function draftIds(ids: string[]): Promise<{ ok: number; failed: number; reasons: string[]; okIds: string[] }> {
     let ok = 0, failed = 0
-    const reasons: string[] = []
+    const reasons: string[] = [], okIds: string[] = []
     setFinding({ stage: 'Writing messages', done: 0, total: ids.length })
     for (let i = 0; i < ids.length; i += 4) {
       const chunk = ids.slice(i, i + 4)
       try {
         // Your own messages to brands, so the first message writes the way you do.
         const d = await api({ action: 'draft', brandIds: chunk, voice: readVoice() })
-        for (const r of (d.results || []) as Array<{ ok: boolean; error?: string }>) { if (r.ok) ok++; else { failed++; if (r.error) reasons.push(r.error) } }
+        for (const r of (d.results || []) as Array<{ brandId: string; ok: boolean; error?: string }>) { if (r.ok) { ok++; okIds.push(r.brandId) } else { failed++; if (r.error) reasons.push(r.error) } }
       // The rest are counted too: a stop must not make them vanish from the total.
       } catch (e) { failed += ids.length - i; reasons.push(e instanceof Error ? e.message : 'Writing stopped.'); break }
       setFinding({ stage: 'Writing messages', done: Math.min(ids.length, i + 4), total: ids.length })
     }
-    return { ok, failed, reasons }
+    return { ok, failed, reasons, okIds }
   }
 
   /** "1 draft could not be written: <why>", with each different reason once. */
@@ -1249,19 +1249,25 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
   }
 
   /** Draft the brands ticked in the live list into Ready to send. */
-  async function draftPicked(only?: string[]) {
+  /** Put these brands on the list and write their requests. Returns the ids
+   *  written, so a list they leave (Star brands) can say where they went. */
+  async function draftPicked(only?: string[]): Promise<string[]> {
     const ids = only || Array.from(livePick)
-    if (!ids.length) { toast.message('Tick the brands to draft first.'); return }
-    if (!core.trim()) { toast.error('Write your core message first'); return }
-    if (!(await saveSettings(true))) return
+    if (!ids.length) { toast.message('Tick the brands to draft first.'); return [] }
+    if (!core.trim()) { toast.error('Write your core message first'); return [] }
+    if (!(await saveSettings(true))) return []
     unsavedCoreSaid()
+    let written: string[] = []
     try {
       setFinding({ stage: 'Putting the brands you picked on your list' })
       const a = await api({ action: 'adopt', brandIds: ids })
       const ready: string[] = a.ready || []
-      const r = ready.length ? await draftIds(ready) : { ok: 0, failed: 0, reasons: [] }
+      const r = ready.length ? await draftIds(ready) : { ok: 0, failed: 0, reasons: [], okIds: [] }
+      written = r.okIds
       if (r.failed) toast.error(notWritten(r.failed, r.reasons), { duration: 15000 })
-      if (r.ok) { toast.success(`${r.ok} added to Ready to send`); if (!only) setTab('queue') }
+      // Written from a list that stays open (Star brands, a brand's details):
+      // the brand leaves that list, so the toast says where it went and opens it.
+      if (r.ok) { if (only) toast.success(`${r.ok} added to Ready to send`, { duration: 10000, action: { label: 'Open Ready to send', onClick: () => setTab('queue') } }); else { toast.success(`${r.ok} added to Ready to send`); setTab('queue') } }
       if (!ready.length) toast.message(only?.length === 1 ? 'That brand is already in Ready to send or sent.' : 'None of those could be drafted: they are already in your queue or sent.')
       if (!only) setLivePick(new Set())
     } catch (e) {
@@ -1271,6 +1277,7 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
       await load()
       setLiveNonce(n => n + 1)
     }
+    return written
   }
 
   /** Collect TRYBE's list now, whatever its age, then show the live list. */
@@ -1748,7 +1755,7 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
   // Not on the Amazon plan's preview, which only shows the details.
   const peekActions: PeekActions | undefined = preview ? undefined : {
     mineOf: (id) => { const b = brands.find(x => x.brand_id === id); return b ? { status: b.status, draft: b.draft } : null },
-    message: (id) => draftPicked([id]),
+    message: async (id) => { await draftPicked([id]) },
     send: async (id) => {
       const b = brands.find(x => x.brand_id === id)
       if (!b || !b.draft) { toast.error('That message is not in Ready to send any more. Reload the page.'); return }
@@ -2008,7 +2015,7 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
       {tab === 'upload' && <TrybeUpload />}
 
       {tab === 'stars' && !lockedTab && (
-        <TrybeStarBrands canCount={canPlaybook} cards={isAdmin} scoutVersion={scoutVersion} hasCore={!!core.trim()} onWrite={(ids) => draftPicked(ids)} scoutOpens={scoutOpens} />
+        <TrybeStarBrands canCount={canPlaybook} cards={isAdmin} scoutVersion={scoutVersion} hasCore={!!core.trim()} onWrite={(ids) => draftPicked(ids)} onOpenQueue={() => setTab('queue')} scoutOpens={scoutOpens} />
       )}
 
 

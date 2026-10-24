@@ -73,7 +73,7 @@ check('the page says how many had no pay figure', /with no pay figure/.test(read
   const peek = read('components/labs/TrybeBrandPeek.tsx'), ch = read('components/labs/TrybeChanges.tsx'), bn = read('components/labs/TrybeBestNew.tsx'), out = read('components/labs/TrybeOutreach.tsx'), rt = read('app/api/labs/trybe/route.ts')
   check('What changed opens a brand with the Find brands details, read by id', /ids: \[id\]/.test(peek) && /idsQ\.length\) q = q\.in\('brand_id', idsQ\)/.test(rt) && /<BrandExtras /.test(peek) && /<PayChip /.test(peek))
   check('What changed and Best new brands both open the details', /<TrybeBrandPeek /.test(ch) && /<TrybeBrandPeek /.test(bn) && /actions=\{actions\}/.test(ch))
-  check('the details write and send with the same steps as Find brands and Ready to send', /message: \(id\) => draftPicked\(\[id\]\)/.test(out) && /await sendOne\(b\)/.test(out) && (out.match(/actions=\{peekActions\}/g) || []).length === 2)
+  check('the details write and send with the same steps as Find brands and Ready to send', /message: async \(id\) => \{ await draftPicked\(\[id\]\) \}/.test(out) && /await sendOne\(b\)/.test(out) && (out.match(/actions=\{peekActions\}/g) || []).length === 2)
   check('the Amazon preview shows details only, never a send', /const peekActions: PeekActions \| undefined = preview \? undefined/.test(out))
   check('a brand TRYBE no longer lists says so instead of a blank panel', /TRYBE no longer lists/.test(peek))
 }
