@@ -1740,7 +1740,9 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
   const busy = !!finding || pageRunning
   // Said on the card as you type: the server writes no request from a core
   // message that talks pay, and names the same words (lib/trybe-outreach).
-  const coreHit = useMemo(() => termsHit(core), [core])
+  // A plain call, never a hook: this is below the loading return, and a hook
+  // here crashed the page (2026-10-24).
+  const coreHit = termsHit(core)
   // WHAT CHANGED CAN MESSAGE TOO (Seb, 2026-10-16): the same draft and send
   // steps as Find brands and Ready to send, handed to the brand details there.
   // Not on the Amazon plan's preview, which only shows the details.

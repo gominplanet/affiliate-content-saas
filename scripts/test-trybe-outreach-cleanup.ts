@@ -45,7 +45,19 @@ check('a core message that talks pay stops the requests before any writing, nami
 check('the writer is told which words to take out', /Your last try said \u201c\$\{firstHit\}\u201d/.test(ROUTE))
 check('a brand that is not on the list is said, not dropped', /That brand is not on your list, so it was not written/.test(ROUTE))
 check('the page shows the server\'s reason with the count', /reasons\.push\(r\.error\)/.test(UI) && /function notWritten\(/.test(UI) && (UI.match(/notWritten\(r\.failed, r\.reasons/g) || []).length === 4 && !/could not be written`\)/.test(UI))
-check('the core message card warns while you type', /const coreHit = useMemo\(\(\) => termsHit\(core\), \[core\]\)/.test(UI) && /\{coreHit && <p/.test(UI))
+check('the core message card warns while you type', /const coreHit = termsHit\(core\)/.test(UI) && /\{coreHit && <p/.test(UI))
+// NO HOOK BELOW AN EARLY RETURN. A useMemo put under "if (loading) return"
+// crashed the TRYBE page for everyone (2026-10-24): the loading render ran
+// one hook fewer than the next one.
+{
+  const start = UI.indexOf('export default function TrybeOutreach(')
+  const body = UI.slice(start)
+  const firstReturn = body.search(/\n  if \([^\n]*\) return\b/)
+  const pageReturn = body.indexOf('\n  return (', firstReturn)
+  const between = firstReturn < 0 ? '' : body.slice(firstReturn, pageReturn)
+  const hooks = between.split('\n').filter((l) => /\buse[A-Z][A-Za-z]*\(/.test(l) && !/^\s*\/\//.test(l))
+  check(`no React hook runs after an early return in the TRYBE page${hooks.length ? `: ${hooks.map((l) => l.trim().slice(0, 60)).join(' | ')}` : ''}`, firstReturn > 0 && pageReturn > firstReturn && hooks.length === 0)
+}
 check('the brand\'s pay is never given to a writer', !/`TRYBE pay: \$\{b\.payText\}`/.test(OUT) && !/`Pays: \$\{b\.payText\}`/.test(read('lib/trybe-playbook.ts')) && /payText: null, website: r\.website/.test(ROUTE))
 
 // Voice.
