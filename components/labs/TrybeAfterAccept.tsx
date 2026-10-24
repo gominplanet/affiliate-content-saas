@@ -6,8 +6,8 @@
 //   - what to do next, from who wrote last and when (lib/trybe-playbook
 //     afterAccept): message before you film, waiting, no answer in N days
 //     (don't film yet), or they answered (safe to film 2 or 3);
-//   - the first message (thanks, video ideas, a 10 minute call, their monthly
-//     ad spend) and the follow up, written by MVP, edited and sent by the
+//   - the first message (thanks, video ideas, a 10 minute call; never their ad
+//     spend, Seb 2026-10-24) and the follow up, written by MVP, edited and sent by the
 //     creator into the brand's own TRYBE chat through SCOUT;
 //   - video ideas: one body and call to action, ten hooks, each a script to
 //     copy, next to the brand's own best videos on TRYBE (TrybeVideoIdeas).

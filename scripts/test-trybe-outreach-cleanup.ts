@@ -32,7 +32,7 @@ const OUT = read('lib/trybe-outreach.ts')
 for (const t of ['Love that you pay $50 per video', 'Is payment handled through TRYBE?', 'The 20% commission works great', 'What is the price per video?', 'your monthly ad budget', 'We charge $150 per video']) check(`"${t}" is money talk`, talksTerms(t))
 check('a voice sample that talks pay is never learned', asksMoney('We charge $150 per video'))
 check('budget-friendly is not money talk', !talksTerms('Budget-friendly and sturdy.'))
-check('kickoff, follow up and join requests are checked, written once more, then refused', /const moneyOk = \(t: string\) => !talksTerms\(t, \{ adSpendQuestion: action === 'kickoff' \}\)/.test(ROUTE) && /The message kept talking about pay or rates/.test(ROUTE) && /if \(text && talksTerms\(text\)\) text = await write\(/.test(ROUTE) && /The draft kept talking about pay or rates/.test(ROUTE))
+check('kickoff, follow up and join requests are checked, written once more, then refused, with no exception', /const moneyOk = \(t: string\) => !talksTerms\(t\)/.test(ROUTE) && /The message kept talking about pay or rates/.test(ROUTE) && /if \(text && talksTerms\(text\)\) text = await write\(/.test(ROUTE) && /The draft kept talking about pay or rates/.test(ROUTE))
 check('a core message that talks pay is said on save', /const warning = coreMessage && talksTerms\(coreMessage/.test(ROUTE) && /if \(d\.warning\) toast\.warning\(d\.warning/.test(UI))
 check('the brand\'s pay is never given to a writer', !/`TRYBE pay: \$\{b\.payText\}`/.test(OUT) && !/`Pays: \$\{b\.payText\}`/.test(read('lib/trybe-playbook.ts')) && /payText: null, website: r\.website/.test(ROUTE))
 

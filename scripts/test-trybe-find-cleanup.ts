@@ -91,5 +91,11 @@ check('each "not known" names its source, not TRYBE', /MVP has not read the webs
 check('website links name the address', !/<Globe size=\{11\} \/> Website <ExternalLink/.test(OUT + read('components/labs/TrybeBrandPeek.tsx')) && /\{siteName\(b\.website\)\}/.test(OUT))
 check('the New preset says what it lists', /label: 'New on TRYBE', says: 'Joined TRYBE in the last 30 days, or new to MVP in the last 14/.test(CTRL))
 
+// Seb, 2026-10-24: "3 reviews minimum" for Star brands' rating and ranking.
+{
+  const BP = read('lib/brand-popularity.ts')
+  check('a rating and ads per review count from 3 reviews', /export const STAR_MIN_REVIEWS = 3/.test(BP) && /reviews < STAR_MIN_REVIEWS\) return null/.test(BP) && /rating: \(ratingOf\(x\.r\)\?\.reviews \?\? 0\) >= STAR_MIN_REVIEWS/.test(ROUTE) && /A rating counts from 3 reviews/.test(read('components/labs/TrybeStarBrands.tsx')))
+}
+
 if (fails.length) { console.error('trybe-find-cleanup failed:\n - ' + fails.join('\n - ')); process.exit(1) }
 console.log('✅ trybe-find-cleanup: Find brands ranks real signals, the refresh counts every brand and says when it has, unknowns say where they come from')

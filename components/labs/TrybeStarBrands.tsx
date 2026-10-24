@@ -176,7 +176,7 @@ export default function TrybeStarBrands({ canCount, cards, scoutVersion, hasCore
           {numberBox('TRYBE rating', '\u2605 or more', minRating, setMinRating, 'any', 5, 0.1)}
           {/* Only once TRYBE's list gives creator counts: before, it could only empty the list. */}
           {(c?.creators ?? 0) > 0 && numberBox('Up to', 'creators', maxCreators, setMaxCreators, 'any')}
-          <span className="text-[12px]" style={soft}>4.5 of 5 stars is 90%.</span>
+          <span className="text-[12px]" style={soft}>4.5 of 5 stars is 90%. A rating counts from 3 reviews.</span>
           <button onClick={() => void load()} disabled={loading} className={btn} style={{ border: '1px solid var(--border-2)' }}>
             {loading ? <Loader2 size={13} className="animate-spin" /> : <RotateCcw size={13} />} Refresh
           </button>
@@ -272,7 +272,7 @@ export default function TrybeStarBrands({ canCount, cards, scoutVersion, hasCore
                             ? <><span className="text-[20px] font-extrabold tabular-nums" style={{ color: ratio >= 5 ? GREEN : 'var(--text)' }}>{ratio.toLocaleString('en-US')}</span><span className="text-[12.5px]" style={{ color: 'var(--text-2)' }}>Meta ads per creator</span></>
                             : perRev != null
                               ? <><span className="text-[20px] font-extrabold tabular-nums" style={{ color: perRev >= 5 ? GREEN : 'var(--text)' }}>{perRev.toLocaleString('en-US')}</span><span className="text-[12.5px]" style={{ color: 'var(--text-2)' }}>Meta ads per review</span></>
-                              : <><span className="text-[20px] font-extrabold tabular-nums" style={{ color: (b.meta_ads ?? 0) >= 50 ? GREEN : 'var(--text)' }}>{(b.meta_ads ?? 0).toLocaleString('en-US')}</span><span className="text-[12.5px]" style={{ color: 'var(--text-2)' }}>Meta ad{b.meta_ads === 1 ? '' : 's'} running when counted, no reviews yet</span></>}
+                              : <><span className="text-[20px] font-extrabold tabular-nums" style={{ color: (b.meta_ads ?? 0) >= 50 ? GREEN : 'var(--text)' }}>{(b.meta_ads ?? 0).toLocaleString('en-US')}</span><span className="text-[12.5px]" style={{ color: 'var(--text-2)' }}>Meta ad{b.meta_ads === 1 ? '' : 's'} running when counted, {b.review_count ? `only ${b.review_count} review${b.review_count === 1 ? '' : 's'} (ranked per review from 3)` : 'no reviews yet'}</span></>}
                         <span className="text-[12.5px] inline-flex items-center gap-1" style={soft}>
                           {known && !notOwn && (ratio != null || perRev != null) ? `${(b.meta_ads ?? 0).toLocaleString('en-US')} ads running \u00b7 ` : ''}
                           {b.total_creators != null

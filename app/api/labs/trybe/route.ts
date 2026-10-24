@@ -23,7 +23,7 @@ import { INTRO_MAX_BYTES, cleanInputs, introSystem, introPrompt, parseIntro, rea
 import { sellsOf, type SellsRead } from '@/lib/trybe-sells'
 import { outreachNiche } from '@/lib/outreach-niche'
 import { pickScore, creatorProgramOf, readTopCreatives, tallyTop, META_ADS_FRESH_MS, readPriorities, weighScore, staticsOf, bucketDollars, metaTrustOf, metaUsable } from '@/lib/trybe-pick'
-import { adsPerCreator, adsPerReview } from '@/lib/brand-popularity'
+import { adsPerCreator, adsPerReview, STAR_MIN_REVIEWS } from '@/lib/brand-popularity'
 import { ratingOf, readDirStats, rawKeys, amazonOf, nameVariants, readFilters, filterCheck, spendingOf, productOnAmazon, filmedProducts, mergeSnapshot, pickBaseline, crowdOf, creatorSpendOf, snapshotKey, isNewBrand, mixPick, mixOf, SNAPSHOT_KEEP_DAYS, type AmazonOf, type AmazonFilmed, type AmazonVideoProduct, type CcCampaign, type FilterId, type Snapshot } from '@/lib/trybe-finder'
 import { payLines, payReadOf, estimatePay } from '@/lib/trybe-pay'
 import { readTopWords, firstHook, keepHooks, readHooksBody, hooksBlock, type TopHook } from '@/lib/trybe-hooks'
@@ -1247,10 +1247,10 @@ export async function POST(request: Request) {
       })
       try { const u = usageFromAnthropic(msg); recordUsage({ userId, tier, feature: 'trybe_outreach_kickoff', model: MODEL, input: u.input, output: u.output }) } catch { /* best-effort */ }
       let text = tidyDraft(scrubBanned((msg.content as Array<{ type: string; text?: string }>).map(b => b.type === 'text' ? b.text || '' : '').join('')), 1500)
-      // NEVER RATES (house rule): a message that talks pay is written once
-      // more, then refused. The first message's ad spend question stays
-      // (Cole's call question) until Seb says otherwise.
-      const moneyOk = (t: string) => !talksTerms(t, { adSpendQuestion: action === 'kickoff' })
+      // NEVER RATES (house rule): a message that talks pay or a brand's ad
+      // budget is written once more, then refused. No exception: Seb took the
+      // first message's ad spend question out (2026-10-24).
+      const moneyOk = (t: string) => !talksTerms(t)
       if (text && !moneyOk(text)) {
         const again = await createAnthropicClient().messages.create({
           model: MODEL, max_tokens: 500,
@@ -1661,7 +1661,8 @@ export async function POST(request: Request) {
       const c = filterCheck({ perVideo: estBy.get(x.r.brand_id)?.dollars ?? null, creators: typeof x.r.total_creators === 'number' ? x.r.total_creators : null, stats: statsBy.get(x.r.brand_id)!, earningsBucket: x.r.earnings_bucket ?? null, amazon: amazonBy.get(x.r.brand_id) ?? null, amazonUnknown: amazonNotes.length > 0, starred: starredIds.has(x.r.brand_id), crowd: crowdBy.get(x.r.brand_id)?.level ?? null,
         spending: spendingOf(x.r), isNew: newBy.get(x.r.brand_id), reviewDays: results.review.get(x.r.brand_id)?.reviewDays ?? null, sells: sellsBy.get(x.r.brand_id) ?? null, spend: spendBy.get(x.r.brand_id)?.dollars ?? null,
         tiktokShop: tiktokShopOf(x.r), tierUp: tierLog ? !!tierLog.get(x.r.brand_id)?.up : null,
-        rating: ratingOf(x.r)?.stars ?? null }, filters)
+        // A rating counts with STAR_MIN_REVIEWS reviews or more (Seb, 2026-10-24).
+        rating: (ratingOf(x.r)?.reviews ?? 0) >= STAR_MIN_REVIEWS ? ratingOf(x.r)?.stars ?? null : null }, filters)
       for (const f of c.failed) hiddenBy[f] = (hiddenBy[f] ?? 0) + 1
       for (const f of c.blank) blankBy[f] = (blankBy[f] ?? 0) + 1
       if (!c.pass) return false

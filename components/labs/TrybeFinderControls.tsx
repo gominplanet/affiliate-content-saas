@@ -168,7 +168,7 @@ export function FinderToolbar({ filters, onFilters, name, onName, sort, sorts, o
               {numberBox('maxVideos', 'Up to', 'videos approved', 'Few videos approved so far: room for you.')}
             </>)}
             {group('The brand', <>
-              {numberBox('minRating', 'TRYBE rating', '\u2605 or more', 'Creators\u2019 rating of the brand on TRYBE, out of 5 stars: 4.5 is 90%. A brand with no reviews yet is left out.', 0.1)}
+              {numberBox('minRating', 'TRYBE rating', '\u2605 or more', 'Creators\u2019 rating of the brand on TRYBE, out of 5 stars: 4.5 is 90%. A rating counts once a brand has 3 reviews or more; one with fewer is left out.', 0.1)}
               {toggle('spending', undefined, 'Meta ads running now, or videos in TRYBE\u2019s Top 100.')}
               {toggle('fastReview', <Clock size={12} />, 'Decides videos in 5 days or less, from MVP members\u2019 results. Brands without enough members\u2019 results are listed after.')}
               {toggle('samples')}
@@ -219,7 +219,7 @@ export function FinderFilterNote({ hiddenBy, blankBy, unknownBy }: { hiddenBy?: 
     }
     if (f === 'minRating' && blank > 0) {
       const low = n - blank
-      return [low > 0 ? `${low.toLocaleString()} rated lower` : null, `${blank.toLocaleString()} with no creator reviews on TRYBE yet`].filter(Boolean).join(' and ')
+      return [low > 0 ? `${low.toLocaleString()} rated lower` : null, `${blank.toLocaleString()} with fewer than 3 creator reviews on TRYBE`].filter(Boolean).join(' and ')
     }
     if (f === 'sells' && blank > 0) {
       const other = n - blank

@@ -52,7 +52,8 @@ const yes = afterAccept({ chat: true, read: R([now - 2 * day], [now - 3600_000])
 check('they answered after your message: safe to film 2 or 3', yes.state === 'answered' && yes.filmOk === true && /2 or 3/.test(yes.says))
 check('answered stays answered after you write back (review 2026-10-12)', afterAccept({ chat: true, read: R([now - 5 * day, now - 4 * day], [now - 4.5 * day]) }, now).state === 'answered')
 check('a message from the brand before yours is not an answer', afterAccept({ chat: true, read: R([], [now - 3 * day]), kickoffSentAt: new Date(now - 2 * day).toISOString() }, now).state === 'waiting')
-check('the first message asks for a call and their ad spend, and starts with 2 or 3 videos', /ten minutes for a quick call/.test(KICKOFF_SYSTEM('')) && /spend on ads each month/.test(KICKOFF_SYSTEM('')) && /two or three videos/.test(KICKOFF_SYSTEM('')))
+// Seb, 2026-10-24: the ad spend question is out ("Remove it"): no money talk in any TRYBE message.
+check('the first message asks for a call, never their ad spend, and starts with 2 or 3 videos', /ten minutes for a quick call/.test(KICKOFF_SYSTEM('')) && !/spend on ads/.test(KICKOFF_SYSTEM('')) && /two or three videos/.test(KICKOFF_SYSTEM('')))
 
 // 4. One body, many hooks
 const plan = parseVideoPlan(JSON.stringify({

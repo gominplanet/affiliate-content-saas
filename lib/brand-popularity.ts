@@ -158,8 +158,12 @@ export function adsPerCreator(metaAds: number | null | undefined, creators: numb
 
 /** Meta ads running for each creator review on TRYBE, or null when either is
  *  not known or it has no reviews. Pure. */
+/** Reviews a brand needs before its rating or its ads per review rank it
+ *  (Seb, 2026-10-24: "3 reviews minimum"): one 5 star review is a fluke. */
+export const STAR_MIN_REVIEWS = 3
+
 export function adsPerReview(metaAds: number | null | undefined, reviews: number | null | undefined): number | null {
-  if (typeof reviews !== 'number' || !Number.isFinite(reviews) || reviews < 1) return null
+  if (typeof reviews !== 'number' || !Number.isFinite(reviews) || reviews < STAR_MIN_REVIEWS) return null
   return adsPerCreator(metaAds, reviews)
 }
 
