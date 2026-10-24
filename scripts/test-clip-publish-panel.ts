@@ -21,15 +21,13 @@ const base = {
   hashtags: ['wallettracker', '#Gadgets', 'gadgets'], disclosure: 'As an Amazon Associate I earn from qualifying purchases.',
 }
 const tt = composeClipDescription({ ...base, platform: 'tiktok', include: CLIP_PLATFORM_RULES.tiktok.defaults })
-check('TikTok: link in bio, no unclickable product link, by default', /Link in bio/.test(tt) && !/mvpl\.ink/.test(tt))
+check('TikTok: nothing that sends people off TikTok, #ad first (Jarett, 2026-10-24)', !/link in bio/i.test(tt) && !/mvpl\.ink/.test(tt) && !/amazon/i.test(tt) && tt.startsWith('#ad'))
 const fb = composeClipDescription({ ...base, platform: 'facebook', include: CLIP_PLATFORM_RULES.facebook.defaults })
 check('Facebook: the product link, named as Amazon (policy 6(w)), and the full review', /Grab it on Amazon 👉 https:\/\/mvpl\.ink\/abc/.test(fb) && /full review/.test(fb))
 const yt = composeClipDescription({ ...base, platform: 'youtube', include: CLIP_PLATFORM_RULES.youtube.defaults })
 check('YouTube: product link and full review by default, and the note says links are not clickable on a Short',
   /mvpl\.ink/.test(yt) && /youtube\.com\/watch/.test(yt) && /plain text, not clickable/.test(CLIP_PLATFORM_RULES.youtube.linkNote))
-for (const [name, text] of [['TikTok', tt], ['YouTube', yt]] as const) {
-  check(`${name}: the disclosure is always there, last`, text.trim().endsWith(base.disclosure))
-}
+check('YouTube: the disclosure is always there, last', yt.trim().endsWith(base.disclosure))
 for (const [name, text] of [['TikTok', tt], ['Facebook', fb], ['YouTube', yt]] as const) {
   check(`${name}: each hashtag once`, (text.match(/#gadgets/gi) ?? []).length === 1 && (text.match(/#wallettracker/gi) ?? []).length === 1)
 }
@@ -47,6 +45,21 @@ check('everything off leaves the write-up and the disclosure', none === `This wa
 check('hashtags are taken out of the write-up and placed by choice', stripHashtags('Nice #a #b') === 'Nice')
 const why = unavailableReasons({ productLink: null, videoUrl: null, blogUrl: null }, [])
 check('a choice that adds nothing says why', !!why.productLink && /No product link found/.test(why.productLink) && !!why.review && !!why.hashtags)
+
+// TIKTOK NEVER SENDS ANYONE OFF TIKTOK (Jarett, 2026-10-24: TikTok Shop
+// flagged a post for "Link in bio to shop it" and the Amazon Associates line).
+{
+  const { tiktokSafeCaption, sendsOffTikTok } = require('../lib/tiktok-caption') as typeof import('../lib/tiktok-caption')
+  const jarett = 'Finally sit through your workday without pain. Doctor-recommended comfort that actually lasts. As an Amazon Associate I earn from qualifying purchases.\n\n🛒 Link in bio to shop it\n\n#everlasting #ergonomic #desk #ergonomicchair\n\nAs an Amazon Associate I earn from qualifying purchases. Some links on this site are affiliate links, if you buy though them I may make a commission at no extra cost to you.'
+  const out = tiktokSafeCaption(jarett)
+  check('Jarett\'s caption keeps his words and tags, loses every way off TikTok, and says #ad', out === '#ad\n\nFinally sit through your workday without pain. Doctor-recommended comfort that actually lasts.\n\n#everlasting #ergonomic #desk #ergonomicchair')
+  check('a store, a link or a store hashtag never reaches TikTok', !/amazon|amzn|https?:/i.test(tiktokSafeCaption('My favorite Amazon find! It cleans fast. #amazonfinds #cleaning\nShop it here: https://amzn.to/abc')) && /#cleaning/.test(tiktokSafeCaption('Nice. #amazonfinds #cleaning')))
+  check('a clean caption keeps its words and gains only #ad', tiktokSafeCaption('This blender changed my mornings. #blender') === '#ad\n\nThis blender changed my mornings. #blender' && !sendsOffTikTok('This blender changed my mornings.'))
+  const T = r('services/tiktok.ts')
+  check('every post to TikTok goes through it', (T.match(/title: fitHashtags\(tiktokSafeCaption\(opts\.title\), 'tiktok'\)/g) || []).length === 2)
+  check('the TikTok switches that would send people away say why', /TikTok Shop flags a video that sends people off TikTok/.test(unavailableReasons({ productLink: 'x', videoUrl: 'y', blogUrl: null }, ['a'], 'tiktok').bioCta || '') && /unavailableReasons\(kit, hashtags, platform\)/.test(r('components/clip-factory/PublishPanel.tsx')))
+  check('the TikTok box says what MVP takes out', /sendsOffTikTok\(caption\) && <p/.test(r('components/TikTokDirectModal.tsx')))
+}
 
 const PAGE = r('components/clip-factory/ClipFactory.tsx')
 check('every pill opens the panel rather than posting', ['tiktok', 'instagram', 'youtube', 'facebook'].every((p) => new RegExp(`openPanel\\('${p}'\\)`).test(PAGE)))

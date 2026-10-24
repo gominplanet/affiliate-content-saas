@@ -19,6 +19,7 @@
 // a style choice, so the panel shows it without a switch.
 
 import { productCtaLine } from '@/lib/social-link-mode'
+import { tiktokSafeCaption } from '@/lib/tiktok-caption'
 
 export type ClipPlatform = 'tiktok' | 'instagram' | 'youtube' | 'facebook'
 
@@ -51,10 +52,13 @@ export const CLIP_PLATFORM_RULES: Record<ClipPlatform, { label: string; linksCli
     defaults: { productLink: true, bioCta: false, review: true, hashtags: true },
     bioLine: '🛒 Links are on my channel page',
   },
+  // NOTHING THAT SENDS PEOPLE OFF TIKTOK (Jarett, 2026-10-24: TikTok Shop
+  // flagged a post for "Link in bio to shop it" and the Amazon Associates
+  // line). lib/tiktok-caption takes them out; #ad is the disclosure.
   tiktok: {
     label: 'TikTok', linksClickable: false,
-    linkNote: 'TikTok captions are not clickable, so "link in bio" is what sends people to buy.',
-    defaults: { productLink: false, bioCta: true, review: false, hashtags: true },
+    linkNote: 'TikTok Shop flags a video whose caption sends people off TikTok (a link, "link in bio", Amazon or another store), so MVP leaves those out on TikTok and discloses with #ad.',
+    defaults: { productLink: false, bioCta: false, review: false, hashtags: true },
     bioLine: '🛒 Link in bio to shop it',
   },
   instagram: {
@@ -133,13 +137,20 @@ export function composeClipDescription(opts: {
   if (links.length) lines.push(links.join('\n'))
   if (opts.include.hashtags) { const h = hashtagLine(opts.hashtags); if (h) lines.push(h) }
   if (d) lines.push(d)
-  return lines.join('\n\n').trim()
+  const text = lines.join('\n\n').trim()
+  return opts.platform === 'tiktok' ? tiktokSafeCaption(text) : text
 }
 
 /** What each choice can actually add, so a switch that would add nothing says
  *  why instead of looking like it worked. Pure. */
-export function unavailableReasons(k: { productLink: string | null; videoUrl: string | null; blogUrl: string | null }, hashtags: string[]): Partial<Record<keyof ClipInclude, string>> {
+export function unavailableReasons(k: { productLink: string | null; videoUrl: string | null; blogUrl: string | null }, hashtags: string[], platform?: ClipPlatform): Partial<Record<keyof ClipInclude, string>> {
   const out: Partial<Record<keyof ClipInclude, string>> = {}
+  if (platform === 'tiktok') {
+    const off = 'TikTok Shop flags a video that sends people off TikTok, so MVP leaves this out on TikTok.'
+    out.productLink = off; out.bioCta = off; out.review = off
+    if (!hashtagLine(hashtags)) out.hashtags = 'This clip has no hashtags.'
+    return out
+  }
   if (!k.productLink) out.productLink = 'No product link found: add the product in Enhance, or type the link into the text.'
   if (!k.videoUrl && !k.blogUrl) out.review = 'MVP does not know which long video or post this clip came from.'
   if (!hashtagLine(hashtags)) out.hashtags = 'This clip has no hashtags.'

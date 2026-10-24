@@ -74,7 +74,7 @@ export default function PublishPanel(props: {
   // Each platform's own pick (TikTok, Instagram and Facebook used to reuse the
   // one made for the Short); the clip's tags when the pick did not come back.
   const hashtags = useMemo(() => (kit?.hashtags?.length ? kit.hashtags : props.hashtags), [kit, props.hashtags])
-  const missing = useMemo(() => (kit ? unavailableReasons(kit, hashtags) : {}), [kit, hashtags])
+  const missing = useMemo(() => (kit ? unavailableReasons(kit, hashtags, platform) : {}), [kit, hashtags, platform])
   const [include, setInclude] = useState<ClipInclude>(rules.defaults)
   const [text, setText] = useState('')
   const [edited, setEdited] = useState(false)

@@ -23,6 +23,7 @@ import { useModalA11y } from '@/components/ui/useModalA11y'
 import { youtubeUploadEnabled } from '@/lib/feature-flags'
 import { canUseIgDm } from '@/lib/ig-dm-access'
 import { withDmCta } from '@/lib/dm-caption-cta'
+import { sendsOffTikTok } from '@/lib/tiktok-caption'
 import ReelAutoDm, { type ReelAutoDmState } from '@/components/instagram/ReelAutoDm'
 import { tzAbbrev } from '@/lib/format-schedule'
 
@@ -677,6 +678,8 @@ export function TikTokDirectModal({
                   className="w-full text-sm px-3 py-2 rounded-md border border-gray-200 dark:border-white/10 bg-white dark:bg-[#2c2c2e] text-[#1d1d1f] dark:text-[#f5f5f7]"
                 />
                 <p className="text-[10px] text-[#86868b] mt-1">{caption.length} / 2200 · Hashtags + disclaimer included.</p>
+                {/* Said, never done quietly (lib/tiktok-caption, Jarett 2026-10-24). */}
+                {sendsOffTikTok(caption) && <p className="text-[11px] mt-1" style={{ color: '#B45309' }}>On TikTok, MVP takes out what sends people off TikTok (a link, &ldquo;link in bio&rdquo;, Amazon, the affiliate line) and discloses with #ad: TikTok Shop flags a video that does. Instagram and YouTube get the caption as written.</p>}
                 <TagCounts text={caption} platform="tiktok" />
               </div>
 

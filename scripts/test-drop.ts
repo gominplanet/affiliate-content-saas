@@ -263,8 +263,10 @@ void (async () => {
     const { http, calls } = fakeHttp((url, method) => caption(url) ?? kit(url) ?? (url === '/api/tiktok/publish-burned' && method === 'POST' ? ok({ ok: true, publishId: 'pub-1' }) : undefined))
     const r = await runSend(job('tiktok', { privacyLevel: 'PUBLIC_TO_EVERYONE' }), vItem, null, { http, waitMs: 0 })
     const post = calls.find((c) => c.url === '/api/tiktok/publish-burned')
-    check('TikTok: the creator’s privacy, switches off unless turned on, link in bio and not a link in the caption', post?.body.privacyLevel === 'PUBLIC_TO_EVERYONE'
-      && post.body.disableComment === true && post.body.disableDuet === true && /link in bio/i.test(post.body.caption) && !/amzn\.to/.test(post.body.caption))
+    // Nothing that sends people off TikTok (Jarett, 2026-10-24: TikTok Shop
+    // flagged "Link in bio to shop it" and the Amazon Associates line).
+    check('TikTok: the creator’s privacy, switches off unless turned on, and nothing that sends people off TikTok', post?.body.privacyLevel === 'PUBLIC_TO_EVERYONE'
+      && post.body.disableComment === true && post.body.disableDuet === true && !/link in bio/i.test(post.body.caption) && !/amzn\.to|amazon/i.test(post.body.caption))
     check('TikTok: as many tags as TikTok rewards, and #ad once', (post?.body.caption.match(/#\w+/g) || []).length <= 6 && (post?.body.caption.match(/#ad\b/g) || []).length === 1)
     check('TikTok: sent is not posted; it is read back on the next pass', r.state === 'wanted' && r.payload?.publishId === 'pub-1' && typeof r.payload?.written === 'string')
     const back = fakeHttp((url) => url.startsWith('/api/tiktok/publish-burned/status') ? ok({ status: 'published', shareUrl: 'https://tiktok.com/@me/video/9' }) : undefined)

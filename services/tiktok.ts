@@ -1,4 +1,6 @@
 import { fitHashtags } from '@/lib/hashtag-engine'
+// Nothing that sends people off TikTok, on every path (lib/tiktok-caption).
+import { tiktokSafeCaption } from '@/lib/tiktok-caption'
 import { planChunks } from '@/lib/tiktok-chunks'
 import { fetchWithTimeout } from '@/lib/fetch-timeout'
 import { maybeDecrypt, maybeEncrypt } from '@/lib/secrets'
@@ -224,7 +226,7 @@ export async function directPostVideo(
     : {
         post_info: {
           // THE HASHTAG SAFETY NET (lib/hashtag-engine): 3 to 5, no spam.
-          title: fitHashtags(opts.title, 'tiktok').slice(0, 2200),
+          title: fitHashtags(tiktokSafeCaption(opts.title), 'tiktok').slice(0, 2200),
           privacy_level: opts.privacyLevel,
           disable_comment: opts.disableComment,
           disable_duet: opts.disableDuet,
@@ -322,7 +324,7 @@ export async function directPostVideoUpload(
     : {
         post_info: {
           // THE HASHTAG SAFETY NET (lib/hashtag-engine): 3 to 5, no spam.
-          title: fitHashtags(opts.title, 'tiktok').slice(0, 2200),
+          title: fitHashtags(tiktokSafeCaption(opts.title), 'tiktok').slice(0, 2200),
           privacy_level: opts.privacyLevel,
           disable_comment: opts.disableComment,
           disable_duet: opts.disableDuet,
