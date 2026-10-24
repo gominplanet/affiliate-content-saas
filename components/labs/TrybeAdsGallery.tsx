@@ -11,7 +11,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Loader2, AlertTriangle, ExternalLink, Play, Handshake, RotateCcw } from 'lucide-react'
-import { galleryStats, sortAds, adDays, adUrl, nextToRead, type MetaAd, type AdSort } from '@/lib/trybe-adsgallery'
+import { galleryStats, sortAds, ranDays, closingLine, adUrl, nextToRead, LONG_RUN_DAYS, type MetaAd, type AdSort } from '@/lib/trybe-adsgallery'
 import { readMetaAds, metaAdsWords } from '@/components/labs/metaAdsRead'
 import { SCOUT_META_CARDS_MIN_VERSION, scoutAtLeast } from '@/lib/scout-version'
 
@@ -51,7 +51,11 @@ export default function TrybeAdsGallery({ isAdmin, scoutVersion, canRead, topBra
 }) {
   const [data, setData] = useState<GalleryRead | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [sort, setSort] = useState<AdSort>('opening')
+  // LONGEST RUNNING FIRST, VIDEOS (Seb, 2026-10-24: "brands running the
+  // longest ad on meta means the video is working and the hook and cta is
+  // selling.. that is what i want this section to show").
+  const [sort, setSort] = useState<AdSort>('longest')
+  const [videosOnly, setVideosOnly] = useState(true)
   const [limit, setLimit] = useState(SHOWN)
   const [run, setRun] = useState<{ done: number; total: number } | null>(null)
   const [note, setNote] = useState<{ tone: 'ok' | 'warn' | 'bad'; text: string } | null>(null)
@@ -74,8 +78,10 @@ export default function TrybeAdsGallery({ isAdmin, scoutVersion, canRead, topBra
 
   const now = Date.now()
   const inCat = useMemo(() => (data?.ads || []).filter((a) => !category || (data?.categories[a.brandId] || []).some((c) => c.toLowerCase() === category.toLowerCase())), [data, category])
-  const stats = useMemo(() => galleryStats(inCat, category ? new Set(inCat.map((a) => a.brandId)).size : data?.brandsRead ?? 0, now), [inCat, data, category]) // eslint-disable-line react-hooks/exhaustive-deps
-  const shown = useMemo(() => sortAds(inCat, sort, now), [inCat, sort]) // eslint-disable-line react-hooks/exhaustive-deps
+  const videoCount = useMemo(() => inCat.filter((a) => a.video).length, [inCat])
+  const inView = useMemo(() => (videosOnly ? inCat.filter((a) => a.video) : inCat), [inCat, videosOnly])
+  const stats = useMemo(() => galleryStats(inView, category ? new Set(inView.map((a) => a.brandId)).size : data?.brandsRead ?? 0, now), [inView, data, category]) // eslint-disable-line react-hooks/exhaustive-deps
+  const shown = useMemo(() => sortAds(inView, sort, now), [inView, sort]) // eslint-disable-line react-hooks/exhaustive-deps
   const canCards = scoutAtLeast(scoutVersion, SCOUT_META_CARDS_MIN_VERSION)
 
   // The Top 100 read on this visit, else the one MVP saved (the Daily refresh
@@ -97,16 +103,15 @@ export default function TrybeAdsGallery({ isAdmin, scoutVersion, canRead, topBra
 
   const soft = { color: 'var(--text-soft)' }
   const chip = (on: boolean) => ({ className: 'rounded-full px-3 py-1 text-[12.5px] font-semibold border', style: on ? { background: 'rgba(124,58,237,0.10)', color: PURPLE, borderColor: 'transparent' } : { borderColor: 'var(--border)', color: 'var(--text)' } })
-  const pct = (x: number | null) => (x == null ? 'None yet' : `${Math.round(x * 100)}%`)
 
   return (
-    <section id="ww-ads" className="space-y-3 scroll-mt-24" aria-label="Ads TRYBE brands run on Meta">
+    <section id="ww-ads" className="space-y-3 scroll-mt-24" aria-label="TRYBE brands' longest running Meta ads">
       <div className="flex flex-wrap items-baseline gap-2">
-        <h2 className="text-[22px] font-bold tracking-tight">Ads TRYBE brands run on Meta</h2>
+        <h2 className="text-[22px] font-bold tracking-tight">TRYBE brands&rsquo; longest running Meta ads</h2>
         {data && data.ads.length > 0 && <span className="text-[12px] font-semibold rounded-full px-2 py-0.5" style={{ background: 'rgba(219,39,119,0.10)', color: PINK }}>{inCat.length} ad cards</span>}
         {data?.at && <span className="text-[12px] font-semibold rounded-full px-2 py-0.5" style={{ background: 'var(--surface-2)', color: 'var(--text-2)' }}>Read {new Date(data.at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</span>}
       </div>
-      <p className="text-[13px]" style={soft}>The ads with each brand&rsquo;s name running on Facebook and Instagram now, copied from Meta&rsquo;s public Ad Library by the MVP team&rsquo;s SCOUT, with how long each has run. Each card links to the ad on Meta. A preview Meta has since taken down shows the ad&rsquo;s words instead.</p>
+      <p className="text-[13px]" style={soft}>A brand keeps paying for an ad that sells, so the longer an ad runs, the better its video, its hook and its call to action are working. These are the ads TRYBE brands run on Facebook and Instagram, longest running first, copied from Meta&rsquo;s public Ad Library by the MVP team&rsquo;s SCOUT. Days are counted to when MVP read each ad. Each card links to the ad on Meta.</p>
 
       {isAdmin && (
         <div className="rounded-xl border border-dashed px-3 py-2.5 text-[12.5px] flex flex-wrap items-center gap-2" style={{ borderColor: 'var(--border)' }}>
@@ -138,17 +143,20 @@ export default function TrybeAdsGallery({ isAdmin, scoutVersion, canRead, topBra
               400 ads): the brands are every one read on Meta; the cards are
               only the newest MVP keeps, so they are never "the ads running". */}
           <Stat color={PURPLE} big={stats.brands.toLocaleString()} label={category ? `Brands in ${category} with ad cards kept` : `TRYBE brands read on Meta${data.withAds ? `, ${data.withAds.toLocaleString()} running ads` : ''}`} />
-          <Stat color={PINK} big={stats.ads.toLocaleString()} label={data.keepMax && data.ads.length >= data.keepMax ? `Ad cards kept: the newest ${data.keepMax.toLocaleString()} read` : 'Ad cards kept to look through'} />
-          <Stat color="#0891B2" big={stats.medianDays != null ? `${stats.medianDays} days` : 'Not read'} label={`Middle ad's time running${stats.dated && stats.dated < stats.ads ? ` (${stats.dated} with a date)` : ''}`} />
-          <Stat color={GREEN} big={pct(stats.paidShare)} label={`Paid partnerships · ${pct(stats.videoShare)} videos`} />
+          <Stat color={PINK} big={stats.longRun.toLocaleString()} label={`of ${stats.ads.toLocaleString()} ${videosOnly ? 'video ads' : 'ads'} kept had run ${LONG_RUN_DAYS} days or more when read`} />
+          <Stat color="#0891B2" big={stats.longest ? `${stats.longest.days} days` : 'Not read'} label={stats.longest ? `The longest running, by ${stats.longest.brand}` : 'No start dates read yet'} />
+          <Stat color={GREEN} big={stats.medianDays != null ? `${stats.medianDays} days` : 'Not read'} label={`Middle ad's time running${stats.dated && stats.dated < stats.ads ? ` (${stats.dated} with a date)` : ''}`} />
         </div>
         <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Sort ads">
-          <button onClick={() => setSort('opening')} aria-pressed={sort === 'opening'} {...chip(sort === 'opening')}>Opening line first</button>
           <button onClick={() => setSort('longest')} aria-pressed={sort === 'longest'} {...chip(sort === 'longest')}>Running longest</button>
           <button onClick={() => setSort('newest')} aria-pressed={sort === 'newest'} {...chip(sort === 'newest')}>Newest</button>
+          <button onClick={() => setSort('opening')} aria-pressed={sort === 'opening'} {...chip(sort === 'opening')}>With words first</button>
+          <span className="mx-1 h-4 w-px" style={{ background: 'var(--border)' }} aria-hidden />
+          <button onClick={() => { setVideosOnly((v) => !v); setLimit(SHOWN) }} aria-pressed={videosOnly} {...chip(videosOnly)}><Play size={11} className="inline -mt-0.5" /> Videos only ({videoCount.toLocaleString()})</button>
           <span className="ml-auto text-[12px]" style={soft}>Showing {Math.min(limit, shown.length)} of {shown.length}</span>
         </div>
-        {inCat.length === 0 ? <p className="text-[13px]" style={soft}>No ads kept for brands in {category}. Pick All categories above.</p> : (
+        {inCat.length === 0 ? <p className="text-[13px]" style={soft}>No ads kept for brands in {category}. Pick All categories above.</p>
+          : inView.length === 0 ? <p className="text-[13px]" style={soft}>None of the ads kept here is a video. Turn off Videos only to see the rest.</p> : (
           <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
             {shown.slice(0, limit).map((a) => <AdCard key={a.id} ad={a} now={now} />)}
           </div>
@@ -170,7 +178,11 @@ function Stat({ color, big, label }: { color: string; big: string; label: string
 
 function AdCard({ ad, now }: { ad: MetaAd; now: number }) {
   const [bad, setBad] = useState(false)
-  const days = adDays(ad.started, now)
+  const days = ranDays(ad, now)
+  // Days are counted to the read: an ad read a while ago is said as of then.
+  const readT = Date.parse(ad.readAt)
+  const asOf = Number.isFinite(readT) && now - readT > 3 * 86_400_000 ? ` when read ${new Date(readT).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}` : ''
+  const closing = closingLine(ad.body)
   const pic = ad.preview && !bad
   return (
     <a href={adUrl(ad.id)} target="_blank" rel="noopener noreferrer" className="group rounded-2xl border overflow-hidden flex flex-col hover:shadow-sm transition-shadow" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
@@ -182,20 +194,22 @@ function AdCard({ ad, now }: { ad: MetaAd; now: number }) {
           : (
             <div className="p-4 min-h-[11rem] flex flex-col justify-center">
               <span className="w-10 h-10 rounded-xl inline-flex items-center justify-center text-[17px] font-bold mb-3" style={{ background: 'rgba(124,58,237,0.12)', color: PURPLE }}>{(ad.brand.trim()[0] || '?').toUpperCase()}</span>
-              <p className="text-[12px] font-semibold" style={{ color: PURPLE }}>Opening line</p>
+              <p className="text-[12px] font-semibold" style={{ color: PURPLE }}>Hook</p>
               <p className="text-[15px] font-semibold leading-snug line-clamp-6" style={{ color: 'var(--text)' }}>{ad.opening ? `“${ad.opening}”` : 'Meta showed no words for this ad.'}</p>
             </div>
           )}
         {ad.video && <span className="absolute top-2 right-2 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-bold" style={{ background: 'rgba(0,0,0,0.65)', color: '#fff' }}><Play size={10} /> Video</span>}
       </div>
       <div className="p-3 flex-1 flex flex-col gap-1">
-        {pic && ad.opening && <p className="text-[13px] font-semibold leading-snug line-clamp-3">&ldquo;{ad.opening}&rdquo;</p>}
+        <p className="text-[12.5px] font-bold" style={{ color: days != null && days >= LONG_RUN_DAYS ? GREEN : 'var(--text)' }}>
+          {days != null ? `Running ${days} day${days === 1 ? '' : 's'}${asOf}` : ad.startedText ? `Started ${ad.startedText}` : 'Start date not shown'}
+        </p>
+        {pic && ad.opening && <p className="text-[13px] leading-snug line-clamp-3"><span className="font-semibold" style={{ color: PURPLE }}>Hook </span>&ldquo;{ad.opening}&rdquo;</p>}
+        {closing && <p className="text-[12.5px] leading-snug line-clamp-2"><span className="font-semibold" style={{ color: PINK }}>Ends with </span>&ldquo;{closing}&rdquo;</p>}
+        {(ad.cta || ad.link) && <p className="text-[12px]" style={{ color: 'var(--text-soft)' }}><span className="font-semibold" style={{ color: 'var(--text)' }}>Button:</span> {[ad.cta, ad.link ? `to ${ad.link}` : null].filter(Boolean).join(' ')}</p>}
         <p className="text-[12.5px] font-bold">{ad.brand}</p>
         {ad.page && ad.page.toLowerCase() !== ad.brand.toLowerCase() && <p className="text-[12px]" style={{ color: 'var(--text-soft)' }}>Run by {ad.page}</p>}
-        <p className="text-[12px] flex flex-wrap items-center gap-1.5" style={{ color: 'var(--text-soft)' }}>
-          {days != null ? `Running ${days} day${days === 1 ? '' : 's'}` : ad.startedText ? `Started ${ad.startedText}` : 'Start date not shown'}
-          {ad.paid && <span className="inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[10.5px] font-bold" style={{ background: 'rgba(22,163,74,0.12)', color: GREEN }}><Handshake size={10} /> Paid partnership</span>}
-        </p>
+        {ad.paid && <p className="text-[12px]"><span className="inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[10.5px] font-bold" style={{ background: 'rgba(22,163,74,0.12)', color: GREEN }}><Handshake size={10} /> Paid partnership</span></p>}
         <span className="mt-auto pt-1 inline-flex items-center gap-1 text-[12px] font-semibold" style={{ color: PURPLE }}>See it on Meta <ExternalLink size={11} /></span>
       </div>
     </a>

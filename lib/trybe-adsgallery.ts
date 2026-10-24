@@ -15,8 +15,12 @@ import { openingLine } from '@/lib/trybe-working'
 
 /** The meta table row the gallery lives in. */
 export const GALLERY_KEY = 'meta_gallery'
-/** Ads kept in all, the newest reads first. */
+/** Ads kept in all, the longest running first (Seb, 2026-10-24: "brands
+ *  running the longest ad on meta means the video is working and the hook
+ *  and cta is selling"). */
 export const GALLERY_MAX = 400
+/** An ad not read again in this long may have stopped, so it is let go. */
+export const GALLERY_FRESH_DAYS = 60
 /** Ads kept per brand. */
 export const ADS_PER_BRAND = 8
 
@@ -39,6 +43,10 @@ export interface MetaAd {
   versions: boolean
   preview: string | null
   readAt: string
+  /** The button Meta shows ("Shop now") and the site it leads to, as Meta
+   *  wrote it. Absent on ads read before 2026-10-24. */
+  cta?: string | null
+  link?: string | null
 }
 
 export interface Gallery {
@@ -107,19 +115,28 @@ export function readAdCard(c: AdCardIn, brandId: string, brand: string, now: str
     if (body.join(' ').length > 600) break
   }
   const text = body.join('\n').slice(0, 600).trim()
+  // The call to action under the words: the button and the site it leads to.
+  const rest = after.slice(body.length)
+  const cta = rest.find((l) => CTA.test(l)) ?? null
+  const link = rest.find((l) => DOMAIN.test(l))?.toLowerCase() ?? null
   return {
     id, brandId, brand, page, startedText, started: adDate(startedText), body: text, opening: text ? openingLine(text) : '',
     paid: /paid partnership/i.test(c.text), video: c.video === true, versions: /multiple versions/i.test(c.text),
     preview: c.preview ? safePreview(c.preview) : null, readAt: now,
+    cta: cta ? cta.slice(0, 40) : null, link: link ? link.slice(0, 80) : null,
   }
 }
 
 /** The gallery with this brand's ads read now in place of its older ones.
- *  The newest reads stay when there are more than GALLERY_MAX. Pure. */
+ *  Ads not read again in GALLERY_FRESH_DAYS are let go (they may have
+ *  stopped), and the longest running stay when there are more than
+ *  GALLERY_MAX: a brand keeps paying for an ad that sells. Pure. */
 export function mergeGallery(had: Gallery | null | undefined, brandId: string, brandName: string, ads: MetaAd[], count: number | null, now: string): Gallery {
-  const keep = (had?.ads || []).filter((a) => a.brandId !== brandId)
+  const nowT = Date.parse(now)
+  const fresh = (a: MetaAd) => !Number.isFinite(nowT) || !Number.isFinite(Date.parse(a.readAt)) || nowT - Date.parse(a.readAt) < GALLERY_FRESH_DAYS * 86_400_000
+  const keep = (had?.ads || []).filter((a) => a.brandId !== brandId && fresh(a))
   const mine = Array.from(new Map(ads.filter((a) => a.brandId === brandId).map((a) => [a.id, a])).values()).slice(0, ADS_PER_BRAND)
-  const all = [...mine, ...keep].sort((a, b) => b.readAt.localeCompare(a.readAt)).slice(0, GALLERY_MAX)
+  const all = [...mine, ...keep].sort((a, b) => (ranDays(b) ?? -1) - (ranDays(a) ?? -1) || b.readAt.localeCompare(a.readAt)).slice(0, GALLERY_MAX)
   const brands = { ...(had?.brands || {}), [brandId]: { name: brandName, at: now, count } }
   return { at: now, brands, ads: all }
 }
@@ -130,7 +147,29 @@ export function adDays(started: string | null | undefined, now: number): number 
   return Number.isFinite(t) ? Math.max(0, Math.floor((now - t) / 86_400_000)) : null
 }
 
-export interface GalleryStats { brands: number; ads: number; medianDays: number | null; paidShare: number | null; videoShare: number | null; dated: number }
+/** Days an ad had been running when MVP read it: Meta lists only ads that
+ *  are running, so this is a fact; days since then are not. Pure. */
+export function ranDays(a: Pick<MetaAd, 'started' | 'readAt'>, now = Date.now()): number | null {
+  const read = Date.parse(a.readAt)
+  return adDays(a.started, Number.isFinite(read) ? Math.min(read, now) : now)
+}
+
+/** The ad's closing sentence, often its offer or call to action, when it is
+ *  not also its opening. Pure. */
+export function closingLine(body: string): string | null {
+  const parts = String(body || '').replace(/\s+/g, ' ').trim().match(/[^.!?]+[.!?]*/g) || []
+  const last = (parts[parts.length - 1] || '').trim()
+  return parts.length > 1 && last.length > 3 ? last.slice(0, 160) : null
+}
+
+/** Ads that had run this long when read are the ones a brand keeps paying for. */
+export const LONG_RUN_DAYS = 30
+
+export interface GalleryStats { brands: number; ads: number; medianDays: number | null; paidShare: number | null; videoShare: number | null; dated: number
+  /** Ads that had run LONG_RUN_DAYS or more when read. */
+  longRun: number
+  /** The longest running ad kept. */
+  longest: { days: number; brand: string } | null }
 
 /** Brands whose last read found ads running. Pure. */
 export function brandsWithAds(g: Pick<Gallery, 'brands'> | null | undefined): number {
@@ -148,10 +187,14 @@ export function nextToRead<T extends { brandId: string }>(top: T[], g: { brands?
 /** The four tiles: brands read, ads kept, the middle ad's age, the share of
  *  paid partnerships and of videos. A share over no ads is null, never 0%. Pure. */
 export function galleryStats(ads: MetaAd[], brandsRead: number, now: number): GalleryStats {
-  const days = ads.map((a) => adDays(a.started, now)).filter((d): d is number => d != null).sort((a, b) => a - b)
+  const days = ads.map((a) => ranDays(a, now)).filter((d): d is number => d != null).sort((a, b) => a - b)
   const median = days.length ? (days.length % 2 ? days[(days.length - 1) / 2] : Math.round((days[days.length / 2 - 1] + days[days.length / 2]) / 2)) : null
+  const top = [...ads].sort((a, b) => (ranDays(b, now) ?? -1) - (ranDays(a, now) ?? -1))[0]
+  const topDays = top ? ranDays(top, now) : null
   return {
     brands: brandsRead, ads: ads.length, medianDays: median, dated: days.length,
+    longRun: days.filter((d) => d >= LONG_RUN_DAYS).length,
+    longest: top && topDays != null ? { days: topDays, brand: top.brand } : null,
     paidShare: ads.length ? ads.filter((a) => a.paid).length / ads.length : null,
     videoShare: ads.length ? ads.filter((a) => a.video).length / ads.length : null,
   }
@@ -162,7 +205,7 @@ export type AdSort = 'opening' | 'longest' | 'newest'
 /** Opening line first (ads with words, then the rest), running longest, or
  *  newest. Ties keep the brand together. Pure. */
 export function sortAds(ads: MetaAd[], by: AdSort, now: number): MetaAd[] {
-  const age = (a: MetaAd) => adDays(a.started, now)
+  const age = (a: MetaAd) => ranDays(a, now)
   return [...ads].sort((a, b) => {
     if (by === 'opening') return Number(!a.opening) - Number(!b.opening) || (age(b) ?? -1) - (age(a) ?? -1) || a.brand.localeCompare(b.brand)
     if (by === 'longest') return (age(b) ?? -1) - (age(a) ?? -1) || a.brand.localeCompare(b.brand)

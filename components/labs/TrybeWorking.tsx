@@ -19,8 +19,8 @@
 // transcribed where TRYBE has none) had 85 that evening, so they are read
 // from MVP in one answer, and the tab says how many of the 100 had words.
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Loader2, AlertTriangle, RotateCcw, Play, Users } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Loader2, AlertTriangle, RotateCcw, Play, Users, X } from 'lucide-react'
 import { requestTrybeApi } from '@/lib/extension-frame'
 import { keysOf } from '@/lib/trybe-mybrands'
 import { readTopEntries, openingLine, hookType, hookCounts, middleHalf, HOOK_TYPES, type TopVideoEntry, type HookType } from '@/lib/trybe-working'
@@ -30,7 +30,8 @@ import TrybeAdsGallery from '@/components/labs/TrybeAdsGallery'
 
 const PURPLE = '#7C3AED'
 const AMBER = '#B45309'
-const CACHE_KEY = 'mvp.trybe.working.v2'
+// v3: entries carry every video link, the whole video first (2026-10-24).
+const CACHE_KEY = 'mvp.trybe.working.v3'
 
 interface Read { at: number; entries: TopVideoEntry[]; lines: Record<string, string>; tried: number; keys: string; waiting: number }
 
@@ -61,6 +62,7 @@ export default function TrybeWorking({ canRead, isAdmin, newToTop, scoutVersion 
   const [error, setError] = useState<string | null>(null)
   const [progress, setProgress] = useState<{ done: number; of: number } | null>(null)
   const [pick, setPick] = useState<HookType | null>(null)
+  const [playing, setPlaying] = useState<TopVideoEntry | null>(null)
 
   const load = useCallback(async (fresh = false) => {
     if (!fresh) { const c = cached(); if (c) { setData(c); return } }
@@ -154,9 +156,10 @@ export default function TrybeWorking({ canRead, isAdmin, newToTop, scoutVersion 
 
   return (
     <div className="space-y-7">
+      {playing && <ExamplePlayer entry={playing} isAdmin={isAdmin} onClose={() => setPlaying(null)} />}
       <div className="flex flex-wrap items-center gap-2">
         <nav className="flex flex-wrap gap-1.5" aria-label="On this tab">
-          {[['ww-glance', 'At a glance'], ['ww-hooks', 'Hooks'], ['ww-lengths', 'Video lengths'], ['ww-creators', 'Top creators'], ['ww-ads', 'Meta ads']].map(([id, label]) => (
+          {[['ww-glance', 'At a glance'], ['ww-hooks', 'Hooks'], ['ww-lengths', 'Video lengths'], ['ww-creators', 'Top creators'], ['ww-ads', 'Longest running ads']].map(([id, label]) => (
             <a key={id} href={`#${id}`} className="rounded-full px-3 py-1 text-[12.5px] font-semibold border hover:border-[#7C3AED]/50" style={{ borderColor: 'var(--border)', color: 'var(--text)' }}>{label}</a>
           ))}
         </nav>
@@ -222,12 +225,12 @@ export default function TrybeWorking({ canRead, isAdmin, newToTop, scoutVersion 
           <div className="mt-4 grid gap-3 md:grid-cols-2 lg:grid-cols-3">
             {examples.map((e) => (
               <article key={e.id} className="rounded-2xl border p-3 flex gap-3" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
-                <a href={e.video || e.thumbnail || '#'} target="_blank" rel="noopener noreferrer" className="relative shrink-0 w-[84px] rounded-xl overflow-hidden border" style={{ aspectRatio: '9 / 16', borderColor: 'var(--border)', background: 'rgba(0,0,0,0.05)' }} title="Watch it">
+                <button type="button" onClick={() => e.video && setPlaying(e)} disabled={!e.video} aria-label={`Watch the ${e.brandName || 'TRYBE'} example`} className="relative shrink-0 w-[84px] rounded-xl overflow-hidden border" style={{ aspectRatio: '9 / 16', borderColor: 'var(--border)', background: 'rgba(0,0,0,0.05)' }} title="Watch it">
                   {e.thumbnail
                     // eslint-disable-next-line @next/next/no-img-element
                     ? <img src={e.thumbnail} alt="" loading="lazy" className="absolute inset-0 w-full h-full object-cover" />
                     : <span className="absolute inset-0 flex items-center justify-center text-[11px]" style={soft}>No cover</span>}
-                </a>
+                </button>
                 <div className="min-w-0 flex flex-col">
                   <p className="text-[14.5px] font-semibold leading-snug">&ldquo;{data.lines[e.id as string]}&rdquo;</p>
                   <p className="mt-1.5 text-[12.5px] flex flex-wrap items-center gap-1.5">
@@ -235,7 +238,7 @@ export default function TrybeWorking({ canRead, isAdmin, newToTop, scoutVersion 
                     {e.rank != null && <span className="text-[11px] font-bold rounded-full px-1.5 py-0.5" style={{ background: 'rgba(124,58,237,0.10)', color: PURPLE }}>TRYBE #{e.rank}</span>}
                   </p>
                   <p className="text-[12px]" style={soft}>{[e.category, e.creator ? `Creator: ${e.creator}` : null].filter(Boolean).join(' · ')}</p>
-                  {e.video && <a href={e.video} target="_blank" rel="noopener noreferrer" className="mt-auto pt-1.5 inline-flex items-center gap-1 text-[12.5px] font-semibold" style={{ color: PURPLE }}><Play size={12} /> Watch this example</a>}
+                  {e.video && <button type="button" onClick={() => setPlaying(e)} className="mt-auto pt-1.5 inline-flex items-center gap-1 text-[12.5px] font-semibold self-start" style={{ color: PURPLE }}><Play size={12} /> Watch this example</button>}
                 </div>
               </article>
             ))}
@@ -300,14 +303,14 @@ export default function TrybeWorking({ canRead, isAdmin, newToTop, scoutVersion 
                 </div>
                 <div className="flex gap-1.5">
                   {c.clips.slice(0, 3).map((v, k) => (
-                    <a key={`${v.id || k}`} href={v.video || v.thumbnail || '#'} target="_blank" rel="noopener noreferrer" title={`${v.brand || 'Video'}${v.rank ? `, TRYBE #${v.rank}` : ''}`}
+                    <button type="button" key={`${v.id || k}`} onClick={() => { const full = entries.find((x) => x.id && x.id === v.id); if (full?.video || v.video) setPlaying(full ?? { id: v.id, rank: v.rank, brandId: null, brandName: v.brand, brandLogo: null, category: null, creator: c.name, thumbnail: v.thumbnail, video: v.video, seconds: null }) }} title={`Watch ${v.brand || 'this video'}${v.rank ? `, TRYBE #${v.rank}` : ''}`}
                       className="relative w-[46px] rounded-lg overflow-hidden border shrink-0" style={{ aspectRatio: '9 / 16', borderColor: 'var(--border)', background: 'var(--surface-2)' }}>
                       {v.thumbnail
                         // eslint-disable-next-line @next/next/no-img-element
                         ? <img src={v.thumbnail} alt="" loading="lazy" className="absolute inset-0 w-full h-full object-cover" />
                         : null}
                       <span className="absolute inset-0 flex items-center justify-center"><span className="w-5 h-5 rounded-full inline-flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.55)', color: '#fff' }}><Play size={10} /></span></span>
-                    </a>
+                    </button>
                   ))}
                 </div>
               </li>
@@ -331,6 +334,61 @@ function Glance({ color, label, big, title, sub }: { color: string; label: strin
       <p className="text-[30px] font-bold leading-tight mt-1 tabular-nums" style={{ color }}>{big}</p>
       {title && <p className="text-[14px] font-bold mt-0.5">{title}</p>}
       <p className="text-[12.5px] mt-1" style={{ color: 'var(--text-soft)' }}>{sub}</p>
+    </div>
+  )
+}
+
+/** WATCH THE WHOLE VIDEO (Seb, 2026-10-24: "when i click on watch example i
+ *  can always only see the first 3 seconds"). Plays in the page, trying each
+ *  link TRYBE sent, the whole file first: a link that ends well before
+ *  TRYBE's own length (or within six seconds when TRYBE gives none) moves on
+ *  to the next. When every link is that short, the longest plays and the
+ *  player says TRYBE shares only that much, never as if it were the video. */
+function ExamplePlayer({ entry, isAdmin, onClose }: { entry: TopVideoEntry; isAdmin: boolean; onClose: () => void }) {
+  const links = entry.videos?.length ? entry.videos : entry.video ? [{ url: entry.video, from: 'video' }] : []
+  const want = entry.seconds && entry.seconds > 8 ? entry.seconds - 2 : 6
+  const [at, setAt] = useState(0)
+  const [lengths, setLengths] = useState<Record<number, number | 'failed'>>({})
+  const settled = useRef(false)
+  const [final, setFinal] = useState(false)
+  useEffect(() => {
+    const onKey = (ev: KeyboardEvent) => { if (ev.key === 'Escape') onClose() }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+  /** Every link tried and none long enough: the longest that played. */
+  const settle = (got: Record<number, number | 'failed'>) => {
+    settled.current = true; setFinal(true)
+    const best = Object.entries(got).filter(([, v]) => typeof v === 'number').sort((a, b) => (b[1] as number) - (a[1] as number))[0]
+    if (best && Number(best[0]) !== at) setAt(Number(best[0]))
+  }
+  const tried = (v: number | 'failed') => {
+    const got = { ...lengths, [at]: v }
+    setLengths(got)
+    if (settled.current) return
+    if (typeof v === 'number' && v >= want) { settled.current = true; setFinal(true); return }
+    if (at + 1 < links.length) setAt(at + 1)
+    else settle(got)
+  }
+  const len = lengths[at]
+  const short = final && typeof len === 'number' && len < want
+  const allFailed = links.length > 0 && Object.keys(lengths).length === links.length && Object.values(lengths).every((v) => v === 'failed')
+  const soft = { color: 'var(--text-soft)' }
+  return (
+    <div role="dialog" aria-modal="true" aria-label={`${entry.brandName || 'TRYBE'} example`} className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.6)' }} onClick={onClose}>
+      <div className="relative rounded-2xl p-3 max-w-[420px] w-full space-y-2" style={{ background: 'var(--surface)' }} onClick={(ev) => ev.stopPropagation()}>
+        <button type="button" onClick={onClose} aria-label="Close" className="absolute top-2 right-2 rounded-full p-1" style={{ background: 'var(--surface-2)' }}><X size={14} /></button>
+        <p className="text-[13px] font-semibold pr-8">{entry.brandName || 'TRYBE'}{entry.rank ? `, TRYBE #${entry.rank}` : ''}{entry.creator ? ` · ${entry.creator}` : ''}</p>
+        {links.length === 0 || allFailed
+          ? <p className="text-[13px]" style={{ color: AMBER }}>This video did not play from the {links.length ? `${links.length} link${links.length === 1 ? '' : 's'}` : 'nothing'} TRYBE sent for it.</p>
+          : <video key={links[at].url} src={links[at].url} poster={entry.thumbnail || undefined} controls autoPlay playsInline className="w-full rounded-xl max-h-[70vh] bg-black"
+              onLoadedMetadata={(ev) => { const d = ev.currentTarget.duration; if (Number.isFinite(d)) tried(d) }} onError={() => tried('failed')} />}
+        {short && <p className="text-[12.5px]" style={{ color: AMBER }}>TRYBE shares only the first {Math.round(len as number)} seconds of this video{entry.seconds ? ` (it runs ${entry.seconds} seconds)` : ''}, so that is all MVP can play.</p>}
+        {links[at] && <a href={links[at].url} target="_blank" rel="noopener noreferrer" className="text-[12px] font-semibold" style={{ color: PURPLE }}>Open the video file in a new tab</a>}
+        {isAdmin && links.length > 0 && (
+          <p className="text-[11px]" style={soft}>Links TRYBE sent: {links.map((l, k) => `${l.from} ${lengths[k] === 'failed' ? '(did not play)' : typeof lengths[k] === 'number' ? `(${Math.round(lengths[k] as number)}s)` : '(not tried)'}`).join(', ')}{entry.seconds ? `. TRYBE's length: ${entry.seconds}s` : ''}</p>
+        )}
+      </div>
     </div>
   )
 }

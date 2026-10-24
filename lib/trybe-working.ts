@@ -29,6 +29,10 @@ export interface TopVideoEntry {
   creatorSales?: string | null
   thumbnail: string | null
   video: string | null
+  /** Every video link TRYBE sent for this entry, the most likely whole
+   *  video first, with where it was (Seb, 2026-10-24: "when i click on
+   *  watch example i can always only see the first 3 seconds"). */
+  videos?: Array<{ url: string; from: string }>
   /** Seconds, when TRYBE says. */
   seconds: number | null
 }
@@ -53,6 +57,31 @@ function findVideoFile(o: unknown, depth = 0): string | null {
   }
   for (const v of Object.values(o)) { if (typeof v === 'object') { const f = findVideoFile(v, depth + 1); if (f) return f } }
   return null
+}
+
+// THE WHOLE VIDEO BEFORE A CLIP. An entry can carry more than one video link:
+// the one MVP took first played only the opening seconds, so every link is
+// collected with the name it sat under, and one whose name says a short cut
+// (preview, hook, clip, trim) goes after one that says the whole file.
+const SHORT_CUT = /preview|hook|clip|trim|teaser|snippet|short|gif|sample|thumb|first|intro|loop|cover/i
+const WHOLE = /full|original|raw|source|master|download|playback|hls|m3u8|submission|^video$|^videoUrl$|^url$/i
+export function videoLinks(o: unknown, path = '', depth = 0, out: Array<{ url: string; from: string }> = []): Array<{ url: string; from: string }> {
+  if (depth > 3 || out.length >= 8) return out
+  if (Array.isArray(o)) { o.slice(0, 10).forEach((v, i) => videoLinks(v, `${path}[${i}]`, depth + 1, out)); return out }
+  if (!isObj(o)) return out
+  for (const [k, v] of Object.entries(o)) {
+    const at = path ? `${path}.${k}` : k
+    if (typeof v === 'string') {
+      if (!/^https:\/\//i.test(v) || PAGE_HOST.test(v) || /\.(jpe?g|png|webp|gif|avif)(\?|#|$)/i.test(v)) continue
+      if ((VIDEO_FILE.test(v) || VIDEO_KEY.test(k) || /video/i.test(k)) && !out.some((x) => x.url === v)) out.push({ url: v, from: at })
+    } else if (typeof v === 'object') videoLinks(v, at, depth + 1, out)
+  }
+  return out
+}
+/** Whole files first, short cuts last, else as TRYBE sent them. Pure. */
+export function rankVideoLinks(links: Array<{ url: string; from: string }>): Array<{ url: string; from: string }> {
+  const score = (x: { from: string }) => { const k = x.from.split('.').pop() || x.from; return (SHORT_CUT.test(x.from) ? -2 : 0) + (WHOLE.test(k) ? 1 : 0) }
+  return links.map((x, i) => ({ x, i })).sort((a, b) => score(b.x) - score(a.x) || a.i - b.i).map((a) => a.x)
 }
 
 /** The field names on TRYBE's first Top 100 entry, nested ones as
@@ -100,7 +129,11 @@ export function readTopEntries(json: unknown): TopVideoEntry[] {
       creatorAvatar: url(first(raw, ['creatorAvatarUrl', 'creatorImageUrl']) ?? first(creator, ['avatarUrl', 'avatar', 'profileImageUrl', 'profilePictureUrl', 'imageUrl', 'photoUrl', 'image'])),
       creatorSales: str(first(raw, ['creatorGmvBucket', 'creatorSalesBucket', 'gmvBucket']) ?? first(creator, ['gmvBucket', 'gmv30dBucket', 'salesBucket', 'gmvRange', 'estimatedGmvBucket', 'gmvLabel'])).slice(0, 40) || null,
       thumbnail: url(first(raw, ['thumbnailUrl', 'thumbnail_url', 'thumbnail', 'coverUrl', 'posterUrl']) ?? first(meta, ['thumbnailUrl', 'thumbnail', 'coverUrl', 'posterUrl'])),
-      video: url(first(raw, ['videoUrl', 'video_url', 'url', 'mediaUrl']) ?? first(meta, ['videoUrl', 'url', 'playbackUrl'])) ?? findVideoFile(raw),
+      ...(() => {
+        const links = rankVideoLinks(videoLinks(raw))
+        const named = url(first(raw, ['videoUrl', 'video_url', 'url', 'mediaUrl']) ?? first(meta, ['videoUrl', 'url', 'playbackUrl'])) ?? findVideoFile(raw)
+        return { video: links[0]?.url ?? named, videos: links.length ? links : named ? [{ url: named, from: 'video' }] : [] }
+      })(),
       // Milliseconds when large.
       seconds: secs != null && secs > 0 ? (secs > 1000 ? Math.round(secs / 1000) : Math.round(secs)) : null,
     })

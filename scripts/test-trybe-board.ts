@@ -10,7 +10,7 @@ import { readFileSync } from 'node:fs'
 import { activeKeys, activeRows, activeBy, rankActive, categoryCounts, tierWentUp, latestTierChanges, VIDEOS_LEAD_MIN } from '../lib/trybe-active'
 import { topCreators } from '../lib/trybe-creators'
 import { readTopEntries } from '../lib/trybe-working'
-import { readAdCard, readCardsBody, adDate, safePreview, mergeGallery, galleryStats, sortAds, adDays, GALLERY_MAX, ADS_PER_BRAND, brandsWithAds, nextToRead, type MetaAd } from '../lib/trybe-adsgallery'
+import { readAdCard, readCardsBody, adDate, safePreview, mergeGallery, galleryStats, sortAds, adDays, ranDays, closingLine, GALLERY_MAX, GALLERY_FRESH_DAYS, ADS_PER_BRAND, brandsWithAds, nextToRead, type MetaAd } from '../lib/trybe-adsgallery'
 import { compareRows } from '../lib/trybe-compare'
 import { filterCheck, readFilters, FILTER_WORDS, readDirStats } from '../lib/trybe-finder'
 import { BROWSE_SORTS } from '../lib/trybe-outreach'
@@ -78,7 +78,7 @@ const mk = (id: string, brandId: string, readAt: string, started: string | null 
 const g1 = mergeGallery(null, 'b1', 'B1', [mk('1', 'b1', '2026-10-16'), mk('2', 'b1', '2026-10-16')], 2, '2026-10-16')
 const g2 = mergeGallery(g1, 'b1', 'B1', [mk('3', 'b1', '2026-10-17')], 1, '2026-10-17')
 check('a brand read again has its ads replaced, not added to', g2.ads.length === 1 && g2.ads[0].id === '3' && g2.brands.b1.count === 1)
-check('the gallery keeps at most GALLERY_MAX ads, newest reads first', (() => {
+check('the gallery keeps at most GALLERY_MAX ads', (() => {
   let g = null as ReturnType<typeof mergeGallery> | null
   for (let i = 0; i < 70; i++) g = mergeGallery(g, `b${i}`, `B${i}`, Array.from({ length: 8 }, (_, k) => mk(`${i}-${k}`, `b${i}`, `2026-10-${String(1 + (i % 28)).padStart(2, '0')}T${String(i % 24).padStart(2, '0')}:00:00Z`)), 8, '2026-10-17')
   return g!.ads.length === GALLERY_MAX
@@ -89,6 +89,37 @@ check('tiles: the middle ad’s age, paid and video shares', st.medianDays === 1
 check('no ads is not 0%: the shares are not known', galleryStats([], 0, nowT).paidShare === null && galleryStats([], 0, nowT).medianDays === null)
 const sorted = sortAds([mk('n', 'b', 'x', '2026-10-15'), mk('o', 'b', 'x', '2026-08-01'), mk('w', 'b', 'x', '2026-10-10', { opening: '' })], 'longest', nowT)
 check('running longest first, and newest first', sorted[0].id === 'o' && sortAds(sorted, 'newest', nowT)[0].id === 'n' && sortAds(sorted, 'opening', nowT)[2].id === 'w')
+// LONGEST RUNNING (Seb, 2026-10-24: "brands running the longest ad on meta
+// means the video is working and the hook and cta is selling").
+check('the button and the site it leads to are read from the card', ad.cta === 'Shop now' && ad.link === 'humehealth.com')
+check('the closing line is the last sentence, when there is more than one', closingLine('These are way too expensive. But here is why. Shop the band today.') === 'Shop the band today.' && closingLine('One line only.') === null)
+check('days running are counted to the read, never past it', ranDays({ started: '2026-08-01', readAt: '2026-09-01T00:00:00Z' }, Date.parse('2026-10-24T00:00:00Z')) === 31)
+{
+  const long = mk('long', 'b1', '2026-10-20T00:00:00Z', '2026-03-01'), short = mk('short', 'b2', '2026-10-20T00:00:00Z', '2026-10-15')
+  const g = mergeGallery({ at: '', brands: {}, ads: [short, long] }, 'b3', 'B3', [mk('mid', 'b3', '2026-10-21T00:00:00Z', '2026-07-01')], 1, '2026-10-21T00:00:00Z')
+  check('the longest running are kept first', g.ads.map((a) => a.id).join(',') === 'long,mid,short')
+  const stale = mergeGallery({ at: '', brands: {}, ads: [mk('old', 'b1', '2026-07-01T00:00:00Z', '2026-01-01')] }, 'b3', 'B3', [], 0, '2026-10-21T00:00:00Z')
+  check(`an ad not read again in ${GALLERY_FRESH_DAYS} days is let go`, stale.ads.length === 0)
+  const st2 = galleryStats([long, short], 2, Date.parse('2026-10-24T00:00:00Z'))
+  check('the tiles count the ads that ran 30 days or more and name the longest', st2.longRun === 1 && st2.longest?.days === 233 && st2.longest?.brand === 'b1')
+}
+{
+  const gal = read('components/labs/TrybeAdsGallery.tsx')
+  check('the section opens on running longest, videos only, and says why', /useState<AdSort>\('longest'\)/.test(gal) && /const \[videosOnly, setVideosOnly\] = useState\(true\)/.test(gal) && /A brand keeps paying for an ad that sells/.test(gal) && /longest running Meta ads/.test(gal))
+  check('each card shows its hook, how it ends and its button', /Hook /.test(gal) && /Ends with /.test(gal) && /Button:/.test(gal))
+}
+// THE WHOLE EXAMPLE (Seb, 2026-10-24: "when i click on watch example i can
+// always only see the first 3 seconds").
+{
+  const { readTopEntries } = require('../lib/trybe-working') as typeof import('../lib/trybe-working')
+  const e = readTopEntries({ data: [{ brandName: 'B', id: 's1', previewVideoUrl: 'https://cdn.x/p.mp4', video: { hookClipUrl: 'https://cdn.x/h.mp4', url: 'https://cdn.x/full.mp4' }, thumbnailUrl: 'https://cdn.x/t.jpg', tiktokUrl: 'https://www.tiktok.com/@a/video/1' }] })[0]
+  check('every video link is kept, the whole file before a preview or a hook clip', e.video === 'https://cdn.x/full.mp4' && (e.videos || []).map((v) => v.from).join(',') === 'video.url,previewVideoUrl,video.hookClipUrl')
+  check('a page link or a picture is never a video', !(e.videos || []).some((v) => /tiktok|\.jpg/.test(v.url)))
+  const W = read('components/labs/TrybeWorking.tsx')
+  check('Watch this example plays in the page, trying each link until one is long enough', /function ExamplePlayer\(/.test(W) && /onClick=\{\(\) => setPlaying\(e\)\}/.test(W) && /if \(at \+ 1 < links\.length\) setAt\(at \+ 1\)/.test(W) && !/href=\{e\.video/.test(W))
+  check('a clip is said as a clip, never as the video', /TRYBE shares only the first \{Math\.round\(len as number\)\} seconds of this video/.test(W))
+  check('kept reads from before are read again', /mvp\.trybe\.working\.v3/.test(W))
+}
 check('days running from the start date', adDays('2026-10-07', nowT) === 10 && adDays(null, nowT) === null)
 
 // ── 7. Payouts and TikTok Shop in Find brands ───────────────────────────────
@@ -172,7 +203,7 @@ for (const f of ['components/labs/TrybeActive.tsx', 'components/labs/TrybeOffDis
   check('the route sends the saved Top 100 to the team, with when each was read', /if \(tier === 'admin'\) \{[\s\S]{0,200}gt\('top100_hits', 0\)/.test(ROUTE) && /readAt: g\?\.brands\?\.\[r\.brand_id\]\?\.at \?\? null/.test(ROUTE))
   check('the button never offers 0 brands', !/Read the ads of \{Math\.min\(25, topBrands\.length\)\}/.test(PANEL) && /todo\.length \? `Read the ads of \$\{todo\.length\} Top 100 brands`/.test(PANEL))
   check('no "read the Top 100 above" when nothing above can', !/Read the Top 100 above first/.test(PANEL))
-  check('the kept cards are never called the ads running', !/label="Ads they are running"/.test(PANEL) && /Ad cards kept: the newest/.test(PANEL) && /running ads/.test(PANEL))
+  check('the kept cards are never called the ads running', !/label="Ads they are running"/.test(PANEL) && /kept had run \$\{LONG_RUN_DAYS\} days or more when read/.test(PANEL) && /running ads/.test(PANEL))
 }
 
 if (failures.length) {
