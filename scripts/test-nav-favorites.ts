@@ -35,6 +35,20 @@ const read = (p: string) => readFileSync(p, 'utf8')
     /create table if not exists public\.user_nav_favorites/.test(M) && /drop policy if exists "user_nav_favorites_own"/.test(M) && /using \(user_id = auth\.uid\(\)\) with check \(user_id = auth\.uid\(\)\)/.test(M))
 }
 
+// STUCK STARS (Seb, 2026-10-24: "why cant i get rid of the two feature stuck
+// in my features"). A star saved on a page later merged into another row as
+// a tab showed as that row, whose star never checked it.
+{
+  const stuck = ['/brand-kit', '/youtube-first-comments']
+  const out = toggleFavorite(stuck, '/brand-inquiries', MAX_NAV_FAVORITES, ['/brand-kit', '/inquiries'])
+  check('a row\'s star takes out a star saved on one of its tabs', out.next.join() === '/youtube-first-comments' && !out.full)
+  check('and adds the row\'s own address when none is starred', toggleFavorite(['/co-pilot'], '/brand-inquiries', MAX_NAV_FAVORITES, ['/brand-kit']).next.join() === '/co-pilot,/brand-inquiries')
+  check('it clears every address of the row at once', toggleFavorite(['/a', '/x', '/b'], '/x', MAX_NAV_FAVORITES, ['/a', '/b']).next.length === 0)
+  const S2 = read('components/layout/DashboardShellV2.tsx')
+  check('the star reads the row and its tabs', /const starred = \[item\.href, \.\.\.aliases\]\.some\(\(h\) => favorites\.includes\(h\)\)/.test(S2) && /starFeature\(item\.href, item\.label, aliases\)/.test(S2))
+  check('while editing, the star has its own room and never covers the NEW chip', /starSpace=\{editingFavorites && !item\.external\}/.test(S2) && /!collapsed && starSpace && 'pr-9'/.test(S2))
+}
+
 if (failures.length) {
   console.error(`\n❌ nav-favorites: ${failures.length} failure(s)\n`)
   for (const f of failures) console.error(`   • ${f}`)

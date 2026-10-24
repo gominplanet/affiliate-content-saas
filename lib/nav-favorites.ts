@@ -19,9 +19,15 @@ export const MAX_NAV_FAVORITES = 12
 
 const LOCAL_KEY = 'mvp_nav_favorites_v1'
 
-/** Adds or removes one page, keeping pin order and the maximum. Pure. */
-export function toggleFavorite(list: string[], href: string, max = MAX_NAV_FAVORITES): { next: string[]; full: boolean } {
-  if (list.includes(href)) return { next: list.filter((h) => h !== href), full: false }
+/** Adds or removes one page, keeping pin order and the maximum. `aliases`
+ *  are the other addresses the same row answers to (the tabs merged into it):
+ *  a star saved on one of them shows as this row, so it is this row's star
+ *  and taking the row out takes them all out (Seb, 2026-10-24: YouTube
+ *  comments and Brand inbox were stuck in My features, starred on an address
+ *  the row's own star never checked). Pure. */
+export function toggleFavorite(list: string[], href: string, max = MAX_NAV_FAVORITES, aliases: string[] = []): { next: string[]; full: boolean } {
+  const all = [href, ...aliases]
+  if (list.some((h) => all.includes(h))) return { next: list.filter((h) => !all.includes(h)), full: false }
   if (list.length >= max) return { next: list, full: true }
   return { next: [...list, href], full: false }
 }
@@ -38,7 +44,7 @@ function writeLocal(list: string[]) {
 
 export function useNavFavorites(): {
   favorites: string[]
-  toggle: (href: string) => { full: boolean }
+  toggle: (href: string, aliases?: string[]) => { full: boolean }
   /** Where the list is kept: the account (every device) or only this browser. */
   savedTo: 'account' | 'device' | null
 } {
@@ -71,8 +77,8 @@ export function useNavFavorites(): {
     return () => { alive = false }
   }, [])
 
-  const toggle = useCallback((href: string) => {
-    const r = toggleFavorite(current.current, href)
+  const toggle = useCallback((href: string, aliases: string[] = []) => {
+    const r = toggleFavorite(current.current, href, MAX_NAV_FAVORITES, aliases)
     if (r.full) return { full: true }
     setFavorites(r.next)
     writeLocal(r.next)

@@ -362,8 +362,8 @@ export default function DashboardShellV2({
   useEffect(() => {
     try { setFavoritesHintHidden(window.localStorage.getItem('mvp_nav_fav_hint_hidden') === '1') } catch { setFavoritesHintHidden(false) }
   }, [])
-  const starFeature = (href: string, label: string) => {
-    const { full } = toggleFavorite(href)
+  const starFeature = (href: string, label: string, aliases: string[] = []) => {
+    const { full } = toggleFavorite(href, aliases)
     setFavoritesNote(full ? `My features holds ${MAX_NAV_FAVORITES}. Take one out to add ${label}.` : null)
   }
 
@@ -1095,16 +1095,21 @@ export default function DashboardShellV2({
                             item={item}
                             active={itemActive(item)}
                             collapsed={railCollapsed}
+                            starSpace={editingFavorites && !item.external}
                           />
                           {/* THE STAR: pins a feature to My features, or takes it
                               out. Shown on hover, and always while editing, so
                               the menu stays calm the rest of the time. */}
                           {!railCollapsed && !item.external && (() => {
-                            const starred = favorites.includes(item.href)
+                            // The row's own address and its tabs': My features
+                            // shows a star saved on a tab as this row, so its
+                            // star reads and clears all of them.
+                            const aliases = (item.tabs ?? []).map((t) => t.href).filter((h) => h !== item.href)
+                            const starred = [item.href, ...aliases].some((h) => favorites.includes(h))
                             return (
                               <button
                                 type="button"
-                                onClick={(e) => { e.preventDefault(); e.stopPropagation(); starFeature(item.href, item.label) }}
+                                onClick={(e) => { e.preventDefault(); e.stopPropagation(); starFeature(item.href, item.label, aliases) }}
                                 aria-label={starred ? `Take ${item.label} out of My features` : `Add ${item.label} to My features`}
                                 aria-pressed={starred}
                                 title={starred ? 'Take out of My features' : 'Add to My features'}
@@ -1413,7 +1418,7 @@ export default function DashboardShellV2({
 
 // ── Sub-components ──────────────────────────────────────────────────────
 
-function NavItem({ item, active, collapsed }: { item: NavItemDef; active: boolean; collapsed: boolean }) {
+function NavItem({ item, active, collapsed, starSpace = false }: { item: NavItemDef; active: boolean; collapsed: boolean; starSpace?: boolean }) {
   // External items (Recommended tools) open in a new tab via a plain <a>
   // — Next.js Link's prefetcher is wasted on offsite URLs, and we want
   // target="_blank" + rel="noopener" for safety on partner links.
@@ -1422,6 +1427,9 @@ function NavItem({ item, active, collapsed }: { item: NavItemDef; active: boolea
     // dark theme in commit 929cdb4).
     'relative flex items-center gap-2 py-2 rounded-lg text-[14px] font-semibold transition-colors',
     collapsed ? 'justify-center' : 'px-2.5',
+    // While editing My features every row shows its star: room for it, so
+    // it no longer sits on the NEW chip ("NE").
+    !collapsed && starSpace && 'pr-9',
   )
   // EVERY TITLE READS IN FULL (Seb, 2026-10-24: "the titles on the left
   // sidebar are always cutoff"). "Bulk Amazo...", "Instagram A..." and
