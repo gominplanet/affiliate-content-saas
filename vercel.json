@@ -93,6 +93,10 @@
       "schedule": "25 */2 * * *"
     },
     {
+      "path": "/api/cron/meta-ad-hear",
+      "schedule": "*/20 * * * *"
+    },
+    {
       "path": "/api/cron/refresh-deal-radar",
       "schedule": "0 */6 * * *"
     },

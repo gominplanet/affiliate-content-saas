@@ -25,7 +25,7 @@ export const GALLERY_FRESH_DAYS = 60
 /** Ads kept per brand. */
 export const ADS_PER_BRAND = 8
 
-export interface AdCardIn { text: string; video: boolean; preview: string | null }
+export interface AdCardIn { text: string; video: boolean; preview: string | null; /** SCOUT 1.53.9: the video file on Meta's servers. */ videoUrl?: string | null }
 
 export interface MetaAd {
   /** Meta's Library ID. */
@@ -50,7 +50,19 @@ export interface MetaAd {
   link?: string | null
   /** The brand named in "Paid partnership with ...", for a creator's ad. */
   partner?: string | null
+  /** The video file on Meta's servers (SCOUT 1.53.9), kept for listening
+   *  only: Meta's links expire within days, and members are never sent it. */
+  videoUrl?: string | null
+  /** What the video says first, and where hearing it stands; filled in from
+   *  the hooks MVP heard (HOOKS_KEY) when the gallery is read. */
+  spoken?: string | null
+  heard?: HeardState
 }
+
+/** Where hearing a video ad stands: its first spoken sentence is in, it says
+ *  no words (music, text on screen), it is waiting its turn, Meta's link ran
+ *  out before MVP listened, or SCOUT sent no file (older than 1.53.9). */
+export type HeardState = 'ready' | 'none' | 'waiting' | 'gone' | 'nofile'
 
 export interface Gallery {
   at: string
@@ -65,6 +77,13 @@ const CTA = /^(shop now|learn more|sign up|order now|get offer|buy now|book now|
 const PLAYER_CLOCK = /\s*\b\d{1,2}:\d{2}(?::\d{2})?\s*\/\s*\d{1,2}:\d{2}(?::\d{2})?\b/g
 /** Meta writes a link's domain in capitals ("HUMEHEALTH.COM"). */
 const DOMAIN = /^[A-Z0-9][A-Z0-9.-]*\.[A-Z]{2,}(\/\S*)?$/
+
+/** A video MVP will listen to: Meta's own video servers only. */
+export function safeVideoUrl(v: unknown): string | null {
+  const s = typeof v === 'string' ? v.trim() : ''
+  if (!/^https:\/\//i.test(s) || s.length > 2000) return null
+  try { const h = new URL(s).hostname.toLowerCase(); return h.endsWith('.fbcdn.net') ? s : null } catch { return null }
+}
 
 /** A preview picture MVP will show: Meta's own image servers only. */
 export function safePreview(v: unknown): string | null {
@@ -83,7 +102,7 @@ export function readCardsBody(v: unknown): AdCardIn[] {
     if (!c || typeof c !== 'object') return []
     const o = c as Record<string, unknown>
     const text = typeof o.text === 'string' ? o.text.slice(0, 3000) : ''
-    return text.trim() ? [{ text, video: o.video === true, preview: safePreview(o.preview) }] : []
+    return text.trim() ? [{ text, video: o.video === true, preview: safePreview(o.preview), videoUrl: o.video === true ? safeVideoUrl(o.videoUrl) : null }] : []
   })
 }
 
@@ -130,6 +149,7 @@ export function readAdCard(c: AdCardIn, brandId: string, brand: string, now: str
     preview: c.preview ? safePreview(c.preview) : null, readAt: now,
     cta: cta ? cta.slice(0, 40) : null, link: link ? link.slice(0, 80) : null,
     partner: lines.map((l) => l.match(/^paid partnership with\s+(.+)$/i)?.[1]).find(Boolean)?.slice(0, 120) ?? null,
+    videoUrl: c.video === true ? safeVideoUrl(c.videoUrl) : null,
   }
 }
 
@@ -254,3 +274,69 @@ export function sortAds(ads: MetaAd[], by: AdSort, now: number): MetaAd[] {
 
 /** An ad's page on Meta's Ad Library. */
 export const adUrl = (id: string) => `https://www.facebook.com/ads/library/?id=${encodeURIComponent(id)}`
+
+// ── WHAT EACH VIDEO SAYS FIRST (Seb, 2026-10-24: "yes build that") ────────────
+// The caption's first line is not the hook: the hook is what the video says.
+// SCOUT 1.53.9 hands MVP each video's file on Meta's servers, and MVP listens
+// to it (lib/meta-ad-hear, every 20 minutes and on the team's press), longest
+// running first. What it heard is kept apart from the gallery, by Meta's ad
+// ID, so a listen never races a read of the ads.
+
+/** The meta table row the heard hooks live in. */
+export const HOOKS_KEY = 'meta_ad_hooks'
+/** Listens a day, the team's presses included. */
+export const META_LISTEN_DAILY = 200
+/** Heard hooks kept, the ads in the gallery first. */
+const HOOKS_MAX = 1500
+/** A link with no expiry of its own is trusted this long after the read. */
+const LINK_FRESH_MS = 2 * 86_400_000
+
+export interface AdHook { hook: string | null; script: string | null; state: 'ready' | 'none' | 'failed'; why?: string | null; at: string; tries: number }
+export type AdHooks = Record<string, AdHook>
+
+/** When Meta's link to a file stops working: its `oe` (hex seconds), else
+ *  two days after the read. Pure. */
+export function linkExpiresAt(url: string, readAt: string): number {
+  try {
+    const oe = new URL(url).searchParams.get('oe')
+    const t = oe && /^[0-9a-f]{6,10}$/i.test(oe) ? parseInt(oe, 16) * 1000 : NaN
+    if (Number.isFinite(t)) return t
+  } catch { /* the read's age instead */ }
+  const r = Date.parse(readAt)
+  return Number.isFinite(r) ? r + LINK_FRESH_MS : 0
+}
+
+/** Where hearing this ad stands. Pure. */
+export function heardState(a: MetaAd, hooks: AdHooks, now: number): HeardState {
+  const h = hooks[a.id]
+  if (h?.state === 'ready') return 'ready'
+  if (h?.state === 'none') return 'none'
+  if (!a.videoUrl) return 'nofile'
+  return linkExpiresAt(a.videoUrl, a.readAt) - 10 * 60_000 > now ? 'waiting' : 'gone'
+}
+
+/** The video ads to listen to next: a file whose link still works, not heard
+ *  yet (one that failed gets one more try), longest running first. Pure. */
+export function toHear(ads: MetaAd[], hooks: AdHooks, now: number, n: number): MetaAd[] {
+  return ads
+    .filter((a) => a.video && a.videoUrl && heardState(a, hooks, now) === 'waiting' && (hooks[a.id]?.tries ?? 0) < 2)
+    .sort((a, b) => (ranDays(b, now) ?? -1) - (ranDays(a, now) ?? -1))
+    .slice(0, Math.max(0, n))
+}
+
+/** The hooks with these new ones in, the gallery's first, at most HOOKS_MAX. Pure. */
+export function mergeHooks(had: AdHooks | null | undefined, add: AdHooks, inGallery: Set<string>): AdHooks {
+  const all = { ...(had || {}), ...add }
+  const ids = Object.keys(all).sort((a, b) => Number(inGallery.has(b)) - Number(inGallery.has(a)) || (all[b].at || '').localeCompare(all[a].at || ''))
+  return Object.fromEntries(ids.slice(0, HOOKS_MAX).map((id) => [id, all[id]]))
+}
+
+/** Ads as members get them: what each says first and where hearing stands,
+ *  with Meta's file link left out. Pure. */
+export function withHooks(ads: MetaAd[], hooks: AdHooks, now: number): MetaAd[] {
+  return ads.map(({ videoUrl, ...a }) => {
+    if (!a.video) return a
+    const state = heardState({ ...a, videoUrl }, hooks, now)
+    return { ...a, heard: state, spoken: state === 'ready' ? hooks[a.id]?.hook ?? null : null }
+  })
+}

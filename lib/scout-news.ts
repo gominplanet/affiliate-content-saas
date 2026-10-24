@@ -55,6 +55,13 @@ export type ScoutRelease = { version: string; date: string; notes: ScoutNote[] }
  *  manual: at most 110 characters), plain words, no dashes. */
 export const SCOUT_RELEASES: ScoutRelease[] = [
   {
+    version: '1.53.9',
+    date: '2026-10-24',
+    notes: [
+      { text: 'Meta ads: MVP hears what each video ad says first, so the hook is what is said, not the caption.', href: '/trybe?tab=working', gate: 'team' },
+    ],
+  },
+  {
     version: '1.53.8',
     date: '2026-10-24',
     notes: [

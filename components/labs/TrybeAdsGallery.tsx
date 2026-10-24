@@ -13,7 +13,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Loader2, AlertTriangle, ExternalLink, Play, Handshake, RotateCcw } from 'lucide-react'
 import { galleryStats, sortAds, ranDays, closingLine, adUrl, nextToRead, LONG_RUN_DAYS, type MetaAd, type AdSort } from '@/lib/trybe-adsgallery'
 import { readMetaAds, metaAdsWords } from '@/components/labs/metaAdsRead'
-import { SCOUT_META_CARDS_MIN_VERSION, SCOUT_META_LONGEST_MIN_VERSION, scoutAtLeast } from '@/lib/scout-version'
+import { SCOUT_META_CARDS_MIN_VERSION, SCOUT_META_LONGEST_MIN_VERSION, SCOUT_META_VIDEO_MIN_VERSION, scoutAtLeast } from '@/lib/scout-version'
 
 const PURPLE = '#7C3AED'
 const GREEN = '#16A34A'
@@ -61,6 +61,8 @@ export default function TrybeAdsGallery({ isAdmin, scoutVersion, canRead, topBra
   const [limit, setLimit] = useState(SHOWN)
   const [run, setRun] = useState<{ done: number; total: number } | null>(null)
   const [note, setNote] = useState<{ tone: 'ok' | 'warn' | 'bad'; text: string } | null>(null)
+  const [listening, setListening] = useState(false)
+  const [heardNote, setHeardNote] = useState<{ tone: 'ok' | 'warn' | 'bad'; text: string } | null>(null)
 
   const load = useCallback(async () => {
     try {
@@ -99,9 +101,34 @@ export default function TrybeAdsGallery({ isAdmin, scoutVersion, canRead, topBra
       const r = await readMetaAds(todo, { cards: true, onProgress: (done, total) => setRun({ done, total }) })
       setNote(metaAdsWords(r, scoutVersion))
       await load()
+      // The new videos' first words, right away rather than at the next run.
+      if (canHear) void listenNow()
     } catch (e) { setNote({ tone: 'bad', text: e instanceof Error ? e.message : 'The ads could not be saved.' }) }
     finally { setRun(null) }
   }
+
+  /** LISTEN NOW (the team): what the next video ads say first. The job does
+   *  the same every 20 minutes; this is for not waiting. */
+  async function listenNow() {
+    setListening(true); setHeardNote(null)
+    try {
+      const r = await fetch('/api/labs/trybe', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'meta_hear' }), signal: AbortSignal.timeout(170_000) })
+      const d = await r.json().catch(() => ({}))
+      if (!r.ok) throw new Error(d.error || `Request failed (${r.status})`)
+      const parts = [`Listened to ${d.tried} video${d.tried === 1 ? '' : 's'}: ${d.heard} with words${d.none ? `, ${d.none} with none spoken` : ''}${d.failed ? `, ${d.failed} that did not play` : ''}.`]
+      if (d.why) parts.push(d.why)
+      else if (d.left) parts.push(`${d.left} more wait${d.left === 1 ? 's' : ''}; MVP listens to them every 20 minutes.`)
+      setHeardNote({ tone: d.failed && !d.heard ? 'warn' : 'ok', text: parts.join(' ') })
+      await load()
+    } catch (e) { setHeardNote({ tone: 'bad', text: e instanceof Error ? e.message : 'The listen stopped.' }) }
+    finally { setListening(false) }
+  }
+  const canHear = scoutAtLeast(scoutVersion, SCOUT_META_VIDEO_MIN_VERSION)
+  const heard = useMemo(() => {
+    const n = { ready: 0, none: 0, waiting: 0, gone: 0, nofile: 0 }
+    for (const a of data?.ads || []) if (a.video && a.heard) n[a.heard]++
+    return n
+  }, [data])
 
   const soft = { color: 'var(--text-soft)' }
   const chip = (on: boolean) => ({ className: 'rounded-full px-3 py-1 text-[12.5px] font-semibold border', style: on ? { background: 'rgba(124,58,237,0.10)', color: PURPLE, borderColor: 'transparent' } : { borderColor: 'var(--border)', color: 'var(--text)' } })
@@ -128,6 +155,14 @@ export default function TrybeAdsGallery({ isAdmin, scoutVersion, canRead, topBra
               ? `Of ${pool.length} in the Top 100${fromSaved && data?.top?.at ? ` (as saved ${new Date(data.top.at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })})` : ''}, the ones read longest ago first. Daily refresh and Find brands’ “Check for Meta ads” add to this too.`
               : 'Daily refresh and Find brands’ “Check for Meta ads” add to this too.'}
           </span>
+          {data && data.ads.some((a) => a.video) && (
+            <span className="basis-full inline-flex flex-wrap items-center gap-2">
+              <span style={soft}>What the videos say first: {heard.ready} heard{heard.none ? `, ${heard.none} say no words` : ''}{heard.waiting ? `, ${heard.waiting} waiting` : ''}{heard.gone ? `, ${heard.gone} whose link on Meta ran out first (the next read brings them back)` : ''}{heard.nofile ? `, ${heard.nofile} read without the video file (SCOUT older than ${SCOUT_META_VIDEO_MIN_VERSION})` : ''}.</span>
+              {heard.waiting > 0 && <button onClick={() => void listenNow()} disabled={listening} className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1 font-semibold border disabled:opacity-50" style={{ borderColor: 'var(--border)' }}>{listening ? <><Loader2 size={12} className="animate-spin" /> Listening</> : 'Listen now'}</button>}
+            </span>
+          )}
+          {heardNote && <span className="basis-full" style={{ color: heardNote.tone === 'ok' ? GREEN : heardNote.tone === 'warn' ? AMBER : RED }}>{heardNote.text}</span>}
+          {canCards && !canHear && <span className="basis-full" style={{ color: AMBER }}>Hearing what each video says needs SCOUT {SCOUT_META_VIDEO_MIN_VERSION}, which hands MVP the video file. Yours is {scoutVersion || 'unknown'}.</span>}
           {canCards && !scoutAtLeast(scoutVersion, SCOUT_META_LONGEST_MIN_VERSION) && <span className="basis-full" style={{ color: AMBER }}>Your SCOUT ({scoutVersion || 'unknown'}) copies the first 8 ads Meta shows for each brand. SCOUT {SCOUT_META_LONGEST_MIN_VERSION} looks at up to 30 and copies the 8 running longest; Chrome brings it once the Web Store has it.</span>}
           {data && data.notOwn > 0 && <span className="basis-full" style={soft}>{data.notOwn.toLocaleString()} ad{data.notOwn === 1 ? '' : 's'} kept from earlier reads {data.notOwn === 1 ? 'was' : 'were'} run by other advertisers that only mention a brand&rsquo;s name, so {data.notOwn === 1 ? 'it is' : 'they are'} left out. The next read of those brands replaces them.</span>}
           {note && <span className="basis-full" style={{ color: note.tone === 'ok' ? GREEN : note.tone === 'warn' ? AMBER : RED }}>{note.text}</span>}
@@ -198,7 +233,7 @@ function AdCard({ ad, now }: { ad: MetaAd; now: number }) {
           : (
             <div className="p-4 min-h-[11rem] flex flex-col justify-center">
               <span className="w-10 h-10 rounded-xl inline-flex items-center justify-center text-[17px] font-bold mb-3" style={{ background: 'rgba(124,58,237,0.12)', color: PURPLE }}>{(ad.brand.trim()[0] || '?').toUpperCase()}</span>
-              <p className="text-[12px] font-semibold" style={{ color: PURPLE }}>Hook</p>
+              <p className="text-[12px] font-semibold" style={{ color: PINK }}>Caption</p>
               <p className="text-[15px] font-semibold leading-snug line-clamp-6" style={{ color: 'var(--text)' }}>{ad.opening ? `“${ad.opening}”` : 'Meta showed no words for this ad.'}</p>
             </div>
           )}
@@ -208,8 +243,13 @@ function AdCard({ ad, now }: { ad: MetaAd; now: number }) {
         <p className="text-[12.5px] font-bold" style={{ color: days != null && days >= LONG_RUN_DAYS ? GREEN : 'var(--text)' }}>
           {days != null ? `Running ${days} day${days === 1 ? '' : 's'}${asOf}` : ad.startedText ? `Started ${ad.startedText}` : 'Start date not shown'}
         </p>
-        {pic && ad.opening && <p className="text-[13px] leading-snug line-clamp-3"><span className="font-semibold" style={{ color: PURPLE }}>Hook </span>&ldquo;{ad.opening}&rdquo;</p>}
-        {closing && <p className="text-[12.5px] leading-snug line-clamp-2"><span className="font-semibold" style={{ color: PINK }}>Ends with </span>&ldquo;{closing}&rdquo;</p>}
+        {/* THE HOOK IS WHAT IS SAID (Seb, 2026-10-24): the video's first
+            spoken sentence, heard by MVP; the caption is said apart. */}
+        {ad.spoken && <p className="text-[13.5px] font-semibold leading-snug line-clamp-3"><span style={{ color: PURPLE }}>Says </span>&ldquo;{ad.spoken}&rdquo;</p>}
+        {ad.heard === 'none' && <p className="text-[12px]" style={{ color: 'var(--text-soft)' }}>Says no words: music or text on screen.</p>}
+        {ad.heard === 'waiting' && <p className="text-[12px]" style={{ color: 'var(--text-soft)' }}>What it says: MVP listens to it soon.</p>}
+        {pic && ad.opening && <p className="text-[12.5px] leading-snug line-clamp-2"><span className="font-semibold" style={{ color: PINK }}>Caption </span>&ldquo;{ad.opening}&rdquo;</p>}
+        {closing && <p className="text-[12.5px] leading-snug line-clamp-2"><span className="font-semibold" style={{ color: PINK }}>Caption ends </span>&ldquo;{closing}&rdquo;</p>}
         {(ad.cta || ad.link) && <p className="text-[12px]" style={{ color: 'var(--text-soft)' }}><span className="font-semibold" style={{ color: 'var(--text)' }}>Button:</span> {[ad.cta, ad.link ? `to ${ad.link}` : null].filter(Boolean).join(' ')}</p>}
         <p className="text-[12.5px] font-bold">{ad.brand}</p>
         {ad.page && ad.page.toLowerCase() !== ad.brand.toLowerCase() && <p className="text-[12px]" style={{ color: 'var(--text-soft)' }}>Run by {ad.page}</p>}

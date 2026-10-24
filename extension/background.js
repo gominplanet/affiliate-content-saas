@@ -15339,11 +15339,19 @@ async function metaAdsReadInPage(withCards) {
       }
       const video = card.querySelector('video')
       let preview = video && video.poster ? video.poster : null
+      // 1.53.9 THE VIDEO FILE (Seb, 2026-10-24: the hook is what is said, not
+      // the caption): its address on Meta's own servers, so MVP can listen
+      // to the opening. A stream with no file address (blob:) is not sent.
+      let videoUrl = null
+      if (video) {
+        const srcs = [video.currentSrc, video.src].concat(Array.from(video.querySelectorAll('source')).map((x) => x.src))
+        videoUrl = srcs.find((u) => /^https:\/\/[^/]*fbcdn\.net\//i.test(String(u || ''))) || null
+      }
       if (!preview) {
         const imgs = Array.from(card.querySelectorAll('img')).filter((im) => (im.naturalWidth || im.width || 0) >= 120 && /^https:/.test(im.src || ''))
         preview = imgs.length ? imgs[0].src : null
       }
-      out.push({ text: String(card.innerText || '').slice(0, 2500), video: !!video, preview: preview ? String(preview).slice(0, 1500) : null })
+      out.push({ text: String(card.innerText || '').slice(0, 2500), video: !!video, preview: preview ? String(preview).slice(0, 1500) : null, videoUrl: videoUrl ? String(videoUrl).slice(0, 2000) : null })
       if (out.length >= max) break
     }
     return out

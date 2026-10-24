@@ -1266,7 +1266,7 @@ export async function requestTrybePutFile(o: { fileUrl: string; uploadUrl: strin
 
 export interface MetaAdsResult { ok: boolean; error?: string; results?: Array<{ brandId: string; name: string; text: string | null; error: string | null
   /** SCOUT 1.51.0, asked with `cards`: the words of up to 8 ad cards, as the page showed them. Absent from an older SCOUT. */
-  cards?: Array<{ text: string; video: boolean; preview: string | null }>
+  cards?: Array<{ text: string; video: boolean; preview: string | null; /** SCOUT 1.53.9: the video file on Meta's servers. */ videoUrl?: string | null }>
   /** SCOUT 1.53.8: how many of the brand's ads it looked at before copying the 8 running longest. */
   cardsSeen?: number | null }>; /** Brands SCOUT had no time left for. */ notReached?: string[] }
 

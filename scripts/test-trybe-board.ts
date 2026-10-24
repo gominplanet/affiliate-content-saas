@@ -106,7 +106,7 @@ check('days running are counted to the read, never past it', ranDays({ started: 
 {
   const gal = read('components/labs/TrybeAdsGallery.tsx')
   check('the section opens on running longest, videos only, and says why', /useState<AdSort>\('longest'\)/.test(gal) && /const \[videosOnly, setVideosOnly\] = useState\(true\)/.test(gal) && /A brand keeps paying for an ad that sells/.test(gal) && /longest running Meta ads/.test(gal))
-  check('each card shows its hook, how it ends and its button', /Hook /.test(gal) && /Ends with /.test(gal) && /Button:/.test(gal))
+  check('each card shows what it says, its caption, how the caption ends and its button', /Says /.test(gal) && /Caption /.test(gal) && /Caption ends /.test(gal) && /Button:/.test(gal))
 }
 // THE WHOLE EXAMPLE (Seb, 2026-10-24: "when i click on watch example i can
 // always only see the first 3 seconds").
@@ -140,7 +140,27 @@ check('days running are counted to the read, never past it', ranDays({ started: 
   check('only the brand\'s own go into the gallery, and earlier ones by others are let go', mergeGallery({ at: '', brands: {}, ads: [mk('x', 'b5', '2026-10-20T00:00:00Z', '2026-01-01', { page: 'Someone Else' })] }, 'b6', 'Acme b6', [mk('y', 'b6', '2026-10-21T00:00:00Z', '2026-02-01', { page: 'Other Page' }), mk('z', 'b6', '2026-10-21T00:00:00Z')], 2, '2026-10-21T00:00:00Z').ads.map((a) => a.id).join(',') === 'z')
   check('the player\'s clock is never the ad\'s ending', closingLine('Shop now. With Love, The Glo Melanin Team 0:00 / 0:43') === 'With Love, The Glo Melanin Team' && closingLine('only at the straye.com 🔥 - #straye 0:00 / 0:04') === null && !/0:00/.test(readAdCard({ text: 'Library ID: 1234567\nGlo\nSponsored\nHi there. Bye now 0:00 / 0:43\nShop now', video: true, preview: null }, 'g', 'Glo', '2026-10-24')!.body))
   const R = read('app/api/labs/trybe/route.ts')
-  check('the gallery sends only the brand\'s own ads and says how many were left out', /const ads = kept\.filter\(a => ownAd\(a, a\.brand\)\)/.test(R) && /notOwn: kept\.length - ads\.length/.test(R) && /galleryAds \+= own; notOwnAds \+= ads\.length - own/.test(R))
+  check('the gallery sends only the brand\'s own ads and says how many were left out', /const ads = withHooks\(kept\.filter\(a => ownAd\(a, a\.brand\)\)/.test(R) && /notOwn: kept\.length - ads\.length/.test(R) && /galleryAds \+= own; notOwnAds \+= ads\.length - own/.test(R))
+}
+// WHAT EACH VIDEO SAYS FIRST (Seb, 2026-10-24: "yes build that"): SCOUT
+// 1.53.9 sends the video file, MVP listens, the card says it apart from the caption.
+{
+  const G = require('../lib/trybe-adsgallery') as typeof import('../lib/trybe-adsgallery')
+  const BG = read('extension/background.js')
+  check('SCOUT sends the video file, only from Meta\'s servers', /videoUrl = srcs\.find\(\(u\) => \/\^https:\\\/\\\/\[\^\/\]\*fbcdn\\\.net\\\/\/i/.test(BG) && /videoUrl: videoUrl \? String\(videoUrl\)\.slice\(0, 2000\) : null/.test(BG))
+  check('MVP takes only a Meta video file, and only for a video', G.safeVideoUrl('https://video.xx.fbcdn.net/v/a.mp4?oe=6720ABCD') !== null && G.safeVideoUrl('https://evil.example/a.mp4') === null && G.readCardsBody([{ text: 'x', video: true, videoUrl: 'https://video.xx.fbcdn.net/v/a.mp4' }, { text: 'y', video: false, videoUrl: 'https://video.xx.fbcdn.net/v/b.mp4' }]).map((c) => c.videoUrl).join(',') === 'https://video.xx.fbcdn.net/v/a.mp4,')
+  check('a link\'s end is read from Meta\'s own expiry, else two days after the read', G.linkExpiresAt('https://video.xx.fbcdn.net/v/a.mp4?oe=6720ABCD', '2026-10-24T00:00:00Z') === 0x6720ABCD * 1000 && G.linkExpiresAt('https://video.xx.fbcdn.net/v/a.mp4', '2026-10-24T00:00:00Z') === Date.parse('2026-10-26T00:00:00Z'))
+  const now = Date.parse('2026-10-24T12:00:00Z')
+  const v = (id: string, started: string, extra: Partial<MetaAd> = {}) => mk(id, 'b8', '2026-10-24T00:00:00Z', started, { video: true, videoUrl: `https://video.xx.fbcdn.net/v/${id}.mp4`, ...extra })
+  const ads = [v('new', '2026-10-01'), v('old', '2025-01-01'), v('done', '2024-01-01'), v('mute', '2024-02-01'), v('gone', '2023-01-01', { readAt: '2026-10-01T00:00:00Z' }), v('nofile', '2023-06-01', { videoUrl: null }), v('tried', '2023-03-01')]
+  const hooks = { done: { hook: 'Stop scrolling.', script: 'Stop scrolling. This works.', state: 'ready' as const, at: '', tries: 1 }, mute: { hook: null, script: null, state: 'none' as const, at: '', tries: 1 }, tried: { hook: null, script: null, state: 'failed' as const, at: '', tries: 2 } }
+  check('MVP listens to the waiting ones, longest running first, never one heard, out of date or tried twice', G.toHear(ads, hooks, now, 10).map((a) => a.id).join(',') === 'old,new')
+  const shown = G.withHooks(ads, hooks, now)
+  check('members get what it says and where hearing stands, never Meta\'s file link', shown.every((a) => !('videoUrl' in a)) && shown.find((a) => a.id === 'done')?.spoken === 'Stop scrolling.' && shown.find((a) => a.id === 'mute')?.heard === 'none' && shown.find((a) => a.id === 'gone')?.heard === 'gone' && shown.find((a) => a.id === 'nofile')?.heard === 'nofile' && shown.find((a) => a.id === 'old')?.heard === 'waiting')
+  check('the hooks kept favour the ads in the gallery', Object.keys(G.mergeHooks({ a: { hook: 'x', script: null, state: 'ready', at: '2026-01-01', tries: 1 } }, { b: { hook: 'y', script: null, state: 'ready', at: '2026-01-02', tries: 1 } }, new Set(['a'])))[0] === 'a')
+  const HEAR = read('lib/meta-ad-hear.ts'), R = read('app/api/labs/trybe/route.ts'), V = read('vercel.json')
+  check('a link Meta no longer serves is said as that, never as no words', /Meta no longer serves this video’s file/.test(HEAR) && /if \(!\(await reachable\(/.test(HEAR))
+  check('listening is counted, capped a day, and runs every 20 minutes and on the team\'s press only', /await countListen\(sb\)/.test(HEAR) && /META_LISTEN_DAILY - today/.test(HEAR) && (JSON.parse(V).crons as Array<{ path: string; schedule: string }>).some((c) => c.path === '/api/cron/meta-ad-hear' && c.schedule === '*/20 * * * *') && /if \(action === 'meta_hear'\) \{[\s\S]{0,400}if \(tier !== 'admin'\)/.test(R))
 }
 check('days running from the start date', adDays('2026-10-07', nowT) === 10 && adDays(null, nowT) === null)
 

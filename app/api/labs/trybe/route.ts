@@ -35,7 +35,9 @@ import { winnersForPlan, winnersBlock, readScript } from '@/lib/trybe-mybrands'
 import { directoryChanges, adsChange, poolBrands, type Change, type MemberRow } from '@/lib/trybe-changes'
 import { topDayKey, topDayOf, TOP_DAYS_KEEP } from '@/lib/trybe-topdays'
 import { activeKeys, activeRows, activeBy, rankActive, categoryCounts, latestTierChanges, type ActiveBy, type ActiveRow } from '@/lib/trybe-active'
-import { GALLERY_KEY, readCardsBody, readAdCard, mergeGallery, type Gallery, type MetaAd, brandsWithAds, GALLERY_MAX, ownAd } from '@/lib/trybe-adsgallery'
+import { GALLERY_KEY, readCardsBody, readAdCard, mergeGallery, type Gallery, type MetaAd, brandsWithAds, GALLERY_MAX, ownAd, HOOKS_KEY, withHooks, type AdHooks } from '@/lib/trybe-adsgallery'
+import { hearMetaAds } from '@/lib/meta-ad-hear'
+import { transcriptionConfigured } from '@/lib/shorts-transcribe'
 import {
   cleanScript, toTranscribe, coverageWords, openingOf, bestRank, whyNoWords, noWordsSentence, pickExamples, examplesBlock, type TopScript,
 } from '@/lib/trybe-scripts'
@@ -923,7 +925,10 @@ export async function POST(request: Request) {
     // advertisers that mention its name were kept before 2026-10-24, and are
     // left out here, counted, until the next read replaces them.
     const kept = Array.isArray(g?.ads) ? g!.ads : []
-    const ads = kept.filter(a => ownAd(a, a.brand))
+    // What each video says first (lib/meta-ad-hear), and Meta's file links
+    // left out: members never get them.
+    const { data: hRow } = await admin.from('trybe_directory_meta').select('value').eq('key', HOOKS_KEY).maybeSingle()
+    const ads = withHooks(kept.filter(a => ownAd(a, a.brand)), (hRow?.value || {}) as AdHooks, Date.now())
     const ids = Array.from(new Set(ads.map(a => a.brandId))).slice(0, 500)
     const cats: Record<string, string[]> = {}
     for (let i = 0; i < ids.length; i += 200) {
@@ -953,6 +958,19 @@ export async function POST(request: Request) {
       brandsRead: g ? Object.keys(g.brands || {}).length : 0, brandsWithAds: brandsWithAds(g), keepMax: GALLERY_MAX,
       ads, categories: cats, top, notOwn: kept.length - ads.length,
     })
+  }
+
+  if (action === 'meta_hear') {
+    // LISTEN NOW (the team): what the next video ads say first, longest
+    // running first, on the same daily cap as the job that runs every 20
+    // minutes (app/api/cron/meta-ad-hear).
+    if (tier !== 'admin') return NextResponse.json({ error: 'Only the MVP team listens to the ads.' }, { status: 403 })
+    if (!transcriptionConfigured()) return NextResponse.json({ error: 'Listening is not set up on this deployment (FAL_KEY).' }, { status: 503 })
+    try {
+      return NextResponse.json({ ok: true, ...(await hearMetaAds(admin, 8, 120_000)) })
+    } catch (e) {
+      return NextResponse.json({ error: e instanceof Error ? e.message : 'The listen stopped.' }, { status: 500 })
+    }
   }
 
   if (action === 'brands_brief') {
