@@ -19,6 +19,8 @@ export interface TrybeChoice {
   programId: string | null
   angleId: string | null
   productIds: string[]
+  /** The picked products' names, for ticking the matching sample in This week. */
+  productNames?: string[]
   exclusive: boolean
   notes: string
   /** The brand wants a product picked and none is yet. */
@@ -123,7 +125,10 @@ export default function DropTrybePicker({ brands, brandsError, value, onChange }
                   const on = value.productIds.includes(p.id)
                   return (
                     <button key={p.id} type="button" aria-pressed={on}
-                      onClick={() => onChange({ ...value, productIds: on ? value.productIds.filter((x) => x !== p.id) : [...value.productIds, p.id] })}
+                      onClick={() => {
+                        const ids = on ? value.productIds.filter((x) => x !== p.id) : [...value.productIds, p.id]
+                        onChange({ ...value, productIds: ids, productNames: opts.products.filter((pp) => ids.includes(pp.id)).map((pp) => pp.name) })
+                      }}
                       className="inline-flex items-center gap-1.5 rounded-lg border px-2 py-1 text-[12px]"
                       style={{ borderColor: on ? '#0EA5A4' : 'var(--border)', background: on ? 'rgba(14,165,164,0.10)' : 'transparent', color: 'var(--text)' }}>
                       {/* eslint-disable-next-line @next/next/no-img-element */}

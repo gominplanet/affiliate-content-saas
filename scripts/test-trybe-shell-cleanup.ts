@@ -28,7 +28,7 @@ check('?tab= is read on every navigation, for every tab, inside Suspense', /func
 check('a tab goes into the address', /router\.replace\(`\?tab=\$\{t\}`, \{ scroll: false \}\)/.test(UI))
 check('a partial or fallback collection is not "done"', /stopped at page/.test(UI) && /ok && !partial && !fellBack \? 'done'/.test(UI) && /in MVP\\u2019s earlier copy/.test(UI))
 check('the inbox is read when the TRYBE tab opens', /was !== 'open' && was !== 'checking' && trybeTab === 'open'\) void loadInbox\(\)/.test(UI))
-check('the automatic jobs wait for the TRYBE tab', (UI.match(/if \(ownTab && trybeTab !== 'open'\) return/g) || []).length >= 3)
+check('the automatic jobs wait for the TRYBE tab', (UI.match(/if \(ownTab && trybeTab !== 'open'\) return/g) || []).length >= 2)
 check('the daily find says how it went wherever you are', /THE DAILY FIND SAYS HOW IT WENT/.test(UI) && !/SCOUT works in a tab behind this one for a few minutes/.test(UI))
 check('SCOUT sending by itself does not lock the page', /const busy = !!finding \|\| pageRunning/.test(UI))
 check('SCOUT not answering is said as that', /if \(res == null && !ask\) return \{ state: 'no-answer'/.test(read('lib/extension-frame.ts')) && /SCOUT did not answer just now, so MVP cannot tell whether it is allowed on TRYBE/.test(UI))

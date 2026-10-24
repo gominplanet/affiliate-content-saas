@@ -41,6 +41,8 @@ import DropTrybePicker, { emptyChoice, choiceBlocker, type TrybeChoice } from '@
 type Stage = 'uploading' | 'ready' | 'sending' | 'in_review' | 'sent_unconfirmed' | 'failed'
 
 interface Vid {
+  /** What happened to the sample in This week after TRYBE took it. */
+  week?: { ok: boolean; text: string } | null
   key: string
   file: File | null
   name: string
@@ -86,6 +88,29 @@ function probe(file: File): Promise<{ duration: number; width: number; height: n
 const card = 'rounded-2xl border p-4'
 const cardStyle = { borderColor: 'var(--border)', background: 'var(--surface)' }
 const soft = { color: 'var(--text-soft)' }
+
+/** After TRYBE takes a video: tick Submitted on the sample it is for, in
+ *  This week. Only when exactly one sample of that brand (and product, when
+ *  one was picked) is still waiting; otherwise it says what to tick by hand.
+ *  Never throws. Returns the words to show, or '' when there is no sample. */
+async function tickSubmitted(c: { brandId: string; brandName: string; productNames?: string[] }): Promise<string> {
+  const norm = (t: string) => t.toLowerCase().replace(/\([^)]*\)/g, ' ').replace(/[^a-z0-9]+/g, ' ').trim()
+  try {
+    const r = await fetch('/api/labs/trybe/samples', { signal: AbortSignal.timeout(20_000) })
+    const d = await r.json().catch(() => ({}))
+    if (!r.ok || !Array.isArray(d.samples)) return 'This week was not updated: MVP could not read your samples. Tick Submitted there.'
+    type S = { id: string; brand_id: string | null; brand_name: string; product: string; submitted_at: string | null }
+    const mine = (d.samples as S[]).filter((x) => !x.submitted_at && ((c.brandId && x.brand_id === c.brandId) || norm(x.brand_name) === norm(c.brandName)))
+    if (!mine.length) return ''
+    const names = (c.productNames || []).map(norm).filter(Boolean)
+    const hits = names.length ? mine.filter((x) => { const k = norm(x.product); return names.some((n) => n === k || (n.length > 3 && (k.includes(n) || n.includes(k)))) }) : mine
+    if (hits.length !== 1) return `Tick Submitted in This week for the right ${c.brandName} sample: ${hits.length || mine.length} of them are waiting.`
+    const t = await fetch('/api/labs/trybe/samples', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'tick', id: hits[0].id, field: 'submitted', on: true }), signal: AbortSignal.timeout(20_000) })
+    return t.ok ? `Ticked Submitted for ${hits[0].product} in This week.` : 'This week was not updated: the tick did not save. Tick Submitted there.'
+  } catch {
+    return 'This week was not updated: MVP did not answer. Tick Submitted there.'
+  }
+}
 
 export default function TrybeUpload() {
   const supabase = createBrowserClient()
@@ -246,6 +271,10 @@ export default function TrybeUpload() {
         mark(v.key, { stage: 'failed', step: null, note: 'Another tab is already sending this one.' })
       } else if (res.state === 'in_review') {
         mark(v.key, { stage: 'in_review', step: null, note: `${brand} has it, waiting on their review.` })
+        // THIS WEEK FOLLOWS (Seb's follow up to the TRYBE review): the matching sample is ticked
+        // Submitted, and anything short of that is said under the card.
+        const tick = await tickSubmitted(v.choice)
+        if (tick) mark(v.key, { week: { ok: /^Ticked Submitted/.test(tick), text: tick } })
       } else if (res.state === 'sent_unconfirmed') {
         mark(v.key, { stage: 'sent_unconfirmed', step: null, note: `TRYBE took it, but it is not in your ${brand} submissions yet. Check TRYBE before sending it again.` })
       } else {
@@ -349,6 +378,9 @@ export default function TrybeUpload() {
               <p className="text-[13px] mt-3 inline-flex items-center gap-1.5" style={{ color: '#15803D' }}>
                 <Check size={14} /> {v.note}
               </p>
+            )}
+            {v.stage === 'in_review' && v.week && (
+              <p className="text-[12.5px] mt-1" style={{ color: v.week.ok ? '#15803D' : '#B45309' }}>{v.week.text}</p>
             )}
 
             {v.stage === 'sent_unconfirmed' && (

@@ -119,6 +119,9 @@ async function readSettings(admin: Db, ownerId: string) {
     // when the database does not have the columns yet, so the page can say so.
     priorities: data && 'priorities' in data ? readPriorities(data.priorities) : null,
     starred: data && Array.isArray(data.starred) ? (data.starred as unknown[]).map(String).slice(0, 500) : data && 'starred' in data ? [] : null,
+    // When Save message last changed the words (migration 457): drafts older
+    // than this are marked in Ready to send. Null before 457, or never changed.
+    coreSavedAt: (data?.core_saved_at as string | null | undefined) ?? null,
   }
 }
 
@@ -670,6 +673,9 @@ export async function POST(request: Request) {
     const row: Record<string, unknown> = { user_id: ownerId, updated_at: now }
     const coreMessage = typeof body.coreMessage === 'string' ? body.coreMessage.trim().slice(0, 2000) : null
     if (coreMessage != null) row.core_message = coreMessage
+    // Did the words change? Stamped below, on its own, so a database without
+    // migration 457 still saves the message.
+    const coreChanged = coreMessage != null && coreMessage !== (await readSettings(admin, ownerId)).coreMessage.trim()
     if (body.dailyCap != null) row.daily_cap = clampCap(body.dailyCap)
     // Sent only when the page sends them, so an older page cannot wipe them.
     if (body.categories !== undefined) row.categories = cleanTerms(body.categories)
@@ -680,6 +686,7 @@ export async function POST(request: Request) {
       const missing = /column .* does not exist|schema cache/i.test(error.message)
       return NextResponse.json({ error: missing ? setupWords(tier, 'The niche settings need migration 416 in Supabase first.') : error.message }, { status: 500 })
     }
+    if (coreChanged) { try { await admin.from('trybe_outreach_settings').update({ core_saved_at: now }).eq('user_id', ownerId) } catch { /* before 457: no drafts are marked */ } }
     // A core message that talks pay is saved, and said: every message is
     // written from it, and TRYBE messages never talk rates.
     const warning = coreMessage && talksTerms(coreMessage, { adSpendQuestion: false }) ? 'Your core message talks about pay, rates or prices. TRYBE brands set the pay, so MVP will not send messages that mention it: take that part out.' : null
@@ -1093,9 +1100,27 @@ export async function POST(request: Request) {
     const words = readTopWords(raw)
     const listed = keepHooks(words.filter(w => w.text).map(w => ({ submissionId: w.submissionId, brandId: w.brandId, brandName: w.brandName, rank: w.rank, hook: firstHook(w.text) || '' })).filter(h => h.hook))
     if (listed.length >= 3) await admin.from('trybe_directory_meta').upsert({ key: 'top100_hooks', value: { at: now, hooks: listed, from: 'list' }, updated_at: now })
-    const needScripts = listed.length >= 3 ? [] : words.filter(w => w.submissionId).sort((a, b) => (a.rank ?? 999) - (b.rank ?? 999)).slice(0, 25)
-      .map(w => ({ submissionId: w.submissionId, brandId: w.brandId, brandName: w.brandName, rank: w.rank }))
-    return NextResponse.json({ ok: true, read: entries.length, brands: hits.size, matched, hooks: listed.length, needScripts })
+    let top25 = listed.length >= 3 ? [] : words.filter(w => w.submissionId).sort((a, b) => (a.rank ?? 999) - (b.rank ?? 999)).slice(0, 25)
+      .map(w => ({ submissionId: w.submissionId as string, brandId: w.brandId, brandName: w.brandName, rank: w.rank }))
+    // THE WORDS ALREADY FILED (review 2026-10-24: the Top 100 filing and this
+    // read each asked TRYBE for the same scripts): any of these videos whose
+    // words MVP has (trybe_top_scripts) give their opening lines here, and
+    // only the rest are asked for.
+    let hooksFromFiled = 0
+    if (top25.length) {
+      try {
+        const { data: filedRows } = await admin.from('trybe_top_scripts').select('submission_id, script').eq('state', 'ready').in('submission_id', top25.map(w => w.submissionId))
+        const filedBy = new Map(((filedRows || []) as Array<{ submission_id: string; script: string | null }>).filter(r => r.script).map(r => [r.submission_id, r.script as string]))
+        const fromFiled = keepHooks(top25.filter(w => filedBy.has(w.submissionId)).map(w => ({ ...w, hook: firstHook(filedBy.get(w.submissionId) as string) || '' })).filter(h => h.hook))
+        if (fromFiled.length >= 3) {
+          await admin.from('trybe_directory_meta').upsert({ key: 'top100_hooks', value: { at: now, hooks: fromFiled, from: 'filed' }, updated_at: now })
+          hooksFromFiled = fromFiled.length
+          top25 = []
+        } else top25 = top25.filter(w => !filedBy.has(w.submissionId))
+      } catch { /* asked for below, as before */ }
+    }
+    const needScripts = top25
+    return NextResponse.json({ ok: true, read: entries.length, brands: hits.size, matched, hooks: listed.length || hooksFromFiled, hooksFromFiled, needScripts })
   }
 
   if (action === 'top100_hooks') {
@@ -2644,7 +2669,9 @@ export async function POST(request: Request) {
 
   if (action === 'edit') {
     const draft = typeof body.draft === 'string' ? body.draft.trim().slice(0, 2000) : ''
-    const { data: changed, error } = await admin.from('trybe_brands').update({ draft, status: draft ? 'drafted' : 'new', updated_at: now })
+    // A hand edit counts as written now: it is no longer "from your earlier
+    // core message" (migration 457's mark).
+    const { data: changed, error } = await admin.from('trybe_brands').update({ draft, status: draft ? 'drafted' : 'new', drafted_at: draft ? now : null, updated_at: now })
       .eq('user_id', ownerId).eq('brand_id', brandId).in('status', ['new', 'drafted', 'failed', 'skipped']).select('brand_id')
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
     // Nothing changed: the brand is being sent or went, so the edit was not kept.

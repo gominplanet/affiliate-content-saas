@@ -35,7 +35,7 @@ function openError(error?: string): string {
   return `Chrome said "${error.slice(0, 120)}"`
 }
 
-export default function TrybeTabGate({ state, inBackground, onCheck, onAllowed }: {
+export default function TrybeTabGate({ state, inBackground, onCheck, onAllowed, holdPopup = false }: {
   state: TrybeTabState | 'checking'
   /** SCOUT can open TRYBE behind MVP's tab (1.53.5+). */
   inBackground: boolean
@@ -43,6 +43,8 @@ export default function TrybeTabGate({ state, inBackground, onCheck, onAllowed }
   onCheck: () => void
   /** SCOUT was just allowed on TRYBE. */
   onAllowed: () => void
+  /** SCOUT is opening TRYBE by itself right now: the pop-up waits for it. */
+  holdPopup?: boolean
 }) {
   const needed = state === 'closed' || state === 'signed-out' || state === 'unknown' || state === 'not-allowed'
   const [pop, setPop] = useState(false)
@@ -51,10 +53,11 @@ export default function TrybeTabGate({ state, inBackground, onCheck, onAllowed }
 
   useEffect(() => {
     if (!needed) { setPop(false); return }
+    if (holdPopup) return
     let shown = false
     try { shown = sessionStorage.getItem(SEEN_KEY) === '1' } catch { /* show it */ }
     if (!shown) { setPop(true); try { sessionStorage.setItem(SEEN_KEY, '1') } catch { /* this visit only */ } }
-  }, [needed])
+  }, [needed, holdPopup])
 
   // While it is needed, look again every few seconds: signing in happens in
   // another tab, and this page should notice without a reload.

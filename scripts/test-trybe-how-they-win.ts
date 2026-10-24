@@ -43,9 +43,9 @@ check('and so are the actions only it used',
 // TRYBE visit of the day. Listening needs only the saved file, so the server
 // does it, under a daily cap.
 check('the first team visit of the day collects by itself',
-  /if \(preview \|\| !isAdmin \|\| !canMyBrands \|\| autoCollect\.current\) return/.test(O) && /void collectTop100\(\)\.then/.test(O))
+  /if \(preview \|\| !isAdmin \|\| !canMyBrands \|\| loading \|\| autoCollect\.current\) return/.test(O) && /const r = await collectTop100\(\)/.test(O))
 check('and the day is marked done only after the run finished',
-  O.indexOf('localStorage.setItem(KEY, today)') > O.indexOf('void collectTop100()') && /if \(!r\.ok\) \{ toast\.error/.test(O))
+  O.indexOf('localStorage.setItem(KEY, today)') > O.indexOf('const r = await collectTop100()') && /if \(!r\.ok\) toast\.error/.test(O))
 check('a run that went fine is one quiet line, a problem says what it was',
   /if \(r\.report\.tone === 'warn'\) toast\.warning\(`Today’s Top 100: \$\{r\.report\.lines\.join\(' '\)\}`/.test(O)
     && /Today’s TRYBE Top 100 is in\. Make videos writes from its winning ads\./.test(O))

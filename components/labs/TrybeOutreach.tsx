@@ -78,6 +78,8 @@ const RED = '#DC2626'
 interface Brand {
   brand_id: string
   name: string
+  /** When its message was written (Ready to send's "earlier core message" mark). */
+  drafted_at?: string | null
   categories: string[] | null
   website: string | null
   about: string | null
@@ -611,6 +613,8 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
   // What the server has saved, which is what the daily find goes by: never
   // the half-typed message or a box ticked a second ago.
   const [saved, setSaved] = useState<{ core: string; dailyFind: boolean } | null>(null)
+  // When Save message last changed the words (migration 457), for marking older drafts.
+  const [coreSavedAt, setCoreSavedAt] = useState<string | null>(null)
   const stopRef = useRef(false)
   // Leaving the page stops a send run: nothing sends with nothing on screen.
   // Leaving also ends a read of TRYBE's brand list (Sent's request states).
@@ -644,6 +648,7 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
       setDirectory(d.directory ?? null)
       setIsAdmin(d.isAdmin === true)
       setSaved({ core: d.settings?.coreMessage || '', dailyFind: d.settings?.dailyFind !== false })
+      setCoreSavedAt(d.settings?.coreSavedAt ?? null)
       if (!(d.settings?.coreMessage || '').trim()) setEditingCore(true)
       return d
     } catch (e) {
@@ -695,10 +700,14 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
   const tabOpens = scoutAtLeast(scoutVersion, SCOUT_TRYBE_TAB_OPEN_MIN_VERSION)
   const tabInBackground = ownTab && tabOpens
   const autoOpened = useRef(false)
+  // While SCOUT is opening it, the gate's pop-up waits (it asked to open
+  // TRYBE at the very moment TRYBE was opening by itself).
+  const [autoOpening, setAutoOpening] = useState(false)
   useEffect(() => {
     if (preview || !tabInBackground || trybeTab !== 'closed' || autoOpened.current) return
     autoOpened.current = true
-    void requestTrybeTabOpen(false).then((r) => { if (r.open) window.setTimeout(lookTab, 3000) })
+    setAutoOpening(true)
+    void requestTrybeTabOpen(false).then((r) => { if (r.open) window.setTimeout(() => { lookTab(); setAutoOpening(false) }, 3000); else setAutoOpening(false) }).catch(() => setAutoOpening(false))
   }, [preview, tabInBackground, trybeTab, lookTab])
   const canInbox = !preview && access === 'granted' && scoutAtLeast(scoutVersion, SCOUT_TRYBE_INBOX_MIN_VERSION)
   const scoutOpens = access === 'granted' && scoutAtLeast(scoutVersion, SCOUT_TRYBE_OPEN_BRAND_MIN_VERSION)
@@ -711,24 +720,8 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
   // that costs, is left to the server's job (api/cron/trybe-top-hear). The
   // day is only marked done when the run finished, so a failed run is tried
   // again on the next visit, and either outcome is said in a toast.
+  // The team's daily Top 100 chain is below, once canPlaybook is known.
   const autoCollect = useRef(false)
-  useEffect(() => {
-    if (preview || !isAdmin || !canMyBrands || autoCollect.current) return
-    // Not before SCOUT's TRYBE tab is open (it errored on first visits).
-    if (ownTab && trybeTab !== 'open') return
-    const KEY = 'mvp:trybe-top100-day'
-    const today = new Date().toISOString().slice(0, 10)
-    try { if (localStorage.getItem(KEY) === today) return } catch { return }
-    autoCollect.current = true
-    void collectTop100().then((r) => {
-      if (!r.ok) { toast.error(`Today’s Top 100 was not collected: ${r.error}`); return }
-      try { localStorage.setItem(KEY, today) } catch { /* runs again next visit */ }
-      // QUIET WHEN FINE (Seb, 2026-10-19: the filed and shared counts meant
-      // nothing to him). A problem says what it was; otherwise one line.
-      if (r.report.tone === 'warn') toast.warning(`Today’s Top 100: ${r.report.lines.join(' ')}`, { duration: 12000 })
-      else toast.success('Today’s TRYBE Top 100 is in. Make videos writes from its winning ads.', { duration: 5000 })
-    }).catch((e) => toast.error(`Today’s Top 100 was not collected: ${e instanceof Error ? e.message : 'no answer'}`))
-  }, [preview, isAdmin, canMyBrands, ownTab, trybeTab])
   // What changed, read ahead. Read again once SCOUT can read your joined
   // brands, so any brand you joined wrongly listed as left is put right first.
   useEffect(() => { if (preview || access === 'checking') return; fetchChanges(7, canMyBrands).then(setChanges).catch((e) => setChangesError(e instanceof Error ? e.message : 'not read')) }, [access, canMyBrands]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -873,14 +866,39 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
   // 1.45.0: TRYBE's Top 100 and Meta's Ad Library (Cole's picks).
   const canPlaybook = !preview && access === 'granted' && scoutAtLeast(scoutVersion, SCOUT_TRYBE_PLAYBOOK_MIN_VERSION)
   // Read once a day by itself, quietly, when the page opens.
+  // THE TEAM'S TOP 100, ONE DAILY CHAIN (review 2026-10-24: two jobs read
+  // the same list and asked TRYBE for the same scripts on every first visit).
+  // First filed (Make videos writes from its words, lib/trybe-collect), then
+  // counted per brand (Find brands' "in the Top 100"), whose openings then
+  // come from the words just filed. Each step says how it went.
   useEffect(() => {
-    if (!canPlaybook || topTried.current || !directory || !isAdmin) return
+    if (preview || !isAdmin || !canMyBrands || loading || autoCollect.current) return
     if (ownTab && trybeTab !== 'open') return
-    const at = directory.top100?.at ? Date.parse(directory.top100.at) : 0
-    if (Date.now() - at < TOP100_FRESH_MS) return
+    const KEY = 'mvp:trybe-top100-day'
+    const today = new Date().toISOString().slice(0, 10)
+    let filedToday = false
+    try { filedToday = localStorage.getItem(KEY) === today } catch { return }
+    const at = directory?.top100?.at ? Date.parse(directory.top100.at) : 0
+    const countDue = canPlaybook && !!directory && Date.now() - at >= TOP100_FRESH_MS
+    if (filedToday && !countDue) return
+    autoCollect.current = true
     topTried.current = true
-    void readTop100(true)
-  }, [canPlaybook, directory, ownTab, trybeTab]) // eslint-disable-line react-hooks/exhaustive-deps
+    void (async () => {
+      if (!filedToday) {
+        try {
+          const r = await collectTop100()
+          if (!r.ok) toast.error(`Today’s Top 100 was not collected: ${r.error}`)
+          else {
+            try { localStorage.setItem(KEY, today) } catch { /* runs again next visit */ }
+            // QUIET WHEN FINE (Seb, 2026-10-19): a problem says what it was.
+            if (r.report.tone === 'warn') toast.warning(`Today’s Top 100: ${r.report.lines.join(' ')}`, { duration: 12000 })
+            else toast.success('Today’s TRYBE Top 100 is in. Make videos writes from its winning ads.', { duration: 5000 })
+          }
+        } catch (e) { toast.error(`Today’s Top 100 was not collected: ${e instanceof Error ? e.message : 'no answer'}`) }
+      }
+      if (countDue) await readTop100(true)
+    })()
+  }, [preview, isAdmin, canMyBrands, loading, ownTab, trybeTab, directory, canPlaybook]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const queue = useMemo(() => brands.filter(b => b.status === 'drafted' && b.draft).sort((a, b) => priority(b) - priority(a)), [brands])
   const found = useMemo(() => brands.filter(b => b.status === 'new' && b.fit_prefs === savedKey).sort((a, b) => priority(b) - priority(a)), [brands, savedKey])
@@ -927,6 +945,7 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
       // THE DAILY RUN GOES BY WHAT WAS SAVED: unticking it and saving used to
       // leave the old "on" here, and the run wrote twenty messages anyway.
       setSaved({ core: d.settings.coreMessage || '', dailyFind: d.settings.dailyFind !== false })
+      setCoreSavedAt(d.settings.coreSavedAt ?? null)
       if (!quiet) toast.success('Saved')
       return true
     } catch (e) { toast.error(e instanceof Error ? e.message : 'Save failed'); return false }
@@ -1283,6 +1302,7 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
       // HOOKS WINNING ON TRYBE: when the Top 100 carries no words, the MVP
       // team's SCOUT reads each video's script (the same read as a brand's
       // best videos) and MVP keeps their opening lines for every member.
+      if (!quiet && d.hooksFromFiled) say({ tone: 'ok', text: `Hooks winning on TRYBE: kept the opening lines of ${d.hooksFromFiled} Top 100 videos from the words MVP already filed.` })
       if (isAdmin && Array.isArray(d.needScripts) && d.needScripts.length) {
         const got: Array<Record<string, unknown>> = []
         for (const v of d.needScripts as Array<{ submissionId: string; brandId: string | null; brandName: string | null; rank: number | null }>) {
@@ -1400,9 +1420,15 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
       if (fresh(directory?.top100?.at) && directory?.top100?.at) {
         step('top100', 'skipped', `Read ${ago(directory.top100.at)}: not needed again yet.`)
       } else {
-        step('top100', 'running', 'Reading TRYBE\u2019s Top 100...')
+        // Filed first (Make videos' words), then counted per brand: the same
+        // chain the team's first visit of the day runs, so neither is skipped.
+        step('top100', 'running', 'Filing TRYBE\u2019s Top 100 for Make videos...')
+        const c = await collectTop100({ onStep: (x) => step('top100', 'running', `${x}...`), shouldStop: () => dailyStop.current }).catch((e) => ({ ok: false as const, error: e instanceof Error ? e.message : 'no answer' }))
+        if (c.ok) { try { localStorage.setItem('mvp:trybe-top100-day', new Date().toISOString().slice(0, 10)) } catch { /* this browser only */ } }
+        const filedWords = c.ok ? `Filed: ${c.report.lines[0]}` : `Not filed: ${c.error}`
+        step('top100', 'running', 'Reading TRYBE\u2019s Top 100 per brand...')
         const t = await readTop100(false, true)
-        step('top100', !t ? 'failed' : t.tone === 'ok' ? 'done' : t.tone === 'warn' ? 'warn' : 'failed', t?.text || 'SCOUT cannot read TRYBE\u2019s Top 100 here (update SCOUT).')
+        step('top100', !t || !c.ok ? (t ? 'warn' : 'failed') : t.tone === 'ok' && c.report.tone === 'ok' ? 'done' : t.tone === 'bad' ? 'failed' : 'warn', `${t?.text || 'SCOUT cannot read TRYBE\u2019s Top 100 here (update SCOUT).'} ${filedWords}`)
       }
       if (dailyStop.current) { stopRest(['list', 'meta'], 'Stopped.'); return }
       // 2. Every brand on TRYBE, collected again. Refused for the sign-in: the
@@ -1816,7 +1842,7 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
       {/* TRYBE OPEN FIRST: everything below goes through the creator's TRYBE tab. */}
       {/* Not allowed on TRYBE yet, or no longer: the same card asks for it first. */}
       {!preview && tabScout && (access === 'granted' || access === 'not-granted') && (
-        <TrybeTabGate state={access === 'not-granted' ? 'not-allowed' : trybeTab} inBackground={tabScout && tabOpens} onCheck={lookTab}
+        <TrybeTabGate state={access === 'not-granted' ? 'not-allowed' : trybeTab} inBackground={tabScout && tabOpens} onCheck={lookTab} holdPopup={autoOpening}
           onAllowed={() => { setAccess('granted'); lookTab() }} />
       )}
 
@@ -1872,6 +1898,11 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
           // it may change depending on what users are searching for"). The
           // search lives in Find brands, and changes with every search.
         ]
+        // ONE PLACE TO ACT (review 2026-10-24): while the TRYBE card at the
+        // top asks to allow SCOUT or open TRYBE, these two steps point to it
+        // instead of a second button that behaves differently.
+        const gateShows = tabScout && (access === 'not-granted' || (access === 'granted' && (trybeTab === 'closed' || trybeTab === 'signed-out' || trybeTab === 'unknown')))
+        if (gateShows) for (const x of steps) if (!x.done && (x.title === 'SCOUT allowed on TRYBE' || x.title === 'TRYBE open in this Chrome')) { x.action = undefined; x.todo = 'Use the TRYBE card at the top of this page.' }
         const next = steps.findIndex((x) => !x.done)
         if (next < 0) return null
         return (
@@ -2468,6 +2499,13 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
               {running
                 ? <button onClick={() => void stopRun()} className={btn} style={{ border: '1px solid var(--border)' }}><Square size={13} /> Stop</button>
                 : <>
+                  {(() => {
+                    // The ones written from an earlier core message, in one press.
+                    const old = coreSavedAt ? queue.filter(b => !!b.drafted_at && Date.parse(b.drafted_at) < Date.parse(coreSavedAt)) : []
+                    return old.length > 0 && old.length < queue.length ? <button onClick={() => void rewrite(old)} disabled={!!finding} className={btn} style={{ border: `1px solid ${AMBER}`, color: AMBER }} title="Write again the messages written before you last changed your core message">
+                      <RotateCcw size={13} /> Rewrite the {old.length} from your earlier core message
+                    </button> : null
+                  })()}
                   {queue.length > 0 && <button onClick={() => void rewrite(queue)} disabled={!!finding} className={btn} style={{ border: '1px solid var(--border)' }} title="Write every message here again from your core message as it is now">
                     {finding ? <Loader2 size={13} className="animate-spin" /> : <RotateCcw size={13} />} Rewrite all
                   </button>}
@@ -2513,7 +2551,7 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
           )}
           {!queue.length && <p className="text-[13px]" style={soft}>No messages ready yet. <button onClick={() => setTab('find')} className="font-semibold underline" style={{ color: PURPLE }}>Pick brands in Find brands</button> and press Write messages.</p>}
           <div className="space-y-3">
-            {queue.map(b => <QueueRow key={b.brand_id} b={b} amazon={amz.brand(b.brand_id)} promotes={promotes(b)} busy={current === b.brand_id || scoutRun?.current?.id === b.brand_id} disabled={running} onSave={t => void saveDraft(b, t)} onRemove={() => void remove(b)} onRewrite={() => void rewrite([b])} rewriting={!!finding} scoutOpens={scoutOpens} onSendNow={t => void saveDraft(b, t).then(ok => { if (ok) void sendOne({ ...b, draft: t }) })} canSend={access === 'granted' && remaining > 0 && !finding} sendReason={finding ? `Busy: ${finding.stage}.` : sendBlocked} />)}
+            {queue.map(b => <QueueRow key={b.brand_id} b={b} stale={!!coreSavedAt && !!b.drafted_at && Date.parse(b.drafted_at) < Date.parse(coreSavedAt)} amazon={amz.brand(b.brand_id)} promotes={promotes(b)} busy={current === b.brand_id || scoutRun?.current?.id === b.brand_id} disabled={running} onSave={t => void saveDraft(b, t)} onRemove={() => void remove(b)} onRewrite={() => void rewrite([b])} rewriting={!!finding} scoutOpens={scoutOpens} onSendNow={t => void saveDraft(b, t).then(ok => { if (ok) void sendOne({ ...b, draft: t }) })} canSend={access === 'granted' && remaining > 0 && !finding} sendReason={finding ? `Busy: ${finding.stage}.` : sendBlocked} />)}
           </div>
           {/* Brands skipped before Remove existed: put back, or off the page. */}
           {brands.some(b => b.status === 'skipped') && (
@@ -2713,7 +2751,9 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
   )
 }
 
-function QueueRow({ b, busy, disabled, onSave, onRemove, onRewrite, rewriting, onSendNow, canSend, sendReason, scoutOpens, amazon, promotes }: {
+function QueueRow({ b, busy, disabled, onSave, onRemove, onRewrite, rewriting, onSendNow, canSend, sendReason, scoutOpens, amazon, promotes, stale = false }: {
+  /** Written before the core message last changed (migration 457). */
+  stale?: boolean
   /** The brand on Amazon, and whether to say "You already promote them". */
   amazon?: LiveAmazon | null; promotes?: boolean
   b: Brand; busy: boolean; disabled: boolean; onSave: (t: string) => void; onRemove: () => void; onRewrite: () => void; rewriting: boolean; scoutOpens: boolean
@@ -2738,6 +2778,8 @@ function QueueRow({ b, busy, disabled, onSave, onRemove, onRewrite, rewriting, o
             <span className="text-[14px] font-semibold">{b.name}</span>
             {promotes && <span className="text-[11px] font-semibold rounded-full px-2 py-0.5" style={{ background: 'rgba(22,163,74,0.12)', color: GREEN }}>You already promote them</span>}
             {b.pay_text && <span className="text-[11px] font-semibold rounded-md px-2 py-0.5" style={{ background: 'rgba(22,163,74,0.10)', color: GREEN }}>{b.pay_text}</span>}
+            {/* EARLIER WORDS (review 2026-10-24): written before the core message last changed. */}
+            {stale && <button onClick={onRewrite} disabled={disabled || rewriting} className="text-[11px] font-semibold rounded-full px-2 py-0.5 disabled:opacity-50" style={{ background: 'rgba(217,119,6,0.12)', color: AMBER }} title="This message was written before you last changed your core message. Rewrite writes it again from the words you saved.">From your earlier core message: Rewrite</button>}
             {b.left_trybe_at && <span className="text-[11px] font-semibold rounded-full px-2 py-0.5" style={{ background: 'rgba(217,119,6,0.12)', color: AMBER }} title={`MVP's last full read of TRYBE's list (${new Date(b.left_trybe_at).toLocaleDateString()}) did not have this brand. It may have left TRYBE, or stopped taking creators. Open it on TRYBE to check before sending.`}>Not in TRYBE&rsquo;s list lately</span>}
             <TrybeLink brandId={b.brand_id} name={b.name} scout={scoutOpens} />
             {b.website && <a href={b.website} target="_blank" rel="noopener noreferrer" className="text-[12px] inline-flex items-center gap-0.5" style={soft}><Globe size={11} /> {siteName(b.website)} <ExternalLink size={10} /></a>}
