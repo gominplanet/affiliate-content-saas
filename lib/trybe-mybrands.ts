@@ -59,7 +59,9 @@ export interface MyBrand {
 
 /** The keys of an answer, for an admin when nothing could be read from it. */
 export function keysOf(json: unknown): string {
-  const root = isObj(json) && isObj(json.data) ? json.data : json
+  // A data list is described too (TRYBE's ad videos answer, 2026-10-24: its
+  // top level said only "data", which told nothing about the list inside).
+  const root = isObj(json) && (isObj(json.data) || Array.isArray(json.data)) ? json.data : json
   if (Array.isArray(root)) return `a list of ${root.length}${isObj(root[0]) ? ` (${Object.keys(root[0]).slice(0, 12).join(', ')})` : ''}`
   if (isObj(root)) return Object.keys(root).slice(0, 15).join(', ') || '(empty)'
   return typeof root

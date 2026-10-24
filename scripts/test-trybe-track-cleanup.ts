@@ -57,11 +57,20 @@ check('ad videos or totals not read are said, never "no ads"', /read\.videosRead
 // own answer is said: once on My brands, not on every card.
 {
   const HOOK = read('components/labs/useTrybeAds.ts')
-  check('the ad videos are asked with the sort TRYBE requires', /analytics\/submissions\?period=\$\{period\}&sort=earnings`/.test(HOOK))
+  check('the ad videos are asked with the sort TRYBE requires', /sort: 'earnings' \| 'hook' = 'earnings'/.test(HOOK) && /analytics\/submissions\?period=\$\{period\}&sort=\$\{sort\}`/.test(HOOK))
   check('the ad videos are asked at 100, 50 and no page size, stopping at signed out or not found', /\[`\$\{base\}&limit=100`, `\$\{base\}&limit=50`, base\]/.test(HOOK) && /last\.status === 401 \|\| last\.status === 403 \|\| last\.status === 404\) break/.test(HOOK))
   check('a videos list in the totals answer stands in, and only a list with videos', /const fromTotals = !v\.ok && t\.ok \? readAdVideos\(t\.json\) : \[\]/.test(HOOK) && /const videosRead = \(v\.ok && !unreadForm\) \|\| fromTotals\.length > 0/.test(HOOK))
   check('a list MVP finds no videos in while TRYBE counts live ads is said as unread, never "no ads"', /const unreadForm = v\.ok && videos\.length === 0 && liveCounted > 0/.test(HOOK) && /in a form MVP does not read yet/.test(HOOK))
-  check('why the videos did not read is said in TRYBE\'s words', /videosWhy: videosRead \? null : unreadForm \? `TRYBE sent the list, but in a form MVP does not read yet: \$\{keysOf\(v\.json\)\}` : whyNot\(v\)/.test(HOOK) && /TRYBE answered \$\{r\.status\}/.test(HOOK) && /read\.videosWhy \?/.test(ADS) && /ads\.read\.videosWhy \?/.test(MB))
+  check('why the videos did not read is said in TRYBE\'s words', /videosWhy: videosRead \? null : unreadForm \? \(rowsSent === 0 \?/.test(HOOK) && /in a form MVP does not read yet: \$\{keysOf\(v\.json\)\}`\) : whyNot\(v\)/.test(HOOK) && /TRYBE answered \$\{r\.status\}/.test(HOOK) && /read\.videosWhy \?/.test(ADS) && /ads\.read\.videosWhy \?/.test(MB))
+  // TRYBE's answer on Seb's screen (2026-10-24): currencyContext, data,
+  // message, pagination, requestId, success, and no video read from it.
+  const { readAdVideos, adVideoRows } = require('../lib/trybe-ads') as typeof import('../lib/trybe-ads')
+  const { keysOf } = require('../lib/trybe-mybrands') as typeof import('../lib/trybe-mybrands')
+  const answer = (data: unknown) => ({ success: true, data, message: 'ok', pagination: { page: 1 }, requestId: 'r', currencyContext: {} })
+  check('a list in data is read, with or without an id TRYBE names', readAdVideos(answer([{ submission_id: 's1', metrics: { linkClicks: 2 } }, { metrics: { linkClicks: 1 } }])).length === 2 && readAdVideos(answer([{ submission_id: 's1' }]))[0].id === 's1')
+  check('a list one level down in data is found', adVideoRows(answer({ creatives: [{ id: 'a' }] })).length === 1)
+  check('what is inside data is described, not only its name', /a list of 2 \(submission_id/.test(keysOf(answer([{ submission_id: 's1' }, {}]))))
+  check('an empty list by earnings is asked again by hook rate and said as empty, never "no ads"', /const h = await readVideos\(period, 'hook'\)/.test(HOOK) && /TRYBE sent an empty list of videos for these/.test(HOOK))
   check('My brands says it once, not on every card', /Ads: not read \(see above\)\./.test(MB) && (MB.match(/MVP could not read your ad videos from TRYBE just now/g) || []).length === 1)
 }
 check('one brand\'s earnings are its period earnings', /earned: oneEarned \?\? one\.totals\.earned/.test(ADS))

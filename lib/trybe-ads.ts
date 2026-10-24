@@ -107,30 +107,45 @@ export interface AdVideo extends AdTotals {
 /** GET /backend/api/creator/v2/analytics/submissions?period=&sort=earnings
  *  (sort is required: earnings or hook): one entry per
  *  video, with its results. Pure. */
-export function readAdVideos(json: unknown): AdVideo[] {
+/** The list of videos in an answer, wherever TRYBE put it: the answer
+ *  itself, its data, a named list in it, or any list of objects one level
+ *  down. Pure. */
+export function adVideoRows(json: unknown): unknown[] {
   const root = rootOf(json)
-  const list = Array.isArray(root) ? root
-    : isObj(root) ? ([root.items, root.submissions, root.videos, root.data, root.results, root.rows].find(Array.isArray) as unknown[] | undefined) || [] : []
+  if (Array.isArray(root)) return root
+  if (!isObj(root)) return []
+  const named = [root.items, root.submissions, root.videos, root.data, root.results, root.rows, root.ads].find(Array.isArray) as unknown[] | undefined
+  if (named) return named
+  return (Object.values(root).find((v) => Array.isArray(v) && v.some(isObj)) as unknown[] | undefined) || []
+}
+
+export function readAdVideos(json: unknown): AdVideo[] {
+  const list = adVideoRows(json)
   const out: AdVideo[] = []
-  for (const raw of list) {
-    if (!isObj(raw)) continue
-    const sub = isObj(raw.submission) ? raw.submission : null
+  list.forEach((raw, i) => {
+    if (!isObj(raw)) return
+    const sub = isObj(raw.submission) ? raw.submission : isObj(raw.video) ? raw.video : null
     const brand = isObj(raw.brand) ? raw.brand : isObj(sub?.brand) ? sub!.brand as Obj : null
     const meta = isObj(raw.metadata) ? raw.metadata : isObj(sub?.metadata) ? sub!.metadata as Obj : null
-    const id = str(raw.id ?? raw.submissionId ?? sub?.id)
-    if (!id) continue
+    const brandId = str(raw.brandId ?? raw.brand_id ?? brand?.id ?? sub?.brandId) || null
+    // A row with no id TRYBE named but with results is still a video: it
+    // gets one from its place in the list. A row with neither is skipped.
+    const results = totalsOf(raw)
+    const named = str(raw.id ?? raw.submissionId ?? raw.submission_id ?? raw._id ?? raw.videoId ?? raw.adId ?? raw.creativeId ?? sub?.id)
+    if (!named && !Object.values(results).some((x) => x != null)) return
+    const id = named || `${brandId || 'video'}-${i + 1}`
     const liveRaw = raw.isActive ?? raw.active ?? raw.isLive ?? raw.live ?? raw.hasActiveAds ?? raw.activeAd
     const liveCount = num(raw.activeAds ?? raw.liveAds)
     out.push({
-      ...totalsOf(raw),
+      ...results,
       id,
       title: str(raw.title ?? raw.caption ?? sub?.title ?? meta?.title ?? raw.productName ?? (isObj(raw.product) ? raw.product.title ?? raw.product.name : '')) || null,
-      brand: str(raw.brandName ?? brand?.name ?? sub?.brandName) || null,
-      brandId: str(raw.brandId ?? brand?.id ?? sub?.brandId) || null,
-      thumbnail: str(raw.thumbnailUrl ?? meta?.thumbnailUrl ?? sub?.thumbnailUrl) || null,
+      brand: str(raw.brandName ?? raw.brand_name ?? brand?.name ?? sub?.brandName) || null,
+      brandId,
+      thumbnail: str(raw.thumbnailUrl ?? raw.thumbnail ?? meta?.thumbnailUrl ?? sub?.thumbnailUrl) || null,
       live: typeof liveRaw === 'boolean' ? liveRaw : liveCount != null ? liveCount > 0 : null,
     })
-  }
+  })
   return out
 }
 

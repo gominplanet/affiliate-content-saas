@@ -11,7 +11,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { requestTrybeApi, type TrybeApiResult } from '@/lib/extension-frame'
 import { readBrandStats, keysOf } from '@/lib/trybe-mybrands'
-import { readAdTotals, readAdVideos, fillTotals, readCount, adBrands, adWinners, NO_TOTALS, PERIOD_DAYS, type AdPeriod, type AdTotals, type AdVideo, type AdWinner } from '@/lib/trybe-ads'
+import { readAdTotals, readAdVideos, adVideoRows, fillTotals, readCount, adBrands, adWinners, NO_TOTALS, PERIOD_DAYS, type AdPeriod, type AdTotals, type AdVideo, type AdWinner } from '@/lib/trybe-ads'
 
 export interface AdsRead {
   period: AdPeriod
@@ -58,8 +58,8 @@ function whyNot(r: TrybeApiResult): string {
  *  totals still read, and a busy TRYBE (500s) or a slow tab answers the next
  *  time. So: 100, then 50, then no page size, stopping at signed out or not
  *  found. */
-async function readVideos(period: AdPeriod): Promise<TrybeApiResult> {
-  const base = `/backend/api/creator/v2/analytics/submissions?period=${period}&sort=earnings`
+async function readVideos(period: AdPeriod, sort: 'earnings' | 'hook' = 'earnings'): Promise<TrybeApiResult> {
+  const base = `/backend/api/creator/v2/analytics/submissions?period=${period}&sort=${sort}`
   let last: TrybeApiResult = { ok: false, error: 'SCOUT did not answer.' }
   for (const path of [`${base}&limit=100`, `${base}&limit=50`, base]) {
     last = await requestTrybeApi('GET', path)
@@ -72,10 +72,19 @@ async function readVideos(period: AdPeriod): Promise<TrybeApiResult> {
 export async function readAds(period: AdPeriod, fresh = false): Promise<{ read: AdsRead | null; problem: AdsProblem | null }> {
   const kept = cache.get(period)
   if (!fresh && kept && Date.now() - kept.at < TTL) return { read: kept, problem: null }
-  const [t, v] = await Promise.all([
+  const [t, v0] = await Promise.all([
     requestTrybeApi('GET', `/backend/api/creator/v2/analytics?period=${period}`),
     readVideos(period),
   ])
+  // An empty list by earnings while TRYBE counts live ads: asked again by
+  // hook rate, in case the earnings list leaves out videos that earned
+  // nothing yet (Seb's answer, 2026-10-24: $0 earned, 7 live ads, no videos).
+  let v = v0, hookEmpty = false
+  if (v0.ok && t.ok && adVideoRows(v0.json).length === 0 && (readAdTotals(t.json).liveAds ?? 0) > 0) {
+    const h = await readVideos(period, 'hook')
+    if (h.ok && adVideoRows(h.json).length > 0) v = h
+    else hookEmpty = h.ok
+  }
   if (t.ok || v.ok) {
     // The totals answer carries a submissions entry: when it is the list of
     // videos, it stands in for a videos answer that did not come. Only a list
@@ -89,7 +98,8 @@ export async function readAds(period: AdPeriod, fresh = false): Promise<{ read: 
     const unreadForm = v.ok && videos.length === 0 && liveCounted > 0
     const videosRead = (v.ok && !unreadForm) || fromTotals.length > 0
     const totals = fillTotals(t.ok ? readAdTotals(t.json) : { ...NO_TOTALS }, videos)
-    const read: AdsRead = { period, totals, videos, source: 'full', totalsRead: t.ok, videosRead, videosWhy: videosRead ? null : unreadForm ? `TRYBE sent the list, but in a form MVP does not read yet: ${keysOf(v.json)}` : whyNot(v), keys: readCount(totals) ? null : `analytics: ${t.ok ? keysOf(t.json) : 'not read'}; submissions: ${v.ok ? keysOf(v.json) : 'not read'}`, at: Date.now() }
+    const rowsSent = v.ok ? adVideoRows(v.json).length : 0
+    const read: AdsRead = { period, totals, videos, source: 'full', totalsRead: t.ok, videosRead, videosWhy: videosRead ? null : unreadForm ? (rowsSent === 0 ? `TRYBE sent an empty list of videos for these ${PERIOD_DAYS[period]} days${hookEmpty ? ', by earnings and by hook rate,' : ''} while counting ${liveCounted} live ads` : `TRYBE sent the list, but in a form MVP does not read yet: ${keysOf(v.json)}`) : whyNot(v), keys: readCount(totals) ? null : `analytics: ${t.ok ? keysOf(t.json) : 'not read'}; submissions: ${v.ok ? keysOf(v.json) : 'not read'}`, at: Date.now() }
     cache.set(period, read)
     return { read, problem: null }
   }
