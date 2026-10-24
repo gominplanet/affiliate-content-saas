@@ -104,7 +104,8 @@ export interface AdVideo extends AdTotals {
   live: boolean | null
 }
 
-/** GET /backend/api/creator/v2/analytics/submissions?period=: one entry per
+/** GET /backend/api/creator/v2/analytics/submissions?period=&sort=earnings
+ *  (sort is required: earnings or hook): one entry per
  *  video, with its results. Pure. */
 export function readAdVideos(json: unknown): AdVideo[] {
   const root = rootOf(json)

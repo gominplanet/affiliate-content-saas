@@ -51,13 +51,15 @@ function whyNot(r: TrybeApiResult): string {
   return r.status ? `TRYBE answered ${r.status}${words ? `: ${words}` : ''}` : (r.error || 'SCOUT did not answer')
 }
 
-/** THE AD VIDEOS, ASKED MORE THAN ONE WAY. The address comes from TRYBE's
- *  page code and its limit was never confirmed: a page size TRYBE does not
- *  take is refused (400 or 422) while the totals still read, and a busy
- *  TRYBE (500s) or a slow tab answers the next time. So: 100, then 50, then
- *  no page size, stopping at signed out or not found. */
+/** THE AD VIDEOS, ASKED MORE THAN ONE WAY. TRYBE needs a sort: it answered
+ *  400 "sort is required and must be one of: earnings, hook" (Seb's screen,
+ *  2026-10-24), so the best earners come first. Its page size was never
+ *  confirmed: one TRYBE does not take is refused (400 or 422) while the
+ *  totals still read, and a busy TRYBE (500s) or a slow tab answers the next
+ *  time. So: 100, then 50, then no page size, stopping at signed out or not
+ *  found. */
 async function readVideos(period: AdPeriod): Promise<TrybeApiResult> {
-  const base = `/backend/api/creator/v2/analytics/submissions?period=${period}`
+  const base = `/backend/api/creator/v2/analytics/submissions?period=${period}&sort=earnings`
   let last: TrybeApiResult = { ok: false, error: 'SCOUT did not answer.' }
   for (const path of [`${base}&limit=100`, `${base}&limit=50`, base]) {
     last = await requestTrybeApi('GET', path)
@@ -79,10 +81,15 @@ export async function readAds(period: AdPeriod, fresh = false): Promise<{ read: 
     // videos, it stands in for a videos answer that did not come. Only a list
     // with videos in it counts, so an empty one is never "no ads ran".
     const fromTotals = !v.ok && t.ok ? readAdVideos(t.json) : []
-    const videosRead = v.ok || fromTotals.length > 0
     const videos = v.ok ? readAdVideos(v.json) : fromTotals
+    // TRYBE's list was never seen before it answered (2026-10-24): an answer
+    // MVP finds no videos in while TRYBE counts live ads is a form MVP does
+    // not read yet, said so, never "no videos ran as ads".
+    const liveCounted = t.ok ? readAdTotals(t.json).liveAds ?? 0 : 0
+    const unreadForm = v.ok && videos.length === 0 && liveCounted > 0
+    const videosRead = (v.ok && !unreadForm) || fromTotals.length > 0
     const totals = fillTotals(t.ok ? readAdTotals(t.json) : { ...NO_TOTALS }, videos)
-    const read: AdsRead = { period, totals, videos, source: 'full', totalsRead: t.ok, videosRead, videosWhy: videosRead ? null : whyNot(v), keys: readCount(totals) ? null : `analytics: ${t.ok ? keysOf(t.json) : 'not read'}; submissions: ${v.ok ? keysOf(v.json) : 'not read'}`, at: Date.now() }
+    const read: AdsRead = { period, totals, videos, source: 'full', totalsRead: t.ok, videosRead, videosWhy: videosRead ? null : unreadForm ? `TRYBE sent the list, but in a form MVP does not read yet: ${keysOf(v.json)}` : whyNot(v), keys: readCount(totals) ? null : `analytics: ${t.ok ? keysOf(t.json) : 'not read'}; submissions: ${v.ok ? keysOf(v.json) : 'not read'}`, at: Date.now() }
     cache.set(period, read)
     return { read, problem: null }
   }

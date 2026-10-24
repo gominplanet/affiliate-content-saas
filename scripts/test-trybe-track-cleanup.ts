@@ -57,9 +57,11 @@ check('ad videos or totals not read are said, never "no ads"', /read\.videosRead
 // own answer is said: once on My brands, not on every card.
 {
   const HOOK = read('components/labs/useTrybeAds.ts')
+  check('the ad videos are asked with the sort TRYBE requires', /analytics\/submissions\?period=\$\{period\}&sort=earnings`/.test(HOOK))
   check('the ad videos are asked at 100, 50 and no page size, stopping at signed out or not found', /\[`\$\{base\}&limit=100`, `\$\{base\}&limit=50`, base\]/.test(HOOK) && /last\.status === 401 \|\| last\.status === 403 \|\| last\.status === 404\) break/.test(HOOK))
-  check('a videos list in the totals answer stands in, and only a list with videos', /const fromTotals = !v\.ok && t\.ok \? readAdVideos\(t\.json\) : \[\]/.test(HOOK) && /const videosRead = v\.ok \|\| fromTotals\.length > 0/.test(HOOK))
-  check('why the videos did not read is said in TRYBE\'s words', /videosWhy: videosRead \? null : whyNot\(v\)/.test(HOOK) && /TRYBE answered \$\{r\.status\}/.test(HOOK) && /read\.videosWhy \?/.test(ADS) && /ads\.read\.videosWhy \?/.test(MB))
+  check('a videos list in the totals answer stands in, and only a list with videos', /const fromTotals = !v\.ok && t\.ok \? readAdVideos\(t\.json\) : \[\]/.test(HOOK) && /const videosRead = \(v\.ok && !unreadForm\) \|\| fromTotals\.length > 0/.test(HOOK))
+  check('a list MVP finds no videos in while TRYBE counts live ads is said as unread, never "no ads"', /const unreadForm = v\.ok && videos\.length === 0 && liveCounted > 0/.test(HOOK) && /in a form MVP does not read yet/.test(HOOK))
+  check('why the videos did not read is said in TRYBE\'s words', /videosWhy: videosRead \? null : unreadForm \? `TRYBE sent the list, but in a form MVP does not read yet: \$\{keysOf\(v\.json\)\}` : whyNot\(v\)/.test(HOOK) && /TRYBE answered \$\{r\.status\}/.test(HOOK) && /read\.videosWhy \?/.test(ADS) && /ads\.read\.videosWhy \?/.test(MB))
   check('My brands says it once, not on every card', /Ads: not read \(see above\)\./.test(MB) && (MB.match(/MVP could not read your ad videos from TRYBE just now/g) || []).length === 1)
 }
 check('one brand\'s earnings are its period earnings', /earned: oneEarned \?\? one\.totals\.earned/.test(ADS))
