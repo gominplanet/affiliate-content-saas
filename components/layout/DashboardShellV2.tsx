@@ -910,7 +910,7 @@ export default function DashboardShellV2({
         <div className="fixed inset-0 z-30 bg-black/40 md:hidden" onClick={() => setMobileOpen(false)} aria-hidden="true" />
       )}
       <aside
-        className={`${railCollapsed ? 'md:w-[68px]' : 'md:w-[232px]'} w-[264px] flex-shrink-0 border-r flex flex-col transition-[width,transform] duration-200 fixed md:sticky top-0 left-0 z-40 h-screen ${mobileOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0`}
+        className={`${railCollapsed ? 'md:w-[68px]' : 'md:w-[264px]'} w-[280px] flex-shrink-0 border-r flex flex-col transition-[width,transform] duration-200 fixed md:sticky top-0 left-0 z-40 h-screen ${mobileOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0`}
         style={{ backgroundColor: 'var(--bg-sidebar)', borderColor: 'var(--border)' }}
       >
         {/* Brand + collapse toggle. Each tier shows its own square badge — the
@@ -986,7 +986,8 @@ export default function DashboardShellV2({
         )}
 
         {/* Nav groups */}
-        <nav className="flex-1 px-2 flex flex-col gap-3 overflow-y-auto pb-3">
+        {/* A thin scrollbar: the wide one took a label's last letters. */}
+        <nav className="flex-1 px-2 flex flex-col gap-3 overflow-y-auto pb-3 [scrollbar-width:thin]">
           {groupsWithFavorites.map((group) => {
             const visibleItems = group.items.filter((it) => it.gate !== false)
             const isFavorites = group.label === 'My features'
@@ -1419,9 +1420,15 @@ function NavItem({ item, active, collapsed }: { item: NavItemDef; active: boolea
   const className = cn(
     // 14px + font-semibold + py-2 for legibility (calibrated for the
     // dark theme in commit 929cdb4).
-    'relative flex items-center gap-2.5 py-2 rounded-lg text-[14px] font-semibold transition-colors',
+    'relative flex items-center gap-2 py-2 rounded-lg text-[14px] font-semibold transition-colors',
     collapsed ? 'justify-center' : 'px-2.5',
   )
+  // EVERY TITLE READS IN FULL (Seb, 2026-10-24: "the titles on the left
+  // sidebar are always cutoff"). "Bulk Amazo...", "Instagram A..." and
+  // "Comparisons and g..." were cut to one line beside a wide "New" chip. The
+  // rail is wider, the chip is smaller, and a title that still does not fit
+  // wraps to a second line instead of losing its end.
+  const fullTitle = collapsed ? item.label : item.label.length > 20 ? item.label : undefined
   // Barbie-pink (or any) TEXT colour for a spotlighted row (e.g. Oink) — the
   // letters + icon are tinted, background stays normal so it pops without a
   // heavy block. Stays pink on hover/active.
@@ -1463,7 +1470,7 @@ function NavItem({ item, active, collapsed }: { item: NavItemDef; active: boolea
           </>
         )}
       </span>
-      {!collapsed && <span className="flex-1 truncate">{item.label}</span>}
+      {!collapsed && <span className="flex-1 min-w-0 leading-[1.25] line-clamp-2 break-words">{item.label}</span>}
       {/* External-link glyph — small tail icon hinting "opens off-site".
           Hidden when the sidebar is collapsed (the row icon is already
           ExternalLink in that mode). */}
@@ -1476,14 +1483,16 @@ function NavItem({ item, active, collapsed }: { item: NavItemDef; active: boolea
         // eye. Word badges (e.g. "Paused") stay subtle in the neutral style.
         typeof item.badge === 'number' ? (
           <span
-            className="text-[11px] tabular-nums min-w-[18px] h-[18px] px-1.5 rounded-full font-bold flex items-center justify-center text-white"
+            className="text-[11px] tabular-nums min-w-[18px] h-[18px] px-1.5 rounded-full font-bold flex flex-shrink-0 items-center justify-center text-white"
             style={{ backgroundColor: '#ff3b30' }}
           >
             {item.badge > 99 ? '99+' : item.badge}
           </span>
         ) : (
+          // A small chip, so the title keeps the room: "NEW" took a third of
+          // the row in 11px sentence case.
           <span
-            className="text-[11px] tabular-nums px-1.5 py-0.5 rounded font-semibold"
+            className="flex-shrink-0 text-[9.5px] uppercase tracking-[0.06em] leading-none px-[5px] py-[3px] rounded-md font-bold"
             style={{
               backgroundColor: active ? 'rgba(124,58,237,0.22)' : 'var(--surface-bright)',
               color: active ? 'var(--nav-active-text)' : 'var(--text-soft)',
@@ -1502,7 +1511,7 @@ function NavItem({ item, active, collapsed }: { item: NavItemDef; active: boolea
         href={item.href}
         target="_blank"
         rel="noopener noreferrer"
-        title={collapsed ? `${item.label} (opens in new tab)` : undefined}
+        title={fullTitle ? `${item.label} (opens in new tab)` : undefined}
         className={className}
         style={style}
         onMouseEnter={onMouseEnter}
@@ -1516,7 +1525,7 @@ function NavItem({ item, active, collapsed }: { item: NavItemDef; active: boolea
   return (
     <Link
       href={item.href}
-      title={collapsed ? item.label : undefined}
+      title={fullTitle}
       className={className}
       style={style}
       onMouseEnter={onMouseEnter}
