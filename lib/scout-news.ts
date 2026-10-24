@@ -46,7 +46,8 @@ export const FORCE_PARAM = 'scoutnews'
 /** At most this many lines on the card, newest first. */
 export const MAX_NOTES = 5
 
-export type NoteGate = PreviewFeature | 'video_tools'
+/** 'team': only the MVP team sees it, for a feature not open to members yet. */
+export type NoteGate = PreviewFeature | 'video_tools' | 'team'
 export type ScoutNote = { text: string; href?: string; gate?: NoteGate }
 export type ScoutRelease = { version: string; date: string; notes: ScoutNote[] }
 
@@ -57,7 +58,8 @@ export const SCOUT_RELEASES: ScoutRelease[] = [
     version: '1.53.7',
     date: '2026-10-21',
     notes: [
-      { text: 'TRYBE: your intro video goes with every request to join a brand. Optional.', href: '/trybe', gate: 'trybe_outreach' },
+      // Team only while the intro video is (the card and the server are admin only).
+      { text: 'TRYBE: your intro video goes with every request to join a brand. Optional.', href: '/trybe', gate: 'team' },
     ],
   },
   {

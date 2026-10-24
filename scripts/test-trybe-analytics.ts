@@ -70,7 +70,7 @@ check('one brand’s tiles say they are added up from its videos', /added up fro
 const HOOK = read('components/labs/useTrybeSubmissions.ts')
 check('submissions are read per brand from TRYBE’s own list, which SCOUT already allows', /\/backend\/api\/creator\/v2\/brands\/\$\{encodeURIComponent\(id\)\}\/submissions\?page=1&limit=100/.test(HOOK) && /creator\/v2\/brands\/stats/.test(HOOK))
 const OUT = read('components/labs/TrybeOutreach.tsx')
-check('Analytics is its own tab in Track, opened from the address too', /\{ id: 'analytics', label: 'Analytics'[^\n]*group: 'track'/.test(OUT) && /t === 'analytics'/.test(OUT) && /tab === 'analytics' && canMyBrands && <TrybeAds/.test(OUT))
+check('Analytics is its own tab in Track, opened from the address too', /\{ id: 'analytics', label: 'Analytics'[^\n]*group: 'track'/.test(OUT) && /function TabQueryWatcher\(/.test(OUT) && /TABS\.some\(x => x\.id === t\)/.test(OUT) && /tab === 'analytics' && canMyBrands && <TrybeAds/.test(OUT))
 check('without SCOUT on TRYBE the tab says what it needs, not a blank page', /tab === 'analytics' && !canMyBrands/.test(OUT))
 
 if (failures.length) {

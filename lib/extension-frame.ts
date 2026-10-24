@@ -1133,11 +1133,14 @@ export async function requestTrybeTabOpen(focus = false): Promise<{ open: boolea
 
 /** TRYBE outreach (Labs). Is SCOUT allowed on TRYBE; ask: show Chrome's
  *  Allow window now when it is not. Resolves, never throws. */
-export async function requestTrybeAccess(ask: boolean): Promise<{ state: 'granted' | 'not-granted' | 'no-scout' | 'old'; version?: string | null }> {
+export async function requestTrybeAccess(ask: boolean): Promise<{ state: 'granted' | 'not-granted' | 'no-scout' | 'old' | 'no-answer'; version?: string | null }> {
   const status = await getScoutStatus()
   if (!status.installed) return { state: 'no-scout' }
   if (!scoutAtLeast(status.version, SCOUT_TRYBE_MIN_VERSION)) return { state: 'old', version: status.version ?? null }
   const res = await sendToExtension<{ granted?: boolean }>({ type: 'MVP_TRYBE_ACCESS', ask }, ask ? 185_000 : 10_000)
+  // NO REPLY IS NOT "NOT ALLOWED" (review 2026-10-24): a SCOUT that did not
+  // answer the quiet check is said as such, never sent to a 3 minute Allow.
+  if (res == null && !ask) return { state: 'no-answer', version: status.version ?? null }
   return { state: res?.granted ? 'granted' : 'not-granted', version: status.version ?? null }
 }
 

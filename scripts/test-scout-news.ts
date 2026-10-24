@@ -60,7 +60,7 @@ check('releases in any order are read newest first', scoutPopupPlan({ kind: 'sto
 check('nothing to say: nothing shown', scoutPopupPlan({ kind: 'store', installed: '1.50.0', seen: null, desktop: true, releases: [] }) === null)
 
 // ── Only what the plan has ──
-const canFor = (tier: string) => (g: Parameters<Parameters<typeof releasesFor>[0]>[0]) => g === 'video_tools' ? hasVideoTools(tier) : canUsePreview(g, tier)
+const canFor = (tier: string) => (g: Parameters<Parameters<typeof releasesFor>[0]>[0]) => g === 'team' ? tier === 'admin' : g === 'video_tools' ? hasVideoTools(tier) : canUsePreview(g, tier)
 const proNotes = releasesFor(canFor('pro')).flatMap((r) => r.notes.map((n) => n.text))
 const amazonNotes = releasesFor(canFor('amazon')).flatMap((r) => r.notes.map((n) => n.text))
 const adminNotes = releasesFor(canFor('admin')).flatMap((r) => r.notes.map((n) => n.text))

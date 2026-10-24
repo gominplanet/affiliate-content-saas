@@ -19,7 +19,9 @@
 // step of a send run is written in the run log, so a run that could not start
 // says why instead of looking like nothing happened.
 
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
+import { useEffectiveTier } from '@/lib/useEffectiveTier'
 import { toast } from 'sonner'
 import { Loader2, Lock, Search, Sparkles, Send, Square, ExternalLink, Check, AlertTriangle, Globe, Star, Handshake, RotateCcw, X, Trash2, Tag,
   Dumbbell, Shirt, House, UtensilsCrossed, Baby, PawPrint, Gem, Cpu, Tent, Plane, BookOpen, Church, Palette, SprayCan, Moon, Pill, HeartPulse,
@@ -110,7 +112,7 @@ interface Brand {
   video_plan_at?: string | null
 }
 
-type Access = 'checking' | 'granted' | 'not-granted' | 'no-scout' | 'old'
+type Access = 'checking' | 'granted' | 'not-granted' | 'no-scout' | 'old' | 'no-answer'
 /** MVP's copy of every TRYBE brand (shared), and how complete it is. */
 interface Directory { brands: number; listed?: number | null; firstCountAt?: string | null; joinedSinceFirst?: number | null; joinedStillListed?: number | null; withWebsite: number; websitesRead: number; lastCollectedAt: string | null; lastPartial?: { at: string; pages: number | null; totalPages: number | null } | null; categories: string[]; top100?: { at?: string; entries?: number; brands?: number; matched?: number } | null }
 /** The whole list is collected again after this long. */
@@ -333,9 +335,8 @@ const TAB_GROUPS: Array<{ id: TabGroup; label: string; says: string; color: stri
 const TABS: Array<{ id: Tab; label: string; icon: LucideIcon; group: TabGroup; says: string }> = [
   { id: 'create', label: 'Make videos', icon: Clapperboard, group: 'create', says: 'Pick a brand, pick the product you have, and get ten shooting scripts that follow its brief.' },
   { id: 'upload', label: 'Upload videos', icon: UploadCloud, group: 'create', says: 'Add the videos you filmed and send each one to its TRYBE brand, without leaving this page.' },
-  // TEAM ONLY (Seb, 2026-10-18: "how they win may not be very helpful" as its
-  // own tab). A member's help is in Make videos, where Their best videos now
-  // carries the words collected here. The team keeps this to collect them.
+  // (How they win, once a team-only tab here, was removed 2026-10-18: its
+  // words now show in Make videos, under Their best videos.)
   { id: 'week', label: 'This week', icon: CalendarDays, group: 'create', says: 'Your samples, ticked as they arrive, and your next 7 days planned from them.' },
   { id: 'working', label: 'What\u2019s working', icon: Lightbulb, group: 'create', says: 'Check your own hook, then see how the videos in TRYBE\u2019s Top 100 open, with examples to watch.' },
   { id: 'find', label: 'Find brands', icon: Search, group: 'brands', says: 'Brands that fit your channel, and a first message to each, in your words.' },
@@ -471,6 +472,15 @@ function opensWords(at: string | null): string {
  *  browse, with the Amazon match, filters, priorities, stars and pass; every
  *  other tab is shown as Pro, and nothing that writes, sends or reads the
  *  inbox runs. The server enforces the same (lib/labs-preview). */
+/** ?tab= ON EVERY NAVIGATION (review 2026-10-24): What's new and SCOUT's
+ *  news link to /trybe?tab=queue and others, also while already on /trybe.
+ *  Inside <Suspense>, as useSearchParams needs (the Content page's pattern). */
+function TabQueryWatcher({ onTab }: { onTab: (t: string | null) => void }) {
+  const t = useSearchParams().get('tab')
+  useEffect(() => { onTab(t) }, [t, onTab])
+  return null
+}
+
 export default function TrybeOutreach({ preview = false }: { preview?: boolean } = {}) {
   const [brands, setBrands] = useState<Brand[]>([])
   // "Include my results in members' combined numbers" (migration 428).
@@ -486,9 +496,17 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
   const [tab, setTab] = useState<Tab>(preview ? 'find' : 'create')
   // A Pro tab opened on the Amazon plan: said, with the way to Pro.
   const [lockedTab, setLockedTab] = useState<Tab | null>(null)
+  // The tab goes into the address too, so a reload stays on it.
+  const router = useRouter()
   const go = useCallback((t: Tab) => {
     if (preview && t !== 'find') { setLockedTab(t); return }
     setLockedTab(null); setTab(t)
+    try { if (new URLSearchParams(window.location.search).get('tab') !== t) router.replace(`?tab=${t}`, { scroll: false }) } catch { /* no URL */ }
+  }, [preview, router])
+  const onTabQuery = useCallback((t: string | null) => {
+    if (!t || !TABS.some(x => x.id === t)) return
+    if (preview) { if (t !== 'find') setLockedTab(t as Tab); else setLockedTab(null); return }
+    setLockedTab(null); setTab(t as Tab)
   }, [preview])
   const [core, setCore] = useState('')
   const [cap, setCap] = useState(20)
@@ -524,7 +542,12 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
   const [directory, setDirectory] = useState<Directory | null>(null)
   // How MVP's copy of TRYBE is doing (counts, collection notes) is for the
   // admin only (Seb, 2026-10-07): it makes no difference to a creator.
-  const [isAdmin, setIsAdmin] = useState(false)
+  // TEAM ONLY, AS VIEW AS SHOWS IT (review 2026-10-24): the server says who
+  // is on the team; viewing as a member hides the team's parts, so Seb's
+  // check shows what members see.
+  const [realAdmin, setIsAdmin] = useState(false)
+  const viewTier = useEffectiveTier()
+  const isAdmin = realAdmin && (viewTier === null || viewTier === 'admin')
   const [showAllNiches, setShowAllNiches] = useState(false)
   const searchRef = useRef<HTMLInputElement>(null)
   // The TRYBE inbox, for the unread count and which sent brands answered.
@@ -553,7 +576,9 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
   // the order covers every match and not just the 60 on screen.
   const [sortBy, setSortBy] = useState<LiveSort>('match')
   // What changed's "See all new": Find brands on the New this week list.
-  const seeNew = useCallback(() => { setFilters({ ...NO_FILTERS, newOnly: true }); setSortBy('picks'); go('find') }, [go])
+  // "See all N new": the name search and pay filter go too, so the list is
+  // not quietly a few of the N. Your niche stays (it is yours, and saved).
+  const seeNew = useCallback(() => { setFilters({ ...NO_FILTERS, newOnly: true }); setNameQ(''); setPayType('any'); setSortBy('picks'); go('find') }, [go])
   const [payType, setPayType] = useState<LivePay>('any')
   const [picksHelp, setPicksHelp] = useState(false)
   const [liveLoading, setLiveLoading] = useState(false)
@@ -595,9 +620,16 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
 
   const say = (name: string, text: string, tone: LogLine['tone']) => setLog(l => [{ at: Date.now(), name, text, tone }, ...l].slice(0, 200))
 
+  // A FIRST LOAD THAT FAILED is said, with Retry, instead of a page of
+  // defaults that looks like an empty account (review 2026-10-24: a Save on
+  // that page wrote the blanks over the saved message, niche and cap).
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const loadedOnce = useRef(false)
   const load = useCallback(async () => {
     try {
       const d = await api()
+      loadedOnce.current = true
+      setLoadError(null)
       setBrands(d.brands || [])
       setCore(c => c || d.settings?.coreMessage || '')
       setCap(d.settings?.dailyCap ?? 20)
@@ -614,7 +646,11 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
       setSaved({ core: d.settings?.coreMessage || '', dailyFind: d.settings?.dailyFind !== false })
       if (!(d.settings?.coreMessage || '').trim()) setEditingCore(true)
       return d
-    } catch (e) { toast.error(e instanceof Error ? e.message : 'Could not load'); return null }
+    } catch (e) {
+      const why = e instanceof Error ? e.message : 'Could not load'
+      if (!loadedOnce.current) setLoadError(why); else toast.error(why)
+      return null
+    }
     finally { setLoading(false) }
   }, [])
 
@@ -678,6 +714,8 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
   const autoCollect = useRef(false)
   useEffect(() => {
     if (preview || !isAdmin || !canMyBrands || autoCollect.current) return
+    // Not before SCOUT's TRYBE tab is open (it errored on first visits).
+    if (ownTab && trybeTab !== 'open') return
     const KEY = 'mvp:trybe-top100-day'
     const today = new Date().toISOString().slice(0, 10)
     try { if (localStorage.getItem(KEY) === today) return } catch { return }
@@ -690,7 +728,7 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
       if (r.report.tone === 'warn') toast.warning(`Today’s Top 100: ${r.report.lines.join(' ')}`, { duration: 12000 })
       else toast.success('Today’s TRYBE Top 100 is in. Make videos writes from its winning ads.', { duration: 5000 })
     }).catch((e) => toast.error(`Today’s Top 100 was not collected: ${e instanceof Error ? e.message : 'no answer'}`))
-  }, [preview, isAdmin, canMyBrands])
+  }, [preview, isAdmin, canMyBrands, ownTab, trybeTab])
   // What changed, read ahead. Read again once SCOUT can read your joined
   // brands, so any brand you joined wrongly listed as left is put right first.
   useEffect(() => { if (preview || access === 'checking') return; fetchChanges(7, canMyBrands).then(setChanges).catch((e) => setChangesError(e instanceof Error ? e.message : 'not read')) }, [access, canMyBrands]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -702,6 +740,14 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
     if (r.ok) { setInbox({ convos: r.convos, me: r.me, myName: r.myName }); setInboxError(null) } else setInboxError(r.error)
   }, [])
   useEffect(() => { if (canInbox) void loadInbox() }, [canInbox, loadInbox])
+  // THE TRYBE TAB JUST OPENED (review 2026-10-24): read straight away, not
+  // after two minutes of "Could not read TRYBE" on a tab that is now fine.
+  const tabWas = useRef<string | null>(null)
+  useEffect(() => {
+    const was = tabWas.current
+    tabWas.current = trybeTab
+    if (canInbox && was && was !== 'open' && was !== 'checking' && trybeTab === 'open') void loadInbox()
+  }, [trybeTab, canInbox, loadInbox])
   // The tiles and Sent stay current too: every two minutes while in view, and
   // straight away when the tab comes back into view. The Inbox tab reads its
   // own list on the same rhythm.
@@ -764,7 +810,9 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
       else try { localStorage.setItem(REQUESTS_KEY, JSON.stringify(read)) } catch { /* this browser only */ }
     } finally { requestsBusy.current = false; setRequestsPage(null) }
   }, [])
-  useEffect(() => { if (canRequests && tab === 'sent' && !requests) void loadRequests() }, [canRequests, tab, requests, loadRequests])
+  // Sent reads them; This week also needs them for "accepted brands first"
+  // (review 2026-10-24: opened directly, This week had no order).
+  useEffect(() => { if (canRequests && (tab === 'sent' || tab === 'week') && !requests) void loadRequests() }, [canRequests, tab, requests, loadRequests])
   // REPLY ALERTS (upgrade 4): every fresh read of the inbox is noted on MVP,
   // so the menu count and the Today list show it on other pages.
   const [alertsError, setAlertsError] = useState<string | null>(null)
@@ -772,10 +820,8 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
     if (!inbox) return
     void reportTrybeInbox(inbox.convos).then(r => { if (!r.ok) setAlertsError(r.error); else if (!r.skipped) setAlertsError(null) })
   }, [inbox])
-  // The Today list and the menu count link straight to the Inbox tab.
-  useEffect(() => {
-    try { const t = new URLSearchParams(window.location.search).get('tab'); if (preview) { if (t && t !== 'find') setLockedTab(t as Tab) } else if (t === 'inbox' || t === 'analytics' || t === 'brands' || t === 'week' || t === 'changes' || t === 'working' || t === 'create' || t === 'find') setTab(t) } catch { /* no URL */ }
-  }, [])
+  // The Today list, the menu count and the news link straight to a tab:
+  // TabQueryWatcher, below, on every navigation, for every tab.
   const onInboxConvos = useCallback((convos: Conversation[]) => setInbox(i => (i ? { ...i, convos } : { convos, me: [], myName: '' })), [])
   // A reply seen for the first time is saved, so it counts from then on even
   // when the inbox cannot be read. Each brand once per visit.
@@ -829,11 +875,12 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
   // Read once a day by itself, quietly, when the page opens.
   useEffect(() => {
     if (!canPlaybook || topTried.current || !directory || !isAdmin) return
+    if (ownTab && trybeTab !== 'open') return
     const at = directory.top100?.at ? Date.parse(directory.top100.at) : 0
     if (Date.now() - at < TOP100_FRESH_MS) return
     topTried.current = true
     void readTop100(true)
-  }, [canPlaybook, directory]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [canPlaybook, directory, ownTab, trybeTab]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const queue = useMemo(() => brands.filter(b => b.status === 'drafted' && b.draft).sort((a, b) => priority(b) - priority(a)), [brands])
   const found = useMemo(() => brands.filter(b => b.status === 'new' && b.fit_prefs === savedKey).sort((a, b) => priority(b) - priority(a)), [brands, savedKey])
@@ -868,6 +915,8 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
   // own Save. Find, Write and Rewrite all used to save a half-typed core
   // message on the way, and every draft was then written from it.
   async function saveSettings(quiet = false, what: { core?: boolean; prefs?: boolean } = {}) {
+    // Nothing is saved over settings that never loaded.
+    if (!saved) { toast.error('Your TRYBE settings did not load, so nothing was saved. Reload the page and try again.'); return false }
     setSavingSettings(true)
     try {
       const d = await api({ action: 'settings', categories: cats, keywords: kws, ...(what.core ? { coreMessage: core } : {}), ...(what.prefs ? { dailyCap: cap, dailyFind } : {}) })
@@ -990,6 +1039,13 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
     } finally {
       setFinding(null)
       setFindNotes(notes)
+      // THE DAILY FIND SAYS HOW IT WENT wherever the creator is (review
+      // 2026-10-24: its result only showed on Find brands and Ready to send).
+      if (auto && notes.length) {
+        const last = notes[notes.length - 1]
+        if (/not found|could not|failed/i.test(last)) toast.warning(last, { duration: 12000 })
+        else toast.success(last, { duration: 8000 })
+      }
     }
   }
 
@@ -1092,10 +1148,12 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
     if (!saved.core.trim() || savedKey === prefsKey([], [])) return
     const last = lastFindAt ? Date.parse(lastFindAt) : 0
     if (Date.now() - last < RECOLLECT_MS) return
+    // Not before SCOUT's TRYBE tab is open: every read would fail first.
+    if (ownTab && trybeTab !== 'open') return
     autoRan.current = true
-    toast('Finding today\u2019s brands that fit your niche. SCOUT works in a tab behind this one for a few minutes.', { duration: 9000 })
+    toast('Finding today\u2019s brands that fit your niche. This takes a few minutes; you can keep working.', { duration: 9000 })
     void findBrands(true)
-  }, [loading, access, saved, lastFindAt, savedKey]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [loading, access, saved, lastFindAt, savedKey, ownTab, trybeTab]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Searched again a moment after each change to the categories or keywords.
   const hasDirectory = !!directory && directory.brands > 0
@@ -1363,11 +1421,15 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
         }
         setFinding(null)
         const d0 = await load()
-        step('list', ok && !notes.some((n) => /could not|refused|not allowed|ran out/i.test(n)) ? 'done' : ok ? 'warn' : 'failed',
+        // A collection that stopped part way, or fell back to MVP's earlier
+        // copy, is not "done", and an earlier copy's count is not "now".
+        const partial = notes.some((n) => /could not|refused|not allowed|ran out|stopped at page/i.test(n))
+        const fellBack = notes.some((n) => /^Using MVP's copy/.test(n))
+        step('list', ok && !partial && !fellBack ? 'done' : ok ? 'warn' : 'failed',
           // Two counts that differ on purpose (Seb's first run, 2026-10-21: 6,920
           // and 6,864): TRYBE's Discover list leaves out the brands you joined,
           // and MVP's count of brands on TRYBE keeps them.
-          [ok && d0?.directory?.listed != null ? `${Number(d0.directory.listed).toLocaleString()} brands on TRYBE now, counting the ones you joined (TRYBE\u2019s Discover list leaves those out).` : ok ? 'Collected.' : 'Not collected.', ...notes].join(' '))
+          [ok && d0?.directory?.listed != null ? `${Number(d0.directory.listed).toLocaleString()} brands on TRYBE${fellBack ? ' in MVP\u2019s earlier copy' : ' now'}, counting the ones you joined (TRYBE\u2019s Discover list leaves those out).` : ok ? 'Collected.' : 'Not collected.', ...notes].join(' '))
       }
       if (dailyStop.current) { step('meta', 'skipped', 'Stopped.'); return }
       // 3. Meta ads for EVERY brand (Seb: "keep it running until everything is
@@ -1625,12 +1687,22 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
   }
 
   if (loading) return <div className="flex items-center justify-center py-24"><Loader2 size={16} className="animate-spin" /></div>
+  if (loadError && !loadedOnce.current) return (
+    <section className="rounded-2xl border p-5 max-w-xl mx-auto mt-10" style={{ borderColor: 'rgba(180,83,9,0.35)', background: 'var(--surface)' }}>
+      <p className="text-[15px] font-bold inline-flex items-center gap-2"><AlertTriangle size={15} style={{ color: AMBER }} /> Your TRYBE page did not load</p>
+      <p className="text-[13px] mt-1" style={{ color: 'var(--text-2)' }}>{loadError.replace(/\.$/, '')}. Nothing was changed. Try again in a moment.</p>
+      <button onClick={() => { setLoading(true); void load().then(d => { if (d) { setCats(d.settings?.categories || []); setKws(d.settings?.keywords || []) } }) }} className="mt-3 inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-[13px] font-semibold" style={{ background: PURPLE, color: '#fff' }}><RotateCcw size={13} /> Try again</button>
+    </section>
+  )
 
   const card = 'rounded-2xl border p-5'
   const cardStyle = { borderColor: 'var(--border)', background: 'var(--surface)' }
   const soft = { color: 'var(--text-soft)' }
   const btn = 'inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-[13px] font-semibold disabled:opacity-50'
-  const busy = !!finding || running
+  // SCOUT sending by itself does not lock the page: its copy says keep
+  // working, and a draft never touches a brand being sent (the server writes
+  // drafts only to brands still waiting).
+  const busy = !!finding || pageRunning
   // WHAT CHANGED CAN MESSAGE TOO (Seb, 2026-10-16): the same draft and send
   // steps as Find brands and Ready to send, handed to the brand details there.
   // Not on the Amazon plan's preview, which only shows the details.
@@ -1686,6 +1758,7 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-8 space-y-6" style={{ color: 'var(--text)' }}>
+      <Suspense fallback={null}><TabQueryWatcher onTab={onTabQuery} /></Suspense>
       {/* Header: what this is, in one line, and where to join. */}
       <header className="flex flex-wrap items-end gap-3">
         <div className="flex-1 min-w-[16rem]">
@@ -1699,7 +1772,8 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
             MVP's referral link, and it says so. */}
         <a href={TRYBE_JOIN_URL} target="_blank" rel="sponsored noopener noreferrer" title="MVP's referral link"
           className="inline-flex items-center gap-1 text-[12.5px] font-semibold rounded-full border px-3 py-1.5" style={{ borderColor: 'rgba(124,58,237,0.35)', color: PURPLE }}>
-          New to TRYBE? Join free <ExternalLink size={11} />
+          {/* The referral is said on the link itself, not only on hover. */}
+          New to TRYBE? Join free on TRYBE <span className="font-normal">(MVP&rsquo;s referral link)</span> <ExternalLink size={11} />
         </a>
         {/* DAILY REFRESH: the MVP team only (Seb, 2026-10-21). */}
         {isAdmin && !preview && (
@@ -1766,13 +1840,22 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
         )
       })()}
 
+      {/* SCOUT DID NOT ANSWER: said as that, with a way to ask again, never as "not allowed". */}
+      {!preview && access === 'no-answer' && (
+        <p className="text-[13px] rounded-xl px-3 py-2.5 inline-flex flex-wrap items-center gap-2" style={{ background: 'rgba(180,83,9,0.09)', color: AMBER }}>
+          <AlertTriangle size={14} /> SCOUT did not answer just now, so MVP cannot tell whether it is allowed on TRYBE. If this keeps happening, turn SCOUT off and on again in chrome://extensions.
+          <button onClick={() => void requestTrybeAccess(false).then(r => { setAccess(r.state); setScoutVersion(r.version ?? null) })} className="font-semibold underline">Check again</button>
+        </p>
+      )}
       {/* SETUP CHECK: shown until everything is ready, with the next step. */}
       {!preview && (() => {
         if (access === 'checking') return null
         const steps: Array<{ done: boolean; title: string; ok: string; todo: string; action?: React.ReactNode }> = [
           { done: access !== 'no-scout', title: 'SCOUT in this Chrome', ok: 'Installed.', todo: 'SCOUT is MVP\u2019s Chrome extension. It works in your own TRYBE, in your browser.',
-            action: <a href={SCOUT_STORE_LISTING_URL} target="_blank" rel="noopener noreferrer" className={btn} style={{ background: PURPLE, color: '#fff' }}>Install SCOUT <ExternalLink size={12} /></a> },
-          { done: access !== 'no-scout' && access !== 'old', title: 'SCOUT up to date', ok: scoutVersion ? `Version ${scoutVersion}.` : 'Up to date.', todo: 'Chrome updates SCOUT by itself within a day. To do it now, open chrome://extensions, turn on Developer mode and press Update.' },
+            action: <a href={SCOUT_STORE_LISTING_URL} target="_blank" rel="noopener noreferrer" className={btn} style={{ background: PURPLE, color: '#fff' }}>Install SCOUT from the Chrome Web Store <ExternalLink size={12} /></a> },
+          // Up to date means new enough to work through its own TRYBE tab and
+          // send (review 2026-10-24: 1.47 was ticked, then Send said "Update SCOUT first").
+          { done: access !== 'no-scout' && access !== 'old' && scoutAtLeast(scoutVersion, SCOUT_TRYBE_OWN_TAB_MIN_VERSION), title: 'SCOUT up to date', ok: scoutVersion ? `Version ${scoutVersion}.` : 'Up to date.', todo: `${scoutVersion ? `Version ${scoutVersion}; ` : ''}sending needs SCOUT ${SCOUT_TRYBE_OWN_TAB_MIN_VERSION} or newer. Chrome updates SCOUT by itself within a day. To do it now, open chrome://extensions, turn on Developer mode and press Update.` },
           { done: access === 'granted', title: 'SCOUT allowed on TRYBE', ok: 'Allowed.', todo: 'Chrome asks you once to let SCOUT read and act on jointrybe.com.',
             action: access === 'not-granted' ? <button onClick={() => void allow()} className={btn} style={{ background: PURPLE, color: '#fff' }}>Allow SCOUT on TRYBE</button> : undefined },
           ownTab
@@ -1907,7 +1990,7 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
             The core message is the request itself, so the card says where it stands and opens it. */}
         {isAdmin && <TrybeIntroVideo core={core} onWriteCore={() => { setEditingCore(true); window.setTimeout(() => document.getElementById('trybe-core-message')?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 50) }} />}
         {/* Your stage: volume first, then double down on winners (Seb, 2026-10-14). */}
-        <TrybeStage canRead={canMyBrands} onGo={go} />
+        {!preview && <TrybeStage canRead={canMyBrands} onGo={go} />}
         {/* 1. Core message: a short preview once written, the box while editing. */}
         {!preview && <div id="trybe-core-message" className={card} style={cardStyle}>
           <div className="flex flex-wrap items-center gap-2">
@@ -2083,7 +2166,7 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
             {!preview && <TrybeSampleGuard onFilm={() => go('week')} />}
             {live?.mix?.says && <p className="text-[12px] mb-2 rounded-lg px-2.5 py-1.5" style={{ background: 'rgba(124,58,237,0.06)' }}><b>Your mix:</b> {live.mix.says}</p>}
             {filters.onAmazon && live && (live.amazonVideos ?? 0) === 0 && (
-              <p className="text-[12px] mb-3" style={{ color: AMBER }}>MVP has none of your Amazon videos yet, so On Amazon only finds brands in your storefront and on Creator Connections. <a href="/earnings" className="font-semibold underline">Sync your Amazon videos</a> to see which TRYBE brands you already filmed.</p>
+              <p className="text-[12px] mb-3" style={{ color: AMBER }}>MVP has none of your Amazon videos yet, so On Amazon only finds brands in your storefront and on Creator Connections.{isAdmin && <> <a href="/earnings" className="font-semibold underline">Sync your Amazon videos on Earnings</a> to see which TRYBE brands you already filmed.</>}</p>
             )}
             {(live?.amazonNotes || []).map((n) => <p key={n} className="text-[12px] mb-2" style={{ color: AMBER }}>{n}</p>)}
             {/* WHAT BEST BETS READS, and how much of it is read: a signal not
@@ -2125,8 +2208,10 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
                     )}
                   </p>
                   <p><b>TikTok Shop</b>, from each brand&rsquo;s website, read in the background: brands not on it have less competition.</p>
-                  {access !== 'granted' && <p style={{ color: AMBER }}>Allow SCOUT on TRYBE (top of this page) so it can read the Top 100 and Meta ads.</p>}
-                  {!canPlaybook && access === 'granted' && <p style={{ color: AMBER }}>SCOUT {SCOUT_TRYBE_PLAYBOOK_MIN_VERSION} reads TRYBE&rsquo;s Top 100 and Meta&rsquo;s Ad Library. Yours is {scoutVersion || 'unknown'}; Chrome updates it by itself once the new version is published.</p>}
+                  {/* On your plan's preview the Top 100 and Meta ads are read for Pro only: said as that, not as an old SCOUT. */}
+                  {preview && <p style={{ color: AMBER }}>On your plan, the Top 100 and Meta ads are read with Pro.</p>}
+                  {!preview && access !== 'granted' && <p style={{ color: AMBER }}>Allow SCOUT on TRYBE (top of this page) so it can read the Top 100 and Meta ads.</p>}
+                  {!preview && !canPlaybook && access === 'granted' && <p style={{ color: AMBER }}>SCOUT {SCOUT_TRYBE_PLAYBOOK_MIN_VERSION} reads TRYBE&rsquo;s Top 100 and Meta&rsquo;s Ad Library. Yours is {scoutVersion || 'unknown'}; Chrome updates it by itself once the new version is published.</p>}
                   {signalNote && <p style={{ color: signalNote.tone === 'ok' ? GREEN : signalNote.tone === 'warn' ? AMBER : RED }}>{signalNote.text}</p>}
                 </div>
               )
@@ -2456,6 +2541,7 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
         <p className="text-[13px] rounded-xl border p-4" style={{ borderColor: 'var(--border-2)', color: 'var(--text-2)' }}>
           {access === 'granted'
             ? 'Analytics needs a newer SCOUT. Chrome updates it by itself within a day; to do it now, open chrome://extensions, turn on Developer mode and press Update, then reload this page.'
+            : access === 'no-scout' ? 'Analytics is read from your own TRYBE through SCOUT, MVP\u2019s Chrome extension. Install SCOUT from the Chrome Web Store (top of this page), and your numbers show here.'
             : 'Analytics is read from your own TRYBE through SCOUT. Allow SCOUT on TRYBE at the top of this page, and your numbers show here.'}
         </p>
       )}

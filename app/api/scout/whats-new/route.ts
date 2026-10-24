@@ -81,7 +81,7 @@ export async function GET() {
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const { data } = await supabase.from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
   const tier = (data as { tier?: string | null } | null)?.tier ?? null
-  const can = (gate: NoteGate) => gate === 'video_tools' ? hasVideoTools(tier) : canUsePreview(gate, tier)
+  const can = (gate: NoteGate) => gate === 'team' ? tier === 'admin' : gate === 'video_tools' ? hasVideoTools(tier) : canUsePreview(gate, tier)
 
   let videos: ChannelVideo[] = []
   let videoSource: 'api' | 'feed' | null = null
