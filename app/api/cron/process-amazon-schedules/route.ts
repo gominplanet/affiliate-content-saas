@@ -9,6 +9,7 @@
  * Concurrency: an atomic UPDATE claims pending+due rows to 'processing' first.
  */
 import { QUEUED_NOTE } from '@/lib/facebook-queue-words'
+import { IgTooSoonError } from '@/lib/ig-pace'
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { normalizeTier, type Tier } from '@/lib/tier'
@@ -156,6 +157,15 @@ export async function GET(request: Request) {
       }
       return { id: row.id, status: 'completed' as const }
     } catch (err) {
+      // Too soon after the account's last Instagram post (lib/ig-pace): moved, said, not failed.
+      if (err instanceof IgTooSoonError) {
+        const at = new Date(err.waitUntil + 60_000 + Math.round(Math.random() * 5 * 60_000))
+        await admin.from('amazon_scheduled_posts').update({
+          status: 'pending', scheduled_at: at.toISOString(), updated_at: new Date().toISOString(),
+          error_message: `Waiting: moved to ${at.toISOString().slice(11, 16)} UTC, so it goes at least 15 minutes after this account's last Instagram post.`,
+        }).eq('id', row.id)
+        return { id: row.id, status: 'moved' as const }
+      }
       const msg = (err instanceof Error ? err.message : String(err)).slice(0, 500)
       console.error('[cron/process-amazon-schedules] publish failed', { id: row.id, error: msg })
       await admin.from('amazon_scheduled_posts').update({

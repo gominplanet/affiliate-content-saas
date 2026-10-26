@@ -10,6 +10,7 @@
 
 import { createAdminClient } from '@/lib/supabase/admin'
 import { renderMessage, PUBLIC_REPLY, oneWordKeyword } from '@/lib/ig-dm-message'
+import { nextDmAt, publicReply, PUBLIC_REPLIES, DM_HOURLY_CAP, DM_REPLY_WINDOW_MS } from '@/lib/ig-pace'
 import { confirmLinkStores } from '@/lib/link-store'
 import { sendPrivateReply, replyToComment, refreshLongLivedToken } from '@/services/instagram'
 import { maybeDecrypt, maybeEncrypt } from '@/lib/secrets'
@@ -231,7 +232,8 @@ export async function processCommentEvent(ev: IgCommentEvent): Promise<string> {
 
   // Ignore the account's own comments/replies, including MVP's public reply.
   if (ev.commenterId && ev.commenterId === ev.igAccountId) return 'skip:self'
-  if (ev.text.trim() === PUBLIC_REPLY) return 'skip:self'
+  // MVP's public reply, in any of its wordings (lib/ig-pace PUBLIC_REPLIES).
+  if (ev.text.trim() === PUBLIC_REPLY || PUBLIC_REPLIES.includes(ev.text.trim())) return 'skip:self'
 
   const media = ev.mediaId ? String(ev.mediaId).replace(/[^0-9]/g, '') : ''
   if (!media) return 'skip:no-media'
@@ -338,18 +340,96 @@ export async function processCommentEvent(ev: IgCommentEvent): Promise<string> {
     return 'fail:no-token'
   }
 
-  const { message } = await dmMessageFor(userId as string, settings?.message_template, link, amazonDest)
-  try {
-    const sent = await sendPrivateReply({ igUserId: tok.igUserId, commentId: ev.commentId, message, accessToken: tok.accessToken })
-    await sb.from('ig_dm_sends').update({ status: 'sent', error: sent.messageId ? null : 'Meta accepted it but returned no message id.' }).eq('comment_id', ev.commentId)
-  } catch (e) {
-    await sb.from('ig_dm_sends').update({ status: 'failed', error: (e instanceof Error ? e.message : String(e)).slice(0, 400) }).eq('comment_id', ev.commentId)
-    return 'fail:send'
+  // AT A HUMAN PACE (lib/ig-pace; Seb, 2026-10-26, Alejandro's account was
+  // flagged): a DM goes at least 20 seconds after this account's last one and
+  // no more than DM_HOURLY_CAP an hour. One that would go sooner waits its
+  // turn, and the ig-dm-queue job sends it. Before migration 458 it goes now.
+  const due = await dmDueAt(sb, userId as string)
+  if (due != null && due > Date.now() + 1000) {
+    const { error: qErr } = await sb.from('ig_dm_sends').update({ status: 'queued', send_after: new Date(due).toISOString() }).eq('comment_id', ev.commentId)
+    if (!qErr) return 'queued'
   }
 
-  // Optional public "Sent you a DM!" reply (best-effort).
-  if (settings?.reply_to_comment !== false) {
-    await replyToComment({ commentId: ev.commentId, message: PUBLIC_REPLY, accessToken: tok.accessToken })
-  }
+  const { message } = await dmMessageFor(userId as string, settings?.message_template, link, amazonDest)
+  const out = await deliverDm(sb, { commentId: ev.commentId, message, token: tok, replyPublicly: settings?.reply_to_comment !== false })
+  if (!out) return 'fail:send'
   return source === 'campaign' ? 'sent:campaign' : source === 'any' ? 'sent:any' : 'sent'
+}
+
+/** When this account's next DM may go, or null before migration 458 (no
+ *  sent_at), when MVP cannot pace and sends at once as before. */
+async function dmDueAt(sb: Sb, userId: string): Promise<number | null> {
+  const now = Date.now()
+  const { data: sent, error } = await sb.from('ig_dm_sends').select('sent_at')
+    .eq('user_id', userId).eq('platform', 'instagram').eq('status', 'sent')
+    .gte('sent_at', new Date(now - 3_600_000).toISOString())
+    .order('sent_at', { ascending: false }).limit(DM_HOURLY_CAP + 5)
+  if (error) return null
+  const { data: q } = await sb.from('ig_dm_sends').select('send_after')
+    .eq('user_id', userId).eq('platform', 'instagram').eq('status', 'queued')
+    .order('send_after', { ascending: false }).limit(1)
+  const times = ((sent || []) as Array<{ sent_at: string | null }>).map((r) => Date.parse(String(r.sent_at))).filter(Number.isFinite)
+  const lastQueued = Date.parse(String((q || [])[0]?.send_after ?? ''))
+  return nextDmAt({ now, lastSentAt: times[0] ?? null, sentInHour: times, lastQueuedAt: Number.isFinite(lastQueued) ? lastQueued : null })
+}
+
+/** Send one DM and say so in the log: sent with when it went, or failed with
+ *  Meta's words. The public reply under the comment, in one of its wordings.
+ *  True when Meta took it. */
+async function deliverDm(sb: Sb, o: { commentId: string; message: string; token: { igUserId: string; accessToken: string }; replyPublicly: boolean }): Promise<boolean> {
+  try {
+    const sent = await sendPrivateReply({ igUserId: o.token.igUserId, commentId: o.commentId, message: o.message, accessToken: o.token.accessToken })
+    const patch = { status: 'sent', error: sent.messageId ? null : 'Meta accepted it but returned no message id.' }
+    // sent_at from migration 458; without it the row still says sent.
+    const { error: e1 } = await sb.from('ig_dm_sends').update({ ...patch, sent_at: new Date().toISOString() }).eq('comment_id', o.commentId)
+    if (e1) await sb.from('ig_dm_sends').update(patch).eq('comment_id', o.commentId)
+  } catch (e) {
+    await sb.from('ig_dm_sends').update({ status: 'failed', error: (e instanceof Error ? e.message : String(e)).slice(0, 400) }).eq('comment_id', o.commentId)
+    return false
+  }
+  // Optional public reply (best-effort), worded differently each time: the
+  // same words under every comment read as a bot.
+  if (o.replyPublicly) await replyToComment({ commentId: o.commentId, message: publicReply(), accessToken: o.token.accessToken })
+  return true
+}
+
+/** THE DMS THAT WAITED THEIR TURN (app/api/cron/ig-dm-queue): the ones due
+ *  now, oldest first, at most `perAccount` for one account a run, spaced as
+ *  lib/ig-pace says. Each is claimed before it is sent, so two runs never send
+ *  one twice; one past Instagram's 7 days for a reply is said and left. */
+export async function sendQueuedDms(perAccount: number, budgetMs: number): Promise<{ sent: number; failed: number; late: number; moved: number }> {
+  const sb: Sb = createAdminClient()
+  const started = Date.now()
+  const { data } = await sb.from('ig_dm_sends').select('id, user_id, comment_id, link_sent, created_at, send_after')
+    .eq('status', 'queued').eq('platform', 'instagram').lte('send_after', new Date().toISOString())
+    .order('send_after', { ascending: true }).limit(60)
+  const rows = (data || []) as Array<{ id: string; user_id: string; comment_id: string; link_sent: string | null; created_at: string; send_after: string }>
+  const byUser = new Map<string, typeof rows>()
+  for (const r of rows) byUser.set(r.user_id, [...(byUser.get(r.user_id) || []), r])
+  let sent = 0, failed = 0, late = 0, moved = 0
+  await Promise.all(Array.from(byUser.entries()).map(async ([userId, list]) => {
+    const { data: settings } = await sb.from('ig_dm_settings').select('*').eq('user_id', userId).maybeSingle()
+    const tok = await getValidIgToken(sb, userId)
+    for (const r of list.slice(0, perAccount)) {
+      if (Date.now() - started > budgetMs) return
+      if (Date.now() - Date.parse(r.created_at) > DM_REPLY_WINDOW_MS) {
+        await sb.from('ig_dm_sends').update({ status: 'skipped', error: 'Instagram takes a reply to a comment for 7 days, and this one waited longer than that.' }).eq('id', r.id).eq('status', 'queued')
+        late++; continue
+      }
+      // Still its turn? Another DM may have gone since it was queued.
+      const due = await dmDueAt(sb, userId)
+      if (due != null && due > Date.now() + 1000) {
+        if (due - Date.now() < 30_000 && Date.now() - started + (due - Date.now()) < budgetMs) await new Promise((res) => setTimeout(res, due - Date.now()))
+        else { await sb.from('ig_dm_sends').update({ send_after: new Date(due).toISOString() }).eq('id', r.id).eq('status', 'queued'); moved++; return }
+      }
+      const { data: claimed } = await sb.from('ig_dm_sends').update({ status: 'sending' }).eq('id', r.id).eq('status', 'queued').select('id')
+      if (!(claimed || []).length) continue
+      if (!settings?.enabled) { await sb.from('ig_dm_sends').update({ status: 'skipped', error: 'Auto-DM was turned off before this one went.' }).eq('id', r.id); continue }
+      if (!tok || !r.link_sent) { await sb.from('ig_dm_sends').update({ status: 'failed', error: tok ? 'No link was kept for this DM.' : 'Instagram is not connected in MVP (no token). Reconnect Instagram.' }).eq('id', r.id); failed++; continue }
+      const { message } = await dmMessageFor(userId, settings?.message_template, r.link_sent, /amazon\.|amzn\.to|a\.co\//i.test(r.link_sent))
+      if (await deliverDm(sb, { commentId: r.comment_id, message, token: tok, replyPublicly: settings?.reply_to_comment !== false })) sent++
+      else failed++
+    }
+  }))
+  return { sent, failed, late, moved }
 }

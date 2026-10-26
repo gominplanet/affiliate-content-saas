@@ -32,6 +32,7 @@
  *   https://developers.facebook.com/docs/instagram-platform/content-publishing
  */
 import { describeMetaError } from '@/lib/meta-error'
+import { feedVerdict, IgTooSoonError, IgRepeatError, IG_FEED_GAP_MS } from '@/lib/ig-pace'
 import { fetchWithTimeout } from '@/lib/fetch-timeout'
 import { discloseSocialPost } from '@/lib/social-disclaimer'
 
@@ -355,6 +356,39 @@ export async function publishContainer(opts: {
   return data.id
 }
 
+// AT A HUMAN PACE (lib/ig-pace; Seb, 2026-10-26, Alejandro's account was
+// flagged). Every Reel and feed post MVP makes comes through publishMedia, so
+// the spacing lives here once: held for this account in this process before
+// anything is awaited (two posts in one run cannot both go), then checked
+// against Instagram's own list of the account's posts. Stories are left alone.
+const feedSlots = new Map<string, number>()
+async function claimFeedSlot(igUserId: string, accessToken: string, caption: string | undefined): Promise<void> {
+  const now = Date.now()
+  const held = feedSlots.get(igUserId)
+  if (held && now - held < IG_FEED_GAP_MS) throw new IgTooSoonError(held, now)
+  feedSlots.set(igUserId, now)
+  // A list Instagram did not send is no reason not to post: the hold above
+  // still spaces MVP's own posts.
+  const { media } = await listRecentMedia({ igUserId, accessToken, limit: 10 })
+  const v = feedVerdict(media, caption, now)
+  if (v.ok) return
+  feedSlots.delete(igUserId)
+  if ('tooSoon' in v) throw new IgTooSoonError(v.tooSoon, now)
+  throw new IgRepeatError(v.repeatAt, now)
+}
+
+/** When this account may next take a Reel or feed post, or null for now.
+ *  Holds nothing: for a job deciding whether to start its work (a burn is
+ *  paid for before it posts). */
+export async function feedWaitUntil(igUserId: string, accessToken: string): Promise<number | null> {
+  const now = Date.now()
+  const held = feedSlots.get(igUserId)
+  if (held && now - held < IG_FEED_GAP_MS) return held + IG_FEED_GAP_MS
+  const { media } = await listRecentMedia({ igUserId, accessToken, limit: 3 })
+  const v = feedVerdict(media, null, now)
+  return !v.ok && 'tooSoon' in v ? v.tooSoon + IG_FEED_GAP_MS : null
+}
+
 /**
  * High-level helper: create container → wait → publish in one call.
  * Returns the published media id.
@@ -369,13 +403,21 @@ export async function publishMedia(opts: {
   shareToFeed?: boolean
   thumbOffsetMs?: number
 }): Promise<string> {
-  const containerId = await createMediaContainer(opts)
-  await waitForContainer({ containerId, accessToken: opts.accessToken })
-  return publishContainer({
-    userId: opts.userId,
-    accessToken: opts.accessToken,
-    containerId,
-  })
+  const feed = opts.mediaType !== 'STORIES'
+  if (feed) await claimFeedSlot(opts.userId, opts.accessToken, opts.caption)
+  try {
+    const containerId = await createMediaContainer(opts)
+    await waitForContainer({ containerId, accessToken: opts.accessToken })
+    return await publishContainer({
+      userId: opts.userId,
+      accessToken: opts.accessToken,
+      containerId,
+    })
+  } catch (e) {
+    // Nothing went up: the hold is let go, so a retry is not refused.
+    if (feed) feedSlots.delete(opts.userId)
+    throw e
+  }
 }
 
 /**

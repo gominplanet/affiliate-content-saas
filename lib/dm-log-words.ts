@@ -26,6 +26,10 @@ export function dmLogWords(r: DmLogRow, now = Date.now()): DmLogWords {
         ? { tone: 'bad', title: 'Never confirmed', detail: 'MVP started sending but Meta never answered, so it may not have arrived.' }
         : { tone: 'wait', title: 'Sending', detail: 'Waiting for Meta to confirm.' }
     }
+    // WAITING ITS TURN (lib/ig-pace): spaced from the account's last DM, or
+    // past the hour's cap; the ig-dm-queue job sends it.
+    case 'queued':
+      return { tone: 'wait', title: 'Waiting its turn', detail: 'MVP spaces auto-DMs out so Instagram does not read them as a bot. This one goes within a few minutes.' }
     default:
       return { tone: 'muted', title: 'No DM', detail: err || 'Skipped.' }
   }

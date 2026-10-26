@@ -97,6 +97,10 @@
       "schedule": "*/20 * * * *"
     },
     {
+      "path": "/api/cron/ig-dm-queue",
+      "schedule": "* * * * *"
+    },
+    {
       "path": "/api/cron/refresh-deal-radar",
       "schedule": "0 */6 * * *"
     },

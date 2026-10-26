@@ -6,6 +6,7 @@
 // always lands on youtube_videos. Mirrors the two interactive IG routes.
 
 import { publishMedia, refreshLongLivedToken } from '@/services/instagram'
+import { IgTooSoonError, IgRepeatError } from '@/lib/ig-pace'
 import { maybeDecrypt, maybeEncrypt } from '@/lib/secrets'
 import type { PublishTarget } from '@/lib/tiktok-publish'
 import { autoDmPlan, captionForPlan, finishAutoDm, type AutoDmOutcome } from '@/lib/ig-auto-dm'
@@ -101,7 +102,12 @@ export async function publishInstagramForTarget(
   if (wantReel) {
     try {
       reelId = await publishMedia({ userId: igUserId, accessToken: accessToken!, mediaType: 'REELS', videoUrl, caption: cap, shareToFeed: true, thumbOffsetMs: coverOffsetMs ?? undefined })
-    } catch (e) { errors.push(`Reel: ${e instanceof Error ? e.message : 'failed'}`) }
+    } catch (e) {
+      // Too soon or repeated: nothing goes, the Story neither, so a scheduled
+      // Reel and Story are moved together rather than split (lib/ig-pace).
+      if (e instanceof IgTooSoonError || e instanceof IgRepeatError) throw e
+      errors.push(`Reel: ${e instanceof Error ? e.message : 'failed'}`)
+    }
   }
   if (wantStory) {
     try {

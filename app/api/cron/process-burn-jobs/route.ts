@@ -14,7 +14,8 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { maybeDecrypt } from '@/lib/secrets'
 import { overlayCaptionOnVideo, getLastOverlayError, type OverlayPosition, type CaptionStyle } from '@/services/cloudinary'
 import { researchProductContext, composeReelCaption } from '@/lib/ig-burn'
-import { publishMedia } from '@/services/instagram'
+import { publishMedia, feedWaitUntil } from '@/services/instagram'
+import { IgTooSoonError } from '@/lib/ig-pace'
 import { autoDmPlan, captionForPlan, finishAutoDm } from '@/lib/ig-auto-dm'
 import { recordReachSample } from '@/lib/reach-pulse'
 import { recordUsage } from '@/lib/ai-usage'
@@ -169,6 +170,17 @@ export async function GET(request: Request) {
       return NextResponse.json({ ok: true, processed: 0, skipped: 'over_spend_ceiling', jobId: job.id })
     }
 
+    // AT A HUMAN PACE (lib/ig-pace): a job that would post too soon after the
+    // account's last Reel or post goes back in the queue for just after the
+    // gap, before the burn is paid for. A batch of Reels goes out spaced.
+    const waitUntil = await feedWaitUntil(igUserId, igToken)
+    if (waitUntil) {
+      const at = new Date(waitUntil + 60_000 + Math.round(Math.random() * 5 * 60_000)).toISOString()
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await admin.from('ig_burn_jobs').update({ status: 'pending', scheduled_at: at, claimed_at: null }).eq('id', job.id)
+      return NextResponse.json({ ok: true, processed: 0, moved: job.id, until: at })
+    }
+
     // 1. Burn the overlay — a CTA box sticker (PNG) when set, else the caption
     //    text. Matches the single-video burner: sticker mode passes an empty
     //    caption + the sticker URL; caption mode passes the text.
@@ -230,6 +242,13 @@ export async function GET(request: Request) {
     }).eq('id', job.id)
     return NextResponse.json({ ok: true, processed: 1, jobId: job.id })
   } catch (err) {
+    // Another post went up between the check and the publish: back in the queue.
+    if (err instanceof IgTooSoonError) {
+      const at = new Date(err.waitUntil + 60_000 + Math.round(Math.random() * 5 * 60_000)).toISOString()
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await admin.from('ig_burn_jobs').update({ status: 'pending', scheduled_at: at, claimed_at: null }).eq('id', job.id)
+      return NextResponse.json({ ok: true, processed: 0, moved: job.id, until: at })
+    }
     const msg = err instanceof Error ? err.message : String(err)
     console.error('[cron/process-burn-jobs] failed', { jobId: job.id, error: msg })
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

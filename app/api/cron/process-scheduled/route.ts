@@ -18,6 +18,7 @@
  */
 
 import { trackPost } from '@/lib/reach-pulse'
+import { IgTooSoonError } from '@/lib/ig-pace'
 import { checkPageLinkPost, recordPageLinkPost } from '@/lib/facebook-link-budget'
 import { queueForGroup } from '@/lib/facebook-queue'
 import { QUEUED_NOTE } from '@/lib/facebook-queue-words'
@@ -312,6 +313,18 @@ export async function GET(request: Request) {
       if (row.platform) await trackPost({ userId: row.user_id, platform: row.platform === 'twitter' ? 'x' : row.platform, postId: result.externalId ?? null, caption: row.body_text })
       return { id: row.id, ok: true, externalId: result.externalId }
     } catch (err) {
+      // TOO SOON AFTER THE ACCOUNT'S LAST INSTAGRAM POST (lib/ig-pace): moved
+      // to just after the gap, a few minutes of chance on top, and said. Not
+      // a retry and not a failure: nothing was posted.
+      if (err instanceof IgTooSoonError) {
+        const at = new Date(err.waitUntil + 60_000 + Math.round(Math.random() * 5 * 60_000))
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        await (admin as any).from('scheduled_posts').update({
+          status: 'pending', scheduled_at: at.toISOString(), updated_at: new Date().toISOString(),
+          error_message: `Waiting: moved to ${at.toISOString().slice(11, 16)} UTC, so it goes at least 15 minutes after this account's last Instagram post.`,
+        }).eq('id', row.id)
+        return { id: row.id, ok: false, error: 'moved: too soon after the last Instagram post' }
+      }
       const rawMsg = err instanceof Error ? err.message : String(err)
       // Scrub sensitive substrings before persisting to DB. Provider
       // error bodies (LinkedIn, Twitter, etc.) routinely echo Bearer
