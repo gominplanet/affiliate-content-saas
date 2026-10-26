@@ -18,7 +18,7 @@
  */
 
 import { trackPost } from '@/lib/reach-pulse'
-import { IgTooSoonError } from '@/lib/ig-pace'
+import { IgTooSoonError, igDueNow } from '@/lib/ig-pace'
 import { checkPageLinkPost, recordPageLinkPost } from '@/lib/facebook-link-budget'
 import { queueForGroup } from '@/lib/facebook-queue'
 import { QUEUED_NOTE } from '@/lib/facebook-queue-words'
@@ -198,7 +198,7 @@ export async function GET(request: Request) {
     // rather than 500-ing this claim query on EVERY tick and halting ALL scheduled
     // posting for everyone (exactly the outage this pattern exists to prevent —
     // same reason `kind`, `options`, `video_id` aren't selected here either).
-    .select('id,user_id,blog_post_id,platform,body_text,social_account_id,retry_count')
+    .select('id,user_id,blog_post_id,platform,body_text,social_account_id,retry_count,scheduled_at')
     .limit(MAX_PER_TICK)
 
   if (claimErr) {
@@ -209,8 +209,17 @@ export async function GET(request: Request) {
   // `kind` based on the platform — rows with platform=null are blog_publish
   // rows (the parent in draft-flip mode), rows with a platform are social
   // pushes. Works whether or not migration 103 has been applied.
+  // NEVER ON THE SAME MINUTE (lib/ig-pace): an Instagram post claimed before
+  // its own 0 to 30 minute delay is up goes back to waiting, untouched.
+  const allClaimed = (claimed ?? []) as Array<Record<string, unknown>>
+  const early = allClaimed.filter(r => r.platform === 'instagram' && !igDueNow(String(r.id), r.scheduled_at as string | null, Date.now()))
+  if (early.length) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await (admin as any).from('scheduled_posts').update({ status: 'pending', claimed_at: null }).in('id', early.map(r => r.id)).eq('status', 'processing')
+  }
+  const earlyIds = new Set(early.map(r => r.id))
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const rows: ScheduledRow[] = ((claimed ?? []) as Array<Record<string, unknown>>).map(r => ({
+  const rows: ScheduledRow[] = allClaimed.filter(r => !earlyIds.has(r.id)).map(r => ({
     id: r.id as string,
     user_id: r.user_id as string,
     blog_post_id: r.blog_post_id as string,

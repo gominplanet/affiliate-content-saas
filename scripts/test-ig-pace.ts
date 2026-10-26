@@ -8,7 +8,7 @@
 // rather than failed, auto-DMs spaced and capped an hour with the rest sent
 // later, and the public reply under a comment said a few ways.
 import { readFileSync } from 'node:fs'
-import { feedVerdict, captionKey, nextDmAt, publicReply, PUBLIC_REPLIES, IgTooSoonError, IG_FEED_GAP_MS, DM_GAP_MS, DM_HOURLY_CAP } from '../lib/ig-pace'
+import { feedVerdict, captionKey, nextDmAt, publicReply, PUBLIC_REPLIES, IgTooSoonError, IG_FEED_GAP_MS, DM_GAP_MS, DM_HOURLY_CAP, scheduleSpreadMs, igDueNow, IG_SCHEDULE_SPREAD_MS } from '../lib/ig-pace'
 import { dmLogWords } from '../lib/dm-log-words'
 
 const fails: string[] = []
@@ -52,6 +52,25 @@ const crons = (JSON.parse(read('vercel.json')).crons as Array<{ path: string; sc
 check('the waiting DMs go every minute', crons.some((c) => c.path === '/api/cron/ig-dm-queue' && c.schedule === '* * * * *'))
 const MIG = read('supabase/migrations/458_ig_dm_pace.sql')
 check('migration 458 is safe to run twice', /add column if not exists sent_at timestamptz/.test(MIG) && /add column if not exists send_after timestamptz/.test(MIG) && !/drop |alter column/i.test(MIG))
+
+// NEVER ON THE SAME MINUTE (Seb, 2026-10-26: "yes add time variation";
+// Alejandro's posts went up at nearly the same time every day).
+{
+  const ids = Array.from({ length: 200 }, (_, i) => `00000000-0000-4000-8000-${String(i).padStart(12, '0')}`)
+  const spreads = ids.map(scheduleSpreadMs)
+  check('each post gets its own 0 to 30 minute delay, never before the time picked', spreads.every((d) => d >= 0 && d < IG_SCHEDULE_SPREAD_MS) && IG_SCHEDULE_SPREAD_MS === 30 * 60_000)
+  check('the delays are spread out, not bunched', new Set(spreads.map((d) => Math.floor(d / 60_000))).size >= 25)
+  check('the delay is the same every run, so a post is never pushed later and later', ids.every((id) => scheduleSpreadMs(id) === scheduleSpreadMs(id)))
+  const id = ids[7], set = '2026-10-26T09:00:00Z', d = scheduleSpreadMs(id)
+  check('a post is due at its time plus its delay, not before', !igDueNow(id, set, Date.parse(set) + d - 1000) && igDueNow(id, set, Date.parse(set) + d))
+  for (const f of ['app/api/cron/process-scheduled/route.ts', 'app/api/cron/process-amazon-schedules/route.ts']) {
+    const s = read(f)
+    check(`${f}: an Instagram post claimed before its delay goes back to waiting`, /platform === 'instagram' && !igDueNow\(String\(r\.id\)/.test(s) && /update\(\{ status: 'pending', claimed_at: null \}\)\.in\('id', early\.map/.test(s))
+  }
+  check('process-scheduled reads the time it needs', /retry_count,scheduled_at'\)/.test(read('app/api/cron/process-scheduled/route.ts')))
+  check('a batch Reel waits for its delay too', /\.find\(\(r\) => igDueNow\(String\(r\.id\), r\.scheduled_at, Date\.now\(\)\)\)/.test(read('app/api/cron/process-burn-jobs/route.ts')))
+  check('members are told where they schedule and see it', /IG_SPREAD_WORDS/.test(read('components/content/SocialPreviewModal.tsx')) && /, or up to 30 minutes after/.test(read('app/(dashboard)/content/page.tsx')))
+}
 
 if (fails.length) { console.error('ig-pace failed:\n - ' + fails.join('\n - ')); process.exit(1) }
 console.log('✅ ig-pace: Instagram posts spaced and never repeated, scheduled ones moved not failed, auto-DMs spaced and capped an hour')

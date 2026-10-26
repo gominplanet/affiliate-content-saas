@@ -15,7 +15,7 @@ import { maybeDecrypt } from '@/lib/secrets'
 import { overlayCaptionOnVideo, getLastOverlayError, type OverlayPosition, type CaptionStyle } from '@/services/cloudinary'
 import { researchProductContext, composeReelCaption } from '@/lib/ig-burn'
 import { publishMedia, feedWaitUntil } from '@/services/instagram'
-import { IgTooSoonError } from '@/lib/ig-pace'
+import { IgTooSoonError, igDueNow } from '@/lib/ig-pace'
 import { autoDmPlan, captionForPlan, finishAutoDm } from '@/lib/ig-auto-dm'
 import { recordReachSample } from '@/lib/reach-pulse'
 import { recordUsage } from '@/lib/ai-usage'
@@ -90,14 +90,16 @@ export async function GET(request: Request) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: due, error: dueErr } = await admin
     .from('ig_burn_jobs')
-    .select('id')
+    .select('id, scheduled_at')
     .eq('status', 'pending')
     .lte('scheduled_at', nowIso)
     .order('scheduled_at', { ascending: true })
-    .limit(1)
+    .limit(20)
   if (dueErr) return NextResponse.json({ error: `Queue read failed: ${dueErr.message}` }, { status: 500 })
+  // NEVER ON THE SAME MINUTE (lib/ig-pace): the oldest job whose own 0 to 30
+  // minute delay is up.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const dueId = ((due ?? []) as any[])[0]?.id as string | undefined
+  const dueId = ((due ?? []) as any[]).find((r) => igDueNow(String(r.id), r.scheduled_at, Date.now()))?.id as string | undefined
   if (!dueId) return NextResponse.json({ ok: true, processed: 0 })
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

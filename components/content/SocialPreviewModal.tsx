@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import { IG_SPREAD_WORDS } from '@/lib/ig-pace'
 import { Loader2, X, RefreshCw, CheckCircle, AlertCircle, Calendar, Copy, ExternalLink, Users } from 'lucide-react'
 import { toast } from 'sonner'
 import { useModalA11y } from '@/components/ui/useModalA11y'
@@ -431,7 +432,7 @@ export function SocialPreviewModal({
       if (!res.ok) throw new Error(data.error || 'Schedule failed')
       // Scheduled, said as scheduled: the modal closes, and from a video card
       // nothing else on screen changes, so this is the only sign it worked.
-      toast.success(`${platform} post scheduled for ${formatScheduleTime(when)}`)
+      toast.success(`${platform} post scheduled for ${formatScheduleTime(when)}`, /instagram/i.test(String(platform)) ? { description: IG_SPREAD_WORDS, duration: 8000 } : undefined)
       onScheduled?.(when)
       onClose()
     } catch (err) {

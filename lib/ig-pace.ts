@@ -89,3 +89,24 @@ export const PUBLIC_REPLIES = ['Sent you a DM!', 'Check your DMs 📩', 'Just se
 export function publicReply(pick = Math.random()): string {
   return PUBLIC_REPLIES[Math.min(PUBLIC_REPLIES.length - 1, Math.floor(pick * PUBLIC_REPLIES.length))]
 }
+
+// NEVER ON THE SAME MINUTE (Seb, 2026-10-26: "yes add time variation", after
+// Alejandro's posts went up at nearly the same time every day). A scheduled
+// Instagram post goes a set 0 to 30 minutes AFTER the time picked: never
+// before it, since a post can be timed to a deal going live. The delay comes
+// from the post's own id, so it is the same on every run and a post is never
+// pushed later and later.
+export const IG_SCHEDULE_SPREAD_MS = 30 * 60_000
+/** The delay for this post. Pure. */
+export function scheduleSpreadMs(id: string): number {
+  let h = 2166136261
+  for (let i = 0; i < id.length; i++) { h ^= id.charCodeAt(i); h = Math.imul(h, 16777619) }
+  return (h >>> 0) % IG_SCHEDULE_SPREAD_MS
+}
+/** Whether a scheduled Instagram post is due, its delay included. Pure. */
+export function igDueNow(id: string, scheduledAt: string | null | undefined, now = Date.now()): boolean {
+  const at = Date.parse(String(scheduledAt || ''))
+  return !Number.isFinite(at) || at + scheduleSpreadMs(id) <= now
+}
+/** Said where an Instagram post is scheduled. */
+export const IG_SPREAD_WORDS = 'Instagram posts go up to 30 minutes after the time picked, never on the same minute, so a daily schedule does not look automated.'

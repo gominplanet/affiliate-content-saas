@@ -9,7 +9,7 @@
  * Concurrency: an atomic UPDATE claims pending+due rows to 'processing' first.
  */
 import { QUEUED_NOTE } from '@/lib/facebook-queue-words'
-import { IgTooSoonError } from '@/lib/ig-pace'
+import { IgTooSoonError, igDueNow } from '@/lib/ig-pace'
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { normalizeTier, type Tier } from '@/lib/tier'
@@ -85,8 +85,13 @@ export async function GET(request: Request) {
     .select('*')
     .limit(MAX_PER_TICK)
   if (claimErr) return NextResponse.json({ error: `Claim failed: ${claimErr.message}` }, { status: 500 })
-  const rows = (claimed ?? []) as Row[]
-  if (rows.length === 0) return NextResponse.json({ ok: true, processed: 0 })
+  // NEVER ON THE SAME MINUTE (lib/ig-pace): an Instagram post claimed before
+  // its own 0 to 30 minute delay is up goes back to waiting, untouched.
+  const allClaimed = (claimed ?? []) as Row[]
+  const early = allClaimed.filter((r) => r.platform === 'instagram' && !igDueNow(String(r.id), (r as { scheduled_at?: string | null }).scheduled_at ?? null, Date.now()))
+  if (early.length) await admin.from('amazon_scheduled_posts').update({ status: 'pending', claimed_at: null }).in('id', early.map((r) => r.id)).eq('status', 'processing')
+  const rows = allClaimed.filter((r) => !early.some((e) => e.id === r.id))
+  if (rows.length === 0) return NextResponse.json({ ok: true, processed: 0, waiting: early.length })
 
   const results = await Promise.allSettled(rows.map(async (row) => {
     try {

@@ -80,7 +80,8 @@ for (const file of routes) {
 {
   const BURN = readFileSync('app/api/cron/process-burn-jobs/route.ts', 'utf8')
   check('the burn queue reads the oldest id first',
-    /\.select\('id'\)[\s\S]{0,200}?\.order\('scheduled_at', \{ ascending: true \}\)/.test(BURN),
+    // scheduled_at too since 2026-10-26: each job's own 0 to 30 minute delay (lib/ig-pace).
+    /\.select\('id(, scheduled_at)?'\)[\s\S]{0,200}?\.order\('scheduled_at', \{ ascending: true \}\)/.test(BURN),
     'ordering is allowed on a read and is the only way to keep oldest-first')
   check('and then claims that one id',
     /\.eq\('id', dueId\)[\s\S]{0,80}?\.eq\('status', 'pending'\)/.test(BURN),

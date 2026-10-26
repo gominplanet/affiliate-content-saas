@@ -4,6 +4,7 @@
 // cache dropped content/page.tsx#default from the manifest → RSC render error).
 
 import { pickHashtags } from '@/lib/hashtag-engine'
+import { IG_SPREAD_WORDS } from '@/lib/ig-pace'
 import { isQueuedNote, queuedWords } from '@/lib/facebook-queue-words'
 import { canUsePreview } from '@/lib/labs-preview'
 import { useState, useEffect, useCallback, useRef, useMemo, memo, Suspense } from 'react'
@@ -2349,8 +2350,8 @@ function ScheduledList({
                 <span className={`text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full ${pill.bg} ${pill.fg}`}>
                   {pill.label}
                 </span>
-                <span className="text-[11px] text-[#86868b] dark:text-[#8e8e93]">
-                  {item.status === 'pending' ? 'Scheduled for ' : ''}{dt}
+                <span className="text-[11px] text-[#86868b] dark:text-[#8e8e93]" title={item.status === 'pending' && item.platform === 'instagram' ? IG_SPREAD_WORDS : undefined}>
+                  {item.status === 'pending' ? 'Scheduled for ' : ''}{dt}{item.status === 'pending' && item.platform === 'instagram' ? ', or up to 30 minutes after' : ''}
                 </span>
               </div>
               <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] truncate mb-1">
