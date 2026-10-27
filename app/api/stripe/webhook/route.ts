@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { ENDED_UNPAID } from '@/lib/billing-alert'
 import { getStripe, PRICE_ID_LIST } from '@/lib/stripe'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { alertOps } from '@/lib/ops-alert'
@@ -479,7 +480,11 @@ export async function POST(request: NextRequest) {
   }
 
   if (event.type === 'customer.subscription.deleted') {
-    const sub = event.data.object as { id: string; customer: string }
+    const sub = event.data.object as { id: string; customer: string; cancellation_details?: { reason?: string | null } | null }
+    // WHY IT ENDED, KEPT (lib/billing-alert; Seb, 2026-10-27, Douglas): a plan
+    // Stripe ended because every payment failed says so on the member's screen;
+    // one the member cancelled does not.
+    const endedStatus = sub.cancellation_details?.reason === 'payment_failed' ? ENDED_UNPAID : 'canceled'
     // Downgrade to the free Trial when subscription cancelled.
     //
     // BUG FIX (2026-06-02 audit): previously matched on customer id
@@ -494,7 +499,7 @@ export async function POST(request: NextRequest) {
       .update({
         tier: 'trial',
         stripe_subscription_id: null,
-        subscription_status: 'canceled',
+        subscription_status: endedStatus,
         subscription_period_start: null,
         subscription_period_end: null,
       })

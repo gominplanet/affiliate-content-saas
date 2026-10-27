@@ -68,6 +68,7 @@ import AmazonTagNudge from './AmazonTagNudge'
 import ScoutRequired from './ScoutRequired'
 import ScoutQuietSync from '@/components/scout/ScoutQuietSync'
 import InstagramTagReader from '@/components/scout/InstagramTagReader'
+import BillingAlert from '@/components/layout/BillingAlert'
 import { useTrybeAlerts } from './useTrybeAlerts'
 // TRYBE referral link (direct, so it never depends on the Passport short domain).
 import SiteSwitcherChip from './SiteSwitcherChip'
@@ -1374,6 +1375,8 @@ export default function DashboardShellV2({
         {/* Plan-usage strip — every metered action for this plan, directly
             under the topbar so nothing capped is invisible. Self-hides on
             unlimited plans. */}
+        {/* A payment that did not go through, or a plan that ended for it (lib/billing-alert). */}
+        <BillingAlert />
         <UsageBar />
         {/* Proactive nudge when a limit is 80%+ this period. Dismissible per
             period; self-hides otherwise. */}
