@@ -26,7 +26,9 @@ import { createAnthropicClient } from '@/lib/anthropic'
 import { publishMedia, refreshLongLivedToken, getMediaCount } from '@/services/instagram'
 import { recordReachSample } from '@/lib/reach-pulse'
 import { checkInstagramPace, logSocialPublish } from '@/lib/social-pace'
-import { cloudinaryConfigured, overlayCaptionOnVideo } from '@/services/cloudinary'
+import { cloudinaryConfigured, overlayCaptionOnVideo, getLastOverlayError } from '@/services/cloudinary'
+import { cloudinaryHandOff } from '@/lib/burn-error'
+import { renderCta } from '@/lib/youtube-ingest'
 import { resolveCloakedLink } from '@/lib/link-cloak'
 import { autoDmPlan, captionForPlan, finishAutoDm, autoDmWords } from '@/lib/ig-auto-dm'
 import { tierAllowsSocial, type Tier } from '@/lib/tier'
@@ -352,8 +354,16 @@ Return ONLY the caption text + hashtags.`,
       if (cloudinaryConfigured() && effectiveVideoUrl) {
         // With Auto-DM on an account that can answer, the video says the same
         // as the caption: comment the word.
-        const overlaid = await overlayCaptionOnVideo(effectiveVideoUrl, dmPlan?.ready ? `COMMENT ${dmPlan.keyword.toUpperCase()}` : 'LINK IN BIO')
-        if (overlaid?.url) effectiveVideoUrl = overlaid.url
+        const overlayText = dmPlan?.ready ? `COMMENT ${dmPlan.keyword.toUpperCase()}` : 'LINK IN BIO'
+        const overlaid = await overlayCaptionOnVideo(effectiveVideoUrl, overlayText)
+        let burnedUrl = overlaid?.url ?? null
+        // Cloudinary refused the clip or MVP's account (Alejandro, 2026-10-28:
+        // "cloud_name is disabled (401)"): MVP's own render server burns it.
+        if (!burnedUrl && cloudinaryHandOff(getLastOverlayError())) {
+          const out = await renderCta(effectiveVideoUrl, { text: overlayText, style: 'lowerthird', startSec: 0, endSec: 86_400 }, user.id, 150_000)
+          if (out.ok) burnedUrl = out.url
+        }
+        if (burnedUrl) effectiveVideoUrl = burnedUrl
         else results.warnings.push('Could not burn the on-screen caption, so the original video was posted.')
       }
       if (m === 'reel' || m === 'both') {

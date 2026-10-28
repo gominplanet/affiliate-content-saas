@@ -36,11 +36,29 @@ export function cloudinaryRefusedSize(raw: string | null | undefined): boolean {
   return /file size too large|too large to process|maximum is \d+|exceeds.*(size|limit)|request timeout|timeouterror|\(499\)|timed? ?out|ETIMEDOUT|ESOCKETTIMEDOUT/i.test(r)
 }
 
+/** Cloudinary turned MVP itself away, not the video (Seb, 2026-10-28,
+ *  Alejandro: "Could not burn the overlay: cloud_name is disabled (401)"):
+ *  the account switched off, its keys refused, or its plan used up. Every
+ *  burn goes to MVP's own render server while that lasts. */
+export function cloudinaryAccountDown(raw: string | null | undefined): boolean {
+  const r = String(raw || '')
+  return /cloud_name is disabled|account (is )?(disabled|suspended|blocked)|invalid (api_key|cloud_name|signature)|unknown api_key|api_secret mismatch|\((401|403|420|429)\)|quota|credits? (limit|exceeded|used)|usage limit|rate limit/i.test(r)
+}
+
+/** A burn MVP's own render server can take over: Cloudinary refused the
+ *  file's size or time, or refused MVP's account. */
+export function cloudinaryHandOff(raw: string | null | undefined): boolean {
+  return cloudinaryRefusedSize(raw) || cloudinaryAccountDown(raw)
+}
+
 const SHORTER = 'Use a shorter clip (under about 90 seconds works best), or press "Skip and publish as is" to post it without the overlay.'
 
 /** What the creator sees when the burn did not work. */
 export function burnErrorMessage(raw: string | null | undefined): string {
   const r = String(raw || '').trim()
+  if (cloudinaryAccountDown(r)) {
+    return 'The overlay burner MVP uses is unavailable right now. This is on MVP\'s side, not your video, and the team has been told. Press "Skip and publish as is" to post it without the overlay, or try again later.'
+  }
   if (/file size too large|too large to process|maximum is \d+|exceeds.*(size|limit)/i.test(r)) {
     return `This video is too big for the overlay burner. ${SHORTER}`
   }

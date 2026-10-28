@@ -8,7 +8,8 @@
  * this can never break a publish.
  */
 import { fetchWithTimeout } from '@/lib/fetch-timeout'
-import { cloudErrorText } from '@/lib/burn-error'
+import { cloudErrorText, cloudinaryAccountDown } from '@/lib/burn-error'
+import { alertOps } from '@/lib/ops-alert'
 import { v2 as cloudinary } from 'cloudinary'
 import type { CaptionChunk, SubtitleStyle } from '@/lib/shorts-types'
 
@@ -34,6 +35,19 @@ function ensureConfig(): boolean {
     return true
   }
   return false
+}
+
+// CLOUDINARY REFUSING MVP'S ACCOUNT IS SAID TO THE TEAM (Seb, 2026-10-28,
+// Alejandro: "cloud_name is disabled (401)"). Every overlay, deal card and
+// story image stops at once when it happens, so the first refusal emails the
+// team, at most once an hour per server, with what Cloudinary said.
+let lastDownAlert = 0
+function noteCloudinaryError(text: string | null | undefined): void {
+  if (!cloudinaryAccountDown(text)) return
+  const now = Date.now()
+  if (now - lastDownAlert < 60 * 60 * 1000) return
+  lastDownAlert = now
+  void alertOps('Cloudinary is refusing MVP\'s account', `Cloudinary answered: ${text}\n\nOverlay burns move to MVP's own render server, but deal cards, story images and video pin covers stop until the account works again. Check the Cloudinary console (usage and billing) for the account in CLOUDINARY_URL.`)
 }
 
 export function cloudinaryConfigured(): boolean {
@@ -201,6 +215,7 @@ export async function renderStoryImage(
     return null
   } catch (e) {
     lastOverlayError = cloudErrorText(e)
+    noteCloudinaryError(lastOverlayError)
     return null
   }
 }
@@ -282,6 +297,7 @@ export async function renderDealCard(
     return null
   } catch (e) {
     lastOverlayError = cloudErrorText(e)
+    noteCloudinaryError(lastOverlayError)
     return null
   }
 }
@@ -471,12 +487,14 @@ export async function overlayCaptionOnVideo(
     const { ready, detail } = await waitForVideo(url, Math.max(45_000, 220_000 - (Date.now() - started)))
     if (!ready) {
       lastOverlayError = detail
+      noteCloudinaryError(detail)
       console.warn('[cloudinary] derived video not ready:', detail, '| url:', url)
       return null
     }
     return { url, publicId }
   } catch (e) {
     lastOverlayError = cloudErrorText(e)
+    noteCloudinaryError(lastOverlayError)
     console.warn('[cloudinary] video overlay failed:', lastOverlayError)
     return null
   }
@@ -666,6 +684,7 @@ export async function renderVerticalShort(opts: RenderShortOpts): Promise<Render
     return { url, sourcePublicId }
   } catch (e) {
     lastShortError = errMessage(e)
+    noteCloudinaryError(lastShortError)
     console.warn('[cloudinary] renderVerticalShort failed:', lastShortError)
     return null
   }

@@ -14,7 +14,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { normalizeTier, type Tier } from '@/lib/tier'
 import { cloudinaryConfigured, overlayCaptionOnVideo, getLastOverlayError, type OverlayPosition, type CaptionStyle } from '@/services/cloudinary'
 import { recordUsage } from '@/lib/ai-usage'
-import { burnErrorMessage, cloudinaryRefusedSize } from '@/lib/burn-error'
+import { burnErrorMessage, cloudinaryHandOff } from '@/lib/burn-error'
 import { renderCta } from '@/lib/youtube-ingest'
 import { researchProductContext, composeReelCaption } from '@/lib/ig-burn'
 import { metaEnabledForUser } from '@/lib/feature-flags'
@@ -100,7 +100,9 @@ export async function POST(request: Request) {
     // 2026-10-12: a 3:41 whole-video clip, "This video is too big for the
     // overlay burner"). Cloudinary caps the file it takes; the render server
     // that cut the clip has no such cap. A clip over LONG_CLIP_SEC goes there
-    // first; a shorter one goes there when Cloudinary says too big or too slow.
+    // first; a shorter one goes there when Cloudinary says too big or too slow,
+    // or turns MVP's account away (Alejandro, 2026-10-28: "cloud_name is
+    // disabled (401)").
     const LONG_CLIP_SEC = 120
     const dur = Number(body.durationSec)
     const long = Number.isFinite(dur) && dur > LONG_CLIP_SEC
@@ -114,7 +116,7 @@ export async function POST(request: Request) {
       burnedUrl = burned?.url ?? null
       if (!burnedUrl) cloudReason = getLastOverlayError()
     }
-    if (!burnedUrl && (long || cloudinaryRefusedSize(cloudReason))) {
+    if (!burnedUrl && (long || cloudinaryHandOff(cloudReason))) {
       // What is left of this route's time, less a margin for the caption.
       const left = 600_000 - (Date.now() - started) - 60_000
       const out = await renderCta(videoUrl, {

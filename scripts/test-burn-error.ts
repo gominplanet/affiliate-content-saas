@@ -6,7 +6,7 @@
 
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { cloudErrorText, burnErrorMessage, cloudinaryRefusedSize } from '../lib/burn-error'
+import { cloudErrorText, burnErrorMessage, cloudinaryRefusedSize, cloudinaryAccountDown, cloudinaryHandOff } from '../lib/burn-error'
 
 let failed = 0
 function check(name: string, ok: boolean, detail = '') {
@@ -37,10 +37,25 @@ check('Clip Factory survives a reply that is not JSON', /await res\.json\(\)\.ca
 
 check('too big and too slow hand over to the render server; a bad transform does not', cloudinaryRefusedSize(cloudErrorText(apiShape)) && cloudinaryRefusedSize(cloudErrorText(timeoutShape)) && cloudinaryRefusedSize('Video is too large to process synchronously') && !cloudinaryRefusedSize('HTTP 400: Invalid transformation'))
 const route = read('app/api/instagram/burn/route.ts')
-check('a clip Cloudinary refuses, or a long one, burns on MVP\'s render server', /if \(!burnedUrl && \(long \|\| cloudinaryRefusedSize\(cloudReason\)\)\)/.test(route) && /await renderCta\(videoUrl,/.test(route) && /const LONG_CLIP_SEC = 120/.test(route))
+check('a clip Cloudinary refuses, or a long one, burns on MVP\'s render server', /if \(!burnedUrl && \(long \|\| cloudinaryHandOff\(cloudReason\)\)\)/.test(route) && /await renderCta\(videoUrl,/.test(route) && /const LONG_CLIP_SEC = 120/.test(route))
 check('the route has time for a render server burn', /export const maxDuration = 600/.test(route))
 check('the answer says which burner made it, and the page says so', /\n\s*via,\n/.test(route) && /data\.via === 'render-server'/.test(read('components/clip-factory/ClipFactory.tsx')))
 check('the page sends the clip length', /durationSec: clip\.durationSec,/.test(read('components/clip-factory/ClipFactory.tsx')))
+
+// CLOUDINARY SWITCHED OFF (Alejandro, 2026-10-28: "Could not burn the
+// overlay: cloud_name is disabled (401)"). The account, not the video: every
+// burner hands it to the render server, the member is told it is MVP's side,
+// and the team hears once an hour.
+const disabled = cloudErrorText({ message: 'cloud_name is disabled', http_code: 401 })
+check('a switched-off Cloudinary account is read as MVP\'s side', disabled === 'cloud_name is disabled (401)' && cloudinaryAccountDown(disabled) && cloudinaryHandOff(disabled)
+  && cloudinaryAccountDown('Invalid api_key abc') && !cloudinaryAccountDown('HTTP 400: Invalid transformation') && !cloudinaryHandOff('HTTP 400: Invalid transformation'))
+check('the member is told it is not their video, with what to do, and no dashes', /on MVP's side, not your video/.test(burnErrorMessage(disabled)) && /Skip and publish as is/.test(burnErrorMessage(disabled)) && !/[–—]| - /.test(burnErrorMessage(disabled)))
+check('the team hears about it once an hour, from every Cloudinary failure', /function noteCloudinaryError/.test(svc) && /now - lastDownAlert < 60 \* 60 \* 1000/.test(svc) && (svc.match(/noteCloudinaryError\(/g) || []).length >= 6)
+const jobs = read('app/api/cron/process-burn-jobs/route.ts')
+check('queued Reel burns go to the render server too, and post what it made', /if \(!burnedUrl && cloudinaryHandOff\(cloudReason\)\) \{\s*\n\s*const out = await renderCta\(job\.source_video_url,/.test(jobs) && /videoUrl: burnedUrl,/.test(jobs) && /result_url: burnedUrl,/.test(jobs) && !/burned\.url/.test(jobs))
+check('a queued burn that fails says why in the member\'s words', /throw new Error\(burnErrorMessage\(cloudReason\)\)/.test(jobs))
+const blogIg = read('app/api/blog/instagram-post/route.ts')
+check('the blog Reel overlay goes to the render server too', /if \(!burnedUrl && cloudinaryHandOff\(getLastOverlayError\(\)\)\) \{\s*\n\s*const out = await renderCta\(effectiveVideoUrl,/.test(blogIg))
 
 if (failed) { console.error(`\n${failed} burn error check(s) failed`); process.exit(1) }
 console.log('\nALL PASS')

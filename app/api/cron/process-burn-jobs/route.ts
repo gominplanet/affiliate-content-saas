@@ -13,6 +13,8 @@ import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { maybeDecrypt } from '@/lib/secrets'
 import { overlayCaptionOnVideo, getLastOverlayError, type OverlayPosition, type CaptionStyle } from '@/services/cloudinary'
+import { burnErrorMessage, cloudinaryHandOff } from '@/lib/burn-error'
+import { renderCta } from '@/lib/youtube-ingest'
 import { researchProductContext, composeReelCaption } from '@/lib/ig-burn'
 import { publishMedia, feedWaitUntil } from '@/services/instagram'
 import { IgTooSoonError, igDueNow } from '@/lib/ig-pace'
@@ -42,6 +44,7 @@ interface BurnJob {
 }
 
 export async function GET(request: Request) {
+  const runStarted = Date.now()
   const auth = request.headers.get('authorization') ?? ''
   const secret = process.env.CRON_SECRET
   if (!secret) return NextResponse.json({ error: 'CRON_SECRET not set' }, { status: 500 })
@@ -200,8 +203,26 @@ export async function GET(request: Request) {
           style: job.style as CaptionStyle,
           stickerDurationSec: burnDurationSec,
         })
-    if (!burned?.url) throw new Error(`burn failed: ${getLastOverlayError() || 'unknown'}`)
-    recordUsage({ userId: job.user_id, tier, feature: 'instagram_burn', model: 'cloudinary', images: 1 })
+    // CLOUDINARY TURNS IT DOWN, MVP'S RENDER SERVER BURNS IT (Alejandro,
+    // 2026-10-28: "cloud_name is disabled (401)"), as the single-video burner
+    // does: too big, too slow, or MVP's Cloudinary account refused. The
+    // render gets what is left of this run, less time to publish.
+    let burnedUrl = burned?.url ?? null
+    let via: 'cloudinary' | 'render-server' = 'cloudinary'
+    const cloudReason = burnedUrl ? null : getLastOverlayError()
+    if (!burnedUrl && cloudinaryHandOff(cloudReason)) {
+      const out = await renderCta(job.source_video_url, {
+        text: job.sticker_url ? '' : job.caption_text,
+        style: 'lowerthird',
+        startSec: 0,
+        endSec: burnDurationSec > 0 ? burnDurationSec : 86_400,
+        ...(job.sticker_url ? { stickerUrl: job.sticker_url, widthPct: 0.55 * 0.75, position: job.position } : {}),
+      }, job.user_id, Math.max(60_000, 300_000 - (Date.now() - runStarted) - 120_000))
+      if (out.ok) { burnedUrl = out.url; via = 'render-server' }
+      else throw new Error(`${burnErrorMessage(cloudReason)} MVP's own render server could not burn it either (${out.reason}).`)
+    }
+    if (!burnedUrl) throw new Error(burnErrorMessage(cloudReason))
+    recordUsage({ userId: job.user_id, tier, feature: 'instagram_burn', model: via, images: 1 })
 
     // 2. Research + compose Reel caption.
     const ctx = { userId: job.user_id, tier }
@@ -224,11 +245,11 @@ export async function GET(request: Request) {
       userId: igUserId,
       accessToken: igToken,
       mediaType: 'REELS',
-      videoUrl: burned.url,
+      videoUrl: burnedUrl,
       caption: finalCaption,
       shareToFeed: true,
     })
-    await finishAutoDm(admin, dmPlan, { userId: job.user_id, mediaId: reelMediaId, caption: finalCaption, videoUrl: burned.url, igUserId, accessToken: igToken })
+    await finishAutoDm(admin, dmPlan, { userId: job.user_id, mediaId: reelMediaId, caption: finalCaption, videoUrl: burnedUrl, igUserId, accessToken: igToken })
 
     // Pulse: learn which tags this Reel used (best-effort, non-blocking).
     void recordReachSample({
@@ -240,7 +261,7 @@ export async function GET(request: Request) {
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await admin.from('ig_burn_jobs').update({
-      status: 'completed', result_url: burned.url, reel_caption: reelCaption, ig_published: true,
+      status: 'completed', result_url: burnedUrl, reel_caption: reelCaption, ig_published: true,
     }).eq('id', job.id)
     return NextResponse.json({ ok: true, processed: 1, jobId: job.id })
   } catch (err) {
