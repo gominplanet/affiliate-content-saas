@@ -47,7 +47,7 @@ function noteCloudinaryError(text: string | null | undefined): void {
   const now = Date.now()
   if (now - lastDownAlert < 60 * 60 * 1000) return
   lastDownAlert = now
-  void alertOps('Cloudinary is refusing MVP\'s account', `Cloudinary answered: ${text}\n\nOverlay burns move to MVP's own render server, but deal cards, story images and video pin covers stop until the account works again. Check the Cloudinary console (usage and billing) for the account in CLOUDINARY_URL.`)
+  void alertOps('Cloudinary is refusing MVP\'s account', `Cloudinary answered: ${text}\n\nCloudinary is only MVP's backup now: overlay burns, deal pictures, deal Story images and video pin covers are made by MVP itself (lib/overlay-burn, lib/deal-images). This means MVP's own way failed first and the backup could not help either, so check the render server on Railway. Nothing needs paying for at Cloudinary.`)
 }
 
 export function cloudinaryConfigured(): boolean {
