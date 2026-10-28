@@ -57,5 +57,9 @@ check('a queued burn that fails says why in the member\'s words', /throw new Err
 const blogIg = read('app/api/blog/instagram-post/route.ts')
 check('the blog Reel overlay goes to the render server too', /if \(!burnedUrl && cloudinaryHandOff\(getLastOverlayError\(\)\)\) \{\s*\n\s*const out = await renderCta\(effectiveVideoUrl,/.test(blogIg))
 
+const cf = read('components/clip-factory/ClipFactory.tsx')
+check('the page says why the render server burned it, and when the picked caption look was not kept', /viaWhy: long \? 'long' : cloudinaryAccountDown\(cloudReason\) \? 'unavailable' : 'refused'/.test(route) && /lookKept: !!stickerOverlayUrl/.test(route)
+  && /data\.viaWhy === 'unavailable' \? 'the quick burner is unavailable right now'/.test(cf) && /data\.lookKept === false/.test(cf))
+
 if (failed) { console.error(`\n${failed} burn error check(s) failed`); process.exit(1) }
 console.log('\nALL PASS')

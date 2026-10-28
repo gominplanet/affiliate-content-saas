@@ -14,7 +14,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { normalizeTier, type Tier } from '@/lib/tier'
 import { cloudinaryConfigured, overlayCaptionOnVideo, getLastOverlayError, type OverlayPosition, type CaptionStyle } from '@/services/cloudinary'
 import { recordUsage } from '@/lib/ai-usage'
-import { burnErrorMessage, cloudinaryHandOff } from '@/lib/burn-error'
+import { burnErrorMessage, cloudinaryHandOff, cloudinaryAccountDown } from '@/lib/burn-error'
 import { renderCta } from '@/lib/youtube-ingest'
 import { researchProductContext, composeReelCaption } from '@/lib/ig-burn'
 import { metaEnabledForUser } from '@/lib/feature-flags'
@@ -160,8 +160,14 @@ export async function POST(request: Request) {
       ok: true,
       url: burnedUrl,
       caption: composedCaption,
-      // Said, not hidden: which burner made it.
+      // Said, not hidden: which burner made it, why, and whether the picked
+      // caption look survived (the render server draws text in its own
+      // lower-third style; a sticker keeps its place and size).
       via,
+      ...(via === 'render-server' ? {
+        viaWhy: long ? 'long' : cloudinaryAccountDown(cloudReason) ? 'unavailable' : 'refused',
+        lookKept: !!stickerOverlayUrl,
+      } : {}),
     })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
