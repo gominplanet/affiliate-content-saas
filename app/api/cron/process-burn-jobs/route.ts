@@ -13,8 +13,10 @@ import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { maybeDecrypt } from '@/lib/secrets'
 import { overlayCaptionOnVideo, getLastOverlayError, type OverlayPosition, type CaptionStyle } from '@/services/cloudinary'
-import { burnErrorMessage, cloudinaryHandOff } from '@/lib/burn-error'
-import { renderCta } from '@/lib/youtube-ingest'
+import { burnErrorMessage } from '@/lib/burn-error'
+import { ingestConfigured } from '@/lib/youtube-ingest'
+import { burnOnRenderServer, storageSaver } from '@/lib/overlay-burn'
+import { cloudinaryConfigured } from '@/services/cloudinary'
 import { researchProductContext, composeReelCaption } from '@/lib/ig-burn'
 import { publishMedia, feedWaitUntil } from '@/services/instagram'
 import { IgTooSoonError, igDueNow } from '@/lib/ig-pace'
@@ -186,42 +188,52 @@ export async function GET(request: Request) {
       return NextResponse.json({ ok: true, processed: 0, moved: job.id, until: at })
     }
 
-    // 1. Burn the overlay — a CTA box sticker (PNG) when set, else the caption
-    //    text. Matches the single-video burner: sticker mode passes an empty
-    //    caption + the sticker URL; caption mode passes the text.
+    // 1. Burn the overlay on MVP's own render server (lib/overlay-burn; Seb,
+    //    2026-10-28: Cloudinary disabled MVP's account): a CTA box sticker
+    //    when set, else the caption, in the same look, spot and 1080x1920
+    //    frame Cloudinary made. Cloudinary is only the backup now, when the
+    //    render server cannot be reached and there is still time to try.
     const burnDurationSec = job.sticker_duration_sec ?? 0
-    const burned = job.sticker_url
-      ? await overlayCaptionOnVideo(job.source_video_url, '', {
-          position: job.position as OverlayPosition,
-          style: job.style as CaptionStyle,
-          stickerUrl: job.sticker_url,
-          stickerWidthPct: 0.55,
-          stickerDurationSec: burnDurationSec,
-        })
-      : await overlayCaptionOnVideo(job.source_video_url, job.caption_text, {
-          position: job.position as OverlayPosition,
-          style: job.style as CaptionStyle,
-          stickerDurationSec: burnDurationSec,
-        })
-    // CLOUDINARY TURNS IT DOWN, MVP'S RENDER SERVER BURNS IT (Alejandro,
-    // 2026-10-28: "cloud_name is disabled (401)"), as the single-video burner
-    // does: too big, too slow, or MVP's Cloudinary account refused. The
-    // render gets what is left of this run, less time to publish.
-    let burnedUrl = burned?.url ?? null
-    let via: 'cloudinary' | 'render-server' = 'cloudinary'
-    const cloudReason = burnedUrl ? null : getLastOverlayError()
-    if (!burnedUrl && cloudinaryHandOff(cloudReason)) {
-      const out = await renderCta(job.source_video_url, {
-        text: job.sticker_url ? '' : job.caption_text,
-        style: 'lowerthird',
-        startSec: 0,
-        endSec: burnDurationSec > 0 ? burnDurationSec : 86_400,
-        ...(job.sticker_url ? { stickerUrl: job.sticker_url, widthPct: 0.55 * 0.75, position: job.position } : {}),
-      }, job.user_id, Math.max(60_000, 300_000 - (Date.now() - runStarted) - 120_000))
-      if (out.ok) { burnedUrl = out.url; via = 'render-server' }
-      else throw new Error(`${burnErrorMessage(cloudReason)} MVP's own render server could not burn it either (${out.reason}).`)
+    let burnedUrl: string | null = null
+    let via: 'cloudinary' | 'render-server' = 'render-server'
+    let renderReason: string | null = null
+    if (ingestConfigured()) {
+      const out = await burnOnRenderServer(job.source_video_url, {
+        text: job.caption_text,
+        position: job.position,
+        style: job.style,
+        stickerUrl: job.sticker_url,
+        stickerWidthPct: 0.55,
+        durationSec: burnDurationSec,
+      }, { userId: job.user_id, save: storageSaver(admin), timeoutMs: Math.max(60_000, 300_000 - (Date.now() - runStarted) - 120_000) })
+      if (out.ok) burnedUrl = out.url
+      else renderReason = out.reason
     }
-    if (!burnedUrl) throw new Error(burnErrorMessage(cloudReason))
+    let cloudReason: string | null = null
+    if (!burnedUrl && cloudinaryConfigured() && Date.now() - runStarted < 60_000) {
+      const burned = job.sticker_url
+        ? await overlayCaptionOnVideo(job.source_video_url, '', {
+            position: job.position as OverlayPosition,
+            style: job.style as CaptionStyle,
+            stickerUrl: job.sticker_url,
+            stickerWidthPct: 0.55,
+            stickerDurationSec: burnDurationSec,
+          })
+        : await overlayCaptionOnVideo(job.source_video_url, job.caption_text, {
+            position: job.position as OverlayPosition,
+            style: job.style as CaptionStyle,
+            stickerDurationSec: burnDurationSec,
+          })
+      burnedUrl = burned?.url ?? null
+      if (burnedUrl) via = 'cloudinary'
+      else cloudReason = getLastOverlayError()
+    }
+    if (!burnedUrl) {
+      throw new Error([
+        renderReason ? `MVP's render server could not burn the overlay (${renderReason === 'render-timeout' ? 'it ran out of time' : renderReason}).` : '',
+        cloudReason ? burnErrorMessage(cloudReason) : '',
+      ].filter(Boolean).join(' ') || 'Could not burn the overlay.')
+    }
     recordUsage({ userId: job.user_id, tier, feature: 'instagram_burn', model: via, images: 1 })
 
     // 2. Research + compose Reel caption.

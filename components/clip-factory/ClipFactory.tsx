@@ -775,14 +775,7 @@ export default function ClipFactory({ facebookOnly = false }: { facebookOnly?: b
       // Never let a caption-less burn wipe the clip's own AI caption.
       setComposedCaption(((data.caption as string) || '').trim() || fallbackCaption)
       setStage('publish')
-      if (data.via === 'render-server') {
-        const why = data.viaWhy === 'unavailable' ? 'the quick burner is unavailable right now'
-          : data.viaWhy === 'refused' ? 'the quick burner turned this clip down'
-          : 'this clip was too long for the quick burner'
-        toast.success(`Overlay burned on MVP's render server (${why})`, data.lookKept === false
-          ? { description: 'The caption is in the render server\'s own lower third style, not the look and spot you picked. Check the video before you publish.', duration: 10_000 }
-          : undefined)
-      } else toast.success('Overlay burned')
+      toast.success('Overlay burned')
     } catch (e) { toast.error(errText(e)) }
     finally { setBurning(false) }
   }, [clip, overlayType, stickerId, customStickerUrl, caption, style, position, badgePos, badgeWidthPct, product, productName, burnDuration, fallbackCaption])

@@ -475,6 +475,28 @@ export async function ingestAudio(youtubeVideoId: string, userId?: string): Prom
   }
 }
 
+/** One still from a video as a public JPG, from MVP's render server (/frame).
+ *  The cover a Pinterest video pin needs, without Cloudinary (Seb,
+ *  2026-10-28). Null when the service is not set up or cannot read it. */
+export async function videoFrameUrl(url: string, atSec = 0.5, userId?: string): Promise<string | null> {
+  const base = (process.env.YOUTUBE_INGEST_URL || '').replace(/\/+$/, '')
+  if (!base || !/^https:\/\//i.test(url)) return null
+  try {
+    const res = await fetch(`${base}/frame`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(process.env.YOUTUBE_INGEST_SECRET ? { 'x-ingest-secret': process.env.YOUTUBE_INGEST_SECRET } : {}),
+      },
+      body: JSON.stringify({ url, atSec, ...(userId ? { userId } : {}) }),
+      signal: AbortSignal.timeout(75_000),
+    })
+    if (!res.ok) return null
+    const data = await res.json().catch(() => ({})) as { url?: string }
+    return data?.url && /^https:\/\//i.test(data.url) ? data.url : null
+  } catch { return null }
+}
+
 // ── CTA burn-in ──────────────────────────────────────────────────────────────
 // Burn a branded call-to-action onto a full horizontal video via the ingest
 // service (/render-cta). Returns the hosted URL of the rendered video, or null
@@ -493,11 +515,14 @@ export interface CtaSpec {
   // Free placement: the overlay's top-left as a fraction of the frame.
   xPct?: number
   yPct?: number
+  /** 'reel': make the video 1080x1920 first (fill, centre crop), as
+   *  Cloudinary's burner did. Placement fractions are then of that frame. */
+  frame?: 'reel'
 }
 /** Result of a CTA render. `ok:false` carries a short reason so the caller can
  *  tell the creator WHAT went wrong (service not configured, ingest error,
  *  timeout) instead of a single opaque "busy" message. */
-export type RenderCtaResult = { ok: true; url: string } | { ok: false; reason: string }
+export type RenderCtaResult = { ok: true; url: string; frame?: 'reel' | null } | { ok: false; reason: string }
 
 export async function renderCta(videoUrl: string, cta: CtaSpec, userId?: string, timeoutMs = 540_000): Promise<RenderCtaResult> {
   const base = (process.env.YOUTUBE_INGEST_URL || '').replace(/\/+$/, '')
@@ -522,6 +547,7 @@ export async function renderCta(videoUrl: string, cta: CtaSpec, userId?: string,
         ...(cta.widthPct ? { widthPct: cta.widthPct } : {}),
         ...(cta.position ? { position: cta.position } : {}),
         ...(Number.isFinite(cta.xPct) && Number.isFinite(cta.yPct) ? { xPct: cta.xPct, yPct: cta.yPct } : {}),
+        ...(cta.frame ? { frame: cta.frame } : {}),
         ...(userId ? { userId } : {}),
       }),
       // The caller's budget: a background worker cannot wait longer than it
@@ -534,7 +560,7 @@ export async function renderCta(videoUrl: string, cta: CtaSpec, userId?: string,
       return { ok: false, reason: `ingest-${res.status}${detail ? `: ${detail}` : ''}` }
     }
     const data = await res.json().catch(() => ({}))
-    if (data?.url && /^https:\/\//i.test(data.url)) return { ok: true, url: data.url as string }
+    if (data?.url && /^https:\/\//i.test(data.url)) return { ok: true, url: data.url as string, frame: data.frame === 'reel' ? 'reel' : null }
     console.error('[renderCta] ingest 200 but no url', JSON.stringify(data).slice(0, 300))
     return { ok: false, reason: 'ingest-no-url' }
   } catch (e) {

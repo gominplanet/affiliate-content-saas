@@ -14,8 +14,10 @@ import { createServerClient } from '@/lib/supabase/server'
 import { normalizeTier, type Tier } from '@/lib/tier'
 import { cloudinaryConfigured, overlayCaptionOnVideo, getLastOverlayError, type OverlayPosition, type CaptionStyle } from '@/services/cloudinary'
 import { recordUsage } from '@/lib/ai-usage'
-import { burnErrorMessage, cloudinaryHandOff, cloudinaryAccountDown } from '@/lib/burn-error'
-import { renderCta } from '@/lib/youtube-ingest'
+import { burnErrorMessage } from '@/lib/burn-error'
+import { ingestConfigured } from '@/lib/youtube-ingest'
+import { burnOnRenderServer, storageSaver } from '@/lib/overlay-burn'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { researchProductContext, composeReelCaption } from '@/lib/ig-burn'
 import { metaEnabledForUser } from '@/lib/feature-flags'
 import { getCtaSticker, ctaStickerUrl } from '@/lib/cta-stickers'
@@ -47,7 +49,7 @@ export async function POST(request: Request) {
         upgrade: { tier: 'pro', label: 'Pro', limit: null },
       }, { status: 403 })
     }
-    if (!cloudinaryConfigured()) {
+    if (!ingestConfigured() && !cloudinaryConfigured()) {
       return NextResponse.json({ error: 'Video captioning is not configured yet. Try again shortly.' }, { status: 503 })
     }
 
@@ -96,55 +98,47 @@ export async function POST(request: Request) {
     const stickerOverlayUrl = customOk ? customStickerUrl : sticker ? ctaStickerUrl(sticker.file) : null
     const widthPct = clientWidthPct ?? (customOk ? 0.55 : sticker?.widthPct)
     const started = Date.now()
-    // TOO BIG FOR CLOUDINARY GOES TO MVP'S OWN RENDER SERVER (Seb,
-    // 2026-10-12: a 3:41 whole-video clip, "This video is too big for the
-    // overlay burner"). Cloudinary caps the file it takes; the render server
-    // that cut the clip has no such cap. A clip over LONG_CLIP_SEC goes there
-    // first; a shorter one goes there when Cloudinary says too big or too slow,
-    // or turns MVP's account away (Alejandro, 2026-10-28: "cloud_name is
-    // disabled (401)").
+    // MVP'S OWN RENDER SERVER BURNS IT (Seb, 2026-10-28: Cloudinary disabled
+    // MVP's account, "just make sure that people can do the burn ... as they
+    // used to"). lib/overlay-burn draws the caption in the same look, puts it
+    // on the same spot, and makes the same 1080x1920 frame Cloudinary did,
+    // with no limit on the clip's length. Cloudinary is only the backup now,
+    // for a short clip when the render server cannot be reached.
     const LONG_CLIP_SEC = 120
     const dur = Number(body.durationSec)
     const long = Number.isFinite(dur) && dur > LONG_CLIP_SEC
     let burnedUrl: string | null = null
-    let via: 'cloudinary' | 'render-server' = 'cloudinary'
+    let via: 'cloudinary' | 'render-server' = 'render-server'
+    let renderReason: string | null = null
     let cloudReason: string | null = null
-    if (!long) {
+    if (ingestConfigured()) {
+      const out = await burnOnRenderServer(videoUrl, {
+        text: overlayText,
+        position,
+        style,
+        stickerUrl: stickerOverlayUrl,
+        stickerWidthPct: widthPct,
+        placement: stickerOverlayUrl ? placement : null,
+        durationSec: stickerDurationSec,
+      }, { userId: user.id, save: storageSaver(createAdminClient()), timeoutMs: 420_000 })
+      if (out.ok) burnedUrl = out.url
+      else renderReason = out.reason === 'render-timeout' ? 'it ran out of time' : out.reason
+    }
+    if (!burnedUrl && !long && cloudinaryConfigured() && Date.now() - started < 300_000) {
       const burned = await overlayCaptionOnVideo(videoUrl, overlayText, stickerOverlayUrl
         ? { position, placement, stickerUrl: stickerOverlayUrl, stickerWidthPct: widthPct, stickerDurationSec }
         : { position, style, stickerDurationSec })
       burnedUrl = burned?.url ?? null
-      if (!burnedUrl) cloudReason = getLastOverlayError()
-    }
-    if (!burnedUrl && (long || cloudinaryHandOff(cloudReason))) {
-      // What is left of this route's time, less a margin for the caption.
-      const left = 600_000 - (Date.now() - started) - 60_000
-      const out = await renderCta(videoUrl, {
-        text: stickerOverlayUrl ? '' : overlayText,
-        style: 'lowerthird',
-        startSec: 0,
-        // Whole clip: a window longer than any clip.
-        endSec: stickerDurationSec > 0 ? stickerDurationSec : 86_400,
-        ...(stickerOverlayUrl ? {
-          stickerUrl: stickerOverlayUrl,
-          // The same size the preview showed: Cloudinary scales a preset
-          // position by 0.75, a dragged one as-is.
-          widthPct: (widthPct ?? 0.85) * (placement ? 1 : 0.75),
-          position,
-          ...(placement ? { xPct: placement.xPct, yPct: placement.yPct } : {}),
-        } : {}),
-      }, user.id, Math.max(60_000, left))
-      if (out.ok) { burnedUrl = out.url; via = 'render-server' }
-      else {
-        const why = out.reason === 'render-timeout' ? 'it ran out of time' : out.reason === 'render-service-not-configured' ? 'it is not set up' : out.reason
-        return NextResponse.json({
-          error: `${cloudReason ? burnErrorMessage(cloudReason) + ' ' : ''}MVP's own render server could not burn it either (${why}). Use a shorter clip, or press "Skip and publish as is" to post it without the overlay.`,
-          detail: { cloudinary: cloudReason, renderServer: out.reason },
-        }, { status: 500 })
-      }
+      if (burnedUrl) via = 'cloudinary'
+      else cloudReason = getLastOverlayError()
     }
     if (!burnedUrl) {
-      return NextResponse.json({ error: burnErrorMessage(cloudReason), detail: cloudReason }, { status: 500 })
+      const why = renderReason ? `MVP's render server could not burn it (${renderReason}).` : ''
+      return NextResponse.json({
+        error: `${why}${why && cloudReason ? ' ' : ''}${cloudReason ? burnErrorMessage(cloudReason) : ''}`.trim()
+          || 'Could not burn the overlay. Press "Skip and publish as is" to post it without the overlay, or try again.',
+        detail: { renderServer: renderReason, cloudinary: cloudReason },
+      }, { status: 500 })
     }
     recordUsage({ userId: user.id, tier, feature: 'instagram_burn', model: via, images: 1 })
 
@@ -160,14 +154,8 @@ export async function POST(request: Request) {
       ok: true,
       url: burnedUrl,
       caption: composedCaption,
-      // Said, not hidden: which burner made it, why, and whether the picked
-      // caption look survived (the render server draws text in its own
-      // lower-third style; a sticker keeps its place and size).
+      // Said, not hidden: which burner made it.
       via,
-      ...(via === 'render-server' ? {
-        viaWhy: long ? 'long' : cloudinaryAccountDown(cloudReason) ? 'unavailable' : 'refused',
-        lookKept: !!stickerOverlayUrl,
-      } : {}),
     })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)

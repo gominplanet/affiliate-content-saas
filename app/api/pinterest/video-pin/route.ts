@@ -24,6 +24,7 @@ import { decryptIntegrationRow } from '@/lib/integration-secrets'
 import { tierAllowsSocial, type Tier } from '@/lib/tier'
 import { PinterestService } from '@/services/pinterest'
 import { remoteVideoPosterUrl, uploadedVideoPosterUrl } from '@/services/cloudinary'
+import { videoFrameUrl } from '@/lib/youtube-ingest'
 import { scrubBanned, scrubTitle } from '@/lib/scrub'
 import { recordUsage } from '@/lib/ai-usage'
 import { assertPublicHttpUrl } from '@/lib/ssrf-guard'
@@ -55,6 +56,12 @@ export async function POST(request: Request) {
   let coverImageUrl = (body.coverImageUrl || '').trim()
   if (!coverImageUrl && /res\.cloudinary\.com\/.+\/video\/upload\//i.test(videoUrl)) {
     coverImageUrl = videoUrl.replace('/video/upload/', '/video/upload/so_0,w_720,c_fill/').replace(/\.(mp4|mov|webm|m4v)(\?.*)?$/i, '.jpg')
+  }
+  // MVP's own render server takes a frame from any video (Seb, 2026-10-28:
+  // Cloudinary disabled MVP's account), so a clip's pin gets a cover without
+  // Cloudinary. Cloudinary's two ways stay behind it as backups.
+  if (!/^https:\/\//i.test(coverImageUrl)) {
+    coverImageUrl = (await videoFrameUrl(videoUrl, 0.5, user.id)) || ''
   }
   // Clips rendered OFF Cloudinary (the Shorts "ingest" engine returns an
   // external .mp4) have no native frame to derive — grab a poster frame from

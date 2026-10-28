@@ -1056,6 +1056,11 @@ app.post('/render-cta', async (req, res) => {
   const freePlace = Number.isFinite(xPct) && Number.isFinite(yPct)
   const startSec = Math.max(0, Number(req.body?.startSec) || 0)
   const endSec = Number(req.body?.endSec)
+  // frame 'reel': the video is first made 1080x1920 (scaled to fill, centre
+  // cropped), as Cloudinary's burner did, so an overlay lands where the
+  // Clip Factory preview showed it and every Reel has the same frame.
+  const reel = req.body?.frame === 'reel'
+  const REEL_VF = 'scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1'
   if (!/^https?:\/\//i.test(url)) return res.status(400).json({ error: 'bad source' })
   const sticker = /^https?:\/\//i.test(stickerUrl)
   if (!sticker && !text) return res.status(400).json({ error: 'text or sticker required' })
@@ -1075,7 +1080,7 @@ app.post('/render-cta', async (req, res) => {
       await assertPublicHttpUrl(stickerUrl)
       await downloadToFile(stickerUrl, pngTmp)
       if (!fs.existsSync(pngTmp)) throw new Error('sticker download produced no file')
-      const vwh = await ffprobeWH(srcTmp) || { w: 1920, h: 1080 }
+      const vwh = reel ? { w: 1080, h: 1920 } : (await ffprobeWH(srcTmp) || { w: 1920, h: 1080 })
       const pwh = await ffprobeWH(pngTmp) || { w: 1000, h: 1000 }
       const sw = Math.max(1, Math.round(vwh.w * widthPct))
       const sh = Math.max(1, Math.round(sw * (pwh.h / pwh.w)))
@@ -1083,7 +1088,7 @@ app.post('/render-cta', async (req, res) => {
       const { x, y } = freePlace
         ? { x: clamp(Math.round(vwh.w * xPct), 0, Math.max(0, vwh.w - sw)), y: clamp(Math.round(vwh.h * yPct), 0, Math.max(0, vwh.h - sh)) }
         : overlayXY(position, vwh.w, vwh.h, sw, sh)
-      const fc = `[1:v]scale=${sw}:${sh}[st];[0:v][st]overlay=${x}:${y}:enable='between(t,${startSec.toFixed(2)},${endSec.toFixed(2)})'[vout]`
+      const fc = `${reel ? `[0:v]${REEL_VF}[base];` : ''}[1:v]scale=${sw}:${sh}[st];${reel ? '[base]' : '[0:v]'}[st]overlay=${x}:${y}:enable='between(t,${startSec.toFixed(2)},${endSec.toFixed(2)})'[vout]`
       await new Promise((resolve, reject) => {
         execFile('ffmpeg', [
           '-hide_banner', '-loglevel', 'error', '-threads', '1',
@@ -1104,7 +1109,7 @@ app.post('/render-cta', async (req, res) => {
       await new Promise((resolve, reject) => {
         execFile('ffmpeg', [
           '-hide_banner', '-loglevel', 'error', '-threads', '1',
-          '-i', srcTmp, '-vf', `ass=${assTmp}`,
+          '-i', srcTmp, '-vf', reel ? `${REEL_VF},ass=${assTmp}` : `ass=${assTmp}`,
           '-c:v', 'libx264', '-preset', 'faster', '-crf', '20', '-pix_fmt', 'yuv420p',
           '-x264-params', 'bframes=0:ref=1:rc-lookahead=10:sync-lookahead=0',
           '-c:a', 'copy', '-movflags', '+faststart', '-y', outTmp,
@@ -1117,7 +1122,7 @@ app.post('/render-cta', async (req, res) => {
     if (!fs.existsSync(outTmp)) throw new Error('render produced no file')
     const key = `${userId || 'ingest'}/cta-${Date.now()}.mp4`
     await uploadToSupabase(key, outTmp)
-    return res.json({ url: publicUrl(key) })
+    return res.json({ url: publicUrl(key), frame: reel ? 'reel' : null })
   } catch (e) {
     console.error('[render-cta] failed', e && e.message)
     return res.status(502).json({ error: String((e && e.message) || e).slice(0, 300) })

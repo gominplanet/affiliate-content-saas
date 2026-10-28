@@ -84,6 +84,11 @@ const nextConfig: NextConfig = {
       './node_modules/@fontsource/**/files/*.woff',
       './lib/fonts/*.ttf',
     ],
+    // The overlay burner draws its captions in Arimo (lib/overlay-burn), so
+    // every route that burns one ships the font file with it.
+    '/api/instagram/burn': ['./node_modules/@fontsource/arimo/files/*.woff'],
+    '/api/cron/process-burn-jobs': ['./node_modules/@fontsource/arimo/files/*.woff'],
+    '/api/blog/instagram-post': ['./node_modules/@fontsource/arimo/files/*.woff'],
   },
   // Tree-shake big barrel packages (lucide-react is imported in ~38 files);
   // only the icons actually used get bundled. Near-zero risk, big bundle win.
