@@ -132,7 +132,7 @@ export async function burnRequest(spec: BurnSpec, save: SaveCaption, userId: str
       if (aspect) spot = topLeftFor(spec.position, widthPct * FRAME_W, widthPct * FRAME_W * aspect)
     }
     return {
-      text: '', style: 'lowerthird', ...timing, frame: 'reel', stickerUrl: spec.stickerUrl, widthPct,
+      text: '', style: 'lowerthird', ...timing, frame: 'reel', kind: 'burn', stickerUrl: spec.stickerUrl, widthPct,
       ...(spot ? spot : { position: spec.position || 'lower-left' }),
     }
   }
@@ -144,7 +144,7 @@ export async function burnRequest(spec: BurnSpec, save: SaveCaption, userId: str
   const url = await save(drawn.png, key)
   if (!url) return { error: 'the caption image could not be saved' }
   return {
-    text: '', style: 'lowerthird', ...timing, frame: 'reel', stickerUrl: url,
+    text: '', style: 'lowerthird', ...timing, frame: 'reel', kind: 'burn', stickerUrl: url,
     widthPct: drawn.width / FRAME_W,
     ...(free ?? topLeftFor(spec.position, drawn.width, drawn.height)),
   }

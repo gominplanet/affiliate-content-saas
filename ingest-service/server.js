@@ -1060,6 +1060,9 @@ app.post('/render-cta', async (req, res) => {
   // cropped), as Cloudinary's burner did, so an overlay lands where the
   // Clip Factory preview showed it and every Reel has the same frame.
   const reel = req.body?.frame === 'reel'
+  // kind 'burn': an overlay burn, saved as burned-*.mp4 so MVP's 30 day
+  // clean-up (purge-burned-videos) can tell it from Liftoff and YouTube CTAs.
+  const prefix = req.body?.kind === 'burn' ? 'burned' : 'cta'
   const REEL_VF = 'scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1'
   if (!/^https?:\/\//i.test(url)) return res.status(400).json({ error: 'bad source' })
   const sticker = /^https?:\/\//i.test(stickerUrl)
@@ -1120,7 +1123,7 @@ app.post('/render-cta', async (req, res) => {
       })
     }
     if (!fs.existsSync(outTmp)) throw new Error('render produced no file')
-    const key = `${userId || 'ingest'}/cta-${Date.now()}.mp4`
+    const key = `${userId || 'ingest'}/${prefix}-${Date.now()}.mp4`
     await uploadToSupabase(key, outTmp)
     return res.json({ url: publicUrl(key), frame: reel ? 'reel' : null })
   } catch (e) {

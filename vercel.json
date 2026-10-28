@@ -81,6 +81,10 @@
       "schedule": "0 3 * * *"
     },
     {
+      "path": "/api/cron/purge-burned-videos",
+      "schedule": "41 9 * * *"
+    },
+    {
       "path": "/api/cron/liftoff-cleanup",
       "schedule": "41 * * * *"
     },

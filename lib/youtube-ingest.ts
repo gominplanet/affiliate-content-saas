@@ -518,6 +518,9 @@ export interface CtaSpec {
   /** 'reel': make the video 1080x1920 first (fill, centre crop), as
    *  Cloudinary's burner did. Placement fractions are then of that frame. */
   frame?: 'reel'
+  /** 'burn': an overlay burn, saved as burned-*.mp4 and deleted 30 days on
+   *  unless still scheduled (app/api/cron/purge-burned-videos). */
+  kind?: 'burn'
 }
 /** Result of a CTA render. `ok:false` carries a short reason so the caller can
  *  tell the creator WHAT went wrong (service not configured, ingest error,
@@ -548,6 +551,7 @@ export async function renderCta(videoUrl: string, cta: CtaSpec, userId?: string,
         ...(cta.position ? { position: cta.position } : {}),
         ...(Number.isFinite(cta.xPct) && Number.isFinite(cta.yPct) ? { xPct: cta.xPct, yPct: cta.yPct } : {}),
         ...(cta.frame ? { frame: cta.frame } : {}),
+        ...(cta.kind ? { kind: cta.kind } : {}),
         ...(userId ? { userId } : {}),
       }),
       // The caller's budget: a background worker cannot wait longer than it
