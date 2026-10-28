@@ -2,7 +2,8 @@
 //
 // Deal Radar → Instagram STORY. Meta's API can't add a link sticker or a
 // caption to a Story, so we bake a "LINK IN BIO" call-to-action into a 9:16
-// image (Cloudinary) and publish that as a Story. Followers tap the creator's
+// image (drawn by MVP, lib/deal-images; Cloudinary only as a backup since it
+// disabled MVP's account on 2026-10-28) and publish that as a Story. Followers tap the creator's
 // bio link — ideally their Link in Bio page — to shop. Pairs with the Link in
 // Bio feature: Story drives attention, the bio page holds the shoppable grid.
 
@@ -11,6 +12,7 @@ import { maybeDecrypt } from '@/lib/secrets'
 import { encryptIntegrationWrite } from '@/lib/integration-secrets'
 import { publishMedia, refreshLongLivedToken } from '@/services/instagram'
 import { renderStoryImage, cloudinaryConfigured } from '@/services/cloudinary'
+import { storyImageUrl } from '@/lib/deal-images'
 
 export interface StoryResult { ok: boolean; storyId?: string; error?: string }
 
@@ -25,7 +27,6 @@ export async function publishDealStory(opts: {
   const { supabase, userId, deal } = opts
 
   if (!deal.imageUrl) return { ok: false, error: 'This product has no image to build a Story from.' }
-  if (!cloudinaryConfigured()) return { ok: false, error: 'Story images aren’t available right now — please try again later.' }
 
   // Instagram creds — the canonical IG resolution (matches /instagram/publish-
   // burned): social_accounts first (the modern connect flow mirrors the IG
@@ -71,18 +72,20 @@ export async function publishDealStory(opts: {
   const handle = lp?.handle ? `@${lp.handle}` : ((brand?.name as string | undefined) || undefined)
 
   // Compose the 9:16 story image with the baked-in CTA.
-  const storyImage = await renderStoryImage(deal.imageUrl, {
+  const look = {
     headline: opts.headline,
     handle,
     logoUrl: (brand?.logo_url as string | undefined) || undefined,
-  })
-  if (!storyImage) return { ok: false, error: "Couldn't build the Story image — please try again shortly." }
+  }
+  const storyImage = (await storyImageUrl(deal.imageUrl, look))
+    || (cloudinaryConfigured() ? await renderStoryImage(deal.imageUrl, look) : null)
+  if (!storyImage) return { ok: false, error: "Couldn't build the Story image. Please try again shortly." }
 
   try {
     const storyId = await publishMedia({ userId: igUserId, accessToken, mediaType: 'STORIES', imageUrl: storyImage })
     return { ok: true, storyId }
   } catch (err) {
     console.error('[deal-story-publish] IG publish failed:', err instanceof Error ? err.message : err)
-    return { ok: false, error: 'Instagram couldn’t accept the Story — please try again in a moment.' }
+    return { ok: false, error: 'Instagram couldn’t accept the Story. Please try again in a moment.' }
   }
 }

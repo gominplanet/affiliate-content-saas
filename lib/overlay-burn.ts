@@ -19,9 +19,8 @@
 // reached and Cloudinary still works.
 
 import { createHash } from 'node:crypto'
-import { existsSync, readFileSync } from 'node:fs'
-import path from 'node:path'
 import { renderCta, type RenderCtaResult } from '@/lib/youtube-ingest'
+import { drawTextPill, drawableText } from '@/lib/text-pill'
 
 export type BurnPosition = 'lower-third' | 'bottom' | 'center' | 'top' | 'lower-left' | 'lower-right' | 'upper-left' | 'upper-right'
 export type BurnStyle = 'white-pill' | 'black-pill' | 'yellow-pill' | 'white-shadow'
@@ -79,46 +78,13 @@ export function topLeftFor(pos: BurnPosition | string | null | undefined, w: num
 /** Text the caption face can draw: Latin letters and punctuation. Emoji and
  *  other scripts are dropped, as Cloudinary's Arial layer dropped them. */
 export function drawableCaption(text: string): string {
-  return String(text || '').replace(/[^\x20-\x7E -ÿ]/g, '').replace(/\s{2,}/g, ' ').trim() || 'LINK IN BIO'
-}
-
-let arimo: Buffer | null = null
-function captionFont(): Buffer {
-  if (arimo) return arimo
-  const rel = path.join('@fontsource', 'arimo', 'files', 'arimo-latin-700-normal.woff')
-  for (const p of [path.join(process.cwd(), 'node_modules', rel), path.join(process.cwd(), '..', 'node_modules', rel)]) {
-    if (existsSync(p)) return (arimo = readFileSync(p))
-  }
-  throw new Error('caption font not found (node_modules/@fontsource/arimo)')
+  return drawableText(text) || 'LINK IN BIO'
 }
 
 /** The caption drawn as a transparent PNG at its size on the 1080 frame. */
 export async function drawCaption(text: string, style: BurnStyle | string | null | undefined, fontPx = CAPTION_FONT_PX): Promise<{ png: Buffer; width: number; height: number }> {
-  const [{ default: satori }, { Resvg }, { default: sharp }] = await Promise.all([import('satori'), import('@resvg/resvg-js'), import('sharp')])
   const look = captionLook(style)
-  const tree = {
-    type: 'div',
-    props: {
-      style: { display: 'flex', width: '100%', height: '100%', alignItems: 'flex-start', justifyContent: 'flex-start', padding: 24 },
-      children: {
-        type: 'div',
-        props: {
-          style: {
-            display: 'flex', maxWidth: FRAME_W - 120, textAlign: 'center', justifyContent: 'center',
-            fontFamily: 'Arimo', fontWeight: 700, fontSize: fontPx, lineHeight: 1.15, color: look.color,
-            ...(look.background ? { backgroundColor: look.background, borderRadius: look.radius, padding: `${Math.round(fontPx * 0.18)}px ${Math.round(fontPx * 0.4)}px` } : {}),
-            ...(look.shadow ? { textShadow: '0px 4px 10px rgba(0,0,0,0.85)' } : {}),
-          },
-          children: drawableCaption(text),
-        },
-      },
-    },
-  }
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const svg = await satori(tree as any, { width: FRAME_W, height: 900, fonts: [{ name: 'Arimo', data: captionFont(), weight: 700, style: 'normal' }] })
-  const raw = new Resvg(svg, { fitTo: { mode: 'width', value: FRAME_W }, background: 'rgba(0,0,0,0)' }).render().asPng()
-  const { data, info } = await sharp(raw).trim().png().toBuffer({ resolveWithObject: true })
-  return { png: data, width: info.width, height: info.height }
+  return drawTextPill(drawableCaption(text), { fontPx, color: look.color, background: look.background, radius: look.radius, shadow: look.shadow, maxWidth: FRAME_W - 120 })
 }
 
 /** A sticker's height over its width, read from the image itself. */

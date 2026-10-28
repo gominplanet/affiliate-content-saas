@@ -62,9 +62,7 @@ async function run() {
 
   // Every burn screen burns there first, with the font shipped.
   const NC = read('next.config.ts')
-  for (const r of ['/api/instagram/burn', '/api/cron/process-burn-jobs', '/api/blog/instagram-post']) {
-    check(`${r} ships the caption font`, NC.includes(`'${r}': ['./node_modules/@fontsource/arimo/files/*.woff']`))
-  }
+  check('every API route ships the caption font', NC.includes(`'/api/**': ['./node_modules/@fontsource/arimo/files/*.woff']`))
   check('the Instagram Burner runs without Cloudinary', /if \(!ingestConfigured\(\) && !cloudinaryConfigured\(\)\)/.test(read('app/api/instagram/burn/route.ts')))
   const PIN = read('app/api/pinterest/video-pin/route.ts')
   check('a Pinterest video pin takes its cover from the render server before Cloudinary', /coverImageUrl = \(await videoFrameUrl\(videoUrl, 0\.5, user\.id\)\) \|\| ''/.test(PIN) && PIN.indexOf('videoFrameUrl(videoUrl') < PIN.indexOf('remoteVideoPosterUrl(videoUrl)'))

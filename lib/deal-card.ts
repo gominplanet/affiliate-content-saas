@@ -7,9 +7,14 @@
 // a promoted deal, not a catalog photo. Cheap (a Cloudinary transform, no AI),
 // so it's safe on every post including scheduled bulk blasts.
 //
-// Best-effort: returns null when Cloudinary isn't configured or the render
-// fails, and the caller falls back to the raw product photo.
+// Best-effort: returns null when the card cannot be drawn, and the caller
+// falls back to the raw product photo.
+//
+// DRAWN BY MVP, NOT CLOUDINARY (Seb, 2026-10-28: Cloudinary disabled MVP's
+// account). lib/deal-images draws the same card; Cloudinary is only tried
+// when that fails and Cloudinary still works.
 import { renderDealCard, cloudinaryConfigured } from '@/services/cloudinary'
+import { dealCardUrl } from '@/lib/deal-images'
 
 /** A qualitative deal hook — never a specific % or price, because the post is
  *  evergreen and the number changes (same rule the deal caption follows). */
@@ -44,7 +49,7 @@ export async function buildDealCardImage(
     headline?: string | null
   } = {},
 ): Promise<string | null> {
-  if (!imageUrl || !cloudinaryConfigured()) return null
+  if (!imageUrl) return null
   const headline = (signals.headline || '').trim()
     || dealCardHeadline(signals.dealQuality, signals.lowestLabel, signals.discountPct)
   // Only use the lowest-price label as a supporting line — a short, evergreen
@@ -53,10 +58,13 @@ export async function buildDealCardImage(
   // drifts after posting, so a bare digit or % in the subline is disallowed.
   const rawSubline = (signals.lowestLabel || '').trim().slice(0, 40)
   const subline = (rawSubline && !/[\d%$]/.test(rawSubline)) ? rawSubline : undefined
-  return renderDealCard(imageUrl, {
+  const opts = {
     headline,
     subline,
     brandName: signals.brandName || undefined,
     logoUrl: signals.logoUrl || undefined,
-  })
+  }
+  const drawn = await dealCardUrl(imageUrl, opts)
+  if (drawn) return drawn
+  return cloudinaryConfigured() ? renderDealCard(imageUrl, opts) : null
 }
