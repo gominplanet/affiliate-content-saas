@@ -6,6 +6,7 @@ import { alertOps } from '@/lib/ops-alert'
 import { sendMetaEvent, purchaseEventId } from '@/lib/meta-capi'
 import { TIERS, type Tier } from '@/lib/tier'
 import { normalizeEmail, priorFreeWeek, type TrialRow, type RefundRow } from '@/lib/creator-refund'
+import { periodOf } from '@/lib/billing-period-heal'
 
 /**
  * A tier-write failed. Release this event's idempotency claim so Stripe's retry
@@ -329,6 +330,10 @@ export async function POST(request: NextRequest) {
         stripe_customer_id: session.customer,
         stripe_subscription_id: session.subscription,
         subscription_status: week.status,
+        // The billing month too, from the subscription itself, so a missed
+        // or failed subscription event never leaves a paid account counting
+        // the calendar month (Douglas, 2026-10-28; lib/billing-period-heal).
+        ...(week.period ? { subscription_period_start: week.period.start, subscription_period_end: week.period.end } : {}),
       },
       { onConflict: 'user_id' },
     )
@@ -540,15 +545,23 @@ export async function POST(request: NextRequest) {
     const subId = invoice.subscription || invoice.parent?.subscription_details?.subscription || null
     if (subId) {
       let paidTier: Tier | undefined
+      let paidPeriod: ReturnType<typeof periodOf> = null
       try {
         const s = await stripe.subscriptions.retrieve(subId)
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const pid = (s as any)?.items?.data?.[0]?.price?.id as string | undefined
         paidTier = pid ? PRICE_TO_TIER[pid] : undefined
+        // The month this invoice paid for, written with the tier, so every
+        // paid invoice also repairs a period a missed event left blank.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        paidPeriod = periodOf(s as any)
       } catch { /* leave tier as-is on any lookup failure */ }
-      if (paidTier) {
+      if (paidTier || paidPeriod) {
         const { error: tErr } = await admin.from('integrations')
-          .update({ tier: paidTier })
+          .update({
+            ...(paidTier ? { tier: paidTier } : {}),
+            ...(paidPeriod ? { subscription_period_start: paidPeriod.start, subscription_period_end: paidPeriod.end } : {}),
+          })
           .eq('stripe_customer_id', invoice.customer)
           .eq('stripe_subscription_id', subId)
         if (tErr) return releaseAndRetry(admin, event.id, 'invoice.payment_succeeded', tErr)
@@ -575,6 +588,11 @@ export async function POST(request: NextRequest) {
  * lib/creator-refund). Its own write, after the billing fields are saved, so
  * a database without migration 439 still records everything else and the
  * event is never retried over this column.
+ *
+ * THE FIRST START IS KEPT (2026-10-28, Douglas). A member who comes back on a
+ * new subscription is not a new member: writing the new start date would put
+ * a paying member back on quarter allowances for a week. So an earlier date
+ * already on file stays.
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function recordSubscribedAt(admin: any, sub: { start_date?: number | null; created?: number | null }, who: { userId?: string; customer?: unknown }) {
@@ -582,6 +600,10 @@ async function recordSubscribedAt(admin: any, sub: { start_date?: number | null;
   if (secs == null) return
   const at = new Date(secs * 1000).toISOString()
   try {
+    const read = admin.from('integrations').select('subscribed_at')
+    const { data: cur } = who.userId ? await read.eq('user_id', who.userId).maybeSingle() : await read.eq('stripe_customer_id', who.customer).maybeSingle()
+    const had = Date.parse(String((cur as { subscribed_at?: string | null } | null)?.subscribed_at ?? ''))
+    if (Number.isFinite(had) && had <= secs * 1000) return
     const q = admin.from('integrations').update({ subscribed_at: at })
     const { error } = who.userId ? await q.eq('user_id', who.userId) : await q.eq('stripe_customer_id', who.customer)
     if (error && !/subscribed_at/.test(error.message || '')) console.warn('[stripe-webhook] subscribed_at not saved', error.message)
@@ -599,10 +621,12 @@ async function recordSubscribedAt(admin: any, sub: { start_date?: number | null;
  * kept and the team is told once per signup rather than charged on a guess.
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function freeWeekAtSignup(admin: any, stripe: ReturnType<typeof getStripe>, o: { userId: string; subscriptionId: string; customerId: string; email: string | null }): Promise<{ status: string; freeWeek: boolean }> {
+async function freeWeekAtSignup(admin: any, stripe: ReturnType<typeof getStripe>, o: { userId: string; subscriptionId: string; customerId: string; email: string | null }): Promise<{ status: string; freeWeek: boolean; period: ReturnType<typeof periodOf> }> {
   let sub
-  try { sub = await stripe.subscriptions.retrieve(o.subscriptionId) } catch { return { status: 'active', freeWeek: false } }
-  if (sub.status !== 'trialing') return { status: sub.status, freeWeek: false }
+  try { sub = await stripe.subscriptions.retrieve(o.subscriptionId) } catch { return { status: 'active', freeWeek: false, period: null } }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let period = periodOf(sub as any)
+  if (sub.status !== 'trialing') return { status: sub.status, freeWeek: false, period }
   // The card it started on: the subscription's own, else the customer's.
   let card: string | null = null
   try {
@@ -624,13 +648,16 @@ async function freeWeekAtSignup(admin: any, stripe: ReturnType<typeof getStripe>
   }
   if (!matchable) {
     await alertOps('A free week could not be checked', `Signup ${o.userId} kept its free week because creator_trials is missing. Run migration 444 in Supabase so a second free week on the same card or email is charged instead.`)
-    return { status: 'trialing', freeWeek: true }
+    return { status: 'trialing', freeWeek: true, period }
   }
   let status = 'trialing'
   if (reason) {
     try {
       const ended = await stripe.subscriptions.update(sub.id, { trial_end: 'now', proration_behavior: 'none' })
       status = ended.status
+      // Charged now, so the month starts now, not when the free week would have ended.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      period = periodOf(ended as any) ?? period
     } catch (e) {
       // Said, not swallowed: the member keeps a free week they should not have.
       reason = `${reason} Ending the free week failed (${e instanceof Error ? e.message : 'unknown'}), so it was kept.`
@@ -644,7 +671,7 @@ async function freeWeekAtSignup(admin: any, stripe: ReturnType<typeof getStripe>
       free_week: status === 'trialing', reason,
     }, { onConflict: 'user_id' })
   } catch { /* the signup itself is what matters */ }
-  return { status, freeWeek: status === 'trialing' }
+  return { status, freeWeek: status === 'trialing', period }
 }
 
 /**

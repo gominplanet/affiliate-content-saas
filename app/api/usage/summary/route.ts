@@ -30,6 +30,8 @@ import {
 import { SHORTS_MONTHLY_CAP, X_MONTHLY_CAP, PRIMARY_FEATURE, shortsCapFor } from '@/lib/usage-cap'
 import { createServerClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { getStripe } from '@/lib/stripe'
+import { healBillingPeriod, needsPeriodHeal } from '@/lib/billing-period-heal'
 
 export const dynamic = 'force-dynamic'
 
@@ -67,10 +69,21 @@ export async function GET() {
   const plan = TIERS[tier] ?? TIERS.trial
   const lifetime = plan.lifetimeMax !== null // trial = one-time lifetime allowance
 
-  const { startISO, resetLabel } = billingWindow({
-    periodStart: (ig?.subscription_period_start as string | null) ?? null,
-    periodEnd: (ig?.subscription_period_end as string | null) ?? null,
-  })
+  // A paid account with no billing period (or one long ended) gets it back
+  // from Stripe before anything is counted (lib/billing-period-heal), so the
+  // meter and every gate count the month that was actually billed.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const admin = createAdminClient() as any
+  let periodStart = (ig?.subscription_period_start as string | null) ?? null
+  let periodEnd = (ig?.subscription_period_end as string | null) ?? null
+  if (needsPeriodHeal(ig)) {
+    const healed = await Promise.race([
+      (async () => { try { return await healBillingPeriod(admin, getStripe(), { userId: user.id, email: user.email, row: ig }) } catch { return null } })(),
+      new Promise<null>((r) => setTimeout(() => r(null), 4000)),
+    ])
+    if (healed) { periodStart = healed.start; periodEnd = healed.end }
+  }
+  const { startISO, resetLabel } = billingWindow({ periodStart, periodEnd })
   const windowStart = lifetime ? null : startISO
   // Some caps (scripts, newsletter broadcasts, cascade-only schedules) reset on
   // the CALENDAR month, independent of the billing cycle — count those against
@@ -82,8 +95,6 @@ export async function GET() {
   // count is isolated — a failure returns 0 rather than breaking the whole meter.
   // Service role, as checkUsageCap counts: ai_usage has no member read policy
   // (028), so the member's own client saw zero rows and every meter read 0.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const admin = createAdminClient() as any
   const countFeatures = async (features: string[]): Promise<number> => {
     try {
       let q = admin.from('ai_usage').select('id', { count: 'exact', head: true })
