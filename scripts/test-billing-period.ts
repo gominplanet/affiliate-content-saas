@@ -60,6 +60,7 @@ async function run() {
   check('checkout writes the billing month', /\.\.\.\(week\.period \? \{ subscription_period_start: week\.period\.start, subscription_period_end: week\.period\.end \} : \{\}\)/.test(W) && /period = periodOf\(ended as any\) \?\? period/.test(W))
   check('every paid invoice writes the billing month', /paidPeriod = periodOf\(s as any\)/.test(W) && /\.\.\.\(paidPeriod \? \{ subscription_period_start: paidPeriod\.start, subscription_period_end: paidPeriod\.end \} : \{\}\)/.test(W))
   check('a returning member keeps the first start date', /if \(Number\.isFinite\(had\) && had <= secs \* 1000\) return/.test(W))
+  check('checkout records the start date too, as Stripe may never send subscription.created', /if \(week\.startedAt\) await recordSubscribedAt\(admin, \{ start_date: week\.startedAt \}, \{ userId: user_id \}\)/.test(W))
 
   if (fails.length) { console.error('FAIL billing period:\n  ' + fails.join('\n  ')); process.exit(1) }
   console.log('billing period: ok')

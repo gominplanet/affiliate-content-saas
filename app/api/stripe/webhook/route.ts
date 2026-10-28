@@ -338,6 +338,11 @@ export async function POST(request: NextRequest) {
       { onConflict: 'user_id' },
     )
     if (error) return releaseAndRetry(admin, event.id, 'checkout.session.completed', error)
+    // THE START DATE AT CHECKOUT TOO (Seb, 2026-10-28: Stripe sent MVP no
+    // customer.subscription.created in 30 days, so new members never got
+    // one and their first week ran at full allowances). The first start on
+    // file is kept, as on the subscription events.
+    if (week.startedAt) await recordSubscribedAt(admin, { start_date: week.startedAt }, { userId: user_id })
 
     // ── Meta Purchase (server side) ────────────────────────────────────────
     // Fired AFTER the tier write succeeds, so we never report a sale that
@@ -621,12 +626,13 @@ async function recordSubscribedAt(admin: any, sub: { start_date?: number | null;
  * kept and the team is told once per signup rather than charged on a guess.
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function freeWeekAtSignup(admin: any, stripe: ReturnType<typeof getStripe>, o: { userId: string; subscriptionId: string; customerId: string; email: string | null }): Promise<{ status: string; freeWeek: boolean; period: ReturnType<typeof periodOf> }> {
+async function freeWeekAtSignup(admin: any, stripe: ReturnType<typeof getStripe>, o: { userId: string; subscriptionId: string; customerId: string; email: string | null }): Promise<{ status: string; freeWeek: boolean; period: ReturnType<typeof periodOf>; startedAt: number | null }> {
   let sub
-  try { sub = await stripe.subscriptions.retrieve(o.subscriptionId) } catch { return { status: 'active', freeWeek: false, period: null } }
+  try { sub = await stripe.subscriptions.retrieve(o.subscriptionId) } catch { return { status: 'active', freeWeek: false, period: null, startedAt: null } }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let period = periodOf(sub as any)
-  if (sub.status !== 'trialing') return { status: sub.status, freeWeek: false, period }
+  const startedAt = (typeof sub.start_date === 'number' ? sub.start_date : null) ?? (typeof sub.created === 'number' ? sub.created : null)
+  if (sub.status !== 'trialing') return { status: sub.status, freeWeek: false, period, startedAt }
   // The card it started on: the subscription's own, else the customer's.
   let card: string | null = null
   try {
@@ -648,7 +654,7 @@ async function freeWeekAtSignup(admin: any, stripe: ReturnType<typeof getStripe>
   }
   if (!matchable) {
     await alertOps('A free week could not be checked', `Signup ${o.userId} kept its free week because creator_trials is missing. Run migration 444 in Supabase so a second free week on the same card or email is charged instead.`)
-    return { status: 'trialing', freeWeek: true, period }
+    return { status: 'trialing', freeWeek: true, period, startedAt }
   }
   let status = 'trialing'
   if (reason) {
@@ -671,7 +677,7 @@ async function freeWeekAtSignup(admin: any, stripe: ReturnType<typeof getStripe>
       free_week: status === 'trialing', reason,
     }, { onConflict: 'user_id' })
   } catch { /* the signup itself is what matters */ }
-  return { status, freeWeek: status === 'trialing', period }
+  return { status, freeWeek: status === 'trialing', period, startedAt }
 }
 
 /**
