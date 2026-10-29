@@ -12,6 +12,7 @@ import { Loader2 } from 'lucide-react'
 import { requestTrybeApi } from '@/lib/extension-frame'
 import { readBrandOptions, type BrandOptions } from '@/lib/trybe-submit'
 import { byBrandName, type MyBrand } from '@/lib/trybe-mybrands'
+import { groupProducts, productAudience, worthGrouping, type Audience } from '@/lib/trybe-product-groups'
 
 export interface TrybeChoice {
   brandId: string
@@ -48,6 +49,10 @@ export default function DropTrybePicker({ brands, brandsError, value, onChange }
   const [opts, setOpts] = useState<BrandOptions | null>(null)
   const [optsError, setOptsError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+  // A long product list is grouped, searchable and filterable (Seb,
+  // 2026-10-29: "the list is too messy like this").
+  const [search, setSearch] = useState('')
+  const [audience, setAudience] = useState<Audience | null>(null)
 
   // The brand's programs, angles and products, read when a brand is picked.
   useEffect(() => {
@@ -115,31 +120,67 @@ export default function DropTrybePicker({ brands, brandsError, value, onChange }
               </select>
             </label>
           )}
-          {opts.products.length > 0 && (
-            <fieldset className="flex flex-col gap-1">
-              <legend className="text-[11.5px] font-semibold" style={{ color: 'var(--text-2)' }}>
-                Product{opts.needsProduct ? ' (the brand asks for one)' : ' (optional)'}
-              </legend>
-              <div className="flex flex-wrap gap-1.5 mt-1">
-                {opts.products.map((p) => {
-                  const on = value.productIds.includes(p.id)
-                  return (
-                    <button key={p.id} type="button" aria-pressed={on}
-                      onClick={() => {
-                        const ids = on ? value.productIds.filter((x) => x !== p.id) : [...value.productIds, p.id]
-                        onChange({ ...value, productIds: ids, productNames: opts.products.filter((pp) => ids.includes(pp.id)).map((pp) => pp.name) })
-                      }}
-                      className="inline-flex items-center gap-1.5 rounded-lg border px-2 py-1 text-[12px]"
-                      style={{ borderColor: on ? '#0EA5A4' : 'var(--border)', background: on ? 'rgba(14,165,164,0.10)' : 'transparent', color: 'var(--text)' }}>
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      {p.image && <img src={p.image} alt="" className="w-5 h-5 rounded object-cover" />}
-                      {p.name}
-                    </button>
-                  )
-                })}
-              </div>
-            </fieldset>
-          )}
+          {opts.products.length > 0 && (() => {
+            const toggle = (id: string) => {
+              const on = value.productIds.includes(id)
+              const ids = on ? value.productIds.filter((x) => x !== id) : [...value.productIds, id]
+              onChange({ ...value, productIds: ids, productNames: opts.products.filter((pp) => ids.includes(pp.id)).map((pp) => pp.name) })
+            }
+            const chip = (p: BrandOptions['products'][number]) => {
+              const on = value.productIds.includes(p.id)
+              return (
+                <button key={p.id} type="button" aria-pressed={on} onClick={() => toggle(p.id)}
+                  className="inline-flex items-center gap-1.5 rounded-lg border px-2 py-1 text-[12px]"
+                  style={{ borderColor: on ? '#0EA5A4' : 'var(--border)', background: on ? 'rgba(14,165,164,0.10)' : 'transparent', color: 'var(--text)' }}>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  {p.image && <img src={p.image} alt="" className="w-5 h-5 rounded object-cover" />}
+                  {p.name}
+                </button>
+              )
+            }
+            const grouped = worthGrouping(opts.products)
+            const audiences = Array.from(new Set(opts.products.map((p) => productAudience(p.name)).filter(Boolean))) as Audience[]
+            const q = search.trim().toLowerCase()
+            const shown = opts.products.filter((p) => (!q || p.name.toLowerCase().includes(q)) && (!audience || [audience, 'Unisex', null].includes(productAudience(p.name))))
+            const picked = opts.products.filter((p) => value.productIds.includes(p.id))
+            return (
+              <fieldset className="flex flex-col gap-1">
+                <legend className="text-[11.5px] font-semibold" style={{ color: 'var(--text-2)' }}>
+                  Product{opts.needsProduct ? ' (the brand asks for one)' : ' (optional)'}
+                </legend>
+                {!grouped ? (
+                  <div className="flex flex-wrap gap-1.5 mt-1">{opts.products.map(chip)}</div>
+                ) : (
+                  <div className="flex flex-col gap-2 mt-1">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <input className={`${field} max-w-[260px]`} style={fieldStyle} placeholder={`Search ${opts.products.length} products`} value={search} onChange={(e) => setSearch(e.target.value)} />
+                      {audiences.length > 1 && ([null, ...audiences.filter((a) => a !== 'Unisex')] as (Audience | null)[]).map((a) => (
+                        <button key={a ?? 'all'} type="button" onClick={() => setAudience(a)} className="rounded-full border px-2.5 py-1 text-[11.5px]"
+                          style={{ borderColor: audience === a ? '#0EA5A4' : 'var(--border)', background: audience === a ? 'rgba(14,165,164,0.10)' : 'transparent', color: 'var(--text)' }}>
+                          {a ?? 'All'}
+                        </button>
+                      ))}
+                    </div>
+                    {picked.length > 0 && (
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <span className="text-[11.5px] font-semibold" style={{ color: 'var(--text-2)' }}>Picked:</span>
+                        {picked.map(chip)}
+                      </div>
+                    )}
+                    {shown.length === 0 && <p className="text-[12px]" style={{ color: 'var(--text-2)' }}>No product matches that.</p>}
+                    {groupProducts(shown).map((g) => (
+                      <details key={g.group} open={!!q || !!audience || g.items.some((p) => value.productIds.includes(p.id))} className="rounded-lg border px-2 py-1.5" style={{ borderColor: 'var(--border)' }}>
+                        <summary className="cursor-pointer text-[12px] font-semibold" style={{ color: 'var(--text)' }}>
+                          {g.group} <span className="font-normal" style={{ color: 'var(--text-2)' }}>({g.items.length})</span>
+                        </summary>
+                        <div className="flex flex-wrap gap-1.5 mt-1.5">{g.items.map(chip)}</div>
+                      </details>
+                    ))}
+                  </div>
+                )}
+              </fieldset>
+            )
+          })()}
           <label className="flex items-start gap-2 text-[12px]" style={{ color: 'var(--text)' }}>
             <input type="checkbox" className="mt-0.5" checked={value.exclusive} onChange={(e) => onChange({ ...value, exclusive: e.target.checked })} />
             <span>Only on TRYBE. Tick this only if you will not post this video anywhere else: TRYBE tells the brand it is theirs alone.</span>
