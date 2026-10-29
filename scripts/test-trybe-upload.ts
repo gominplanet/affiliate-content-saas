@@ -23,7 +23,7 @@ check('the component exists', existsSync('components/labs/TrybeUpload.tsx'))
 check('Upload videos is a tab in Create, beside Make videos',
   /\{ id: 'upload', label: 'Upload videos', icon: UploadCloud, group: 'create'/.test(O))
 check('the tab is a real tab, not a label with nothing behind it',
-  /type Tab = [^\n]*'upload'/.test(O) && /\{tab === 'upload' && <TrybeUpload \/>\}/.test(O))
+  /type Tab = [^\n]*'upload'/.test(O) && /\{tab === 'upload' && <TrybeUpload[ >]/.test(O))
 check('it sits under Make videos rather than after This week',
   O.indexOf("id: 'upload'") > O.indexOf("id: 'create', label: 'Make videos'")
   && O.indexOf("id: 'upload'") < O.indexOf("id: 'week'"))

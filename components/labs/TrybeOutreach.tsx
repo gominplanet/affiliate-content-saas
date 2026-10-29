@@ -2011,7 +2011,7 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
 
       {tab === 'create' && <TrybeCreate canRead={canMyBrands} isAdmin={isAdmin} onFind={() => setTab('find')} />}
 
-      {tab === 'upload' && <TrybeUpload />}
+      {tab === 'upload' && <TrybeUpload inbox={inbox} canChat={canInbox} onOpenChat={(id) => { setOpenChat(o => ({ id, n: (o?.n ?? 0) + 1 })); setTab('inbox') }} />}
 
       {tab === 'stars' && !lockedTab && (
         <TrybeStarBrands canCount={canPlaybook} cards={isAdmin} scoutVersion={scoutVersion} hasCore={!!core.trim()} onWrite={(ids) => draftPicked(ids)} onOpenQueue={() => setTab('queue')} scoutOpens={scoutOpens} />

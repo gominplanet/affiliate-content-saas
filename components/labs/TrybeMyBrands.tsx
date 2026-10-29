@@ -85,7 +85,7 @@ const VERDICT: Record<Verdict, { label: string; color: string; bg: string }> = {
 
 /** The brand's TRYBE chat by its whole name, never a group (the same rule as
  *  the Sent tab). */
-function chatFor(brand: string, convos: Conversation[]): Conversation | null {
+export function chatFor(brand: string, convos: Conversation[]): Conversation | null {
   const n = (t: string) => t.toLowerCase().replace(/\(dm\)/g, ' ').replace(/[^a-z0-9()]+/g, ' ').replace(/\b(team|official)\b/g, ' ').replace(/\s+/g, ' ').trim()
   const b = n(brand)
   if (b.length < 2) return null

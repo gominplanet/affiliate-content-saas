@@ -35,6 +35,9 @@ import { scoutAtLeast, SCOUT_TRYBE_SUBMIT_MIN_VERSION } from '@/lib/scout-versio
 import { readBrandStats, type MyBrand } from '@/lib/trybe-mybrands'
 import { browserHttp, sendDropToTrybe } from '@/lib/drop-run'
 import DropTrybePicker, { emptyChoice, choiceBlocker, type TrybeChoice } from '@/components/labs/DropTrybePicker'
+import TrybeUploadTell from '@/components/labs/TrybeUploadTell'
+import { chatFor } from '@/components/labs/TrybeMyBrands'
+import type { Conversation } from '@/components/labs/TrybeInbox'
 
 /** How far a video has got. Each value is a different sentence on the card,
  *  so "nothing happened" can never look like "it went". */
@@ -112,7 +115,13 @@ async function tickSubmitted(c: { brandId: string; brandName: string; productNam
   }
 }
 
-export default function TrybeUpload() {
+export default function TrybeUpload({ inbox = null, canChat = false, onOpenChat }: {
+  /** The creator's TRYBE chats, read by the TRYBE page, for telling a brand
+   *  about the videos just sent (TrybeUploadTell). */
+  inbox?: { convos: Conversation[]; me: string[]; myName: string } | null
+  canChat?: boolean
+  onOpenChat?: (chatId: string) => void
+} = {}) {
   const supabase = createBrowserClient()
   const [vids, setVids] = useState<Vid[]>([])
   const vidsRef = useRef<Vid[]>([])
@@ -410,6 +419,23 @@ export default function TrybeUpload() {
           </div>
         )
       })}
+
+      {/* TELL THE BRAND (Seb, 2026-10-29): one box per brand with videos now
+          in its review, one message for all of them, sent only by a tap. */}
+      {(() => {
+        const sentTo = new Map<string, { brandName: string; videos: { products: string[] }[] }>()
+        for (const v of vids) {
+          if (v.stage !== 'in_review' || !v.choice.brandId) continue
+          const g = sentTo.get(v.choice.brandId) ?? { brandName: v.choice.brandName, videos: [] }
+          g.videos.push({ products: v.choice.productNames ?? [] })
+          sentTo.set(v.choice.brandId, g)
+        }
+        return [...sentTo].map(([brandId, g]) => (
+          <TrybeUploadTell key={brandId} brandId={brandId} brandName={g.brandName} videos={g.videos}
+            chat={inbox ? chatFor(g.brandName, inbox.convos) : null} chatsRead={!!inbox} canChat={canChat}
+            me={inbox?.me ?? []} myName={inbox?.myName ?? ''} onOpenChat={onOpenChat} />
+        ))
+      })()}
     </div>
   )
 }
