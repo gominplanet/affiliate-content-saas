@@ -58,7 +58,7 @@ export function paidLabelWords(why: PaidLabelWhy, detail?: string | null): strin
     case 'off': return 'You turned the label off.'
     case 'not-yet': return 'The label is not open to your account yet.'
     case 'no-facebook': return 'Connect the Facebook Page your Instagram is linked to, and MVP adds the label for you.'
-    case 'no-link': return 'None of the Facebook Pages connected in MVP is linked to this Instagram account. Link them in Instagram (Settings, Accounts Center), then reconnect Facebook in MVP.'
+    case 'no-link': return 'None of the Facebook Pages connected in MVP is linked to this Instagram account. In the Instagram app open Edit profile, then Page, and pick your Facebook Page. If it is already linked to a Page MVP does not have, reconnect Facebook in MVP and tick that Page.'
     case 'reconnect': return 'Reconnect Facebook in MVP and allow Instagram when Facebook asks, so MVP can post through it with the label.'
     case 'refused': return `Instagram turned the label down${detail ? `: ${detail}` : ''}. The post went out without it.`
     case 'unknown-account': return 'MVP could not match this Instagram account to your MVP account.'
