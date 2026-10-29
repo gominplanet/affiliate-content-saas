@@ -482,6 +482,16 @@ function TabQueryWatcher({ onTab }: { onTab: (t: string | null) => void }) {
   return null
 }
 
+/** Which Sent rows a filter chip and the search box keep. Pure. */
+function sentShows(r: { b: { name: string; status: string }; reply: string; rq?: { state: RequestState } | null }, filter: 'all' | 'replied' | 'waiting' | 'accepted' | 'pending' | 'declined', query: string): boolean {
+  const words = query.toLowerCase().split(/\s+/).filter(Boolean)
+  if (words.length && !words.every((w) => r.b.name.toLowerCase().includes(w))) return false
+  if (filter === 'all') return true
+  if (filter === 'accepted' || filter === 'pending' || filter === 'declined') return r.rq?.state === filter
+  if (filter === 'replied') return r.reply === 'replied'
+  return r.reply !== 'replied' && (WENT as string[]).includes(r.b.status)
+}
+
 export default function TrybeOutreach({ preview = false }: { preview?: boolean } = {}) {
   const [brands, setBrands] = useState<Brand[]>([])
   // "Include my results in members' combined numbers" (migration 428).
@@ -556,7 +566,10 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
   const [inboxError, setInboxError] = useState<string | null>(null)
   const [openChat, setOpenChat] = useState<{ id: string; n: number } | null>(null)
   const [editingCore, setEditingCore] = useState(false)
-  const [sentFilter, setSentFilter] = useState<'all' | 'replied' | 'waiting' | 'accepted' | 'declined'>('all')
+  const [sentFilter, setSentFilter] = useState<'all' | 'replied' | 'waiting' | 'accepted' | 'pending' | 'declined'>('all')
+  // SEARCH A BRAND IN SENT (Seb, 2026-10-29: "filter and do searches to
+  // check ... the brands that have said yes or no to partnering").
+  const [sentQuery, setSentQuery] = useState('')
   // THE LIVE LIST (Seb, 2026-10-07): MVP's copy of TRYBE searched as the
   // filters change, no SCOUT and no website fetched.
   const [live, setLive] = useState<{ brands: LiveBrand[]; matched: number; capped: boolean; hiddenMine?: number; payUnknown?: number; payOther?: number
@@ -2696,16 +2709,28 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
               {([
                 ['all', `All (${history.length})`],
                 ...(inbox ? [['replied', `Replied (${repliedCount})`], ['waiting', `No reply yet (${sentRows.filter(r => r.reply !== 'replied' && WENT.includes(r.b.status)).length})`]] : []),
-                ...(requests ? [['accepted', `Accepted (${sentRows.filter(r => r.rq?.state === 'accepted').length})`], ['declined', `Declined (${sentRows.filter(r => r.rq?.state === 'declined').length})`]] : []),
+                ...(requests ? [['accepted', `Said yes (${sentRows.filter(r => r.rq?.state === 'accepted').length})`], ['pending', `Not answered on TRYBE (${sentRows.filter(r => r.rq?.state === 'pending').length})`], ['declined', `Said no or expired (${sentRows.filter(r => r.rq?.state === 'declined').length})`]] : []),
               ] as Array<[typeof sentFilter, string]>).map(([id, label]) => (
                 <button key={id} onClick={() => setSentFilter(id)} className="rounded-full border px-3 py-1 text-[12px] font-semibold"
                   style={sentFilter === id ? { background: PURPLE, borderColor: PURPLE, color: '#fff' } : { borderColor: 'var(--border)' }}>{label}</button>
               ))}
             </div>
           )}
+          {history.length > 0 && (
+            <div className="relative mb-3 max-w-sm">
+              <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2" style={soft} />
+              <input type="search" value={sentQuery} onChange={(e) => setSentQuery(e.target.value)} placeholder="Search a brand you sent to"
+                className="w-full rounded-lg border pl-8 pr-3 py-1.5 text-[12.5px] bg-transparent" style={{ borderColor: 'var(--border)', color: 'var(--text)' }} />
+            </div>
+          )}
           {!history.length && <p className="text-[13px]" style={soft}>Nothing sent yet.</p>}
+          {(() => {
+            const shown = sentRows.filter(r => sentShows(r, sentFilter, sentQuery))
+            if (!history.length || shown.length) return null
+            return <p className="text-[13px]" style={soft}>{sentQuery.trim() ? `No brand you sent to matches “${sentQuery.trim()}”${sentFilter === 'all' ? '' : ' in this list'}.` : 'No brands in this list.'}</p>
+          })()}
           <div className="space-y-2">
-            {sentRows.filter(r => sentFilter === 'all' || (sentFilter === 'accepted' || sentFilter === 'declined' ? r.rq?.state === sentFilter : sentFilter === 'replied' ? r.reply === 'replied' : r.reply !== 'replied' && WENT.includes(r.b.status))).map(({ b, c, reply, lastMine, rq }) => (
+            {sentRows.filter(r => sentShows(r, sentFilter, sentQuery)).map(({ b, c, reply, lastMine, rq }) => (
               <div key={b.brand_id} className="flex items-start gap-3 rounded-xl border p-3" style={{ borderColor: reply === 'replied' ? 'rgba(22,163,74,0.45)' : 'var(--border)' }}>
                 <BrandMark name={b.name} website={b.website} size={36} />
                 <div className="flex-1 min-w-0">

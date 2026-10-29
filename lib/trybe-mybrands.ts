@@ -122,6 +122,9 @@ export interface Submission {
   decidedAt?: number | null
   product: string | null
   thumbnail: string | null
+  /** What the brand wrote when it rejected it or asked for changes, when
+   *  TRYBE sends it. */
+  reason?: string | null
 }
 
 /** TRYBE's status word, in whichever spelling it uses. "Pending approval"
@@ -157,6 +160,7 @@ export function readSubmissions(json: unknown): Submission[] {
     const rawStatus = str(pick(raw, ['status', 'submissionStatus', 'reviewStatus', 'approvalStatus', 'state']))
     const product = isObj(raw.product) ? raw.product : null
     const meta = isObj(raw.metadata) ? raw.metadata : null
+    const review = isObj(raw.review) ? raw.review : null
     out.push({
       id,
       status: subStatus(rawStatus),
@@ -169,6 +173,10 @@ export function readSubmissions(json: unknown): Submission[] {
         : null,
       product: str(product?.title ?? product?.name ?? raw.productName ?? raw.product_name ?? raw.productTitle) || null,
       thumbnail: str(raw.thumbnailUrl ?? raw.thumbnail_url ?? meta?.thumbnailUrl ?? raw.thumbnail) || null,
+      // Only on a video the brand did not approve: its feedback is the why.
+      reason: subStatus(rawStatus) === 'approved' ? null
+        : str(pick(raw, ['rejectionReason', 'rejection_reason', 'revisionReason', 'revisionNotes', 'revision_notes', 'reviewFeedback', 'review_feedback', 'brandFeedback', 'feedback', 'reviewNotes', 'reviewNote', 'declineReason', 'statusReason'])
+          ?? review?.feedback ?? review?.reason ?? review?.notes ?? review?.comment).slice(0, 600) || null,
     })
   }
   return out

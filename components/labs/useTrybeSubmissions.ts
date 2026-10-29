@@ -16,9 +16,10 @@
 // Which one the numbers came from is kept, and an admin sees it with the
 // keys TRYBE sent, so a wrong count can be traced instead of guessed at.
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { requestTrybeApi } from '@/lib/extension-frame'
-import { readBrandStats, readSubmissions, keysOf, type MyBrand } from '@/lib/trybe-mybrands'
+import { readBrandStats, readSubmissions, keysOf, type MyBrand, type Submission } from '@/lib/trybe-mybrands'
+import { listedOf, type ListedSub } from '@/lib/trybe-sub-list'
 import { countSubmissions, readSubmissionTotals, brandCounts, addCounts, NO_COUNTS, type SubmissionCounts } from '@/lib/trybe-analytics'
 import { PERIOD_DAYS, type AdPeriod } from '@/lib/trybe-ads'
 
@@ -52,12 +53,27 @@ const words = (error?: string, status?: number) =>
   status === 401 || status === 403 ? 'TRYBE says you are signed out. Sign in to TRYBE in this browser, then press Read again.'
     : `MVP could not read your submissions from TRYBE just now${error ? ` (${error}${status ? `, TRYBE answered ${status}` : ''})` : ''}.`
 
-async function listCounts(id: string, period: AdPeriod): Promise<SubmissionCounts | null> {
+// A brand's own list, kept for this visit, so the counts and the videos
+// list (useTrybeSubList) read it once between them.
+const lists = new Map<string, { subs: Submission[]; at: number }>()
+
+async function listOf(id: string, period: AdPeriod, fresh = false): Promise<Submission[] | null> {
+  const key = `${period}:${id}`
+  const kept = lists.get(key)
+  if (!fresh && kept && Date.now() - kept.at < TTL) return kept.subs
   const base = `/backend/api/creator/v2/brands/${encodeURIComponent(id)}/submissions?page=1&limit=100`
   let r = await requestTrybeApi('GET', `${base}&period=${period}`)
   // A period TRYBE does not take here: everything, counted by date.
   if (!r.ok && (r.status === 400 || r.status === 422)) r = await requestTrybeApi('GET', `${base}&period=all`)
-  return r.ok ? countSubmissions(readSubmissions(r.json), PERIOD_DAYS[period]) : null
+  if (!r.ok) return null
+  const subs = readSubmissions(r.json)
+  lists.set(key, { subs, at: Date.now() })
+  return subs
+}
+
+async function listCounts(id: string, period: AdPeriod, fresh = false): Promise<SubmissionCounts | null> {
+  const subs = await listOf(id, period, fresh)
+  return subs ? countSubmissions(subs, PERIOD_DAYS[period]) : null
 }
 
 /** A brand's totals say which row each submission is in. */
@@ -95,7 +111,7 @@ export async function readSubs(period: AdPeriod, fresh = false): Promise<{ read:
   const toList = unsettled.slice(0, MAX_LISTS)
   for (let i = 0; i < toList.length; i += 4) {
     const part = await Promise.all(toList.slice(i, i + 4).map(async (b) => {
-      const c = await listCounts(b.id, period).catch(() => null)
+      const c = await listCounts(b.id, period, fresh).catch(() => null)
       const fallback = listed ? null : brandCounts(b)
       return { id: b.id, name: b.name, logo: b.logo, read: c != null || fallback != null, counts: c ?? fallback ?? { ...NO_COUNTS }, earned: listed ? null : b.earnings ?? null }
     }))
@@ -137,4 +153,49 @@ export function useTrybeSubmissions(canRead: boolean, period: AdPeriod) {
   }, [canRead, period])
   useEffect(() => { setRead(cache.get(period) ?? null); void load(false) }, [load, period])
   return { read, error, loading, reload: () => void load(true) }
+}
+
+/** Brands whose videos the list reads, the busiest first. */
+export const MAX_LIST_BRANDS = 40
+
+export interface SubList {
+  list: ListedSub[]
+  /** Brands read so far, out of `of`. */
+  done: number
+  of: number
+  /** Brands whose list TRYBE did not give. */
+  failed: string[]
+  /** Brands past MAX_LIST_BRANDS, not read. */
+  skipped: number
+  loading: boolean
+}
+
+/** YOUR VIDEOS, LISTED (Seb, 2026-10-29: "filter and do searches to check for
+ *  pending submissions, rejected ones"). Read only once the list is opened:
+ *  each brand with a submission in the period (or whose counts could not be
+ *  read), four at a time, from the same lists the counts use. */
+export function useTrybeSubList(read: SubsRead | null, open: boolean) {
+  const [state, setState] = useState<SubList | null>(null)
+  const run = useRef(0)
+  const load = useCallback(async (fresh: boolean) => {
+    if (!read) return
+    const mine = ++run.current
+    const want = read.brands.filter((b) => b.counts.total > 0 || !b.read).sort((x, y) => y.counts.total - x.counts.total)
+    const go = want.slice(0, MAX_LIST_BRANDS)
+    const skipped = want.length - go.length
+    const list: ListedSub[] = []
+    const failed: string[] = []
+    setState({ list: [], done: 0, of: go.length, failed: [], skipped, loading: go.length > 0 })
+    for (let i = 0; i < go.length; i += 4) {
+      const part = await Promise.all(go.slice(i, i + 4).map(async (b) => ({ b, subs: await listOf(b.id, read.period, fresh).catch(() => null) })))
+      if (mine !== run.current) return
+      for (const { b, subs } of part) {
+        if (subs) list.push(...listedOf(b, subs, PERIOD_DAYS[read.period]))
+        else failed.push(b.name)
+      }
+      setState({ list: [...list], done: Math.min(i + 4, go.length), of: go.length, failed: [...failed], skipped, loading: i + 4 < go.length })
+    }
+  }, [read])
+  useEffect(() => { if (open && read) void load(false) }, [open, read, load])
+  return { state, reload: () => void load(true) }
 }

@@ -16,11 +16,18 @@
 // Total submissions (approved, pending, revision, rejected, approval rate),
 // then the same tiles under TRYBE's names, then the top earning videos. One
 // brand's ad numbers are added up from its own videos, and say so.
+//
+// THE VIDEOS BEHIND THE COUNTS (Seb, 2026-10-29: "is there a way we can
+// filter and do searches to check for pending submissions, rejected ones").
+// Tapping Approved, Pending, Revision or Rejected, or searching, lists those
+// videos (components/labs/TrybeSubList), for All or the brand picked.
 
 import { useMemo, useState } from 'react'
-import { Loader2, RotateCcw, TrendingUp, TrendingDown, Minus, Megaphone, PlayCircle, AlertTriangle } from 'lucide-react'
+import { Loader2, RotateCcw, TrendingUp, TrendingDown, Minus, Megaphone, PlayCircle, AlertTriangle, Search } from 'lucide-react'
 import { useTrybeAds } from '@/components/labs/useTrybeAds'
-import { useTrybeSubmissions } from '@/components/labs/useTrybeSubmissions'
+import { useTrybeSubmissions, useTrybeSubList } from '@/components/labs/useTrybeSubmissions'
+import TrybeSubList from '@/components/labs/TrybeSubList'
+import type { SubFilter } from '@/lib/trybe-sub-list'
 import { paceOf, adBrands, adWinners, bestVideos, notRunning, diagnose, remixOf, DIAGNOSIS_WORDS, AD_PERIODS, type AdPeriod, type AdTotals } from '@/lib/trybe-ads'
 import { approvalRateOf, brandAdTotals, sameBrand, NO_COUNTS } from '@/lib/trybe-analytics'
 
@@ -58,6 +65,11 @@ export default function TrybeAds({ canRead, isAdmin, onPlan }: { canRead: boolea
   const [period, setPeriod] = useState<AdPeriod>('7d')
   const { read, week, month, problem, loading, reload, days } = useTrybeAds(canRead, period)
   const subs = useTrybeSubmissions(canRead, period)
+  // The videos list: closed until a count is tapped or a search typed.
+  const [subFilter, setSubFilter] = useState<SubFilter | null>(null)
+  const [subQuery, setSubQuery] = useState('')
+  const listOpen = subFilter !== null || subQuery.trim() !== ''
+  const subList = useTrybeSubList(subs.read, listOpen)
   // ALL OR ONE BRAND, as TRYBE's chips: the brands with a submission or an ad
   // in the period, the busiest first.
   const [brandId, setBrandId] = useState<string | null>(null)
@@ -105,7 +117,7 @@ export default function TrybeAds({ canRead, isAdmin, onPlan }: { canRead: boolea
               style={period === p ? { background: PURPLE, color: '#fff' } : { color: 'var(--text-2)' }}>{PERIOD_LABEL[p]}</button>
           ))}
         </div>
-        <button onClick={() => { reload(); subs.reload() }} disabled={loading || subs.loading} className="text-[12px] font-semibold inline-flex items-center gap-1 underline disabled:opacity-50" style={{ color: PURPLE }}>
+        <button onClick={() => { reload(); subs.reload(); if (listOpen) subList.reload() }} disabled={loading || subs.loading} className="text-[12px] font-semibold inline-flex items-center gap-1 underline disabled:opacity-50" style={{ color: PURPLE }}>
           {loading || subs.loading ? <Loader2 size={12} className="animate-spin" /> : <RotateCcw size={12} />} Read again
         </button>
       </div>
@@ -139,9 +151,12 @@ export default function TrybeAds({ canRead, isAdmin, onPlan }: { canRead: boolea
           {subs.read && !oneUnread && (
             <ul className="flex flex-wrap gap-x-5 gap-y-1">
               {SUB_ROWS.map((r) => (
-                <li key={r.key} className="inline-flex items-center gap-1.5 text-[12.5px]">
-                  <span className="w-1 h-4 rounded-full" style={{ background: r.color }} />
-                  <b className="tabular-nums">{counts[r.key]}</b><span style={soft}>{r.label}</span>
+                <li key={r.key}>
+                  <button type="button" onClick={() => setSubFilter(subFilter === r.key ? null : r.key)} aria-pressed={subFilter === r.key} title={`See your ${r.label.toLowerCase()} videos`}
+                    className="inline-flex items-center gap-1.5 text-[12.5px] rounded-md px-1 -mx-1" style={subFilter === r.key ? { background: 'rgba(124,58,237,0.12)' } : undefined}>
+                    <span className="w-1 h-4 rounded-full" style={{ background: r.color }} />
+                    <b className="tabular-nums">{counts[r.key]}</b><span className="underline decoration-dotted underline-offset-2" style={soft}>{r.label}</span>
+                  </button>
                 </li>
               ))}
               {counts.other > 0 && <li className="text-[12px]" style={soft}>{counts.other} with a status MVP could not place</li>}
@@ -155,10 +170,25 @@ export default function TrybeAds({ canRead, isAdmin, onPlan }: { canRead: boolea
         {subs.read && subs.read.notRead > 0 && (
           <p className="text-[12px] mt-1.5" style={{ color: AMBER }}>{subs.read.notRead} brand{subs.read.notRead === 1 ? '' : 's'} could not be read, so these counts may be low. Press Read again.</p>
         )}
+        {subs.read && (
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <div className="relative flex-1 min-w-[12rem] max-w-sm">
+              <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2" style={soft} />
+              <input type="search" value={subQuery} onChange={(e) => setSubQuery(e.target.value)} placeholder="Search your videos: product, brand, or what the brand wrote"
+                className="w-full rounded-lg border pl-8 pr-3 py-1.5 text-[12.5px] bg-transparent" style={{ borderColor: 'var(--border)', color: 'var(--text)' }} />
+            </div>
+            {!listOpen && <button type="button" onClick={() => setSubFilter('all')} className="text-[12px] font-semibold underline" style={{ color: PURPLE }}>See all your videos</button>}
+          </div>
+        )}
         {isAdmin && subs.read && (
           <p className="text-[11px] mt-1.5" style={soft}>Counted from {subs.read.source === 'analytics' ? 'TRYBE\u2019s analytics totals' : subs.read.source === 'brand totals' ? 'your brand totals for the period' : 'each brand\u2019s submissions list'}. What TRYBE sent: {subs.read.keys}</p>
         )}
       </div>
+
+      {listOpen && (
+        <TrybeSubList state={subList.state} filter={subFilter ?? 'all'} setFilter={setSubFilter} query={subQuery}
+          brandId={brand?.id ?? null} brandName={brand?.name ?? null} days={days} onClose={() => { setSubFilter(null); setSubQuery('') }} />
+      )}
 
       {problem && (
         <p className="text-[12px] mb-3 flex items-start gap-1.5" style={{ color: problem.kind === 'old' ? AMBER : RED }}>
