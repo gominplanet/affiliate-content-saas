@@ -65,7 +65,7 @@ type Route = { igId: string; token: string; pageName: string | null }
 type Found = { route: Route; why?: undefined } | { route?: undefined; why: PaidLabelWhy; detail?: string }
 type Owner = { rowId: string | null; userId: string; extra: Record<string, unknown> }
 
-const routes = new Map<string, { at: number; found: Found }>()
+const routes = new Map<string, { at: number; found: Found; checked: string[] }>()
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Sb = any
@@ -125,7 +125,7 @@ export function isPermissionError(body: unknown): boolean {
 }
 
 /** Which way this account's posts can carry the label, or why not. */
-export async function findPaidLabelRoute(igUserId: string, igToken: string): Promise<Found & { owner?: Owner | null }> {
+export async function findPaidLabelRoute(igUserId: string, igToken: string): Promise<Found & { owner?: Owner | null; checked?: string[] }> {
   const sb = await admin()
   const owner = await ownerOf(sb, igUserId)
   if (!owner) return { why: 'unknown-account', owner }
@@ -148,32 +148,39 @@ export async function findPaidLabelRoute(igUserId: string, igToken: string): Pro
   const { createHash } = await import('node:crypto')
   const key = `${igUserId}|${createHash('sha1').update([...pages].map(([p, tk]) => `${p}:${tk}`).sort().join(',')).digest('hex')}`
   const cached = routes.get(key)
-  if (cached && Date.now() - cached.at < ROUTE_TTL_MS) return { ...cached.found, owner }
+  if (cached && Date.now() - cached.at < ROUTE_TTL_MS) return { ...cached.found, owner, checked: cached.checked }
 
+  // WHAT MVP CHECKED, kept with the answer: the card shows it to the team, so
+  // "not linked" can be read against what Facebook actually said.
+  const checked: string[] = []
   let found: Found
   if (!pages.size) found = { why: 'no-facebook' }
   else {
     const proId = await professionalId(igToken)
+    checked.push(proId ? `This Instagram account's id is ${proId}.` : 'Instagram did not give this account\'s id, so no Page can be matched to it.')
+    const scopes = await grantedScopes(pages.values().next().value as string)
+    checked.push(scopes ? `Your Facebook connection allows: ${scopes.join(', ')}.` : 'Facebook did not say which permissions your connection has.')
     let sawPermission = false
     let match: Route | null = null
     for (const [pageId, token] of pages) {
       try {
         const res = await fetch(`${FB_GRAPH}/${encodeURIComponent(pageId)}?fields=name,instagram_business_account{id,username}&access_token=${encodeURIComponent(token)}`, { signal: AbortSignal.timeout(15_000) })
-        const data = await res.json().catch(() => ({})) as { name?: string; instagram_business_account?: { id?: string } }
-        if (!res.ok) { if (isPermissionError(data)) sawPermission = true; continue }
+        const data = await res.json().catch(() => ({})) as { name?: string; instagram_business_account?: { id?: string; username?: string }; error?: { message?: string } }
+        if (!res.ok) {
+          if (isPermissionError(data)) sawPermission = true
+          checked.push(`Page ${pageId}: Facebook refused (${String(data.error?.message || res.status).slice(0, 160)}).`)
+          continue
+        }
         const linked = String(data.instagram_business_account?.id ?? '')
+        checked.push(`Page "${data.name ?? pageId}": ${linked ? `linked to Instagram ${data.instagram_business_account?.username ? `@${data.instagram_business_account.username}` : ''} (${linked})${linked === proId ? ', this account' : ''}` : 'Facebook shows no Instagram account linked to it'}.`)
         if (linked && proId && linked === proId) { match = { igId: linked, token, pageName: data.name ?? null }; break }
-      } catch { /* the next Page */ }
+      } catch { checked.push(`Page ${pageId}: no answer from Facebook.`) }
     }
-    let missingGrant = sawPermission
-    if (!match && !missingGrant) {
-      const first = pages.values().next().value as string | undefined
-      if (first) missingGrant = lacksInstagramGrant(await grantedScopes(first))
-    }
+    const missingGrant = sawPermission || lacksInstagramGrant(scopes)
     found = match ? { route: match } : missingGrant ? { why: 'reconnect' } : { why: 'no-link' }
   }
-  routes.set(key, { at: Date.now(), found })
-  return { ...found, owner }
+  routes.set(key, { at: Date.now(), found, checked })
+  return { ...found, owner, checked }
 }
 
 /** Keeps what happened to this post on the account, for the settings card. */

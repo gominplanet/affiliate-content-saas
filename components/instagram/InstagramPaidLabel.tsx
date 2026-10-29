@@ -15,6 +15,7 @@ interface Account {
   ready: boolean
   page: string | null
   why: string | null
+  checked?: string[]
   recent: { at: string; on: boolean; kind: string | null; words: string }[]
 }
 interface State { allowed: boolean; enabled?: boolean; accounts?: Account[] }
@@ -90,6 +91,12 @@ export default function InstagramPaidLabel() {
               )}
             </div>
           </div>
+          {(a.checked?.length ?? 0) > 0 && (
+            <details className="text-[11px] pl-6" style={{ color: 'var(--text-faint)' }}>
+              <summary className="cursor-pointer">What MVP checked</summary>
+              <ul className="flex flex-col gap-0.5 mt-1">{a.checked!.map((c, k) => <li key={k}>{c}</li>)}</ul>
+            </details>
+          )}
           {a.recent.length > 0 && (
             <ul className="text-[11px] flex flex-col gap-1 pl-6" style={{ color: 'var(--text-faint)' }}>
               {a.recent.map((r, j) => (

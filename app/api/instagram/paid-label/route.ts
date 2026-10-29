@@ -35,11 +35,12 @@ export async function GET() {
   const enabled = !list.some((r) => r.extra?.paid_label_off === true)
   const accounts = await Promise.all(list.map(async (r) => {
     const token = maybeDecrypt(r.access_token) || ''
-    let ready = false, why: string | null = null, page: string | null = null
+    let ready = false, why: string | null = null, page: string | null = null, checked: string[] = []
     if (!token) why = 'This Instagram account needs reconnecting in MVP.'
     else {
       try {
         const found = await findPaidLabelRoute(r.external_id, token)
+        checked = found.checked ?? []
         if (found.route) { ready = true; page = found.route.pageName }
         else why = paidLabelWords(found.why)
       } catch (e) { why = `MVP could not check this account (${e instanceof Error ? e.message : 'no answer'}).` }
@@ -50,6 +51,7 @@ export async function GET() {
       ready,
       page,
       why,
+      checked,
       recent: log.slice(0, 5).map((e) => ({ at: e.at, on: e.on, kind: e.kind ?? null, words: e.on ? 'Posted with the label' : `Posted without the label. ${paidLabelWords(e.why ?? 'refused', e.detail)}` })),
     }
   }))

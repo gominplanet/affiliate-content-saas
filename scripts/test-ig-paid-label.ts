@@ -22,7 +22,8 @@ async function run() {
   const whys: PaidLabelWhy[] = ['off', 'not-yet', 'no-facebook', 'no-link', 'reconnect', 'refused', 'unknown-account']
   check('every reason is said in words, with no dashes', whys.every((w) => paidLabelWords(w).length > 10 && !/[–—]| - /.test(paidLabelWords(w, 'x'))))
   check('a connection made without Instagram\'s permissions says reconnect, not "not linked"', lacksInstagramGrant(['pages_show_list', 'pages_manage_posts']) && !lacksInstagramGrant(['instagram_basic', 'instagram_content_publish', 'pages_show_list']) && !lacksInstagramGrant(null)
-    && /if \(first\) missingGrant = lacksInstagramGrant\(await grantedScopes\(first\)\)/.test(read('lib/ig-paid-label.ts')))
+    && /const missingGrant = sawPermission \|\| lacksInstagramGrant\(scopes\)/.test(read('lib/ig-paid-label.ts')))
+  check('the card shows what MVP checked: the account id, the connection\'s permissions, each Page\'s linked Instagram', /Your Facebook connection allows: \$\{scopes\.join\(', '\)\}/.test(read('lib/ig-paid-label.ts')) && /Facebook shows no Instagram account linked to it/.test(read('lib/ig-paid-label.ts')) && /What MVP checked/.test(read('components/instagram/InstagramPaidLabel.tsx')))
   check('a missing permission is told from other refusals', isPermissionError({ error: { code: 10 } }) && isPermissionError({ error: { code: 200 } }) && !isPermissionError({ error: { code: 100 } }) && !isPermissionError(null))
 
   // The posting steps, against a fake Instagram.
