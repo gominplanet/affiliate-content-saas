@@ -87,6 +87,8 @@ async function run() {
   check('a labelled post says whether Instagram confirms it, never claims more', /shown === true \? \{ detail: 'Instagram confirms it\.' \}/.test(IG) && /Check the post shows Paid partnership/.test(IG) && /Instagram took the post but says the label is not on/.test(IG))
   check('the direct switch is off now that Instagram showed it ignores it, and an old entry says so', DIRECT_SWITCH_WORKS === false && /direct: DIRECT_SWITCH_WORKS && on &&/.test(read('lib/ig-paid-label.ts'))
     && /ignores the switch on a direct post/.test(entryWords({ on: true, detail: 'Instagram took the switch. Check the post shows Paid partnership.' }) ?? '') && entryWords({ on: true, detail: 'Instagram confirms it.' }) === null)
+  const CARD = read('components/instagram/InstagramPaidLabel.tsx')
+  check('the card says whether it is working, not just whether it is on, with the step as a button', /text: 'Working'/.test(CARD) && /text: 'Not working yet: one step to do'/.test(CARD) && /: not working yet, so the next post goes out without the label\./.test(CARD) && /href="\/api\/auth\/facebook" className="self-start/.test(CARD) && !/'Turn off' : 'Turn on'/.test(CARD))
   check('the Facebook test is gone from the card', !/Run the Facebook label test/.test(read('components/instagram/InstagramPaidLabel.tsx')))
 
   if (fails.length) { console.error('FAIL paid label:\n  ' + fails.join('\n  ')); process.exit(1) }

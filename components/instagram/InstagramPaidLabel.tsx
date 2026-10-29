@@ -46,21 +46,31 @@ export default function InstagramPaidLabel() {
     } finally { setBusy(false) }
   }
 
+  // WORKING OR NOT, SAID FIRST (Seb, 2026-10-29, Alejandro: "I didn't do
+  // anything and it's already enabled", from a card whose account line said
+  // the next post goes out without the label). The setting being on is not
+  // the label working; the badge says which it is.
+  const working = !!state.enabled && accounts.length > 0 && accounts.every((a) => a.ready)
+  const status = !state.enabled ? { text: 'Off', bg: 'var(--border)', fg: 'var(--text-faint)' }
+    : working ? { text: 'Working', bg: 'rgba(52,199,89,0.15)', fg: '#1f8a3b' }
+    : { text: 'Not working yet: one step to do', bg: 'rgba(255,149,0,0.15)', fg: '#a35a00' }
+
   return (
     <div className="rounded-2xl border p-4 flex flex-col gap-3 mt-4" style={{ background: 'var(--surface)', borderColor: 'var(--border)' }}>
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-start gap-2">
           <BadgeCheck size={18} className="mt-0.5 flex-shrink-0" style={{ color: 'var(--text)' }} />
           <div>
-            <div className="text-sm font-semibold" style={{ color: 'var(--text)' }}>Instagram&apos;s Paid partnership label <span className="ml-1 text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded" style={{ background: 'var(--border)', color: 'var(--text-faint)' }}>Labs</span></div>
+            <div className="text-sm font-semibold flex flex-wrap items-center gap-1.5" style={{ color: 'var(--text)' }}>
+              Instagram&apos;s Paid partnership label
+              <span className="text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded" style={{ background: 'var(--border)', color: 'var(--text-faint)' }}>Labs</span>
+              <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full" style={{ background: status.bg, color: status.fg }}>{status.text}</span>
+            </div>
             <p className="text-xs mt-0.5" style={{ color: 'var(--text-faint)' }}>
-              MVP switches the label on when it posts, so you do not add it by hand afterwards. Instagram only allows this through the Facebook Page your Instagram is linked to, connected in MVP. Your #ad and Amazon disclosure stay in the caption either way.
+              When this works, MVP adds the label to your Instagram posts so you do not add it by hand. Instagram only allows it when MVP posts through the Facebook Page your Instagram is linked to. Your #ad and Amazon disclosure stay in the caption either way.
             </p>
           </div>
         </div>
-        <button onClick={toggle} disabled={busy} className="text-xs font-medium px-3 py-1.5 rounded-full border flex-shrink-0" style={{ borderColor: 'var(--border-bright)', color: 'var(--text)' }}>
-          {busy ? <Loader2 size={12} className="animate-spin" /> : state.enabled ? 'Turn off' : 'Turn on'}
-        </button>
       </div>
       {!accounts.length && <p className="text-xs" style={{ color: 'var(--text-faint)' }}>Connect Instagram first.</p>}
       {accounts.map((a, i) => (
@@ -70,13 +80,13 @@ export default function InstagramPaidLabel() {
             <div style={{ color: 'var(--text)' }}>
               <span className="font-medium">@{a.username || 'instagram'}</span>
               {a.ready && state.enabled
-                ? <>: the next post goes out with the label switched on{a.page ? `, posted through ${a.page}` : ''}.</>
-                : <>: the next post goes out without the label. {state.enabled ? a.why : 'You turned the label off.'}</>}
-              {!a.ready && state.enabled && a.why && /Facebook/.test(a.why) && (
-                <a href="/api/auth/facebook" className="ml-1 underline">Reconnect Facebook</a>
-              )}
+                ? <>: working. The next post goes out with the label{a.page ? `, posted through ${a.page}` : ''}.</>
+                : <>: not working yet, so the next post goes out without the label. {state.enabled ? a.why : 'You turned the label off.'}</>}
             </div>
           </div>
+          {!a.ready && state.enabled && a.why && /Facebook/.test(a.why) && (
+            <a href="/api/auth/facebook" className="self-start ml-6 text-xs font-semibold px-3 py-1.5 rounded-full text-white" style={{ background: '#1877f2' }}>Reconnect Facebook</a>
+          )}
           {(a.checked?.length ?? 0) > 0 && (
             <details className="text-[11px] pl-6" style={{ color: 'var(--text-faint)' }}>
               <summary className="cursor-pointer">What MVP checked</summary>
@@ -92,6 +102,9 @@ export default function InstagramPaidLabel() {
           )}
         </div>
       ))}
+      <button onClick={toggle} disabled={busy} className="self-start text-[11px] underline" style={{ color: 'var(--text-faint)' }}>
+        {busy ? <Loader2 size={12} className="animate-spin" /> : state.enabled ? 'Turn the label off' : 'Turn the label on'}
+      </button>
     </div>
   )
 }
