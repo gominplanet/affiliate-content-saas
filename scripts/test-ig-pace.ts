@@ -28,7 +28,7 @@ check('the wait is said in minutes, never as a failure of the post', /can go in 
 
 const IG = read('services/instagram.ts')
 check('every Reel and feed post is held and checked in the one publish helper; Stories are not', /const feed = opts\.mediaType !== 'STORIES'/.test(IG) && /if \(feed\) await claimFeedSlot\(opts\.userId, opts\.accessToken, opts\.caption\)/.test(IG))
-check('the hold is taken before anything is awaited, and let go when nothing went up', /if \(held && now - held < IG_FEED_GAP_MS\) throw new IgTooSoonError\(held, now\)\n  feedSlots\.set\(igUserId, now\)/.test(IG) && /if \(feed\) feedSlots\.delete\(opts\.userId\)/.test(IG))
+check('the hold is taken before anything is awaited, and let go when nothing went up', /if \(held && now - held < IG_FEED_GAP_MS\) throw new IgTooSoonError\(held, now\)\n  feedSlots\.set\(igUserId, now\)/.test(IG) && /if \(feed && !\(e instanceof Error && e\.name === 'PaidLabelUncertainError'\)\) feedSlots\.delete\(opts\.userId\)/.test(IG))
 check('a scheduled Reel and Story are moved together, never split', /if \(e instanceof IgTooSoonError \|\| e instanceof IgRepeatError\) throw e/.test(read('lib/instagram-publish.ts')))
 for (const [f, table] of [['app/api/cron/process-scheduled/route.ts', 'scheduled_posts'], ['app/api/cron/process-amazon-schedules/route.ts', 'amazon_scheduled_posts']] as const) {
   const s = read(f)

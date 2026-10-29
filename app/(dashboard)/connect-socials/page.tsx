@@ -22,6 +22,7 @@ import { Suspense, useEffect, useState } from 'react'
 import { Loader2 } from 'lucide-react'
 import { IntegrationsPanel } from '@/app/(dashboard)/setup/_components'
 import SiteSocialRouting from '@/components/social/SiteSocialRouting'
+import InstagramPaidLabel from '@/components/instagram/InstagramPaidLabel'
 import VaConnections, { type WhoAmI } from '@/components/agency/VaConnections'
 
 function ConnectSocialsInner() {
@@ -60,6 +61,9 @@ function ConnectSocialsInner() {
           on /setup and /brand respectively, not on a Connect Socials
           page. */}
       <IntegrationsPanel onLoad={() => {}} mode="socials" />
+      {/* Instagram's Paid partnership label (Labs: renders nothing for an
+          account it is not open to). */}
+      <InstagramPaidLabel />
       {/* Renders nothing unless the creator has more than one blog AND more
           than one account on a platform, which is the only case where there is
           a routing question to answer. See the component's own header. */}

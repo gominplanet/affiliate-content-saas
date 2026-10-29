@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { metaEnabledForUser } from '@/lib/feature-flags'
 import { startOAuthState, callbackHostRedirect } from '@/lib/oauth-state'
+import { paidLabelAllowed, FB_INSTAGRAM_SCOPES } from '@/lib/ig-paid-label'
 
 export async function GET(request: Request) {
   const appUrl = process.env.NEXT_PUBLIC_APP_URL
@@ -31,9 +32,18 @@ export async function GET(request: Request) {
   // Page to feed webhooks). Env-gated so we only request them once the feature
   // is App-Review-approved — set FB_DM_SCOPES=true, reconnect, set it back false
   // (mirrors the Instagram IG_DM_SCOPES flow). Granted scopes stick on the token.
-  const scope = process.env.FB_DM_SCOPES === 'true'
+  const baseScope = process.env.FB_DM_SCOPES === 'true'
     ? 'pages_show_list,pages_manage_posts,business_management,pages_messaging,pages_read_engagement,pages_manage_metadata'
     : 'pages_show_list,pages_manage_posts,business_management'
+  // THE PAID PARTNERSHIP LABEL (lib/ig-paid-label) posts to Instagram through
+  // the linked Page, which needs Instagram's permissions on this connection.
+  // Asked only of accounts the label is open to (the team while in Labs).
+  let labelScopes: string[] = []
+  if (user) {
+    const { data: tierRow } = await supabase.from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
+    if (paidLabelAllowed(tierRow?.tier as string | null)) labelScopes = [...FB_INSTAGRAM_SCOPES]
+  }
+  const scope = Array.from(new Set([...baseScope.split(','), ...labelScopes])).join(',')
 
   // CSRF protection: a RANDOM, ONE-TIME state (lib/oauth-state) bound to this
   // user in an httpOnly cookie, verified and burned at the callback. Without

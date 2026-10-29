@@ -238,6 +238,33 @@ export async function getMediaCount(opts: { userId: string; accessToken: string 
   }
 }
 
+/** The container's fields, without the token: the same post whichever way
+ *  it goes out (Instagram Login, or Facebook Login for the Paid partnership
+ *  label, lib/ig-paid-label). */
+export type ContainerOpts = Omit<Parameters<typeof createMediaContainer>[0], 'userId' | 'accessToken'>
+export function containerParams(opts: ContainerOpts): URLSearchParams {
+  const body = new URLSearchParams({ media_type: opts.mediaType })
+  if (opts.imageUrl) {
+    body.set('image_url', opts.imageUrl)
+  } else if (opts.videoUrl) {
+    body.set('video_url', opts.videoUrl)
+  } else {
+    throw new Error('createMediaContainer: must provide imageUrl or videoUrl')
+  }
+  if (opts.mediaType === 'REELS') {
+    if (opts.caption) body.set('caption', discloseSocialPost(opts.caption, 'instagram'))
+    if (opts.shareToFeed !== false) body.set('share_to_feed', 'true')
+    // Cover frame chosen in MVP → IG uses this frame as the Reel thumbnail.
+    if (typeof opts.thumbOffsetMs === 'number' && opts.thumbOffsetMs >= 0) {
+      body.set('thumb_offset', String(Math.round(opts.thumbOffsetMs)))
+    }
+  } else if (opts.mediaType === 'IMAGE') {
+    if (opts.caption) body.set('caption', discloseSocialPost(opts.caption, 'instagram'))
+  }
+
+  return body
+}
+
 /**
  * Create a media container for a Reel or Story.
  * Returns the container id which we then have to poll until processing
@@ -264,28 +291,8 @@ export async function createMediaContainer(opts: {
    *  Lets the creator pick the still in MVP instead of fixing it in the IG app. */
   thumbOffsetMs?: number
 }): Promise<string> {
-  const body = new URLSearchParams({
-    media_type: opts.mediaType,
-    access_token: opts.accessToken,
-  })
-  if (opts.imageUrl) {
-    body.set('image_url', opts.imageUrl)
-  } else if (opts.videoUrl) {
-    body.set('video_url', opts.videoUrl)
-  } else {
-    throw new Error('createMediaContainer: must provide imageUrl or videoUrl')
-  }
-  if (opts.mediaType === 'REELS') {
-    if (opts.caption) body.set('caption', discloseSocialPost(opts.caption, 'instagram'))
-    if (opts.shareToFeed !== false) body.set('share_to_feed', 'true')
-    // Cover frame chosen in MVP → IG uses this frame as the Reel thumbnail.
-    if (typeof opts.thumbOffsetMs === 'number' && opts.thumbOffsetMs >= 0) {
-      body.set('thumb_offset', String(Math.round(opts.thumbOffsetMs)))
-    }
-  } else if (opts.mediaType === 'IMAGE') {
-    if (opts.caption) body.set('caption', discloseSocialPost(opts.caption, 'instagram'))
-  }
-
+  const body = containerParams(opts)
+  body.set('access_token', opts.accessToken)
   const res = await fetchWithTimeout(`${GRAPH_BASE}/${GRAPH_VERSION}/${opts.userId}/media`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -406,6 +413,12 @@ export async function publishMedia(opts: {
   const feed = opts.mediaType !== 'STORIES'
   if (feed) await claimFeedSlot(opts.userId, opts.accessToken, opts.caption)
   try {
+    // THE PAID PARTNERSHIP LABEL (lib/ig-paid-label): through the linked
+    // Facebook Page when the account can, else the usual way below, with the
+    // reason kept. It returns null only when nothing was published.
+    const { publishWithPaidLabel } = await import('@/lib/ig-paid-label')
+    const labelled = await publishWithPaidLabel({ userId: opts.userId, accessToken: opts.accessToken, params: containerParams(opts), kind: opts.mediaType })
+    if (labelled) return labelled
     const containerId = await createMediaContainer(opts)
     await waitForContainer({ containerId, accessToken: opts.accessToken })
     return await publishContainer({
@@ -414,8 +427,9 @@ export async function publishMedia(opts: {
       containerId,
     })
   } catch (e) {
-    // Nothing went up: the hold is let go, so a retry is not refused.
-    if (feed) feedSlots.delete(opts.userId)
+    // Nothing went up: the hold is let go, so a retry is not refused. A post
+    // that may be live (lib/ig-paid-label) keeps its hold.
+    if (feed && !(e instanceof Error && e.name === 'PaidLabelUncertainError')) feedSlots.delete(opts.userId)
     throw e
   }
 }

@@ -1,0 +1,239 @@
+// © 2026 Gominplanet / MVP Affiliate — proprietary & confidential.
+//
+// INSTAGRAM'S "PAID PARTNERSHIP" LABEL, ON EVERY POST MVP MAKES (Seb,
+// 2026-10-29, Alejandro: "I'm adding the branded content on all my post
+// manually after MVP post them. Is that something can be toggled ON with
+// MVP?"). Instagram lets an app switch the label on at publish time
+// (is_paid_partnership), but only through the Instagram API with Facebook
+// Login; MVP connects Instagram with Instagram Login, where the setting does
+// not exist.
+//
+// So when the Instagram account is linked to a Facebook Page the member has
+// connected in MVP, the post goes out through that Page's connection with the
+// label on. Everything else about the post is the same (lib containerParams).
+// When it cannot (no Page, no link, a Facebook connection made before MVP
+// asked for Instagram, the member turned it off, Instagram refused the
+// label), the post goes out the usual way, unlabelled, and the reason is kept
+// on the account (social_accounts.extra.paid_label_log) so the settings card
+// says what happened to each post. A post is never lost or sent twice over
+// the label: the usual way is taken only when Instagram refused before
+// anything was published.
+//
+// Labs first: team accounts only until Seb opens it (PAID_LABEL_FOR_MEMBERS).
+
+import { normalizeTier, tierAllowsSocial, type Tier } from '@/lib/tier'
+
+/** Members get the label once this is true; the team has it now. */
+export const PAID_LABEL_FOR_MEMBERS = false
+
+export function paidLabelAllowed(tier: Tier | string | null | undefined): boolean {
+  if (!tier) return false
+  const t = normalizeTier(tier)
+  if (t === 'admin') return true
+  return PAID_LABEL_FOR_MEMBERS && tierAllowsSocial(t, 'instagram')
+}
+
+/** The Facebook permissions posting to Instagram through a Page needs. */
+export const FB_INSTAGRAM_SCOPES = ['instagram_basic', 'instagram_content_publish', 'pages_read_engagement'] as const
+
+export type PaidLabelWhy = 'off' | 'not-yet' | 'no-facebook' | 'no-link' | 'reconnect' | 'refused' | 'unknown-account'
+
+/** What the member reads for each reason the label was not added. Pure. */
+export function paidLabelWords(why: PaidLabelWhy, detail?: string | null): string {
+  switch (why) {
+    case 'off': return 'You turned the label off.'
+    case 'not-yet': return 'The label is not open to your account yet.'
+    case 'no-facebook': return 'Connect the Facebook Page your Instagram is linked to, and MVP adds the label for you.'
+    case 'no-link': return 'None of the Facebook Pages connected in MVP is linked to this Instagram account. Link them in Instagram (Settings, Accounts Center), then reconnect Facebook in MVP.'
+    case 'reconnect': return 'Reconnect Facebook in MVP and allow Instagram when Facebook asks, so MVP can post through it with the label.'
+    case 'refused': return `Instagram turned the label down${detail ? `: ${detail}` : ''}. The post went out without it.`
+    case 'unknown-account': return 'MVP could not match this Instagram account to your MVP account.'
+  }
+}
+
+export type PaidLabelEntry = { at: string; on: boolean; why?: PaidLabelWhy; detail?: string; mediaId?: string; kind?: string }
+/** The newest first, ten kept. Pure. */
+export function withEntry(log: unknown, e: PaidLabelEntry, keep = 10): PaidLabelEntry[] {
+  const prev = Array.isArray(log) ? (log as PaidLabelEntry[]).filter((x) => x && typeof x.at === 'string') : []
+  return [e, ...prev].slice(0, keep)
+}
+
+const FB_GRAPH = 'https://graph.facebook.com/v22.0'
+const ROUTE_TTL_MS = 10 * 60 * 1000
+
+type Route = { igId: string; token: string; pageName: string | null }
+type Found = { route: Route; why?: undefined } | { route?: undefined; why: PaidLabelWhy; detail?: string }
+type Owner = { rowId: string | null; userId: string; extra: Record<string, unknown> }
+
+const routes = new Map<string, { at: number; found: Found }>()
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Sb = any
+
+async function admin(): Promise<Sb> {
+  const { createAdminClient } = await import('@/lib/supabase/admin')
+  return createAdminClient()
+}
+
+/** The MVP account this Instagram account belongs to. */
+async function ownerOf(sb: Sb, igUserId: string): Promise<Owner | null> {
+  const { data: rows } = await sb.from('social_accounts').select('id,user_id,extra').eq('platform', 'instagram').eq('external_id', igUserId).limit(2)
+  const list = (rows ?? []) as { id: string; user_id: string; extra: Record<string, unknown> | null }[]
+  if (list.length === 1) return { rowId: list[0].id, userId: list[0].user_id, extra: list[0].extra ?? {} }
+  if (list.length > 1) return null // two MVP accounts claim it: never guess whose Page to use
+  const { data: legacy } = await sb.from('integrations').select('user_id').eq('instagram_user_id', igUserId).limit(2)
+  const l = (legacy ?? []) as { user_id: string }[]
+  return l.length === 1 ? { rowId: null, userId: l[0].user_id, extra: {} } : null
+}
+
+/** The account's professional id (17841...), which a Page's
+ *  instagram_business_account carries. */
+async function professionalId(igToken: string): Promise<string | null> {
+  try {
+    const res = await fetch(`https://graph.instagram.com/v22.0/me?fields=user_id&access_token=${encodeURIComponent(igToken)}`, { signal: AbortSignal.timeout(15_000) })
+    const data = await res.json().catch(() => ({})) as { user_id?: string | number }
+    const id = String(data?.user_id ?? '').replace(/[^0-9]/g, '')
+    return res.ok && id ? id : null
+  } catch { return null }
+}
+
+/** Facebook said the connection lacks a permission (Graph error 10, 200 to 299). */
+export function isPermissionError(body: unknown): boolean {
+  const e = (body as { error?: { code?: number } } | null)?.error
+  const c = typeof e?.code === 'number' ? e.code : null
+  return c === 10 || (c != null && c >= 200 && c < 300)
+}
+
+/** Which way this account's posts can carry the label, or why not. */
+export async function findPaidLabelRoute(igUserId: string, igToken: string): Promise<Found & { owner?: Owner | null }> {
+  const sb = await admin()
+  const owner = await ownerOf(sb, igUserId)
+  if (!owner) return { why: 'unknown-account', owner }
+  const { data: integ } = await sb.from('integrations').select('tier,facebook_page_id,facebook_page_access_token').eq('user_id', owner.userId).maybeSingle()
+  if (!paidLabelAllowed(integ?.tier)) return { why: 'not-yet', owner }
+  if (owner.extra.paid_label_off === true) return { why: 'off', owner }
+
+  const cached = routes.get(igUserId)
+  if (cached && Date.now() - cached.at < ROUTE_TTL_MS) return { ...cached.found, owner }
+
+  const { maybeDecrypt } = await import('@/lib/secrets')
+  const pages = new Map<string, string>()
+  const { data: fbRows } = await sb.from('social_accounts').select('external_id,access_token').eq('user_id', owner.userId).eq('platform', 'facebook')
+  for (const r of (fbRows ?? []) as { external_id: string; access_token: string | null }[]) {
+    const t = maybeDecrypt(r.access_token)
+    if (r.external_id && t) pages.set(r.external_id, t)
+  }
+  const legacyToken = maybeDecrypt(integ?.facebook_page_access_token)
+  if (integ?.facebook_page_id && legacyToken && !pages.has(integ.facebook_page_id)) pages.set(integ.facebook_page_id, legacyToken)
+
+  let found: Found
+  if (!pages.size) found = { why: 'no-facebook' }
+  else {
+    const proId = await professionalId(igToken)
+    let sawPermission = false
+    let match: Route | null = null
+    for (const [pageId, token] of pages) {
+      try {
+        const res = await fetch(`${FB_GRAPH}/${encodeURIComponent(pageId)}?fields=name,instagram_business_account{id,username}&access_token=${encodeURIComponent(token)}`, { signal: AbortSignal.timeout(15_000) })
+        const data = await res.json().catch(() => ({})) as { name?: string; instagram_business_account?: { id?: string } }
+        if (!res.ok) { if (isPermissionError(data)) sawPermission = true; continue }
+        const linked = String(data.instagram_business_account?.id ?? '')
+        if (linked && proId && linked === proId) { match = { igId: linked, token, pageName: data.name ?? null }; break }
+      } catch { /* the next Page */ }
+    }
+    found = match ? { route: match } : sawPermission ? { why: 'reconnect' } : { why: 'no-link' }
+  }
+  routes.set(igUserId, { at: Date.now(), found })
+  return { ...found, owner }
+}
+
+/** Keeps what happened to this post on the account, for the settings card. */
+async function remember(owner: Owner | null | undefined, e: PaidLabelEntry): Promise<void> {
+  if (!owner?.rowId) return
+  try {
+    const sb = await admin()
+    const { data } = await sb.from('social_accounts').select('extra').eq('id', owner.rowId).maybeSingle()
+    const extra = (data?.extra ?? {}) as Record<string, unknown>
+    await sb.from('social_accounts').update({ extra: { ...extra, paid_label_log: withEntry(extra.paid_label_log, e) } }).eq('id', owner.rowId)
+  } catch { /* the post is what matters */ }
+}
+
+/** Thrown when the labelled post may already be live, so the usual way must
+ *  not post it again. */
+export class PaidLabelUncertainError extends Error {
+  name = 'PaidLabelUncertainError'
+}
+
+/**
+ * Posts with the Paid partnership label when this account can, and returns
+ * the media id. Returns null when it could not, before anything was
+ * published, so the caller posts the usual way; the reason is kept. Throws
+ * only when the post may already be live, or the media itself failed.
+ */
+export async function publishWithPaidLabel(opts: {
+  userId: string
+  accessToken: string
+  params: URLSearchParams
+  kind: string
+  /** Injected in tests; the real lookup otherwise. */
+  find?: typeof findPaidLabelRoute
+}): Promise<string | null> {
+  let found: Awaited<ReturnType<typeof findPaidLabelRoute>>
+  try { found = await (opts.find ?? findPaidLabelRoute)(opts.userId, opts.accessToken) } catch { return null }
+  const at = new Date().toISOString()
+  if (!found.route) {
+    // Nothing kept for accounts the label is not open to, or turned off.
+    if (found.why !== 'not-yet' && found.why !== 'unknown-account') await remember(found.owner, { at, on: false, why: found.why, kind: opts.kind })
+    return null
+  }
+  const { igId, token } = found.route
+  const body = new URLSearchParams(opts.params)
+  body.set('is_paid_partnership', 'true')
+  body.set('access_token', token)
+
+  // 1. The container. A refusal here means nothing exists yet: the usual way.
+  let containerId: string
+  try {
+    const res = await fetch(`${FB_GRAPH}/${igId}/media`, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: body.toString(), signal: AbortSignal.timeout(60_000) })
+    const data = await res.json().catch(() => ({})) as { id?: string; error?: { message?: string } }
+    if (!res.ok || !data.id) {
+      if (isPermissionError(data)) routes.delete(opts.userId)
+      await remember(found.owner, { at, on: false, why: isPermissionError(data) ? 'reconnect' : 'refused', detail: String(data.error?.message || `HTTP ${res.status}`).slice(0, 200), kind: opts.kind })
+      return null
+    }
+    containerId = data.id
+  } catch (e) {
+    await remember(found.owner, { at, on: false, why: 'refused', detail: e instanceof Error ? e.message.slice(0, 200) : 'no answer', kind: opts.kind })
+    return null
+  }
+
+  // 2. Instagram processes the media. A failure here is the media's own and
+  //    would fail the usual way too, so it is thrown as it is.
+  const deadline = Date.now() + 5 * 60 * 1000
+  for (let i = 0; ; i++) {
+    if (Date.now() > deadline) throw new Error('Instagram container processing timed out after 5 minutes')
+    const res = await fetch(`${FB_GRAPH}/${containerId}?fields=status_code,status&access_token=${encodeURIComponent(token)}`, { signal: AbortSignal.timeout(20_000) })
+    const data = await res.json().catch(() => ({})) as { status_code?: string; status?: string; error?: { message?: string } }
+    if (!res.ok) throw new Error(`Instagram status check failed: ${data.error?.message || `HTTP ${res.status}`}`)
+    if (data.status_code === 'FINISHED') break
+    if (data.status_code === 'ERROR' || data.status_code === 'EXPIRED') throw new Error(`Instagram container failed: status=${data.status_code} ${data.status ?? ''}`)
+    await new Promise((r) => setTimeout(r, i === 0 ? 3000 : 5000))
+  }
+
+  // 3. Publish. A clear refusal means it is not live: the usual way. No
+  //    answer at all means it may be live: never post it twice.
+  let res: Response
+  try {
+    res = await fetch(`${FB_GRAPH}/${igId}/media_publish`, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ creation_id: containerId, access_token: token }).toString(), signal: AbortSignal.timeout(60_000) })
+  } catch {
+    throw new PaidLabelUncertainError('Instagram did not answer the publish, so MVP did not try again: check Instagram before posting this again, it may already be live.')
+  }
+  const data = await res.json().catch(() => ({})) as { id?: string; error?: { message?: string } }
+  if (!res.ok || !data.id) {
+    if (res.status >= 500) throw new PaidLabelUncertainError('Instagram failed while publishing, so MVP did not try again: check Instagram before posting this again, it may already be live.')
+    await remember(found.owner, { at, on: false, why: 'refused', detail: String(data.error?.message || `HTTP ${res.status}`).slice(0, 200), kind: opts.kind })
+    return null
+  }
+  await remember(found.owner, { at, on: true, mediaId: data.id, kind: opts.kind })
+  return data.id
+}

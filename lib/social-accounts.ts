@@ -316,6 +316,14 @@ export async function syncInstagramAccount(
   account: { externalId: string; username: string | null; accessToken: string; tokenExpiry?: number | null; permissions?: string[] | null },
 ): Promise<void> {
   if (!account.externalId || !account.accessToken) return
+  // What MVP keeps on the account between connects (the Paid partnership
+  // label setting and log, lib/ig-paid-label) survives a reconnect.
+  let kept: Record<string, unknown> = {}
+  try {
+    const { data: prev } = await supabase.from('social_accounts').select('extra').eq('user_id', userId).eq('platform', 'instagram').eq('external_id', account.externalId).maybeSingle()
+    const e = (prev?.extra ?? {}) as Record<string, unknown>
+    kept = Object.fromEntries(Object.entries(e).filter(([k]) => k.startsWith('paid_label_')))
+  } catch { /* a first connect has nothing to keep */ }
   // This account becomes the new default — clear the flag on the others.
   await supabase
     .from('social_accounts')
@@ -334,6 +342,7 @@ export async function syncInstagramAccount(
       // and comments ones), so a status screen can say "reconnect" before a
       // DM fails rather than after.
       extra: {
+        ...kept,
         ...(account.tokenExpiry ? { token_expiry: account.tokenExpiry } : {}),
         ...(account.permissions ? { permissions: account.permissions } : {}),
       },
