@@ -15,7 +15,9 @@ const check = (name: string, ok: boolean | undefined) => { if (!ok) fails.push(n
 const read = (f: string) => readFileSync(f, 'utf8')
 
 async function run() {
-  check('team only while in Labs', paidLabelAllowed('admin') && (PAID_LABEL_FOR_MEMBERS || !paidLabelAllowed('pro')) && !paidLabelAllowed(null))
+  check('team and named testers only while in Labs', paidLabelAllowed('admin') && (PAID_LABEL_FOR_MEMBERS || !paidLabelAllowed('pro')) && !paidLabelAllowed(null)
+    && paidLabelAllowed('pro', '9936ec62-d758-4c7e-b14c-7890aa8d251d') && (PAID_LABEL_FOR_MEMBERS || !paidLabelAllowed('pro', 'someone-else'))
+    && ['app/api/auth/facebook/route.ts', 'app/api/instagram/paid-label/route.ts', 'lib/ig-paid-label.ts'].every((f) => !/paidLabelAllowed\([^,)]*\)/.test(read(f).replace(/export function paidLabelAllowed[^\n]*/, ''))))
   check('posting through a Page asks Instagram\'s permissions', ['instagram_basic', 'instagram_content_publish', 'pages_read_engagement'].every((p) => (FB_INSTAGRAM_SCOPES as readonly string[]).includes(p)))
   const log = withEntry(Array.from({ length: 12 }, (_, i) => ({ at: `t${i}`, on: true })), { at: 'new', on: false, why: 'no-link' })
   check('the newest outcome first, ten kept', log.length === 10 && log[0].at === 'new' && log[1].at === 't0')
@@ -71,7 +73,7 @@ async function run() {
   check('a post that may be live keeps the account\'s posting hold', /if \(feed && !\(e instanceof Error && e\.name === 'PaidLabelUncertainError'\)\) feedSlots\.delete\(opts\.userId\)/.test(IG))
   check('the usual way builds the same post', /const body = containerParams\(opts\)\s*\n\s*if \(opts\.paidPartnership\) body\.set\('is_paid_partnership', 'true'\)\s*\n\s*body\.set\('access_token', opts\.accessToken\)/.test(IG))
   const FB = read('app/api/auth/facebook/route.ts')
-  check('connecting Facebook asks Instagram\'s permissions of accounts the label is open to', /if \(paidLabelAllowed\(tierRow\?\.tier as string \| null\)\) labelScopes = \[\.\.\.FB_INSTAGRAM_SCOPES\]/.test(FB))
+  check('connecting Facebook asks Instagram\'s permissions of accounts the label is open to', /if \(paidLabelAllowed\(tierRow\?\.tier as string \| null, user\.id\)\) labelScopes = \[\.\.\.FB_INSTAGRAM_SCOPES\]/.test(FB))
   check('the setting and log survive a reconnect', /kept = Object\.fromEntries\(Object\.entries\(e\)\.filter\(\(\[k\]\) => k\.startsWith\('paid_label_'\)\)\)/.test(read('lib/social-accounts.ts')) && /\.\.\.kept,/.test(read('lib/social-accounts.ts')))
   check('the card is on Connect Socials and says what happened to each post', /<InstagramPaidLabel \/>/.test(read('app/(dashboard)/connect-socials/page.tsx')) && /Posted with the label/.test(read('app/api/instagram/paid-label/route.ts')) && /Posted without the label/.test(read('app/api/instagram/paid-label/route.ts')))
 

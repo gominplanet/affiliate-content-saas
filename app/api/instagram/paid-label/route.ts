@@ -29,7 +29,7 @@ async function signedIn() {
 export async function GET() {
   const me = await signedIn()
   if (!me) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  if (!paidLabelAllowed(me.tier)) return NextResponse.json({ allowed: false })
+  if (!paidLabelAllowed(me.tier, me.user.id)) return NextResponse.json({ allowed: false })
   const { data: rows } = await me.admin.from('social_accounts').select('id,external_id,display_name,access_token,extra').eq('user_id', me.user.id).eq('platform', 'instagram')
   const list = (rows ?? []) as { id: string; external_id: string; display_name: string | null; access_token: string | null; extra: Record<string, unknown> | null }[]
   const enabled = !list.some((r) => r.extra?.paid_label_off === true)
@@ -67,7 +67,7 @@ export async function GET() {
 export async function POST(request: Request) {
   const me = await signedIn()
   if (!me) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  if (!paidLabelAllowed(me.tier)) return NextResponse.json({ error: 'The label is not open to your account yet.' }, { status: 403 })
+  if (!paidLabelAllowed(me.tier, me.user.id)) return NextResponse.json({ error: 'The label is not open to your account yet.' }, { status: 403 })
   const body = await request.json().catch(() => ({})) as { enabled?: boolean }
   if (typeof body.enabled !== 'boolean') return NextResponse.json({ error: 'Say whether to turn it on or off.' }, { status: 400 })
   const { data: rows } = await me.admin.from('social_accounts').select('id,extra').eq('user_id', me.user.id).eq('platform', 'instagram')

@@ -41,7 +41,7 @@ export async function GET(request: Request) {
   let labelScopes: string[] = []
   if (user) {
     const { data: tierRow } = await supabase.from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
-    if (paidLabelAllowed(tierRow?.tier as string | null)) labelScopes = [...FB_INSTAGRAM_SCOPES]
+    if (paidLabelAllowed(tierRow?.tier as string | null, user.id)) labelScopes = [...FB_INSTAGRAM_SCOPES]
   }
   const scope = Array.from(new Set([...baseScope.split(','), ...labelScopes])).join(',')
 

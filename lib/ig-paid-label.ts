@@ -40,7 +40,14 @@ import { normalizeTier, tierAllowsSocial, type Tier } from '@/lib/tier'
 /** Members get the label once this is true; the team has it now. */
 export const PAID_LABEL_FOR_MEMBERS = false
 
-export function paidLabelAllowed(tier: Tier | string | null | undefined): boolean {
+/** Members testing it before everyone gets it (Seb, 2026-10-29: "can i have
+ *  alejandro test this"), by MVP user id. */
+export const PAID_LABEL_TESTERS: readonly string[] = [
+  '9936ec62-d758-4c7e-b14c-7890aa8d251d', // Alejandro
+]
+
+export function paidLabelAllowed(tier: Tier | string | null | undefined, userId?: string | null): boolean {
+  if (userId && PAID_LABEL_TESTERS.includes(userId)) return true
   if (!tier) return false
   const t = normalizeTier(tier)
   if (t === 'admin') return true
@@ -144,7 +151,7 @@ export async function findPaidLabelRoute(igUserId: string, igToken: string): Pro
   const owner = await ownerOf(sb, igUserId)
   if (!owner) return { why: 'unknown-account', owner }
   const { data: integ } = await sb.from('integrations').select('tier,facebook_page_id,facebook_page_access_token').eq('user_id', owner.userId).maybeSingle()
-  if (!paidLabelAllowed(integ?.tier)) return { why: 'not-yet', owner }
+  if (!paidLabelAllowed(integ?.tier, owner.userId)) return { why: 'not-yet', owner }
   if (owner.extra.paid_label_off === true) return { why: 'off', owner }
 
   const { maybeDecrypt } = await import('@/lib/secrets')
@@ -228,7 +235,7 @@ export async function paidLabelWanted(igUserId: string): Promise<{ on: boolean; 
   const owner = await ownerOf(sb, igUserId)
   if (!owner) return { on: false, direct: false, owner }
   const { data: integ } = await sb.from('integrations').select('tier').eq('user_id', owner.userId).maybeSingle()
-  const on = paidLabelAllowed(integ?.tier) && owner.extra.paid_label_off !== true
+  const on = paidLabelAllowed(integ?.tier, owner.userId) && owner.extra.paid_label_off !== true
   return { on, direct: DIRECT_SWITCH_WORKS && on && !directRefused(owner.extra), owner }
 }
 
