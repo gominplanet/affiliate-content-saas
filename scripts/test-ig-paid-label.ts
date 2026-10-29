@@ -7,7 +7,7 @@
 // answer is never retried (no double post); every outcome is kept and said;
 // the setting survives a reconnect; the card is on Connect Socials.
 import { readFileSync } from 'node:fs'
-import { paidLabelAllowed, withEntry, paidLabelWords, isPermissionError, lacksInstagramGrant, refusedTheSwitch, directRefused, publishWithPaidLabel, PaidLabelUncertainError, PAID_LABEL_FOR_MEMBERS, FB_INSTAGRAM_SCOPES, type PaidLabelWhy } from '../lib/ig-paid-label'
+import { paidLabelAllowed, withEntry, paidLabelWords, isPermissionError, lacksInstagramGrant, refusedTheSwitch, directRefused, entryWords, DIRECT_SWITCH_WORKS, publishWithPaidLabel, PaidLabelUncertainError, PAID_LABEL_FOR_MEMBERS, FB_INSTAGRAM_SCOPES, type PaidLabelWhy } from '../lib/ig-paid-label'
 import { containerParams } from '../services/instagram'
 
 const fails: string[] = []
@@ -83,6 +83,8 @@ async function run() {
     && directRefused({ paid_label_direct_refused_at: new Date(Date.now() - 86_400_000).toISOString() }) && !directRefused({ paid_label_direct_refused_at: new Date(Date.now() - 8 * 86_400_000).toISOString() }) && !directRefused({})
     && /if \(label\.refusedTheSwitch\(msg\)\) directRefusal = msg/.test(IG) && /const containerId = await createMediaContainer\(opts\)\s*\n\s*if \(directRefusal\) await label\.noteDirectRefusal\(want\.owner, directRefusal\)/.test(IG))
   check('a labelled post says whether Instagram confirms it, never claims more', /shown === true \? \{ detail: 'Instagram confirms it\.' \}/.test(IG) && /Check the post shows Paid partnership/.test(IG) && /Instagram took the post but says the label is not on/.test(IG))
+  check('the direct switch is off now that Instagram showed it ignores it, and an old entry says so', DIRECT_SWITCH_WORKS === false && /direct: DIRECT_SWITCH_WORKS && on &&/.test(read('lib/ig-paid-label.ts'))
+    && /ignores the switch on a direct post/.test(entryWords({ on: true, detail: 'Instagram took the switch. Check the post shows Paid partnership.' }) ?? '') && entryWords({ on: true, detail: 'Instagram confirms it.' }) === null)
   check('the Facebook test is gone from the card', !/Run the Facebook label test/.test(read('components/instagram/InstagramPaidLabel.tsx')))
 
   if (fails.length) { console.error('FAIL paid label:\n  ' + fails.join('\n  ')); process.exit(1) }

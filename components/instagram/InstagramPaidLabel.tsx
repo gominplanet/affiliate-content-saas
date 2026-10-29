@@ -54,7 +54,7 @@ export default function InstagramPaidLabel() {
           <div>
             <div className="text-sm font-semibold" style={{ color: 'var(--text)' }}>Instagram&apos;s Paid partnership label <span className="ml-1 text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded" style={{ background: 'var(--border)', color: 'var(--text-faint)' }}>Labs</span></div>
             <p className="text-xs mt-0.5" style={{ color: 'var(--text-faint)' }}>
-              MVP switches the label on with every Instagram post it makes, so you do not add it by hand afterwards. Your #ad and Amazon disclosure stay in the caption either way.
+              MVP switches the label on when it posts, so you do not add it by hand afterwards. Instagram only allows this through the Facebook Page your Instagram is linked to, connected in MVP. Your #ad and Amazon disclosure stay in the caption either way.
             </p>
           </div>
         </div>

@@ -10,7 +10,7 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { maybeDecrypt } from '@/lib/secrets'
-import { findPaidLabelRoute, paidLabelAllowed, paidLabelWords, directRefused, type PaidLabelEntry } from '@/lib/ig-paid-label'
+import { findPaidLabelRoute, paidLabelAllowed, paidLabelWords, directRefused, entryWords, DIRECT_SWITCH_WORKS, type PaidLabelEntry } from '@/lib/ig-paid-label'
 
 export const dynamic = 'force-dynamic'
 
@@ -37,11 +37,13 @@ export async function GET() {
     const token = maybeDecrypt(r.access_token) || ''
     let ready = false, why: string | null = null, page: string | null = null, checked: string[] = []
     if (!token) why = 'This Instagram account needs reconnecting in MVP.'
-    else if (!directRefused(r.extra)) {
+    else if (DIRECT_SWITCH_WORKS && !directRefused(r.extra)) {
       // The simple way: the switch goes on the usual post.
       ready = true
     } else {
-      checked = [`Instagram did not take the label switch on a direct post: ${String(r.extra?.paid_label_direct_refused_why ?? 'no reason given').slice(0, 200)}. MVP tries again after a week, and meanwhile posts through a linked Facebook Page when there is one.`]
+      checked = DIRECT_SWITCH_WORKS
+        ? [`Instagram did not take the label switch on a direct post: ${String(r.extra?.paid_label_direct_refused_why ?? 'no reason given').slice(0, 200)}. MVP tries again after a week, and meanwhile posts through a linked Facebook Page when there is one.`]
+        : ['Instagram only shows the label when MVP posts through the Facebook Page this Instagram account is linked to.']
       try {
         const found = await findPaidLabelRoute(r.external_id, token)
         checked = [...checked, ...(found.checked ?? [])]
@@ -56,7 +58,7 @@ export async function GET() {
       page,
       why,
       checked,
-      recent: log.slice(0, 5).map((e) => ({ at: e.at, on: e.on, kind: e.kind ?? null, words: e.on ? `Posted with the label switched on.${e.detail ? ` ${e.detail}` : ''}` : `Posted without the label. ${paidLabelWords(e.why ?? 'refused', e.detail)}` })),
+      recent: log.slice(0, 5).map((e) => ({ at: e.at, on: e.on, kind: e.kind ?? null, words: entryWords(e) ?? (e.on ? `Posted with the label switched on.${e.detail ? ` ${e.detail}` : ''}` : `Posted without the label. ${paidLabelWords(e.why ?? 'refused', e.detail)}`) })),
     }
   }))
   return NextResponse.json({ allowed: true, enabled, accounts })

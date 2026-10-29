@@ -27,6 +27,12 @@
 // without it (nothing was created), the refusal is kept on the account for a
 // week, and the Facebook Page route below is used instead.
 //
+// TRIED, AND INSTAGRAM IGNORES IT (Seb, 2026-10-29: "it did post it but did
+// not show the label"). Instagram took a direct post with the switch on and
+// showed no label, as Meta's reference says. DIRECT_SWITCH_WORKS is false,
+// so the direct way is no longer sent: the label comes only through a linked
+// Facebook Page, and a post without one says so.
+//
 // Labs first: team accounts only until Seb opens it (PAID_LABEL_FOR_MEMBERS).
 
 import { normalizeTier, tierAllowsSocial, type Tier } from '@/lib/tier'
@@ -191,6 +197,15 @@ export async function findPaidLabelRoute(igUserId: string, igToken: string): Pro
   return { ...found, owner, checked }
 }
 
+/** Whether Instagram shows the label from the switch on a direct post. It
+ *  does not (tested 2026-10-29); kept as a switch in case Meta adds it. */
+export const DIRECT_SWITCH_WORKS = false
+
+/** What an old log entry from the direct test really means. Pure. */
+export function entryWords(e: { on: boolean; detail?: string }): string | null {
+  return e.on && /^Instagram took the switch/.test(String(e.detail ?? '')) ? 'Posted without the label: Instagram ignores the switch on a direct post, so the label needs a linked Facebook Page.' : null
+}
+
 /** Instagram refused the switch on a direct post this long ago or less: use
  *  the Facebook route meanwhile, and try the direct way again after it. */
 export const DIRECT_REFUSAL_KEEP_MS = 7 * 24 * 60 * 60 * 1000
@@ -214,7 +229,7 @@ export async function paidLabelWanted(igUserId: string): Promise<{ on: boolean; 
   if (!owner) return { on: false, direct: false, owner }
   const { data: integ } = await sb.from('integrations').select('tier').eq('user_id', owner.userId).maybeSingle()
   const on = paidLabelAllowed(integ?.tier) && owner.extra.paid_label_off !== true
-  return { on, direct: on && !directRefused(owner.extra), owner }
+  return { on, direct: DIRECT_SWITCH_WORKS && on && !directRefused(owner.extra), owner }
 }
 
 /** Keeps that Instagram refused the switch on a direct post. */
