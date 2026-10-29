@@ -7,7 +7,7 @@
 // answer is never retried (no double post); every outcome is kept and said;
 // the setting survives a reconnect; the card is on Connect Socials.
 import { readFileSync } from 'node:fs'
-import { paidLabelAllowed, withEntry, paidLabelWords, isPermissionError, publishWithPaidLabel, PaidLabelUncertainError, PAID_LABEL_FOR_MEMBERS, FB_INSTAGRAM_SCOPES, type PaidLabelWhy } from '../lib/ig-paid-label'
+import { paidLabelAllowed, withEntry, paidLabelWords, isPermissionError, lacksInstagramGrant, publishWithPaidLabel, PaidLabelUncertainError, PAID_LABEL_FOR_MEMBERS, FB_INSTAGRAM_SCOPES, type PaidLabelWhy } from '../lib/ig-paid-label'
 import { containerParams } from '../services/instagram'
 
 const fails: string[] = []
@@ -21,6 +21,8 @@ async function run() {
   check('the newest outcome first, ten kept', log.length === 10 && log[0].at === 'new' && log[1].at === 't0')
   const whys: PaidLabelWhy[] = ['off', 'not-yet', 'no-facebook', 'no-link', 'reconnect', 'refused', 'unknown-account']
   check('every reason is said in words, with no dashes', whys.every((w) => paidLabelWords(w).length > 10 && !/[–—]| - /.test(paidLabelWords(w, 'x'))))
+  check('a connection made without Instagram\'s permissions says reconnect, not "not linked"', lacksInstagramGrant(['pages_show_list', 'pages_manage_posts']) && !lacksInstagramGrant(['instagram_basic', 'instagram_content_publish', 'pages_show_list']) && !lacksInstagramGrant(null)
+    && /if \(first\) missingGrant = lacksInstagramGrant\(await grantedScopes\(first\)\)/.test(read('lib/ig-paid-label.ts')))
   check('a missing permission is told from other refusals', isPermissionError({ error: { code: 10 } }) && isPermissionError({ error: { code: 200 } }) && !isPermissionError({ error: { code: 100 } }) && !isPermissionError(null))
 
   // The posting steps, against a fake Instagram.

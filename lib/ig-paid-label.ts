@@ -97,6 +97,26 @@ async function professionalId(igToken: string): Promise<string | null> {
   } catch { return null }
 }
 
+/** The permissions a Facebook token was granted, from Facebook itself
+ *  (debug_token with the app's own token), or null when it cannot say. Without
+ *  instagram_basic Facebook leaves a Page's linked Instagram out of its answer
+ *  without an error, so "no Page is linked" and "MVP may not see the link"
+ *  look the same until the grant is read (Seb, 2026-10-29). */
+export async function grantedScopes(token: string): Promise<string[] | null> {
+  const id = process.env.FACEBOOK_APP_ID, secret = process.env.FACEBOOK_APP_SECRET
+  if (!id || !secret) return null
+  try {
+    const res = await fetch(`${FB_GRAPH}/debug_token?input_token=${encodeURIComponent(token)}&access_token=${encodeURIComponent(`${id}|${secret}`)}`, { signal: AbortSignal.timeout(15_000) })
+    const data = await res.json().catch(() => ({})) as { data?: { scopes?: string[] } }
+    return res.ok && Array.isArray(data.data?.scopes) ? data.data!.scopes! : null
+  } catch { return null }
+}
+
+/** Is a grant missing what posting to Instagram through a Page needs? Pure. */
+export function lacksInstagramGrant(scopes: string[] | null): boolean {
+  return !!scopes && !(['instagram_basic', 'instagram_content_publish'] as const).every((s) => scopes.includes(s))
+}
+
 /** Facebook said the connection lacks a permission (Graph error 10, 200 to 299). */
 export function isPermissionError(body: unknown): boolean {
   const e = (body as { error?: { code?: number } } | null)?.error
@@ -113,9 +133,6 @@ export async function findPaidLabelRoute(igUserId: string, igToken: string): Pro
   if (!paidLabelAllowed(integ?.tier)) return { why: 'not-yet', owner }
   if (owner.extra.paid_label_off === true) return { why: 'off', owner }
 
-  const cached = routes.get(igUserId)
-  if (cached && Date.now() - cached.at < ROUTE_TTL_MS) return { ...cached.found, owner }
-
   const { maybeDecrypt } = await import('@/lib/secrets')
   const pages = new Map<string, string>()
   const { data: fbRows } = await sb.from('social_accounts').select('external_id,access_token').eq('user_id', owner.userId).eq('platform', 'facebook')
@@ -125,6 +142,13 @@ export async function findPaidLabelRoute(igUserId: string, igToken: string): Pro
   }
   const legacyToken = maybeDecrypt(integ?.facebook_page_access_token)
   if (integ?.facebook_page_id && legacyToken && !pages.has(integ.facebook_page_id)) pages.set(integ.facebook_page_id, legacyToken)
+
+  // Remembered per connection: a reconnect brings new tokens, so the next
+  // post (and the card) reads the new connection straight away.
+  const { createHash } = await import('node:crypto')
+  const key = `${igUserId}|${createHash('sha1').update([...pages].map(([p, tk]) => `${p}:${tk}`).sort().join(',')).digest('hex')}`
+  const cached = routes.get(key)
+  if (cached && Date.now() - cached.at < ROUTE_TTL_MS) return { ...cached.found, owner }
 
   let found: Found
   if (!pages.size) found = { why: 'no-facebook' }
@@ -141,9 +165,14 @@ export async function findPaidLabelRoute(igUserId: string, igToken: string): Pro
         if (linked && proId && linked === proId) { match = { igId: linked, token, pageName: data.name ?? null }; break }
       } catch { /* the next Page */ }
     }
-    found = match ? { route: match } : sawPermission ? { why: 'reconnect' } : { why: 'no-link' }
+    let missingGrant = sawPermission
+    if (!match && !missingGrant) {
+      const first = pages.values().next().value as string | undefined
+      if (first) missingGrant = lacksInstagramGrant(await grantedScopes(first))
+    }
+    found = match ? { route: match } : missingGrant ? { why: 'reconnect' } : { why: 'no-link' }
   }
-  routes.set(igUserId, { at: Date.now(), found })
+  routes.set(key, { at: Date.now(), found })
   return { ...found, owner }
 }
 
@@ -197,7 +226,7 @@ export async function publishWithPaidLabel(opts: {
     const res = await fetch(`${FB_GRAPH}/${igId}/media`, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: body.toString(), signal: AbortSignal.timeout(60_000) })
     const data = await res.json().catch(() => ({})) as { id?: string; error?: { message?: string } }
     if (!res.ok || !data.id) {
-      if (isPermissionError(data)) routes.delete(opts.userId)
+      if (isPermissionError(data)) routes.clear()
       await remember(found.owner, { at, on: false, why: isPermissionError(data) ? 'reconnect' : 'refused', detail: String(data.error?.message || `HTTP ${res.status}`).slice(0, 200), kind: opts.kind })
       return null
     }
