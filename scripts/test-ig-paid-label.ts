@@ -73,6 +73,12 @@ async function run() {
   check('the setting and log survive a reconnect', /kept = Object\.fromEntries\(Object\.entries\(e\)\.filter\(\(\[k\]\) => k\.startsWith\('paid_label_'\)\)\)/.test(read('lib/social-accounts.ts')) && /\.\.\.kept,/.test(read('lib/social-accounts.ts')))
   check('the card is on Connect Socials and says what happened to each post', /<InstagramPaidLabel \/>/.test(read('app/(dashboard)/connect-socials/page.tsx')) && /Posted with the label/.test(read('app/api/instagram/paid-label/route.ts')) && /Posted without the label/.test(read('app/api/instagram/paid-label/route.ts')))
 
+  const T = read('app/api/facebook/paid-label-test/route.ts')
+  check('the Facebook label test is team only, hidden, always deleted, and says Facebook\'s words', /if \(normalizeTier\(integ\?\.tier\) !== 'admin'\) return NextResponse\.json\(\{ error: 'Team only\.' \}, \{ status: 403 \}\)/.test(T)
+    && /published: 'false'/.test(T) && /\} finally \{\s*\n\s*const del = await call\(`\$\{FB\}\/\$\{postId\}\?access_token=\$\{t\}`, \{ method: 'DELETE' \}\)/.test(T) && /NOT deleted, please remove it from your Page/.test(T) && /sponsor_id: partner/.test(T))
+  check('a try it cannot read back is never called a pass', /no field says whether a label with no brand is on, so this does not show that it works/.test(T))
+  check('the card has the test button', /Run the Facebook label test/.test(read('components/instagram/InstagramPaidLabel.tsx')))
+
   if (fails.length) { console.error('FAIL paid label:\n  ' + fails.join('\n  ')); process.exit(1) }
   console.log('✅ ig-paid-label: Instagram posts carry the Paid partnership label when they can, and say when they did not')
 }

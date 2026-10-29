@@ -24,6 +24,20 @@ const when = (iso: string) => new Date(iso).toLocaleString(undefined, { month: '
 export default function InstagramPaidLabel() {
   const [state, setState] = useState<State | null>(null)
   const [busy, setBusy] = useState(false)
+  // The Facebook label test (team only, /api/facebook/paid-label-test).
+  const [fbBusy, setFbBusy] = useState(false)
+  const [partnerId, setPartnerId] = useState('')
+  const [fbTest, setFbTest] = useState<{ page?: string; verdict?: string; steps?: { step: string; ok: boolean; said: string }[]; error?: string } | null>(null)
+  const runFbTest = async () => {
+    setFbBusy(true)
+    setFbTest(null)
+    try {
+      const r = await fetch('/api/facebook/paid-label-test', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(partnerId.trim() ? { partnerPageId: partnerId.trim() } : {}) })
+      const d = await r.json().catch(() => ({}))
+      setFbTest(r.ok ? d : { error: d.error || `The test did not run (${r.status}).` })
+    } catch { setFbTest({ error: 'The test did not get an answer from MVP.' }) }
+    finally { setFbBusy(false) }
+  }
   const load = useCallback(async () => {
     try {
       const r = await fetch('/api/instagram/paid-label', { cache: 'no-store' })
@@ -85,6 +99,32 @@ export default function InstagramPaidLabel() {
           )}
         </div>
       ))}
+      <div className="rounded-xl border p-3 flex flex-col gap-2" style={{ borderColor: 'var(--border)' }}>
+        <div className="text-xs font-medium" style={{ color: 'var(--text)' }}>Facebook: does it keep the label on a post MVP makes?</div>
+        <p className="text-[11px]" style={{ color: 'var(--text-faint)' }}>
+          Makes a hidden post on your connected Facebook Page with Amazon tagged as the partner (Facebook&apos;s way of adding the label), reads back what Facebook kept, and deletes it. Your followers never see it.
+        </p>
+        <div className="flex items-center gap-2">
+          <input value={partnerId} onChange={(e) => setPartnerId(e.target.value.replace(/[^0-9]/g, ''))} placeholder="Amazon's Page ID (optional)" className="flex-1 text-xs px-2 py-1.5 rounded-lg border bg-transparent" style={{ borderColor: 'var(--border)', color: 'var(--text)' }} />
+          <button onClick={runFbTest} disabled={fbBusy} className="text-xs font-medium px-3 py-1.5 rounded-full border flex-shrink-0" style={{ borderColor: 'var(--border-bright)', color: 'var(--text)' }}>
+            {fbBusy ? <Loader2 size={12} className="animate-spin" /> : 'Run the Facebook label test'}
+          </button>
+        </div>
+        {fbTest?.error && <p className="text-xs text-[#ff3b30]">{fbTest.error}</p>}
+        {fbTest?.steps && (
+          <div className="flex flex-col gap-1.5">
+            {fbTest.verdict && <p className="text-xs font-medium" style={{ color: 'var(--text)' }}>{fbTest.verdict}</p>}
+            <ul className="text-[11px] flex flex-col gap-1" style={{ color: 'var(--text-faint)' }}>
+              {fbTest.steps.map((st, k) => (
+                <li key={k} className="flex items-start gap-1.5">
+                  {st.ok ? <CheckCircle2 size={12} className="text-[#34c759] flex-shrink-0 mt-0.5" /> : <XCircle size={12} className="text-[#ff3b30] flex-shrink-0 mt-0.5" />}
+                  <span><span style={{ color: 'var(--text)' }}>{st.step}:</span> {st.said}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </div>
     </div>
   )
 }
