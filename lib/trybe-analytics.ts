@@ -103,13 +103,19 @@ const SUB_KEYS: Record<'total' | 'approved' | 'pending' | 'revision' | 'rejected
 // Where a dashboard answer keeps its counts: the answer itself, or an object
 // named for submissions or statuses, one or two levels in.
 const HOLDERS = /submission|status|summary|totals|overview|stats|kpis|counts/i
+// Money, never submissions (Seb, 2026-10-29: Total submissions 3 beside 5
+// approved and 2 pending, a 167% approval rate). TRYBE's analytics answer has
+// a spendSummary whose total and pending are ad spend; read as submissions,
+// they made a total smaller than its own parts.
+const NOT_HOLDERS = /spend|earn|revenue|payout|money|currency|chart|retention|platform/i
+const holds = (k: string) => HOLDERS.test(k) && !NOT_HOLDERS.test(k)
 
 function holders(root: Obj): Obj[] {
   const out: Obj[] = [root]
   for (const [k, v] of Object.entries(root)) {
-    if (!isObj(v) || !HOLDERS.test(k)) continue
+    if (!isObj(v) || !holds(k)) continue
     out.push(v)
-    for (const [k2, v2] of Object.entries(v)) if (isObj(v2) && HOLDERS.test(k2)) out.push(v2)
+    for (const [k2, v2] of Object.entries(v)) if (isObj(v2) && holds(k2)) out.push(v2)
   }
   return out
 }
@@ -138,6 +144,12 @@ export function readSubmissionTotals(json: unknown): SubmissionCounts | null {
   }
   if (Object.values(c).every((v) => v == null)) return null
   const known = (c.approved ?? 0) + (c.pending ?? 0) + (c.revision ?? 0) + (c.rejected ?? 0)
+  const split = [c.approved, c.pending, c.revision, c.rejected].filter((v) => v != null).length
+  // Not TRYBE's whole count: no total and one status alone (its analytics
+  // answer carries approvedSubmissions only), or a total smaller than its
+  // parts. Null, so the brand totals give the count and its split.
+  if (c.total == null && split < 2) return null
+  if (c.total != null && known > c.total) return null
   const total = c.total ?? known
   return { total, approved: c.approved ?? 0, pending: c.pending ?? 0, revision: c.revision ?? 0, rejected: c.rejected ?? 0, other: Math.max(0, total - known) }
 }
@@ -148,6 +160,7 @@ export function brandCounts(b: Pick<MyBrand, 'submitted' | 'approved' | 'pending
   if ([b.submitted, b.approved, b.pending, b.rejected, b.revision].every((v) => v == null)) return null
   const approved = b.approved ?? 0, pending = b.pending ?? 0, rejected = b.rejected ?? 0, revision = b.revision ?? 0
   const known = approved + pending + rejected + revision
-  const total = b.submitted ?? known
+  // Never a total below its own parts, so the approval rate stays a rate.
+  const total = Math.max(b.submitted ?? known, known)
   return { total, approved, pending, revision, rejected, other: Math.max(0, total - known) }
 }

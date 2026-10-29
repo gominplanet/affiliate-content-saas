@@ -52,6 +52,12 @@ check('sameBrand does not match a different brand', !sameBrand({ brandId: 'nobl'
   const statusCounts = readSubmissionTotals({ data: { statusCounts: { APPROVED: 2, PENDING: 1, REVISION: 1, REJECTED: 0 } } })
   check('and as status counts', !!statusCounts && statusCounts.total === 4 && statusCounts.approved === 2 && statusCounts.revision === 1, JSON.stringify(statusCounts))
   check('an answer with no counts is null, so the brand totals are used, never zeros', readSubmissionTotals({ data: { earnings: 0, impressions: 0 } }) === null)
+  // Seb, 2026-10-29: "Total submissions 3", 5 approved, 2 pending, 167%.
+  // The keys TRYBE's analytics answer actually carried that day.
+  const seb = readSubmissionTotals({ data: { activeAds: 7, approvedSubmissions: 5, byPlatform: {}, earnings: 0, metrics: { impressions: 834 }, period: '7d', spendSummary: { total: 3, pending: 2 }, spendShare: 0 } })
+  check('ad spend is never read as submissions, and approved alone is not a whole count', seb === null, JSON.stringify(seb))
+  check('a total smaller than its parts is not used', readSubmissionTotals({ data: { totalSubmissions: 3, approvedSubmissions: 5, pendingSubmissions: 2 } }) === null)
+  check('a brand total is never below its parts', (() => { const c = brandCounts({ submitted: 3, approved: 5, pending: 2, rejected: 0, revision: 0 }); return !!c && c.total === 7 })())
   check('a brand\u2019s totals for the period are its counts', (() => { const c = brandCounts({ submitted: 1, approved: 0, pending: 1, rejected: 0, revision: null }); return !!c && c.total === 1 && c.pending === 1 && c.other === 0 })())
   check('a brand whose totals leave one unplaced says so, so its list is read', (() => { const c = brandCounts({ submitted: 1, approved: 0, pending: null, rejected: null, revision: null }); return !!c && c.other === 1 })())
   check('no totals at all is null', brandCounts({ submitted: null, approved: null, pending: null, rejected: null, revision: null }) === null)

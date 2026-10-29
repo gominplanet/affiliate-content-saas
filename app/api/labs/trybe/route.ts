@@ -1273,6 +1273,48 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: true, saved, kept, galleryAds, notOwnAds, cardsMissed, galleryKept: tier === 'admin' })
   }
 
+  if (action === 'upload_note') {
+    // TELL THE BRAND ABOUT THE UPLOAD, IN THE CREATOR'S OWN VOICE (Seb,
+    // 2026-10-29: "make it the user's voice"). After TRYBE has videos in a
+    // brand's review, the upload page asks for one short message for that
+    // brand's chat, written the way the creator writes to brands (their own
+    // messages, lib/trybe-voice). Edited and sent by the creator, never here.
+    // Any brand they sent to, joined through MVP or straight on TRYBE.
+    const brandName = typeof body.brandName === 'string' ? body.brandName.trim().slice(0, 120) : ''
+    const count = Math.max(1, Math.min(20, Number(body.count) || 1))
+    const products = (Array.isArray(body.products) ? body.products : []).filter((x: unknown): x is string => typeof x === 'string' && !!x.trim()).map((x: string) => x.trim().slice(0, 160)).slice(0, 6)
+    if (!brandName) return NextResponse.json({ error: 'Which brand is it for?' }, { status: 400 })
+    const spend = await spendGate(userId, tier)
+    if (spend) return spend
+    const creator = await writerFacts(admin, ownerId)
+    const voice = readVoiceBody(body.voice)
+    const system = [
+      'You write one short message a content creator sends a brand in their TRYBE chat, right after submitting video(s) for that brand on TRYBE. It tells the brand the video(s) are in their review and offers to adjust anything.',
+      'Two to four short sentences, friendly and natural, like a real person in a chat. Name the product(s) in plain words (drop model codes like FS06M). Say how many videos when there is more than one.',
+      'From the creator\'s own messages take their greeting, tone, length and sign-off. This message is only about the upload: no pitch, no links, no list of what else they film.',
+      'Never talk about pay, rates, prices, fees, commission or a brand\'s ad budget: on TRYBE the brand sets the pay and TRYBE pays the creator.',
+      'No links, no hashtags, no markdown, no emoji unless the creator\'s own messages use them. Never use an em dash or en dash.',
+      'Reply with the message only.',
+      BANNED_RULE,
+    ].join('\n') + (voice.length ? `\n${VOICE_RULE}` : '')
+    const ask = `CREATOR FACTS:\n${creator.join('\n') || '(none)'}\n\nBRAND: ${brandName}\nVIDEOS JUST SUBMITTED: ${count}\nPRODUCTS IN THEM: ${products.join('; ') || '(not said)'}` + voiceBlock(voice)
+    const write = async (extra = '') => {
+      const msg = await createAnthropicClient().messages.create({ model: MODEL, max_tokens: 300, system, messages: [{ role: 'user', content: ask + extra }] })
+      try { const u = usageFromAnthropic(msg); recordUsage({ userId, tier, feature: 'trybe_upload_note', model: MODEL, input: u.input, output: u.output }) } catch { /* best-effort */ }
+      return tidyDraft(scrubBanned((msg.content as Array<{ type: string; text?: string }>).map(b => b.type === 'text' ? b.text || '' : '').join('')), 800).replace(/\s*[–—]\s*/g, ', ')
+    }
+    try {
+      let text = await write()
+      const hit = text ? termsHit(text) : null
+      if (hit) text = await write(`\n\n(Your last try said “${hit}”, which talks about pay, rates or prices. Write it again without that or anything like it.)`)
+      if (!text) return NextResponse.json({ error: 'The message came back empty. Try again.' }, { status: 502 })
+      if (talksTerms(text)) return NextResponse.json({ error: `The message kept saying “${termsHit(text)}”, which reads as talk about pay. It is not shown.` }, { status: 502 })
+      return NextResponse.json({ ok: true, text, voiced: voice.length > 0 })
+    } catch (e) {
+      return NextResponse.json({ error: e instanceof Error ? `MVP could not write it: ${e.message}` : 'MVP could not write it.' }, { status: 502 })
+    }
+  }
+
   if (action === 'kickoff' || action === 'followup') {
     // The first message after a brand accepts, or a follow up when nobody
     // answered (lib/trybe-playbook). Written here, edited and sent by the

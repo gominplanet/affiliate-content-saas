@@ -2,7 +2,11 @@
 // © 2026 Gominplanet / MVP Affiliate — proprietary & confidential.
 //
 // "Tell <brand> about it", under the videos just sent to that brand
-// (lib/trybe-upload-note). One ready message, editable, for all of them; Send
+// (lib/trybe-upload-note). One ready message, editable, for all of them,
+// written the way the creator writes to brands (Seb, 2026-10-29: "make it the
+// user's voice"): MVP writes it from their own TRYBE messages (useTrybeVoice).
+// Without those, or when the writer fails, it is the standard message, and
+// the box says which one it is showing and why. Send
 // puts it in the brand's TRYBE chat through SCOUT and says Sent only once it
 // shows in the chat (trybe-chat-send); Open the chat opens it in the Inbox.
 // No chat yet, telling them already today, a message that talks pay: each is
@@ -15,6 +19,7 @@ import { sendInTrybeChat } from '@/components/labs/trybe-chat-send'
 import { termsHits } from '@/lib/trybe-outreach'
 import { uploadNoteText, readTold, rememberTold, toldToday } from '@/lib/trybe-upload-note'
 import { brandPageUrl } from '@/lib/trybe-brand-page'
+import { readVoice, rememberMvpText } from '@/components/labs/useTrybeVoice'
 
 const soft = { color: 'var(--text-soft)' }
 const time = (d: Date) => d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
@@ -34,15 +39,43 @@ export default function TrybeUploadTell({ brandId, brandName, videos, chat, chat
   onOpenChat?: (chatId: string) => void
 }) {
   const draft = uploadNoteText(brandName, videos, myName)
+  const products = Array.from(new Set(videos.flatMap((v) => v.products))).slice(0, 6)
+  const ask = JSON.stringify({ brandName, count: videos.length, products })
   const [text, setText] = useState(draft)
+  // Which message is in the box: in the creator's voice, MVP's standard one
+  // (and why), or still being written.
+  const [made, setMade] = useState<{ by: 'writing' | 'voice' | 'standard'; why?: string }>({ by: 'writing' })
   const edited = useRef(false)
-  // A new video for this brand rewrites the message, unless it was edited.
-  useEffect(() => { if (!edited.current) setText(draft) }, [draft])
+  const run = useRef(0)
   const [sending, setSending] = useState(false)
   const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null)
-  const [told, setTold] = useState<Date | null>(null)
+  // undefined until this browser's record is read, so a brand told today is
+  // not written to again for nothing.
+  const [told, setTold] = useState<Date | null | undefined>(undefined)
   const [again, setAgain] = useState(false)
   useEffect(() => { setTold(toldToday(readTold(), brandId)) }, [brandId])
+  const showing = told !== undefined && (!told || again)
+
+  const write = async () => {
+    const mine = ++run.current
+    const standard = (why: string) => { if (mine === run.current && !edited.current) { setText(draft); setMade({ by: 'standard', why }) } }
+    const voice = readVoice()
+    if (!voice.length) return standard('MVP has not read how you write to brands yet. It learns that from your Inbox once a day, so open the Inbox and the next one is written your way.')
+    setMade({ by: 'writing' })
+    try {
+      const r = await fetch('/api/labs/trybe', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'upload_note', ...JSON.parse(ask), voice }) })
+      const d = await r.json().catch(() => ({})) as { ok?: boolean; text?: string; error?: string }
+      if (!r.ok || !d.text) return standard(`MVP could not write it your way just now (${d.error || `error ${r.status}`}).`)
+      if (mine !== run.current || edited.current) return
+      rememberMvpText(d.text)
+      setText(d.text); setMade({ by: 'voice' })
+    } catch {
+      standard('MVP could not write it your way just now (no answer).')
+    }
+  }
+  // Written when the box shows, and again when another video joins this
+  // brand, unless the creator already changed the words.
+  useEffect(() => { if (showing && !edited.current) void write() }, [showing, ask]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const payWords = termsHits(text)
   const send = async () => {
@@ -51,6 +84,8 @@ export default function TrybeUploadTell({ brandId, brandName, videos, chat, chat
     try {
       const r = await sendInTrybeChat(chat.id, text.trim(), me, myName)
       if (r.sent) {
+        // Words MVP wrote: never learned back as the creator's own.
+        rememberMvpText(text.trim())
         const at = new Date()
         rememberTold(brandId, at)
         setTold(at); setAgain(false)
@@ -75,8 +110,18 @@ export default function TrybeUploadTell({ brandId, brandName, videos, chat, chat
         </div>
       ) : (
         <>
-          <textarea value={text} onChange={(e) => { edited.current = true; setText(e.target.value) }} rows={5} maxLength={1500}
-            className="mt-2 w-full rounded-lg border px-3 py-2 text-[13px] bg-transparent" style={{ borderColor: 'var(--border)', color: 'var(--text)' }} />
+          {made.by === 'writing' ? (
+            <p className="mt-2 text-[13px] inline-flex items-center gap-1.5" style={soft}><Loader2 size={13} className="animate-spin" /> Writing it the way you write to brands</p>
+          ) : (
+            <>
+              <textarea value={text} onChange={(e) => { edited.current = true; setText(e.target.value) }} rows={5} maxLength={1500}
+                className="mt-2 w-full rounded-lg border px-3 py-2 text-[13px] bg-transparent" style={{ borderColor: 'var(--border)', color: 'var(--text)' }} />
+              <p className="text-[12px] mt-0.5" style={soft}>
+                {made.by === 'voice' ? 'Written the way you write to brands, from your own TRYBE messages. Change anything before you send.' : `This is MVP's standard message. ${made.why || ''}`}
+                {' '}<button type="button" onClick={() => { edited.current = false; void write() }} className="underline">Write it again</button>
+              </p>
+            </>
+          )}
           {payWords.length > 0 && (
             <p className="text-[12.5px] mt-1 inline-flex items-start gap-1.5" style={{ color: '#B45309' }}><AlertTriangle size={13} className="mt-0.5 flex-shrink-0" /> <span>TRYBE messages never talk pay. Take out: {payWords.join(', ')}.</span></p>
           )}
@@ -91,7 +136,7 @@ export default function TrybeUploadTell({ brandId, brandName, videos, chat, chat
             </p>
           ) : (
             <div className="mt-2 flex flex-wrap items-center gap-2">
-              <button type="button" onClick={() => void send()} disabled={sending || !text.trim() || payWords.length > 0}
+              <button type="button" onClick={() => void send()} disabled={sending || made.by === 'writing' || !text.trim() || payWords.length > 0}
                 className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12.5px] font-semibold text-white disabled:opacity-50" style={{ background: '#7C3AED' }}>
                 {sending ? <Loader2 size={13} className="animate-spin" /> : <Send size={13} />} Send in {brandName} chat
               </button>
