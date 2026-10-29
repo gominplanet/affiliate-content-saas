@@ -19,6 +19,14 @@
 // the label: the usual way is taken only when Instagram refused before
 // anything was published.
 //
+// THE SIMPLE WAY FIRST (Seb, 2026-10-29: "i want MVP to toggle on the label
+// when posting to instagram.. simple no?"). Meta's reference says the switch
+// is for Facebook Login only, but nothing is lost by sending it on the usual
+// Instagram post: when Instagram takes it, that is the whole feature, with no
+// Facebook at all. When Instagram refuses it, the post is sent again at once
+// without it (nothing was created), the refusal is kept on the account for a
+// week, and the Facebook Page route below is used instead.
+//
 // Labs first: team accounts only until Seb opens it (PAID_LABEL_FOR_MEMBERS).
 
 import { normalizeTier, tierAllowsSocial, type Tier } from '@/lib/tier'
@@ -183,8 +191,55 @@ export async function findPaidLabelRoute(igUserId: string, igToken: string): Pro
   return { ...found, owner, checked }
 }
 
+/** Instagram refused the switch on a direct post this long ago or less: use
+ *  the Facebook route meanwhile, and try the direct way again after it. */
+export const DIRECT_REFUSAL_KEEP_MS = 7 * 24 * 60 * 60 * 1000
+
+/** Is the direct refusal kept on this account still current? Pure. */
+export function directRefused(extra: Record<string, unknown> | null | undefined, now = Date.now()): boolean {
+  const at = Date.parse(String(extra?.paid_label_direct_refused_at ?? ''))
+  return Number.isFinite(at) && now - at < DIRECT_REFUSAL_KEEP_MS
+}
+
+/** Did Instagram refuse the parameter itself (not the media)? Pure. */
+export function refusedTheSwitch(message: string): boolean {
+  return /is_paid_partnership|paid.?partnership|invalid parameter|unsupported|not supported|\(#?100\)|code 100/i.test(message)
+}
+
+/** Should this account's next post carry the label, and may the direct way
+ *  be tried? */
+export async function paidLabelWanted(igUserId: string): Promise<{ on: boolean; direct: boolean; owner: Owner | null }> {
+  const sb = await admin()
+  const owner = await ownerOf(sb, igUserId)
+  if (!owner) return { on: false, direct: false, owner }
+  const { data: integ } = await sb.from('integrations').select('tier').eq('user_id', owner.userId).maybeSingle()
+  const on = paidLabelAllowed(integ?.tier) && owner.extra.paid_label_off !== true
+  return { on, direct: on && !directRefused(owner.extra), owner }
+}
+
+/** Keeps that Instagram refused the switch on a direct post. */
+export async function noteDirectRefusal(owner: Owner | null, detail: string): Promise<void> {
+  if (!owner?.rowId) return
+  try {
+    const sb = await admin()
+    const { data } = await sb.from('social_accounts').select('extra').eq('id', owner.rowId).maybeSingle()
+    const extra = (data?.extra ?? {}) as Record<string, unknown>
+    await sb.from('social_accounts').update({ extra: { ...extra, paid_label_direct_refused_at: new Date().toISOString(), paid_label_direct_refused_why: detail.slice(0, 300) } }).eq('id', owner.rowId)
+  } catch { /* the post is what matters */ }
+}
+
+/** Whether Instagram says the label is on a published post, or null when it
+ *  will not say. */
+export async function readBackLabel(mediaId: string, igToken: string): Promise<boolean | null> {
+  try {
+    const res = await fetch(`https://graph.instagram.com/v22.0/${encodeURIComponent(mediaId)}?fields=is_paid_partnership&access_token=${encodeURIComponent(igToken)}`, { signal: AbortSignal.timeout(15_000) })
+    const data = await res.json().catch(() => ({})) as { is_paid_partnership?: boolean }
+    return res.ok && typeof data.is_paid_partnership === 'boolean' ? data.is_paid_partnership : null
+  } catch { return null }
+}
+
 /** Keeps what happened to this post on the account, for the settings card. */
-async function remember(owner: Owner | null | undefined, e: PaidLabelEntry): Promise<void> {
+export async function remember(owner: Owner | null | undefined, e: PaidLabelEntry): Promise<void> {
   if (!owner?.rowId) return
   try {
     const sb = await admin()

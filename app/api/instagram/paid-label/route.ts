@@ -10,7 +10,7 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { maybeDecrypt } from '@/lib/secrets'
-import { findPaidLabelRoute, paidLabelAllowed, paidLabelWords, type PaidLabelEntry } from '@/lib/ig-paid-label'
+import { findPaidLabelRoute, paidLabelAllowed, paidLabelWords, directRefused, type PaidLabelEntry } from '@/lib/ig-paid-label'
 
 export const dynamic = 'force-dynamic'
 
@@ -37,10 +37,14 @@ export async function GET() {
     const token = maybeDecrypt(r.access_token) || ''
     let ready = false, why: string | null = null, page: string | null = null, checked: string[] = []
     if (!token) why = 'This Instagram account needs reconnecting in MVP.'
-    else {
+    else if (!directRefused(r.extra)) {
+      // The simple way: the switch goes on the usual post.
+      ready = true
+    } else {
+      checked = [`Instagram did not take the label switch on a direct post: ${String(r.extra?.paid_label_direct_refused_why ?? 'no reason given').slice(0, 200)}. MVP tries again after a week, and meanwhile posts through a linked Facebook Page when there is one.`]
       try {
         const found = await findPaidLabelRoute(r.external_id, token)
-        checked = found.checked ?? []
+        checked = [...checked, ...(found.checked ?? [])]
         if (found.route) { ready = true; page = found.route.pageName }
         else why = paidLabelWords(found.why)
       } catch (e) { why = `MVP could not check this account (${e instanceof Error ? e.message : 'no answer'}).` }
@@ -52,7 +56,7 @@ export async function GET() {
       page,
       why,
       checked,
-      recent: log.slice(0, 5).map((e) => ({ at: e.at, on: e.on, kind: e.kind ?? null, words: e.on ? 'Posted with the label' : `Posted without the label. ${paidLabelWords(e.why ?? 'refused', e.detail)}` })),
+      recent: log.slice(0, 5).map((e) => ({ at: e.at, on: e.on, kind: e.kind ?? null, words: e.on ? `Posted with the label switched on.${e.detail ? ` ${e.detail}` : ''}` : `Posted without the label. ${paidLabelWords(e.why ?? 'refused', e.detail)}` })),
     }
   }))
   return NextResponse.json({ allowed: true, enabled, accounts })

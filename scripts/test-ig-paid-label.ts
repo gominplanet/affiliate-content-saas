@@ -7,7 +7,7 @@
 // answer is never retried (no double post); every outcome is kept and said;
 // the setting survives a reconnect; the card is on Connect Socials.
 import { readFileSync } from 'node:fs'
-import { paidLabelAllowed, withEntry, paidLabelWords, isPermissionError, lacksInstagramGrant, publishWithPaidLabel, PaidLabelUncertainError, PAID_LABEL_FOR_MEMBERS, FB_INSTAGRAM_SCOPES, type PaidLabelWhy } from '../lib/ig-paid-label'
+import { paidLabelAllowed, withEntry, paidLabelWords, isPermissionError, lacksInstagramGrant, refusedTheSwitch, directRefused, publishWithPaidLabel, PaidLabelUncertainError, PAID_LABEL_FOR_MEMBERS, FB_INSTAGRAM_SCOPES, type PaidLabelWhy } from '../lib/ig-paid-label'
 import { containerParams } from '../services/instagram'
 
 const fails: string[] = []
@@ -68,19 +68,22 @@ async function run() {
   } finally { globalThis.fetch = realFetch }
 
   const IG = read('services/instagram.ts')
-  check('every Instagram post tries the label first, then the usual way', /const labelled = await publishWithPaidLabel\(\{ userId: opts\.userId, accessToken: opts\.accessToken, params: containerParams\(opts\), kind: opts\.mediaType \}\)\s*\n\s*if \(labelled\) return labelled\s*\n\s*const containerId = await createMediaContainer\(opts\)/.test(IG))
   check('a post that may be live keeps the account\'s posting hold', /if \(feed && !\(e instanceof Error && e\.name === 'PaidLabelUncertainError'\)\) feedSlots\.delete\(opts\.userId\)/.test(IG))
-  check('the usual way builds the same post', /const body = containerParams\(opts\)\s*\n\s*body\.set\('access_token', opts\.accessToken\)/.test(IG))
+  check('the usual way builds the same post', /const body = containerParams\(opts\)\s*\n\s*if \(opts\.paidPartnership\) body\.set\('is_paid_partnership', 'true'\)\s*\n\s*body\.set\('access_token', opts\.accessToken\)/.test(IG))
   const FB = read('app/api/auth/facebook/route.ts')
   check('connecting Facebook asks Instagram\'s permissions of accounts the label is open to', /if \(paidLabelAllowed\(tierRow\?\.tier as string \| null\)\) labelScopes = \[\.\.\.FB_INSTAGRAM_SCOPES\]/.test(FB))
   check('the setting and log survive a reconnect', /kept = Object\.fromEntries\(Object\.entries\(e\)\.filter\(\(\[k\]\) => k\.startsWith\('paid_label_'\)\)\)/.test(read('lib/social-accounts.ts')) && /\.\.\.kept,/.test(read('lib/social-accounts.ts')))
   check('the card is on Connect Socials and says what happened to each post', /<InstagramPaidLabel \/>/.test(read('app/(dashboard)/connect-socials/page.tsx')) && /Posted with the label/.test(read('app/api/instagram/paid-label/route.ts')) && /Posted without the label/.test(read('app/api/instagram/paid-label/route.ts')))
 
-  const T = read('app/api/facebook/paid-label-test/route.ts')
-  check('the Facebook label test is team only, hidden, always deleted, and says Facebook\'s words', /if \(normalizeTier\(integ\?\.tier\) !== 'admin'\) return NextResponse\.json\(\{ error: 'Team only\.' \}, \{ status: 403 \}\)/.test(T)
-    && /published: 'false'/.test(T) && /\} finally \{\s*\n\s*const del = await call\(`\$\{FB\}\/\$\{postId\}\?access_token=\$\{t\}`, \{ method: 'DELETE' \}\)/.test(T) && /NOT deleted, please remove it from your Page/.test(T) && /sponsor_id: partner/.test(T))
-  check('a try it cannot read back is never called a pass', /no field says whether a label with no brand is on, so this does not show that it works/.test(T))
-  check('the card has the test button', /Run the Facebook label test/.test(read('components/instagram/InstagramPaidLabel.tsx')))
+  // THE SIMPLE WAY FIRST (Seb: "i want MVP to toggle on the label when posting to instagram.. simple no?").
+  check('the switch goes on the usual Instagram post first, then the Facebook route, then the usual post', IG.indexOf('createMediaContainer({ ...opts, paidPartnership: true })') > 0
+    && IG.indexOf('createMediaContainer({ ...opts, paidPartnership: true })') < IG.indexOf('label.publishWithPaidLabel(') && IG.indexOf('label.publishWithPaidLabel(') < IG.indexOf('const containerId = await createMediaContainer(opts)')
+    && /if \(opts\.paidPartnership\) body\.set\('is_paid_partnership', 'true'\)/.test(IG))
+  check('a refused switch is kept for a week, a media problem is not', refusedTheSwitch('Instagram container create: (#100) Invalid parameter is_paid_partnership') && !refusedTheSwitch('The video file is too large')
+    && directRefused({ paid_label_direct_refused_at: new Date(Date.now() - 86_400_000).toISOString() }) && !directRefused({ paid_label_direct_refused_at: new Date(Date.now() - 8 * 86_400_000).toISOString() }) && !directRefused({})
+    && /if \(label\.refusedTheSwitch\(msg\)\) directRefusal = msg/.test(IG) && /const containerId = await createMediaContainer\(opts\)\s*\n\s*if \(directRefusal\) await label\.noteDirectRefusal\(want\.owner, directRefusal\)/.test(IG))
+  check('a labelled post says whether Instagram confirms it, never claims more', /shown === true \? \{ detail: 'Instagram confirms it\.' \}/.test(IG) && /Check the post shows Paid partnership/.test(IG) && /Instagram took the post but says the label is not on/.test(IG))
+  check('the Facebook test is gone from the card', !/Run the Facebook label test/.test(read('components/instagram/InstagramPaidLabel.tsx')))
 
   if (fails.length) { console.error('FAIL paid label:\n  ' + fails.join('\n  ')); process.exit(1) }
   console.log('✅ ig-paid-label: Instagram posts carry the Paid partnership label when they can, and say when they did not')

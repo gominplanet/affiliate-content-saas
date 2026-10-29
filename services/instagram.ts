@@ -290,8 +290,11 @@ export async function createMediaContainer(opts: {
   /** Reels only — the frame to use as the COVER, in milliseconds into the video.
    *  Lets the creator pick the still in MVP instead of fixing it in the IG app. */
   thumbOffsetMs?: number
+  /** Instagram's Paid partnership label (lib/ig-paid-label). */
+  paidPartnership?: boolean
 }): Promise<string> {
   const body = containerParams(opts)
+  if (opts.paidPartnership) body.set('is_paid_partnership', 'true')
   body.set('access_token', opts.accessToken)
   const res = await fetchWithTimeout(`${GRAPH_BASE}/${GRAPH_VERSION}/${opts.userId}/media`, {
     method: 'POST',
@@ -413,13 +416,45 @@ export async function publishMedia(opts: {
   const feed = opts.mediaType !== 'STORIES'
   if (feed) await claimFeedSlot(opts.userId, opts.accessToken, opts.caption)
   try {
-    // THE PAID PARTNERSHIP LABEL (lib/ig-paid-label): through the linked
-    // Facebook Page when the account can, else the usual way below, with the
-    // reason kept. It returns null only when nothing was published.
-    const { publishWithPaidLabel } = await import('@/lib/ig-paid-label')
-    const labelled = await publishWithPaidLabel({ userId: opts.userId, accessToken: opts.accessToken, params: containerParams(opts), kind: opts.mediaType })
-    if (labelled) return labelled
+    // THE PAID PARTNERSHIP LABEL (lib/ig-paid-label). 1: the switch on the
+    // usual post. 2: when Instagram refuses it, through the linked Facebook
+    // Page. 3: the usual post without it. Each step is taken only when
+    // nothing was published before it, and what happened is kept.
+    const label = await import('@/lib/ig-paid-label')
+    const want = await label.paidLabelWanted(opts.userId).catch(() => ({ on: false, direct: false, owner: null }))
+    // Kept only once the same post goes out another way: then the media was
+    // fine and it was the switch Instagram refused.
+    let directRefusal: string | null = null
+    if (want.direct) {
+      let labelledContainer: string | null = null
+      try {
+        labelledContainer = await createMediaContainer({ ...opts, paidPartnership: true })
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e)
+        // Only a refusal of the switch itself is kept; a media problem fails
+        // the usual post below too, and is said there.
+        if (label.refusedTheSwitch(msg)) directRefusal = msg
+      }
+      if (labelledContainer) {
+        await waitForContainer({ containerId: labelledContainer, accessToken: opts.accessToken })
+        const id = await publishContainer({ userId: opts.userId, accessToken: opts.accessToken, containerId: labelledContainer })
+        const shown = await label.readBackLabel(id, opts.accessToken)
+        await label.remember(want.owner, {
+          at: new Date().toISOString(), on: shown !== false, mediaId: id, kind: opts.mediaType,
+          ...(shown === true ? { detail: 'Instagram confirms it.' } : shown === false ? { why: 'refused' as const, detail: 'Instagram took the post but says the label is not on' } : { detail: 'Instagram took the switch. Check the post shows Paid partnership.' }),
+        })
+        return id
+      }
+    }
+    if (want.on) {
+      const labelled = await label.publishWithPaidLabel({ userId: opts.userId, accessToken: opts.accessToken, params: containerParams(opts), kind: opts.mediaType })
+      if (labelled) {
+        if (directRefusal) await label.noteDirectRefusal(want.owner, directRefusal)
+        return labelled
+      }
+    }
     const containerId = await createMediaContainer(opts)
+    if (directRefusal) await label.noteDirectRefusal(want.owner, directRefusal)
     await waitForContainer({ containerId, accessToken: opts.accessToken })
     return await publishContainer({
       userId: opts.userId,
