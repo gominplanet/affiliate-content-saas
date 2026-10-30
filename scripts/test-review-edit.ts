@@ -5,7 +5,7 @@
 // B-roll lands under its line, never in the opening, never overlapping;
 // zooms run from a strong line to the next cut; captions follow the cuts; a
 // planner answer is checked against the take; settings are made safe.
-import { cleanWords, linesOf, keepSegments, snapSegments, editLength, toOutput, outputWords, insertsFor, zoomsFor, cleanSettings, renderSpec, findWords, cutLines, DEFAULT_SETTINGS, type Word } from '../lib/review-edit'
+import { cleanWords, linesOf, keepSegments, snapSegments, editLength, toOutput, outputWords, insertsFor, zoomsFor, cleanSettings, renderSpec, findWords, cutLines, PACE, DEFAULT_SETTINGS, type Word } from '../lib/review-edit'
 import { cleanPlan, jsonIn } from '../lib/review-edit-plan'
 import { snapSegments as serverSnap, editSeconds as serverSeconds } from '../ingest-service/edit-filters'
 
@@ -75,16 +75,21 @@ check('a plan that cuts every line cuts nothing', cleanPlan({ cuts: [{ from: 0, 
 check('a reply with no JSON is an empty plan, not an error', cleanPlan(jsonIn('sorry'), lines, []).cuts.length === 0)
 
 // ── Settings ─────────────────────────────────────────────────────────────────
-const s1 = cleanSettings({ formats: ['vertical', 'square', 'vertical'], logo: { url: 'javascript:alert(1)', position: 'upper-left' }, title: { text: 'Best — hoodie', position: 'nowhere', seconds: 99 } })
-check('only real formats, once each', JSON.stringify(s1.formats) === '["vertical"]')
+const s1 = cleanSettings({ formats: ['vertical', 'square'], logo: { url: 'javascript:alert(1)', position: 'upper-left' }, title: { text: 'Best \u2014 hoodie', position: 'nowhere', seconds: 99 } })
+check('the format follows what the video is for, never a list sent in', JSON.stringify(s1.formats) === '["wide"]' && JSON.stringify(cleanSettings({ kind: 'trybe' }).formats) === '["vertical"]' && cleanSettings({ kind: 'square' }).kind === 'review')
 check('a logo that is not a web address is no logo', s1.logo === null)
 check('title: no dashes, a known position, 2 to 15 seconds', s1.title.text === 'Best, hoodie' && s1.title.position === 'top' && s1.title.seconds === 15)
 const s2 = cleanSettings({ logo: { url: 'https://x/logo.png', position: 'lower-right' } })
 check('a logo keeps its place and is on', !!s2.logo && s2.logo.position === 'lower-right' && s2.logo.on === true)
 check('switches off stay off', cleanSettings({ zooms: false, color: false }).zooms === false && cleanSettings({ zooms: false }).color === true)
 
-const spec = renderSpec({ words, lines, plan: { cuts, keys: [4], placements: [{ shot: 1, line: 3, why: '' }], title: '' }, shots, duration: 14, settings: { ...DEFAULT_SETTINGS, formats: ['wide'] }, hasBroll: true })
-check('captions are only sent for the vertical version', spec.words.length === 0 && renderSpec({ words, lines, plan: { cuts, keys: [], placements: [], title: '' }, shots, duration: 14, settings: { ...DEFAULT_SETTINGS, formats: ['vertical'] }, hasBroll: false }).words.length > 0)
+const spec = renderSpec({ words, lines, plan: { cuts, keys: [4], placements: [{ shot: 1, line: 3, why: '' }], title: '' }, shots, duration: 14, settings: cleanSettings({ kind: 'review' }), hasBroll: true })
+const plain = { cuts, keys: [], placements: [], title: '' }
+const adSpec = renderSpec({ words, lines, plan: plain, shots, duration: 14, settings: cleanSettings({ kind: 'trybe', logo: { url: 'https://x/logo.png', on: true } }), hasBroll: false })
+check('captions are only on a TRYBE ad', spec.words.length === 0 && adSpec.words.length > 0)
+check('a TRYBE ad never carries the creator\u2019s logo; a review does when it is on', adSpec.logo === null && renderSpec({ words, lines, plan: plain, shots, duration: 14, settings: cleanSettings({ kind: 'review', logo: { url: 'https://x/logo.png', on: true } }), hasBroll: false }).logo !== null)
+check('a TRYBE ad is cut tighter: shorter pauses, so a shorter video from the same take', adSpec.seconds < renderSpec({ words, lines, plan: plain, shots, duration: 14, settings: cleanSettings({ kind: 'review' }), hasBroll: false }).seconds)
+check('an ad\u2019s B-roll may come sooner and is shorter', PACE.trybe.brollNotBefore < PACE.review.brollNotBefore && PACE.trybe.brollMax < PACE.review.brollMax && PACE.trybe.maxPause < PACE.review.maxPause)
 check('B-roll switched off, or no B-roll take, sends none', renderSpec({ words, lines, plan: { cuts, keys: [], placements: [{ shot: 1, line: 3, why: '' }], title: '' }, shots, duration: 14, settings: { ...DEFAULT_SETTINGS, broll: false }, hasBroll: true }).inserts.length === 0 && spec.inserts.length === 1)
 
 if (fails.length) { console.error(`\n❌ review-edit: ${fails.length} failure(s)\n`); for (const f of fails) console.error(`   • ${f}`); process.exit(1) }

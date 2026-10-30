@@ -17,7 +17,7 @@ import { uploadResumable, ResumableUnavailable } from '@/lib/upload-resumable'
 import { uploadWithProgress } from '@/lib/upload-progress'
 import { freshAccessToken, saysExpired } from '@/lib/fresh-token'
 import { storageSizeRefusal, BULK_VIDEO_MAX_BYTES } from '@/lib/clip-source-limits'
-import { DEFAULT_SETTINGS, FORMAT_WORDS, POSITIONS, POSITION_WORDS, type EditSettings, type Format, type Position } from '@/lib/review-edit'
+import { DEFAULT_SETTINGS, FORMAT_WORDS, KIND_WORDS, POSITIONS, POSITION_WORDS, cleanSettings, type EditSettings, type Format, type Position, type VideoKind } from '@/lib/review-edit'
 
 const PURPLE = '#7C3AED'
 const GREEN = '#15803D'
@@ -74,24 +74,19 @@ function Toggle({ on, set, label, hint }: { on: boolean; set: (v: boolean) => vo
 
 /** The choices for a video, new or made. */
 function Choices({ s, set, onLogo, logoBusy }: { s: EditSettings; set: (s: EditSettings) => void; onLogo: (f: File) => void; logoBusy: boolean }) {
-  const fmt = (f: Format) => set({ ...s, formats: s.formats.includes(f) ? (s.formats.length > 1 ? s.formats.filter((x) => x !== f) : s.formats) : [...s.formats, f] })
+  const ad = s.kind === 'trybe'
   const pos = (cur: Position, pick: (p: Position) => void) => (
     <div className="flex flex-wrap gap-1.5 mt-1">{POSITIONS.map((p) => <Chip key={p} on={cur === p} onClick={() => pick(p)}>{POSITION_WORDS[p]}</Chip>)}</div>
   )
   return (
     <div className="flex flex-col gap-3">
-      <div>
-        <p className="text-[12px] font-bold uppercase tracking-wider" style={soft}>Make it</p>
-        <div className="flex flex-wrap gap-1.5 mt-1">{(['wide', 'vertical'] as Format[]).map((f) => <Chip key={f} on={s.formats.includes(f)} onClick={() => fmt(f)}>{FORMAT_WORDS[f]}</Chip>)}</div>
-        {s.formats.includes('vertical') && <p className="text-[12px] mt-1" style={soft}>From a sideways take, the vertical version is cut from the middle, so stay in the centre of the shot.</p>}
-      </div>
       <div className="grid sm:grid-cols-2 gap-2">
         <Toggle on={s.broll} set={(v) => set({ ...s, broll: v })} label="B-roll over the talk" hint="Your B-roll shots where you talk about what they show." />
         <Toggle on={s.zooms} set={(v) => set({ ...s, zooms: v })} label="Slow zooms" hint="A slow push in on your strongest points." />
         <Toggle on={s.color} set={(v) => set({ ...s, color: v })} label="Colour boost" hint="A little more colour and contrast." />
-        <Toggle on={s.captions} set={(v) => set({ ...s, captions: v })} label="Captions on the vertical version" hint="Word by word, like Clip Factory." />
+        {ad && <Toggle on={s.captions} set={(v) => set({ ...s, captions: v })} label="Captions" hint="Word by word, the way ads are watched with the sound off." />}
       </div>
-      <div>
+      {!ad && <div>
         <p className="text-[12px] font-bold uppercase tracking-wider" style={soft}>Logo</p>
         {s.logo ? (
           <div className="mt-1">
@@ -106,13 +101,14 @@ function Choices({ s, set, onLogo, logoBusy }: { s: EditSettings; set: (s: EditS
           {logoBusy ? <Loader2 size={13} className="animate-spin" /> : <ImagePlus size={13} />} {s.logo ? 'Use another logo' : 'Add your logo (a PNG)'}
           <input type="file" accept="image/png,image/webp,image/jpeg" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) onLogo(f); e.target.value = '' }} />
         </label>
-      </div>
+      </div>}
+      {ad && <p className="text-[12px]" style={soft}>No logo on a TRYBE ad: the brand runs it as its own ad.</p>}
       <div>
-        <p className="text-[12px] font-bold uppercase tracking-wider" style={soft}>Title</p>
-        <Toggle on={s.title.on} set={(v) => set({ ...s, title: { ...s.title, on: v } })} label="Show a title at the start" />
+        <p className="text-[12px] font-bold uppercase tracking-wider" style={soft}>{ad ? 'Hook on screen' : 'Title'}</p>
+        <Toggle on={s.title.on} set={(v) => set({ ...s, title: { ...s.title, on: v } })} label={ad ? 'Show the hook as text at the start' : 'Show a title at the start'} />
         {s.title.on && (
           <>
-            <input value={s.title.text} onChange={(e) => set({ ...s, title: { ...s.title, text: e.target.value.slice(0, 60) } })} placeholder="Leave empty and MVP writes it from the product"
+            <input value={s.title.text} onChange={(e) => set({ ...s, title: { ...s.title, text: e.target.value.slice(0, 60) } })} placeholder={ad ? 'Leave empty and MVP writes the hook from what you say' : 'Leave empty and MVP writes it from the product'}
               className="mt-1 w-full max-w-md rounded-lg border px-3 py-1.5 text-[13px] bg-transparent" style={{ borderColor: 'var(--border)', color: 'var(--text)' }} />
             {pos(s.title.position, (p) => set({ ...s, title: { ...s.title, position: p } }))}
             <label className="text-[12.5px] mt-1 inline-flex items-center gap-2" style={soft}>For
@@ -226,16 +222,17 @@ export default function ReviewEditor() {
         <h1 className="text-[22px] font-bold flex items-center gap-2"><Clapperboard size={20} /> Review editor
           <span className="text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded" style={{ background: 'var(--border)', color: 'var(--text-3)' }}>Labs</span></h1>
         <p className="text-[13.5px] mt-1" style={{ color: 'var(--text-2)' }}>
-          Shoot your review in one take and your B-roll in another, then add them here. MVP cuts the mistakes and long pauses, puts your B-roll where you talk about it, and makes the video. Add a whole batch tonight and they are ready in the morning.
+          Film your talking in one take and your B-roll in another, then add them here. MVP cuts the mistakes and long pauses, puts your B-roll where you talk about it, and makes the video. Add a whole batch tonight and they are ready in the morning.
         </p>
       </div>
 
       <details className={card} style={cardStyle}>
         <summary className="text-[13.5px] font-semibold cursor-pointer">How to shoot it</summary>
         <ul className="text-[13px] mt-2 flex flex-col gap-1.5 list-disc pl-5" style={{ color: 'var(--text-2)' }}>
-          <li><b>The review:</b> prop up your phone or camera and talk it through in one go. Made a mistake? Pause, and say the sentence again. MVP keeps the last good try.</li>
+          <li><b>Talk it through in one go.</b> Prop up your phone or camera. Made a mistake? Pause, and say the sentence again. MVP keeps the last good try.</li>
           <li><b>The B-roll:</b> a second take of just the product, without stopping. Hold each shot three to five seconds: the front, the details, it in use.</li>
-          <li><b>Sideways</b> (landscape) for Amazon and YouTube. MVP can cut the vertical version for TRYBE and TikTok from the same take, so stay in the middle of the frame.</li>
+          <li><b>An Amazon and YouTube review</b> is filmed sideways (landscape), at a talking pace. Its Shorts, TikTok and Reels come from the finished review later, through Drop.</li>
+          <li><b>A TRYBE ad</b> is filmed upright (portrait). It is an ad the brand runs, not a review: open on the hook, keep it tight, and film the B-roll upright too.</li>
           <li>1080p is plenty. Each file can be up to {mb(BULK_VIDEO_MAX_BYTES)}.</li>
         </ul>
       </details>
@@ -244,9 +241,19 @@ export default function ReviewEditor() {
 
       <section className={card} style={cardStyle} aria-label="Add a video">
         <p className="text-[15px] font-bold mb-2">Add a video</p>
+        <p className="text-[13px] font-semibold">1. What is this video for?</p>
+        <div className="grid sm:grid-cols-2 gap-2 mt-1 mb-3" role="group" aria-label="What this video is for">
+          {(['review', 'trybe'] as VideoKind[]).map((k) => (
+            <button key={k} type="button" onClick={() => setSettings((s) => cleanSettings({ ...s, kind: k, captions: k === 'trybe' ? true : s.captions }, s))} aria-pressed={settings.kind === k}
+              className="text-left rounded-xl border p-3" style={settings.kind === k ? { borderColor: PURPLE, background: 'rgba(124,58,237,0.08)' } : { borderColor: 'var(--border)' }}>
+              <p className="text-[13.5px] font-bold" style={settings.kind === k ? { color: PURPLE } : undefined}>{KIND_WORDS[k].name}</p>
+              <p className="text-[12px] mt-0.5" style={soft}>{KIND_WORDS[k].line}</p>
+            </button>
+          ))}
+        </div>
         <div className="grid sm:grid-cols-2 gap-3">
           <div>
-            <p className="text-[13px] font-semibold">1. Your review take</p>
+            <p className="text-[13px] font-semibold">2. Your talking take <span className="font-normal" style={soft}>({settings.kind === 'trybe' ? 'filmed upright' : 'filmed sideways'})</span></p>
             <label className="mt-1 inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[13px] font-semibold cursor-pointer" style={{ borderColor: 'var(--border)' }}>
               <UploadCloud size={14} /> {review ? 'Choose another' : 'Choose the file'}
               <input type="file" accept="video/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) void upload(f, 'review'); e.target.value = '' }} />
@@ -254,7 +261,7 @@ export default function ReviewEditor() {
             {progress(review)}
           </div>
           <div>
-            <p className="text-[13px] font-semibold">2. Your B-roll take <span className="font-normal" style={soft}>(optional)</span></p>
+            <p className="text-[13px] font-semibold">3. Your B-roll take <span className="font-normal" style={soft}>(optional)</span></p>
             <label className="mt-1 inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[13px] font-semibold cursor-pointer" style={{ borderColor: 'var(--border)' }}>
               <Film size={14} /> {broll ? 'Choose another' : 'Choose the file'}
               <input type="file" accept="video/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) void upload(f, 'broll'); e.target.value = '' }} />
@@ -263,7 +270,7 @@ export default function ReviewEditor() {
           </div>
         </div>
         <div className="mt-3">
-          <p className="text-[13px] font-semibold">3. The product <span className="font-normal" style={soft}>(optional: its name or Amazon link)</span></p>
+          <p className="text-[13px] font-semibold">4. The product <span className="font-normal" style={soft}>(optional: {settings.kind === 'trybe' ? 'the brand and product' : 'its name or Amazon link'})</span></p>
           <input value={product} onChange={(e) => setProduct(e.target.value)} placeholder="Bassdash UPF 50 hoodie" className="mt-1 w-full max-w-md rounded-lg border px-3 py-1.5 text-[13px] bg-transparent" style={{ borderColor: 'var(--border)', color: 'var(--text)' }} />
         </div>
         <div className="mt-4 pt-3 border-t" style={{ borderColor: 'var(--border)' }}>
@@ -327,7 +334,9 @@ function EditCard({ e, reload, uploadLogo, logoBusy }: { e: EditView; reload: ()
         const ad = await ar.json().catch(() => ({}))
         if (!ar.ok) throw new Error(ad.error || 'Drop did not take it.')
       }
-      toast.success(<span>In your Drop. <a href="/drop" className="underline font-semibold">Open Drop</a> to choose where it goes.</span>, { duration: 12000 })
+      toast.success(e.settings.kind === 'trybe'
+        ? <span>In your Drop. <a href="/drop" className="underline font-semibold">Open Drop</a> and pick the TRYBE brand it is for.</span>
+        : <span>In your Drop. <a href="/drop" className="underline font-semibold">Open Drop</a> to send it to Amazon and YouTube, and to make its Shorts, TikTok and Reels.</span>, { duration: 12000 })
     } catch (err) { toast.error(`Not sent to Drop: ${err instanceof Error ? err.message : 'unknown'}`) } finally { setWork(null) }
   }
   const outs = (Object.entries(e.outputs || {}) as [Format, { url: string; seconds: number }][])
@@ -336,6 +345,7 @@ function EditCard({ e, reload, uploadLogo, logoBusy }: { e: EditView; reload: ()
     <article className={card} style={cardStyle}>
       <div className="flex flex-wrap items-center gap-2">
         <p className="text-[14.5px] font-bold">{e.name || 'Review'}</p>
+        <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full" style={{ background: 'var(--surface-2)', color: 'var(--text-2)' }}>{KIND_WORDS[e.settings.kind].name}</span>
         <span className="text-[11.5px] font-semibold px-2 py-0.5 rounded-full inline-flex items-center gap-1" style={{ color: st.color, background: 'var(--surface-2)' }}>
           {st.busy && <Loader2 size={11} className="animate-spin" />}{e.status === 'done' && <Check size={11} />}{e.status === 'failed' && <AlertTriangle size={11} />} {st.words}
         </span>

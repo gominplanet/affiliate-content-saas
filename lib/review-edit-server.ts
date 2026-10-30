@@ -96,7 +96,12 @@ export async function readTakes(db: Db, row: EditRow): Promise<void> {
     const who = { userId: row.user_id, tier: await tierOf(db, row.user_id) }
     const probe = await videoServer<{ duration: number; width: number; height: number; hasAudio: boolean }>('/probe', { url: row.review_src.url, frames: 0 }, 90_000)
     if (!probe.ok) return await fail(probe.status === 404 ? 'MVP’s video server is being updated. Press Try again in half an hour.' : `MVP could not open your review take: ${probe.error}.`)
-    if (!probe.data.hasAudio) return await fail('Your review take has no sound, so MVP cannot hear what to cut.')
+    if (!probe.data.hasAudio) return await fail('Your take has no sound, so MVP cannot hear what to cut.')
+    // Filmed the way its kind is made: a review sideways, an ad upright.
+    const kindNow = cleanSettings(row.settings).kind
+    const upright = probe.data.height > probe.data.width
+    if (kindNow === 'review' && upright) return await fail('This take was filmed upright. An Amazon and YouTube review is filmed sideways: film it again sideways, or add it as a TRYBE ad.')
+    const sideNote = kindNow === 'trybe' && !upright ? ' It was filmed sideways, so the upright ad is cut from the middle of the picture.' : ''
     // The sound alone, small, for the transcript; deleted straight after.
     const audio = await videoServer<{ url: string }>('/stream-audio', { url: row.review_src.url, userId: row.user_id }, 295_000)
     if (!audio.ok) return await fail(`MVP could not take the sound from your review take: ${audio.error}.`)
@@ -117,10 +122,10 @@ export async function readTakes(db: Db, row: EditRow): Promise<void> {
       }
     }
     await set(db, row.id, { note: 'Deciding the cuts' })
-    const plan = await planEdit({ words, lines, shots, product: row.product, who })
+    const plan = await planEdit({ words, lines, shots, product: row.product, kind: kindNow, who })
     const settings = cleanSettings(row.settings)
     if (!settings.title.text && plan.title) settings.title.text = plan.title
-    const brollNote = row.broll_src && !brollInfo ? ' MVP could not open your B-roll take, so this one has none.' : ''
+    const brollNote = (row.broll_src && !brollInfo ? ' MVP could not open your B-roll take, so this one has none.' : '') + sideNote
     await set(db, row.id, {
       status: 'ready_to_make', attempts: 0,
       note: `Read: ${plan.cuts.length} ${plan.cuts.length === 1 ? 'cut' : 'cuts'}${shots.length ? `, ${plan.placements.length} B-roll ${plan.placements.length === 1 ? 'moment' : 'moments'}` : ''}. Waiting for its turn on the video server.${brollNote}`,
@@ -165,7 +170,7 @@ export async function startMaking(db: Db, row: EditRow): Promise<void> {
     userId: row.user_id, job, callbackUrl: `${appUrl()}/api/review-edit/callback`,
     segments: spec.segments, inserts: spec.inserts, zooms: spec.zooms, color: settings.color,
     formats: settings.formats, cropX: settings.cropX, words: spec.words,
-    logo: settings.logo?.on ? { url: settings.logo.url, position: settings.logo.position, widthPct: { wide: 0.12, vertical: 0.22 } } : undefined,
+    logo: spec.logo ? { url: spec.logo.url, position: spec.logo.position, widthPct: { wide: 0.12, vertical: 0.22 } } : undefined,
     title: title ? { url: title.url, position: settings.title.position, startSec: 0.3, endSec: 0.3 + settings.title.seconds, widthPct: title.widthPct } : undefined,
   }, 60_000)
   if (!sent.ok) {

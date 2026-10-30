@@ -14,7 +14,7 @@
 
 import { createAnthropicClient } from '@/lib/anthropic'
 import { recordAnthropicUsage } from '@/lib/ai-usage'
-import { cleanSettings, clock, findWords, POSITIONS, type Cut, type CutKind, type EditSettings, type Line, type Plan, type Shot, type Word } from '@/lib/review-edit'
+import { cleanSettings, clock, findWords, POSITIONS, type Cut, type CutKind, type EditSettings, type Line, type Plan, type Shot, type VideoKind, type Word } from '@/lib/review-edit'
 
 const PLAN_MODEL = 'claude-sonnet-5'
 const QUICK_MODEL = 'claude-haiku-4-5-20251001'
@@ -115,12 +115,28 @@ const PLAN_SYSTEM = [
   'Reply with JSON only: {"cuts":[{"from":3,"to":4,"kind":"restart","why":"..."},{"from":7,"to":7,"text":"it keeps the sun off and","kind":"restart","why":"..."}],"keys":[12,30],"placements":[{"shot":2,"line":9,"why":"..."}],"title":"..."}. Line numbers are the numbers shown; "text" is only for part of one line, quoted word for word.',
 ].join('\n')
 
-/** The plan for one review take. */
-export async function planEdit(o: { words: Word[]; lines: Line[]; shots: Shot[]; product?: string | null; who: Who }): Promise<Plan> {
+// A TRYBE ad is not a review (Seb, 2026-10-30: "It's an ad"): a brand runs it
+// as a paid ad, so it is cut harder and opens on a hook.
+const TRYBE_SYSTEM = [
+  'You edit a creator\'s TRYBE ad: an upright video a brand runs as a paid social ad. It is not a review. They filmed it in one take talking to the camera, so it has mistakes, restarts, filler and chatter in it. You see what they said, line by line, with the time of each line.',
+  'Cut harder than for a review:',
+  '- restart, mistake, repeat and chatter exactly as an editor would: keep only the last good try of anything said twice.',
+  '- filler: "um", "uh", "you know", "so yeah", and a "like" or "okay so" that opens a line. Quote them in "text" on their line.',
+  '- rambling: a sentence that wanders before it gets to the point, when a tighter version of the same point is said elsewhere.',
+  'Keep the hook (the first strong line about the problem or the product), what the product does, the proof, and the call to action. Never cut the brand or product name.',
+  'Pick 2 to 6 "keys": the hook, the strongest benefits and the call to action. The video slowly zooms in on them.',
+  'If B-roll shots are listed, place a shot under each line that talks about what the shot shows, each shot once, not on the first line. Ads use B-roll often.',
+  'Write a "title": the hook as on-screen text for the first seconds, under 7 words, no year, no dashes, no price.',
+  'Each "why" is one short plain sentence to the creator.',
+  'Reply with JSON only: {"cuts":[{"from":3,"to":4,"kind":"restart","why":"..."},{"from":7,"to":7,"text":"um so","kind":"mistake","why":"..."}],"keys":[0,9],"placements":[{"shot":2,"line":5,"why":"..."}],"title":"..."}. Line numbers are the numbers shown; "text" is only for part of one line, quoted word for word.',
+].join('\n')
+
+/** The plan for one take: a review, or a TRYBE ad. */
+export async function planEdit(o: { words: Word[]; lines: Line[]; shots: Shot[]; product?: string | null; kind?: VideoKind; who: Who }): Promise<Plan> {
   const said = o.lines.map((l) => `${l.i} [${clock(l.start)}] ${l.text}`).join('\n')
   const shots = o.shots.length ? `\n\nB-ROLL SHOTS:\n${o.shots.map((s) => `${s.n}: ${s.what} (${(s.end - s.start).toFixed(1)}s)`).join('\n')}` : '\n\nNo B-roll.'
   const msg = await createAnthropicClient().messages.create({
-    model: PLAN_MODEL, max_tokens: 2500, system: PLAN_SYSTEM,
+    model: PLAN_MODEL, max_tokens: 2500, system: o.kind === 'trybe' ? TRYBE_SYSTEM : PLAN_SYSTEM,
     messages: [{ role: 'user', content: `${o.product ? `PRODUCT: ${o.product}\n\n` : ''}WHAT THEY SAID:\n${said}${shots}` }],
   })
   recordAnthropicUsage(msg, { userId: o.who.userId, tier: o.who.tier, feature: 'review_edit_plan', model: PLAN_MODEL })
@@ -130,7 +146,7 @@ export async function planEdit(o: { words: Word[]; lines: Line[]; shots: Shot[];
 const CHANGE_SYSTEM = [
   'A creator is editing a product review video in MVP and types a change. Turn it into JSON, changing only what they asked for.',
   `Positions: ${POSITIONS.join(', ')} (upper-left is top left, lower-right is bottom right).`,
-  'You can set: "logo": {"position", "on"}; "title": {"text", "position", "seconds", "on"}; "captions", "zooms", "color", "broll" (true or false); "formats" (["wide"], ["vertical"] or both); "cropX" (0 left to 1 right, where the vertical version is cut).',
+  'You can set: "logo": {"position", "on"}; "title": {"text", "position", "seconds", "on"}; "captions", "zooms", "color", "broll" (true or false); "cropX" (0 left to 1 right, where an upright ad is cut from a sideways take). Whether it is a review or a TRYBE ad cannot be changed: say so if asked.',
   'You can also "restore" cuts by number (put the part back) or add "cut" with line numbers {"from","to","why"}.',
   'Reply with JSON only: {"settings":{...},"restore":[],"cut":[],"said":"one short plain sentence saying what you changed"}. If the request is not something you can do, change nothing and say so in "said".',
 ].join('\n')
@@ -146,7 +162,7 @@ export async function promptChange(o: { prompt: string; settings: EditSettings; 
   })
   recordAnthropicUsage(msg, { userId: o.who.userId, tier: o.who.tier, feature: 'review_edit_change', model: QUICK_MODEL })
   const raw = jsonIn(textOf(msg as never)) || {}
-  const settings = cleanSettings(raw.settings && typeof raw.settings === 'object' ? { ...o.settings, ...(raw.settings as object), logo: { ...(o.settings.logo || {}), ...((raw.settings as Record<string, unknown>).logo as object || {}) }, title: { ...o.settings.title, ...((raw.settings as Record<string, unknown>).title as object || {}) } } : o.settings, o.settings)
+  const settings = cleanSettings(raw.settings && typeof raw.settings === 'object' ? { ...o.settings, ...(raw.settings as object), kind: o.settings.kind, logo: { ...(o.settings.logo || {}), ...((raw.settings as Record<string, unknown>).logo as object || {}) }, title: { ...o.settings.title, ...((raw.settings as Record<string, unknown>).title as object || {}) } } : o.settings, o.settings)
   const restore = new Set((Array.isArray(raw.restore) ? raw.restore : []).map(Number))
   const plan: Plan = { ...o.plan, cuts: o.plan.cuts.map((c, k) => (restore.has(k) ? { ...c, restored: true } : c)) }
   const added = cleanPlan({ cuts: Array.isArray(raw.cut) ? raw.cut.map((c: Record<string, unknown>) => ({ ...c, kind: 'chatter' })) : [] }, o.lines, [], o.words).cuts

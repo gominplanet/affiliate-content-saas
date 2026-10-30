@@ -25,6 +25,24 @@ export const MAX_PAUSE = 0.5
 /** The last line keeps a little more, so the video does not stop on the word. */
 export const END_TAIL = 0.5
 
+/** TWO KINDS OF VIDEO, DIFFERENT FROM THE START (Seb, 2026-10-30: "Tribe is a
+ *  different way of making a video. It's an ad. It's not really a video
+ *  review"). A review for Amazon and YouTube is filmed sideways and edited at
+ *  a talking pace; its Shorts, TikTok and Reels come later from the finished
+ *  review, through Drop. A TRYBE ad is filmed upright and edited as an ad:
+ *  tighter pauses, B-roll sooner and shorter, captions, a hook on screen, and
+ *  no creator logo, because it runs as the brand's ad. */
+export type VideoKind = 'review' | 'trybe'
+export const KIND_WORDS: Record<VideoKind, { name: string; line: string }> = {
+  review: { name: 'Amazon and YouTube review', line: 'Filmed sideways. Edited as a review, wide, for Amazon and YouTube. Its Shorts, TikTok and Reels come from it later, through Drop.' },
+  trybe: { name: 'TRYBE ad', line: 'Filmed upright. Edited as an ad: tight, captions on, a hook at the start, no logo. Vertical, for the TRYBE brand.' },
+}
+export interface Pace { padIn: number; padOut: number; maxPause: number; brollNotBefore: number; brollMax: number }
+export const PACE: Record<VideoKind, Pace> = {
+  review: { padIn: PAD_IN, padOut: PAD_OUT, maxPause: MAX_PAUSE, brollNotBefore: 2.5, brollMax: 4 },
+  trybe: { padIn: 0.06, padOut: 0.1, maxPause: 0.25, brollNotBefore: 1.5, brollMax: 3 },
+}
+
 export interface Word { start: number; end: number; text: string }
 /** w0..w1: its words, both included, in the take's sorted word list. */
 export interface Line { i: number; start: number; end: number; text: string; w0: number; w1: number }
@@ -147,7 +165,7 @@ export function snapSegments(segs: Segment[]): Segment[] {
 /** The parts of the review take to keep, in seconds of the take: every word
  *  not cut, with a little room either side that never reaches into a cut
  *  word, and pauses over MAX_PAUSE shortened. Pure. */
-export function keepSegments(words: Word[], lines: Line[], cuts: Cut[], duration: number): Segment[] {
+export function keepSegments(words: Word[], lines: Line[], cuts: Cut[], duration: number, pace: Pace = PACE.review): Segment[] {
   const gone = cutWords(lines, cuts)
   const segs: Segment[] = []
   let prevKept = -2
@@ -155,10 +173,10 @@ export function keepSegments(words: Word[], lines: Line[], cuts: Cut[], duration
   words.forEach((w, k) => {
     if (gone.has(k)) return
     const before = words[k - 1], after = words[k + 1]
-    const a = Math.max(0, w.start - PAD_IN, before && gone.has(k - 1) ? before.end : 0)
-    const b = Math.min(duration, w.end + PAD_OUT, after && gone.has(k + 1) ? after.start : Infinity)
+    const a = Math.max(0, w.start - pace.padIn, before && gone.has(k - 1) ? before.end : 0)
+    const b = Math.min(duration, w.end + pace.padOut, after && gone.has(k + 1) ? after.start : Infinity)
     const seg = segs[segs.length - 1]
-    if (seg && k === prevKept + 1 && w.start - words[k - 1].end <= MAX_PAUSE) seg[1] = Math.max(seg[1], b)
+    if (seg && k === prevKept + 1 && w.start - words[k - 1].end <= pace.maxPause) seg[1] = Math.max(seg[1], b)
     else if (seg && a <= seg[1]) seg[1] = Math.max(seg[1], b)
     else segs.push([a, b])
     prevKept = k
@@ -207,15 +225,16 @@ export function outputWords(words: Word[], segs: Segment[]): Word[] {
   return out
 }
 
-/** No B-roll over the opening: the first seconds are the creator's face. */
-export const BROLL_NOT_BEFORE = 2.5
+/** No B-roll over the opening: the first seconds are the creator's face
+ *  (a review's; an ad's opening is shorter, PACE). */
+export const BROLL_NOT_BEFORE = PACE.review.brollNotBefore
 /** A B-roll moment lasts this long at most. */
-export const BROLL_MAX = 4
+export const BROLL_MAX = PACE.review.brollMax
 
 /** The B-roll moments on the finished video: each shot under its line, a
  *  little after the line starts, for up to four seconds, never overlapping
  *  and never in the opening. Pure. */
-export function insertsFor(placements: Placement[], shots: Shot[], lines: Line[], segs: Segment[]): Insert[] {
+export function insertsFor(placements: Placement[], shots: Shot[], lines: Line[], segs: Segment[], pace: Pace = PACE.review): Insert[] {
   const total = editLength(segs)
   const want: Insert[] = []
   for (const p of placements) {
@@ -226,11 +245,11 @@ export function insertsFor(placements: Placement[], shots: Shot[], lines: Line[]
     const at0 = toOutput(segs, line.start + 0.2) ?? toOutput(segs, line.start)
     if (at0 == null) continue // the line was cut
     const shotLen = shot.end - shot.start
-    const len = Math.min(BROLL_MAX, shotLen, total - at0)
+    const len = Math.min(pace.brollMax, shotLen, total - at0)
     if (len < 1.5) continue
     // Start a little into the shot, past the moment the camera settles.
     const from = shotLen - len > 0.6 ? shot.start + 0.3 : shot.start
-    want.push({ at: r3(onGrid(Math.max(at0, BROLL_NOT_BEFORE))), len: r3(Math.floor(len * FPS + 0.01) / FPS), from: r3(from) })
+    want.push({ at: r3(onGrid(Math.max(at0, pace.brollNotBefore))), len: r3(Math.floor(len * FPS + 0.01) / FPS), from: r3(from) })
   }
   want.sort((a, b) => a.at - b.at)
   const out: Insert[] = []
@@ -272,14 +291,17 @@ export const POSITION_WORDS: Record<Position, string> = {
 export type Format = 'wide' | 'vertical'
 export const FORMAT_WORDS: Record<Format, string> = {
   wide: 'Wide, for Amazon and YouTube',
-  vertical: 'Vertical, for TRYBE, TikTok and Reels',
+  vertical: 'Vertical, for the TRYBE brand',
 }
 
 export interface EditSettings {
+  /** Chosen first, and never changed after: it decides the format. */
+  kind: VideoKind
+  /** From the kind: a review is wide, a TRYBE ad vertical. */
   formats: Format[]
   logo: { url: string; position: Position; on: boolean } | null
   title: { text: string; position: Position; seconds: number; on: boolean }
-  /** Word by word captions, on the vertical version. */
+  /** Word by word captions, on a TRYBE ad. */
   captions: boolean
   zooms: boolean
   color: boolean
@@ -289,6 +311,7 @@ export interface EditSettings {
 }
 
 export const DEFAULT_SETTINGS: EditSettings = {
+  kind: 'review',
   formats: ['wide'],
   logo: null,
   title: { text: '', position: 'top', seconds: 4, on: false },
@@ -305,13 +328,14 @@ const isPos = (v: unknown): v is Position => typeof v === 'string' && (POSITIONS
  *  Pure. */
 export function cleanSettings(raw: unknown, base: EditSettings = DEFAULT_SETTINGS): EditSettings {
   const r = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>
-  const formats = Array.isArray(r.formats) ? (r.formats.filter((f) => f === 'wide' || f === 'vertical') as Format[]) : base.formats
+  const kind: VideoKind = r.kind === 'trybe' || r.kind === 'review' ? r.kind : base.kind ?? 'review'
   const lr = r.logo && typeof r.logo === 'object' ? r.logo as Record<string, unknown> : null
   const logoUrl = lr && typeof lr.url === 'string' && /^https:\/\//.test(lr.url) ? lr.url : base.logo?.url ?? null
   const tr = r.title && typeof r.title === 'object' ? r.title as Record<string, unknown> : {}
   const bool = (k: keyof EditSettings) => (typeof r[k] === 'boolean' ? r[k] as boolean : base[k] as boolean)
   return {
-    formats: formats.length ? Array.from(new Set(formats)) : base.formats,
+    kind,
+    formats: kind === 'trybe' ? ['vertical'] : ['wide'],
     logo: logoUrl ? {
       url: logoUrl,
       position: isPos(lr?.position) ? lr!.position as Position : base.logo?.position ?? 'upper-left',
@@ -334,11 +358,14 @@ export function cleanSettings(raw: unknown, base: EditSettings = DEFAULT_SETTING
 /** Everything the video server needs for one edit, worked out from the plan
  *  and the settings. Pure. */
 export function renderSpec(o: { words: Word[]; lines: Line[]; plan: Plan; shots: Shot[]; duration: number; settings: EditSettings; hasBroll: boolean }) {
-  const segments = keepSegments(o.words, o.lines, o.plan.cuts, o.duration)
-  const inserts = o.settings.broll && o.hasBroll ? insertsFor(o.plan.placements, o.shots, o.lines, segments) : []
+  const pace = PACE[o.settings.kind]
+  const segments = keepSegments(o.words, o.lines, o.plan.cuts, o.duration, pace)
+  const inserts = o.settings.broll && o.hasBroll ? insertsFor(o.plan.placements, o.shots, o.lines, segments, pace) : []
   const zooms = o.settings.zooms ? zoomsFor(o.plan.keys, o.lines, segments) : []
-  const words = o.settings.captions && o.settings.formats.includes('vertical') ? outputWords(o.words, segments) : []
-  return { segments, inserts, zooms, words, seconds: editLength(segments) }
+  const words = o.settings.captions && o.settings.kind === 'trybe' ? outputWords(o.words, segments) : []
+  // A TRYBE ad runs as the brand's ad: never the creator's logo on it.
+  const logo = o.settings.kind === 'review' && o.settings.logo?.on ? o.settings.logo : null
+  return { segments, inserts, zooms, words, logo, seconds: editLength(segments) }
 }
 
 /** "1:05" for a second count. */

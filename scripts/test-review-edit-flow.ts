@@ -45,6 +45,15 @@ check('only this creator’s own files are ever used or deleted', ownPath('https
 check('the video server keeps the takes in a folder of the job’s own, removed whatever happens', /fs\.mkdtempSync\(path\.join\(os\.tmpdir\(\), 'edit-'\)\)/.test(S) && /finally \{\s*\n\s*try \{ fs\.rmSync\(dir, \{ recursive: true, force: true \}\)/.test(S))
 check('finished videos are named for the 30 day clean-up', /edit-\$\{stamp\}-\$\{f\}\.mp4/.test(S) && /edit-\\d\+-\(wide\|vertical\)/.test(read('lib/burn-retention.ts')))
 
+// ── A review and a TRYBE ad are different videos from the start ─────────────
+const E = read('lib/review-edit.ts')
+check('the page asks what the video is for first', /1\. What is this video for\?/.test(U) && /\(\['review', 'trybe'\] as VideoKind\[\]\)/.test(U))
+check('no wide and vertical choice: the kind decides the format', !/Make it<\/p>/.test(U) && /formats: kind === 'trybe' \? \['vertical'\] : \['wide'\]/.test(E))
+check('a TRYBE ad has its own brief: an ad, cut harder, opening on a hook', /system: o\.kind === 'trybe' \? TRYBE_SYSTEM : PLAN_SYSTEM/.test(P) && /It is not a review/.test(P) && /filler/.test(P))
+check('a take filmed the wrong way round for a review is said before any work', /This take was filmed upright\. An Amazon and YouTube review is filmed sideways/.test(W))
+check('a typed change cannot turn a review into an ad', /kind: o\.settings\.kind,/.test(P))
+check('Send to Drop says what comes next for each kind', /pick the TRYBE brand it is for/.test(U) && /make its Shorts, TikTok and Reels/.test(U))
+
 // ── Cost ─────────────────────────────────────────────────────────────────────
 check('the plan on Sonnet 5, the B-roll and typed changes on Haiku', /PLAN_MODEL = 'claude-sonnet-5'/.test(P) && /QUICK_MODEL = 'claude-haiku-4-5-20251001'/.test(P) && /model: QUICK_MODEL[\s\S]{0,40}max_tokens: 900/.test(P))
 check('the B-roll is seen from 36 small frames, sent in the answer, never stored', /frames: 36, width: 320/.test(W) && /jpg: fs\.readFileSync\(out\)\.toString\('base64'\)/.test(S))
