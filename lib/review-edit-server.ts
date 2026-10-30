@@ -243,7 +243,9 @@ export const LOST_CHECK_MS = 4 * 60_000
 
 export type ServerStage = 'wait' | 'download' | 'broll' | 'cut' | 'make' | 'save'
 export interface ServerJob { stage: ServerStage; pct: number | null; since: string; ahead: number }
-export interface ServerView { edits: Set<string>; others: number; progress: Record<string, ServerJob> }
+/** A result the server kept: what it posted back, and whether MVP got it. */
+export interface ServerDone { ok: boolean; error?: string; outputs?: Record<string, { url: string; seconds: number }>; seconds?: number; inserts?: number; zooms?: number; at: string; delivered: boolean; callback: string }
+export interface ServerView { edits: Set<string>; others: number; progress: Record<string, ServerJob>; done: Record<string, ServerDone>; bootAt: string | null }
 
 /** What the video server is working on (its in-memory queue), each video's
  *  step and how far along, or null when it cannot say (not answering, or a
@@ -253,8 +255,12 @@ export async function serverJobs(): Promise<ServerView | null> {
   try {
     const r = await fetch(`${base()}/jobs`, { headers: process.env.YOUTUBE_INGEST_SECRET ? { 'x-ingest-secret': process.env.YOUTUBE_INGEST_SECRET } : {}, signal: AbortSignal.timeout(15_000) })
     if (!r.ok) return null
-    const d = await r.json() as { edits?: string[]; others?: number; progress?: Record<string, ServerJob> }
-    return Array.isArray(d.edits) ? { edits: new Set(d.edits), others: Number(d.others) || 0, progress: d.progress && typeof d.progress === 'object' ? d.progress : {} } : null
+    const d = await r.json() as { edits?: string[]; others?: number; progress?: Record<string, ServerJob>; done?: Record<string, ServerDone>; bootAt?: string }
+    return Array.isArray(d.edits) ? {
+      edits: new Set(d.edits), others: Number(d.others) || 0,
+      progress: d.progress && typeof d.progress === 'object' ? d.progress : {},
+      done: d.done && typeof d.done === 'object' ? d.done : {}, bootAt: d.bootAt ?? null,
+    } : null
   } catch { return null }
 }
 
@@ -267,12 +273,18 @@ export async function moveQueue(db: Db, o: { userId?: string; readBudget?: numbe
   // deploy restarts the video server and empties its queue. A make it no
   // longer has is sent again now, not after MAKE_STALE_MS, and the restart
   // does not count as a try.
-  const { data: making0 } = await db.from('review_edits').select('id,attempts,updated_at').eq('status', 'making').lt('updated_at', new Date(t - LOST_CHECK_MS).toISOString()).limit(20)
+  const { data: making0 } = await db.from('review_edits').select('id,user_id,attempts,updated_at').eq('status', 'making').limit(20)
   if (making0?.length) {
     const jobs = await serverJobs()
     if (jobs) for (const m of making0) {
-      if (jobs.edits.has(`edit-${m.id}`)) continue
-      await set(db, m.id, { status: 'ready_to_make', attempts: Math.max(0, (m.attempts || 1) - 1), note: 'MVP\u2019s video server restarted and lost this one, so it is being made again.' })
+      // A result the server kept that never reached MVP: taken now.
+      const done = jobs.done[`edit-${m.id}`]
+      if (done && Date.parse(done.at) >= Date.parse(m.updated_at)) { await finishMaking(db, m.id, m.user_id, { ...done }); continue }
+      if (jobs.edits.has(`edit-${m.id}`) || t - Date.parse(m.updated_at) < LOST_CHECK_MS) continue
+      // Lost: counted as a try, so a video that keeps stopping the server
+      // stops with a reason instead of going round for ever.
+      if ((m.attempts || 0) >= MAX_ATTEMPTS) await set(db, m.id, { status: 'failed', note: `The video server stopped while making this video ${m.attempts} times, so MVP stopped trying. It may be too long or too big for the server; tell Seb which video it was.` })
+      else await set(db, m.id, { status: 'ready_to_make', note: 'MVP\u2019s video server stopped before finishing this one, so it is being made again.' })
     }
   }
   // Stuck: a read or a make that never came back.

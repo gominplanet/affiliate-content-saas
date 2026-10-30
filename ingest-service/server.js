@@ -260,7 +260,7 @@ function probeProxy() {
 
 app.get('/health', async (_req, res) => {
   const p = await probeProxy()
-  res.json({ ok: true, lastProxyFallback, cookies: cookiesReady, cookiesUpdatedAt, cookieVars: cookieDiag.vars, cookieLines: cookieDiag.lines, cookieError: cookieDiag.error, proxy: !!PROXY, proxyOk: p.ok, proxyError: p.error, ytDlp: ytDlpVersion, ytDlpChannel: YT_DLP_CHANNEL, potProvider: !!POT_BASE_URL, build: BUILD, edit: true })
+  res.json({ ok: true, lastProxyFallback, cookies: cookiesReady, cookiesUpdatedAt, cookieVars: cookieDiag.vars, cookieLines: cookieDiag.lines, cookieError: cookieDiag.error, proxy: !!PROXY, proxyOk: p.ok, proxyError: p.error, ytDlp: ytDlpVersion, ytDlpChannel: YT_DLP_CHANNEL, potProvider: !!POT_BASE_URL, build: BUILD, edit: true, bootAt: BOOT_AT })
 })
 
 // Hot-swap the yt-dlp cookies at runtime — SCOUT reads the operator's fresh
@@ -931,6 +931,9 @@ async function renderShortJob(body, opts) {
 // to MVP, which marks the clip rendered or failed with the reason.
 let renderQueue = Promise.resolve()
 async function postRenderCallback(callbackUrl, payload) {
+  // Whether it got through, and the last answer, so a result MVP never heard
+  // is still known here (the review editor reads it from /jobs).
+  let last = 'no answer'
   for (let i = 0; i < 4; i++) {
     try {
       const r = await fetch(callbackUrl, {
@@ -938,11 +941,13 @@ async function postRenderCallback(callbackUrl, payload) {
         headers: { 'Content-Type': 'application/json', ...(SECRET ? { 'x-ingest-secret': SECRET } : {}) },
         body: JSON.stringify(payload),
       })
-      if (r.ok) return
+      if (r.ok) return { delivered: true, status: r.status }
+      last = `answered ${r.status}`
       console.error('[render-short async] callback', r.status)
-    } catch (e) { console.error('[render-short async] callback', e && e.message) }
+    } catch (e) { last = String((e && e.message) || e).slice(0, 120); console.error('[render-short async] callback', e && e.message) }
     await new Promise((r) => setTimeout(r, 3000 * (i + 1)))
   }
+  return { delivered: false, status: last }
 }
 
 app.post('/render-short', async (req, res) => {
@@ -1454,6 +1459,13 @@ async function renderEditJob(body, report = () => {}) {
 // it without a word. MVP asks here; a video it sent that is not on the list
 // was lost, and MVP sends it again instead of waiting for it to go stale.
 const BOOT_AT = new Date().toISOString()
+// The last results, kept so MVP can collect one it never heard about.
+const editDone = new Map()
+function rememberDone(id, rec) {
+  editDone.delete(id)
+  editDone.set(id, rec)
+  while (editDone.size > 40) editDone.delete(editDone.keys().next().value)
+}
 // video id → { at: when taken, stage, pct, since: when the stage began }.
 // Stages: wait (in line), download, broll, cut, make, save.
 const editJobs = new Map()
@@ -1466,7 +1478,7 @@ app.get('/jobs', (req, res) => {
   if (SECRET && req.get('x-ingest-secret') !== SECRET) return res.status(401).json({ error: 'unauthorized' })
   const order = [...editJobs.entries()].sort((a, b) => a[1].at - b[1].at)
   res.json({
-    bootAt: BOOT_AT, edits: order.map(([id]) => id), others: otherRenders,
+    bootAt: BOOT_AT, edits: order.map(([id]) => id), others: otherRenders, done: Object.fromEntries(editDone),
     progress: Object.fromEntries(order.map(([id, j], i) => [id, { stage: j.stage, pct: j.pct, since: new Date(j.since).toISOString(), ahead: order.slice(0, i).length }])),
   })
 })
@@ -1487,15 +1499,16 @@ app.post('/render-edit', async (req, res) => {
   }
   res.status(202).json({ accepted: true })
   renderQueue = renderQueue.then(async () => {
+    let rec
     try {
-      const out = await renderEditJob(body, report)
-      await postRenderCallback(callbackUrl, { job, ok: true, ...out })
+      rec = { ok: true, ...(await renderEditJob(body, report)) }
     } catch (e) {
       console.error('[render-edit] failed', e && e.message)
-      await postRenderCallback(callbackUrl, { job, ok: false, error: String((e && e.message) || e).slice(0, 400) })
-    } finally {
-      editJobs.delete(id)
+      rec = { ok: false, error: String((e && e.message) || e).slice(0, 400) }
     }
+    editJobs.delete(id)
+    const cb = await postRenderCallback(callbackUrl, { job, ...rec })
+    rememberDone(id, { ...rec, at: new Date().toISOString(), delivered: cb.delivered, callback: cb.status })
   })
 })
 

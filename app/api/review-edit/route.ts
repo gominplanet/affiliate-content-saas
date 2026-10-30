@@ -19,7 +19,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { canUsePreview } from '@/lib/labs-preview'
 import { cleanSettings, clock, linesOf, DEFAULT_SETTINGS, type Plan, type Word } from '@/lib/review-edit'
 import { promptChange } from '@/lib/review-edit-plan'
-import { moveQueue, deleteRaw, ownPath, hasUpload, serverJobs, EDIT_BUCKET, type EditRow, type Src, type ServerView, editDb } from '@/lib/review-edit-server'
+import { moveQueue, deleteRaw, ownPath, hasUpload, serverJobs, finishMaking, EDIT_BUCKET, type EditRow, type Src, type ServerView, editDb } from '@/lib/review-edit-server'
 import { driveAccessToken, driveFile, isDriveId } from '@/lib/google-drive'
 
 export const runtime = 'nodejs'
@@ -89,7 +89,14 @@ export async function GET() {
   // WHAT THE VIDEO SERVER IS DOING WITH IT (Seb, 2026-10-30: "I don't know if
   // it's stuck somewhere"): asked only when a video is being made.
   const server = (data ?? []).some((r: EditRow) => r.status === 'making') ? await serverJobs() : null
-  return NextResponse.json({ edits: (data ?? []).map((r: EditRow) => view(r, server)), defaults: last ? cleanSettings(last.settings) : DEFAULT_SETTINGS })
+  // A result the server kept but MVP never heard: taken now, and shown.
+  let rows = (data ?? []) as EditRow[]
+  if (server) {
+    const heard = rows.filter((r) => r.status === 'making' && server.done[`edit-${r.id}`] && Date.parse(server.done[`edit-${r.id}`].at) >= Date.parse(r.updated_at))
+    for (const r of heard) await finishMaking(db, r.id, r.user_id, { ...server.done[`edit-${r.id}`] })
+    if (heard.length) rows = ((await db.from('review_edits').select('*').eq('user_id', g.userId).order('created_at', { ascending: false }).limit(40)).data ?? rows) as EditRow[]
+  }
+  return NextResponse.json({ edits: rows.map((r: EditRow) => view(r, server)), defaults: last ? cleanSettings(last.settings) : DEFAULT_SETTINGS })
 }
 
 export async function POST(request: Request) {
