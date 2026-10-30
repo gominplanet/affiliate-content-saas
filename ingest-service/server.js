@@ -24,14 +24,14 @@
 // v2: relaxed format selector (any-codec ≤1080p → mp4) + cookies. Bump this
 // comment to force a Railway redeploy of the latest ingest-service code.
 const express = require('express')
-const { execFile } = require('child_process')
+const { execFile, spawn } = require('child_process')
 const fs = require('fs')
 const os = require('os')
 const path = require('path')
 const { buildAss, assTime, assEscape, keepSegments, trimFilters } = require('./render-filters')
 const zlib = require('zlib')
 const { pipeline } = require('stream/promises')
-const { Readable } = require('stream')
+const { Readable, Transform } = require('stream')
 const dns = require('dns').promises
 const net = require('net')
 
@@ -952,6 +952,7 @@ app.post('/render-short', async (req, res) => {
   if (body.async === true && /^https:\/\//i.test(callbackUrl)) {
     const job = String(body.job || '').slice(0, 200)
     res.status(202).json({ accepted: true })
+    otherRenders++
     renderQueue = renderQueue.then(async () => {
       try {
         const out = await renderShortJob(body, { maxDur: 900, timeoutMs: 15 * 60_000 })
@@ -959,6 +960,8 @@ app.post('/render-short', async (req, res) => {
       } catch (e) {
         console.error('[render-short async] failed', e && e.message)
         await postRenderCallback(callbackUrl, { job, ok: false, error: String((e && e.message) || e).slice(0, 300) })
+      } finally {
+        otherRenders = Math.max(0, otherRenders - 1)
       }
     })
     return
@@ -1229,10 +1232,14 @@ function canToneMap() {
   })
 }
 
-async function downloadLarge(url, dest, timeoutMs = 15 * 60_000, auth = null) {
+async function downloadLarge(url, dest, timeoutMs = 15 * 60_000, auth = null, onPct = null) {
   const res = await fetch(url, { signal: AbortSignal.timeout(timeoutMs), ...(auth ? { headers: { Authorization: auth } } : {}) })
   if (!res.ok || !res.body) throw new Error(`source fetch ${res.status}`)
-  await pipeline(Readable.fromWeb(res.body), fs.createWriteStream(dest))
+  // How much has arrived, for the creator's card (/jobs).
+  const total = Number(res.headers.get('content-length')) || 0
+  let got = 0
+  const count = new Transform({ transform(chunk, _e, cb) { got += chunk.length; if (onPct && total) onPct(Math.min(99, Math.floor((got / total) * 100))); cb(null, chunk) } })
+  await pipeline(Readable.fromWeb(res.body), count, fs.createWriteStream(dest))
   return fs.statSync(dest).size
 }
 
@@ -1259,6 +1266,31 @@ function ffprobeInfo(input, auth = null) {
           })
         } catch { resolve(null) }
       })
+  })
+}
+
+/** ffmpeg with how far it has got: out_time against the length expected. */
+function runFfmpegProgress(args, timeoutMs, label, totalSec, onPct) {
+  return new Promise((resolve, reject) => {
+    const p = spawn('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-nostats', '-progress', 'pipe:1', ...args])
+    let err = ''
+    let buf = ''
+    const timer = setTimeout(() => { try { p.kill('SIGKILL') } catch { /* gone */ } }, timeoutMs)
+    p.stdout.on('data', (d) => {
+      buf += String(d)
+      const lines = buf.split('\n'); buf = lines.pop() || ''
+      for (const l of lines) {
+        const m = /^out_time_(?:us|ms)=(\d+)/.exec(l)
+        if (m && totalSec > 0) onPct(Math.min(99, Math.floor((Number(m[1]) / 1e6 / totalSec) * 100)))
+      }
+    })
+    p.stderr.on('data', (d) => { err = (err + String(d)).slice(-2000) })
+    p.on('error', (e) => { clearTimeout(timer); reject(new Error(`${label}: ${e.message}`)) })
+    p.on('close', (code, signal) => {
+      clearTimeout(timer)
+      if (code === 0) resolve()
+      else reject(new Error(`${label}: ` + ((err.trim() || `exit ${code}`) + (signal ? ` [signal ${signal}]` : '')).slice(-400)))
+    })
   })
 }
 
@@ -1312,7 +1344,7 @@ app.post('/probe', async (req, res) => {
 //   logo?: { url, position, widthPct }, title?: { url, position, startSec, endSec, widthPct },
 //   words? (captions on vertical, on the finished timeline) }
 // Posts { job, ok, outputs: { wide?|vertical?: { url, seconds } }, ... } back.
-async function renderEditJob(body) {
+async function renderEditJob(body, report = () => {}) {
   const bad = (msg) => Object.assign(new Error(msg), { status: 400 })
   const mainUrl = String(body.mainUrl || '').trim()
   const brollUrl = String(body.brollUrl || '').trim()
@@ -1324,7 +1356,8 @@ async function renderEditJob(body) {
   try {
     const main = path.join(dir, 'main.mp4')
     await assertPublicHttpUrl(mainUrl)
-    await downloadLarge(mainUrl, main, 15 * 60_000, driveAuth(mainUrl, body.mainAuth))
+    report('download', 0)
+    await downloadLarge(mainUrl, main, 15 * 60_000, driveAuth(mainUrl, body.mainAuth), (p) => report('download', p))
     const info = await ffprobeInfo(main)
     if (!info || !info.w) throw new Error('The review take could not be read as a video.')
     if (info.duration > EDIT_MAX_SOURCE_SEC) throw new Error(`The review take is ${Math.round(info.duration / 60)} minutes; the editor takes up to ${EDIT_MAX_SOURCE_SEC / 60}.`)
@@ -1344,13 +1377,15 @@ async function renderEditJob(body) {
     if (/^https:\/\//i.test(brollUrl) && Array.isArray(body.inserts) && body.inserts.length) {
       const broll = path.join(dir, 'broll.mp4')
       await assertPublicHttpUrl(brollUrl)
-      await downloadLarge(brollUrl, broll, 15 * 60_000, driveAuth(brollUrl, body.brollAuth))
+      report('broll', 0)
+      await downloadLarge(brollUrl, broll, 15 * 60_000, driveAuth(brollUrl, body.brollAuth), (p) => report('broll', p))
       const bi = await ffprobeInfo(broll)
       brollSec = bi ? bi.duration : 0
       inserts = cleanInserts(body.inserts, seconds, brollSec)
       if (inserts.length) {
         const list = []
         for (let i = 0; i < inserts.length; i++) {
+          report('cut', Math.floor((i / inserts.length) * 100))
           const piece = path.join(dir, `piece${i}.mp4`)
           const bHdr = hdrFallback ? null : hdrChain(bi && bi.transfer)
           await runFfmpeg(['-ss', String(inserts[i].from), '-i', broll, '-an',
@@ -1397,7 +1432,9 @@ async function renderEditJob(body) {
         '-x264-params', 'rc-lookahead=10:sync-lookahead=0',
         '-c:a', 'aac', '-b:a', '160k', '-movflags', '+faststart', '-y', files[f])
     }
-    await runFfmpeg([...inputs, '-filter_complex_script', path.join(dir, 'graph.txt'), ...outArgs], 45 * 60_000, 'edit')
+    report('make', 0)
+    await runFfmpegProgress([...inputs, '-filter_complex_script', path.join(dir, 'graph.txt'), ...outArgs], 45 * 60_000, 'edit', built.seconds, (p) => report('make', p))
+    report('save', 0)
     const stamp = Date.now()
     const outputs = {}
     for (const f of built.formats) {
@@ -1417,12 +1454,21 @@ async function renderEditJob(body) {
 // it without a word. MVP asks here; a video it sent that is not on the list
 // was lost, and MVP sends it again instead of waiting for it to go stale.
 const BOOT_AT = new Date().toISOString()
-const editJobs = new Map() // video id → when it was taken
+// video id → { at: when taken, stage, pct, since: when the stage began }.
+// Stages: wait (in line), download, broll, cut, make, save.
+const editJobs = new Map()
 const editIdOf = (job) => String(job || '').split('.')[0]
+// Other renders in the same line (Clip Factory's long clips), so a video
+// waiting behind them says so.
+let otherRenders = 0
 
 app.get('/jobs', (req, res) => {
   if (SECRET && req.get('x-ingest-secret') !== SECRET) return res.status(401).json({ error: 'unauthorized' })
-  res.json({ bootAt: BOOT_AT, edits: [...editJobs.keys()] })
+  const order = [...editJobs.entries()].sort((a, b) => a[1].at - b[1].at)
+  res.json({
+    bootAt: BOOT_AT, edits: order.map(([id]) => id), others: otherRenders,
+    progress: Object.fromEntries(order.map(([id, j], i) => [id, { stage: j.stage, pct: j.pct, since: new Date(j.since).toISOString(), ahead: order.slice(0, i).length }])),
+  })
 })
 
 app.post('/render-edit', async (req, res) => {
@@ -1432,11 +1478,17 @@ app.post('/render-edit', async (req, res) => {
   if (!/^https:\/\//i.test(callbackUrl)) return res.status(400).json({ error: 'callbackUrl required' })
   const job = String(body.job || '').slice(0, 300)
   const id = editIdOf(job)
-  editJobs.set(id, Date.now())
+  editJobs.set(id, { at: Date.now(), stage: 'wait', pct: null, since: Date.now() })
+  const report = (stage, pct) => {
+    const j = editJobs.get(id)
+    if (!j) return
+    if (j.stage !== stage) { j.stage = stage; j.since = Date.now() }
+    j.pct = Number.isFinite(pct) ? pct : null
+  }
   res.status(202).json({ accepted: true })
   renderQueue = renderQueue.then(async () => {
     try {
-      const out = await renderEditJob(body)
+      const out = await renderEditJob(body, report)
       await postRenderCallback(callbackUrl, { job, ok: true, ...out })
     } catch (e) {
       console.error('[render-edit] failed', e && e.message)

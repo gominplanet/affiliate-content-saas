@@ -37,6 +37,8 @@ interface EditView {
   createdAt: string; madeAt: string | null; rawDeleted: boolean; hasBroll: boolean
   /** When the step it is on began. */
   since: string
+  /** While being made: what the video server says it is doing with it. */
+  onServer: { stage: string; pct: number | null; since: string; ahead: number; others: number } | { missing: true } | null
   /** Takes uploaded to MVP that are still kept; a Drive take is never kept by MVP. */
   rawInMvp: boolean; fromDrive: boolean
   settings: EditSettings
@@ -54,6 +56,25 @@ const STATUS: Record<string, { words: string; color: string; busy?: boolean }> =
   making: { words: 'Being made', color: PURPLE, busy: true },
   done: { words: 'Ready', color: GREEN },
   failed: { words: 'Stopped', color: RED },
+}
+
+/** The video server's step, in words. */
+function serverWords(s: { stage: string; pct: number | null; since: string; ahead: number; others: number }): string {
+  const pct = s.pct != null ? ` (${s.pct}%)` : ''
+  const mins = Math.max(0, Math.floor((Date.now() - Date.parse(s.since)) / 60_000))
+  const for_ = mins >= 1 ? `, for ${mins} ${mins === 1 ? 'minute' : 'minutes'}` : ''
+  switch (s.stage) {
+    case 'wait': {
+      const n = s.ahead + s.others
+      return n ? `On the video server: waiting behind ${n} other ${n === 1 ? 'video' : 'videos'}${for_}.` : `On the video server: about to start${for_}.`
+    }
+    case 'download': return `On the video server: getting your talking take${pct}${for_}.`
+    case 'broll': return `On the video server: getting your B-roll take${pct}${for_}.`
+    case 'cut': return `On the video server: cutting the B-roll moments${pct}${for_}.`
+    case 'make': return `On the video server: making the video${pct}${for_}.`
+    case 'save': return `On the video server: saving the finished video${for_}.`
+    default: return 'On the video server.'
+  }
 }
 
 async function api(body: Record<string, unknown>) {
@@ -446,6 +467,15 @@ function EditCard({ e, reload, uploadLogo, logoBusy }: { e: EditView; reload: ()
         <span className="text-[11.5px]" style={soft}>added {new Date(e.createdAt).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</span>
       </div>
       {e.note && <p className="text-[12.5px] mt-1" style={{ color: e.status === 'failed' ? RED : 'var(--text-2)' }}>{e.note}</p>}
+      {/* WHAT THE SERVER IS DOING, SAID (Seb, 2026-10-30: "I don't know if it's
+          stuck somewhere"): its step and how far, or that it does not have it. */}
+      {e.status === 'making' && e.onServer && (
+        <p className="mt-1 text-[12.5px] font-semibold" style={{ color: 'missing' in e.onServer ? AMBER : PURPLE }}>
+          {'missing' in e.onServer
+            ? 'The video server does not have this one right now. MVP sends it again within a few minutes.'
+            : serverWords(e.onServer)}
+        </p>
+      )}
       {/* HOW LONG, SAID (Seb, 2026-10-30: "How long is this supposed to take?"). */}
       {st.busy && (() => {
         const mins = Math.max(0, Math.floor((Date.now() - Date.parse(e.since)) / 60_000))

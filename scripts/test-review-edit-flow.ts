@@ -55,12 +55,15 @@ check('a typed change cannot turn a review into an ad', /kind: o\.settings\.kind
 check('Send to Drop says what comes next for each kind', /pick the TRYBE brand it is for/.test(U) && /make its Shorts, TikTok and Reels/.test(U))
 
 // ── A video is never left hanging (Seb, 2026-10-30: half an hour "being made") ─
-check('the video server says what it is working on, and forgets nothing it took without finishing it', /app\.get\('\/jobs'/.test(S) && /editJobs\.set\(id, Date\.now\(\)\)/.test(S) && /finally \{\s*\n\s*editJobs\.delete\(id\)/.test(S))
-check('a make the server lost in a restart is sent again within minutes, and the restart is not a try', /LOST_CHECK_MS = 4 \* 60_000/.test(W) && /if \(jobs\.has\(`edit-\$\{m\.id\}`\)\) continue/.test(W) && /restarted and lost this one/.test(W))
+check('the video server says what it is working on, and forgets nothing it took without finishing it', /app\.get\('\/jobs'/.test(S) && /editJobs\.set\(id, \{ at: Date\.now\(\), stage: 'wait'/.test(S) && /finally \{\s*\n\s*editJobs\.delete\(id\)/.test(S))
+check('a make the server lost in a restart is sent again within minutes, and the restart is not a try', /LOST_CHECK_MS = 4 \* 60_000/.test(W) && /if \(jobs\.edits\.has\(`edit-\$\{m\.id\}`\)\) continue/.test(W) && /restarted and lost this one/.test(W))
 check('each busy card says how long its step has run and what is normal', /This step started \$\{mins\}/.test(U) && /Making takes 2 to 10 minutes/.test(U))
 check('a step stuck for 20 minutes can be started again by the creator', /STUCK_AFTER_MS = 20 \* 60_000/.test(R) && /Start it again/.test(U))
 
 check('an HDR take and its B-roll are converted, and a server that cannot convert still makes the video', /color_transfer/.test(S) && /transfer: hdrFallback \? '' : info\.transfer/.test(S) && /hdrChain\(bi && bi\.transfer\)/.test(S) && /hdr: built\.hdr \? 'converted'/.test(S))
+
+check('the card says what the video server is doing with it, how far, and what is ahead of it', /report\('make', p\)/.test(S) && /report\('download', p\)/.test(S) && /ahead: order\.slice\(0, i\)\.length/.test(S) && /waiting behind \$\{n\} other/.test(U) && /making the video\$\{pct\}/.test(U))
+check('a video the server does not have is said, not shown as being made', /The video server does not have this one right now/.test(U))
 
 // ── Cost ─────────────────────────────────────────────────────────────────────
 check('the plan on Sonnet 5, the B-roll and typed changes on Haiku', /PLAN_MODEL = 'claude-sonnet-5'/.test(P) && /QUICK_MODEL = 'claude-haiku-4-5-20251001'/.test(P) && /model: QUICK_MODEL[\s\S]{0,40}max_tokens: 900/.test(P))

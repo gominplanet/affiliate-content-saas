@@ -19,7 +19,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { canUsePreview } from '@/lib/labs-preview'
 import { cleanSettings, clock, linesOf, DEFAULT_SETTINGS, type Plan, type Word } from '@/lib/review-edit'
 import { promptChange } from '@/lib/review-edit-plan'
-import { moveQueue, deleteRaw, ownPath, hasUpload, EDIT_BUCKET, type EditRow, type Src, editDb } from '@/lib/review-edit-server'
+import { moveQueue, deleteRaw, ownPath, hasUpload, serverJobs, EDIT_BUCKET, type EditRow, type Src, type ServerView, editDb } from '@/lib/review-edit-server'
 import { driveAccessToken, driveFile, isDriveId } from '@/lib/google-drive'
 
 export const runtime = 'nodejs'
@@ -39,8 +39,12 @@ async function gate() {
   return { userId: user.id, tier: String(intg?.tier || '') }
 }
 
-/** What the page shows for one video: never the whole transcript. */
-function view(r: EditRow) {
+/** What the page shows for one video: never the whole transcript. server:
+ *  what the video server says about it while it is being made. */
+function view(r: EditRow, server?: ServerView | null) {
+  const onServer = r.status === 'making' && server
+    ? (server.progress[`edit-${r.id}`] ? { ...server.progress[`edit-${r.id}`], others: server.others } : { missing: true as const })
+    : null
   const words: Word[] = Array.isArray(r.words) ? r.words : []
   const lines = words.length ? linesOf(words) : []
   const plan = r.plan
@@ -70,6 +74,7 @@ function view(r: EditRow) {
       at: clock(lines[p.line]?.start ?? 0),
     })),
     zooms: (plan?.keys ?? []).length,
+    onServer,
   }
 }
 
@@ -81,7 +86,10 @@ export async function GET() {
   if (error) return NextResponse.json({ error: missing(error.message) ? NEEDS_SQL : error.message, needsSql: missing(error.message) }, { status: missing(error.message) ? 503 : 500 })
   // The settings a new video starts from: the last ones used.
   const last = (data ?? [])[0]
-  return NextResponse.json({ edits: (data ?? []).map((r: EditRow) => view(r)), defaults: last ? cleanSettings(last.settings) : DEFAULT_SETTINGS })
+  // WHAT THE VIDEO SERVER IS DOING WITH IT (Seb, 2026-10-30: "I don't know if
+  // it's stuck somewhere"): asked only when a video is being made.
+  const server = (data ?? []).some((r: EditRow) => r.status === 'making') ? await serverJobs() : null
+  return NextResponse.json({ edits: (data ?? []).map((r: EditRow) => view(r, server)), defaults: last ? cleanSettings(last.settings) : DEFAULT_SETTINGS })
 }
 
 export async function POST(request: Request) {

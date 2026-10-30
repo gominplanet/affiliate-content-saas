@@ -241,15 +241,20 @@ const BUSY = ['reading', 'making', 'queued', 'ready_to_make']
  *  it is working on. */
 export const LOST_CHECK_MS = 4 * 60_000
 
-/** The videos the video server is working on (its in-memory queue), or null
- *  when it cannot say (not answering, or a build before /jobs). */
-async function serverJobs(): Promise<Set<string> | null> {
+export type ServerStage = 'wait' | 'download' | 'broll' | 'cut' | 'make' | 'save'
+export interface ServerJob { stage: ServerStage; pct: number | null; since: string; ahead: number }
+export interface ServerView { edits: Set<string>; others: number; progress: Record<string, ServerJob> }
+
+/** What the video server is working on (its in-memory queue), each video's
+ *  step and how far along, or null when it cannot say (not answering, or a
+ *  build before /jobs). */
+export async function serverJobs(): Promise<ServerView | null> {
   if (!base()) return null
   try {
     const r = await fetch(`${base()}/jobs`, { headers: process.env.YOUTUBE_INGEST_SECRET ? { 'x-ingest-secret': process.env.YOUTUBE_INGEST_SECRET } : {}, signal: AbortSignal.timeout(15_000) })
     if (!r.ok) return null
-    const d = await r.json() as { edits?: string[] }
-    return Array.isArray(d.edits) ? new Set(d.edits) : null
+    const d = await r.json() as { edits?: string[]; others?: number; progress?: Record<string, ServerJob> }
+    return Array.isArray(d.edits) ? { edits: new Set(d.edits), others: Number(d.others) || 0, progress: d.progress && typeof d.progress === 'object' ? d.progress : {} } : null
   } catch { return null }
 }
 
@@ -266,7 +271,7 @@ export async function moveQueue(db: Db, o: { userId?: string; readBudget?: numbe
   if (making0?.length) {
     const jobs = await serverJobs()
     if (jobs) for (const m of making0) {
-      if (jobs.has(`edit-${m.id}`)) continue
+      if (jobs.edits.has(`edit-${m.id}`)) continue
       await set(db, m.id, { status: 'ready_to_make', attempts: Math.max(0, (m.attempts || 1) - 1), note: 'MVP\u2019s video server restarted and lost this one, so it is being made again.' })
     }
   }
