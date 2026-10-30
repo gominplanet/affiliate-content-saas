@@ -70,6 +70,18 @@ check('a video that keeps stopping the server stops with a reason, never going r
 
 check('the dead air is found from the sound itself, when reading and for a video read before', /silences: true \}, 295_000\)/.test(W) && /A video read before the dead air was found from the sound/.test(W) && /function findSilences\(file, duration\)/.test(S) && /silencedetect=noise=\$\{noise\}dB/.test(S))
 
+// ── Title looks and pictures (Seb, 2026-10-30) ──────────────────────────────
+check('the title is drawn in its look, colour and size, and the page previews that same drawing', /drawTitle\(t\.text, \{ look: t\.look/.test(W) && /\/api\/review-edit\/title\?/.test(U) && /This is the picture MVP puts on the video/.test(U))
+check('a preview that cannot be drawn says so, never a blank', /The preview could not be drawn/.test(U) && /onError=\{\(\) => setTitleBad\(true\)\}/.test(U))
+check('a title can stay on for the whole video', /n === 0 \? 'the whole video'/.test(U) && /settings\.title\.seconds === 0 \? spec\.seconds \+ 1/.test(W))
+check('pictures are only ever the creator\u2019s own files, in a library of their own', (R.match(/settings\.pictures = settings\.pictures\.filter\(\(p\) => own\(p\.url\)\)/g) ?? []).length === 2 && /const PICTURE_NAME = \/\^pic-/.test(R) && /pic-\$\{crypto\.randomUUID\(\)\}/.test(U))
+check('deleting from the library touches only a library picture of this creator', /action === 'forget_picture'[\s\S]{0,200}ownPath\(body\.url, g\.userId\)[\s\S]{0,120}PICTURE_NAME\.test/.test(R))
+check('no clean-up job deletes library pictures', !/pic/.test((read('app/api/cron/purge-shorts-sources/route.ts').match(/\^\(([^)]*)\)-/) ?? [''])[0]))
+check('the server lays up to four pictures over the video, each at its moment', /body\.pictures[\s\S]{0,80}\.slice\(0, 4\)/.test(S) && /pictures, ass,/.test(S))
+check('what went on the video is saved when it is sent, and the card shows it, with anything left out said', /info: \{ \.\.\.info, placed \}/.test(W) && /The title could not be drawn, so it is not on this video/.test(W) && /is not said in the finished video, so this picture was left out/.test(E) && /'missed' in p \? <span style=\{\{ color: AMBER \}\}>/.test(U))
+check('a typed change can restyle the title and move pictures, never add one or swap its file', /"look" \(\$\{TITLE_LOOKS/.test(P) && /url: p\.url \}\)\)/.test(P) && /You cannot add a new picture/.test(P))
+check('calls to action stay in Drop, so Amazon gets a clean copy', /Calls to action are added in Drop/.test(U))
+
 // ── Cost ─────────────────────────────────────────────────────────────────────
 check('the plan on Sonnet 5, the B-roll and typed changes on Haiku', /PLAN_MODEL = 'claude-sonnet-5'/.test(P) && /QUICK_MODEL = 'claude-haiku-4-5-20251001'/.test(P) && /model: QUICK_MODEL[\s\S]{0,40}max_tokens: 900/.test(P))
 check('the B-roll is seen from 36 small frames, sent in the answer, never stored', /frames: 36, width: 320/.test(W) && /jpg: fs\.readFileSync\(out\)\.toString\('base64'\)/.test(S))

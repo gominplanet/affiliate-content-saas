@@ -14,7 +14,7 @@
 
 import { createAnthropicClient } from '@/lib/anthropic'
 import { recordAnthropicUsage } from '@/lib/ai-usage'
-import { cleanSettings, clock, findWords, POSITIONS, type Cut, type CutKind, type EditSettings, type Line, type Plan, type Shot, type VideoKind, type Word } from '@/lib/review-edit'
+import { cleanSettings, clock, findWords, POSITIONS, TITLE_COLORS, TITLE_LOOKS, type Cut, type CutKind, type EditSettings, type Line, type Plan, type Shot, type VideoKind, type Word } from '@/lib/review-edit'
 
 const PLAN_MODEL = 'claude-sonnet-5'
 const QUICK_MODEL = 'claude-haiku-4-5-20251001'
@@ -147,7 +147,8 @@ export async function planEdit(o: { words: Word[]; lines: Line[]; shots: Shot[];
 const CHANGE_SYSTEM = [
   'A creator is editing a product review video in MVP and types a change. Turn it into JSON, changing only what they asked for.',
   `Positions: ${POSITIONS.join(', ')} (upper-left is top left, lower-right is bottom right).`,
-  'You can set: "logo": {"position", "on", "opacity" (1 solid, 0.7, 0.5 or 0.3 for a see-through stamp), "size" ("small", "medium" or "large")}; "title": {"text", "position", "seconds", "on"}; "captions", "zooms", "color", "broll" (true or false); "cropX" (0 left to 1 right, where an upright ad is cut from a sideways take). Whether it is a review or a TRYBE ad cannot be changed: say so if asked.',
+  'You can set: "logo": {"position", "on", "opacity" (1 solid, 0.7, 0.5 or 0.3 for a see-through stamp), "size" ("small", "medium" or "large")}; "title": {"text", "position", "seconds" (0 keeps it on for the whole video), "on", "look" (${TITLE_LOOKS.join(', ')}), "color" (${Object.keys(TITLE_COLORS).join(', ')}), "size" ("small", "medium" or "large")}; "captions", "zooms", "color", "broll" (true or false); "cropX" (0 left to 1 right, where an upright ad is cut from a sideways take). Whether it is a review or a TRYBE ad cannot be changed: say so if asked.',
+  'The pictures already on the video are in NOW as "pictures", in order. You can change one by giving "pictures" as a list in the same order, each item only the fields to change: "position" (also "center"), "on", "opacity", "size", "when" ("whole", "start", "end", or "say" with "say": the words to wait for), "seconds". You cannot add a new picture: the creator adds those on the page.',
   'You can also "restore" cuts by number (put the part back) or add "cut" with line numbers {"from","to","why"}.',
   'Reply with JSON only: {"settings":{...},"restore":[],"cut":[],"said":"one short plain sentence saying what you changed"}. If the request is not something you can do, change nothing and say so in "said".',
 ].join('\n')
@@ -163,7 +164,12 @@ export async function promptChange(o: { prompt: string; settings: EditSettings; 
   })
   recordAnthropicUsage(msg, { userId: o.who.userId, tier: o.who.tier, feature: 'review_edit_change', model: QUICK_MODEL })
   const raw = jsonIn(textOf(msg as never)) || {}
-  const settings = cleanSettings(raw.settings && typeof raw.settings === 'object' ? { ...o.settings, ...(raw.settings as object), kind: o.settings.kind, logo: { ...(o.settings.logo || {}), ...((raw.settings as Record<string, unknown>).logo as object || {}) }, title: { ...o.settings.title, ...((raw.settings as Record<string, unknown>).title as object || {}) } } : o.settings, o.settings)
+  const rs = (raw.settings && typeof raw.settings === 'object' ? raw.settings : null) as Record<string, unknown> | null
+  // A typed change edits the pictures already there, in order; it never adds
+  // one or changes where one comes from.
+  const picks = rs && Array.isArray(rs.pictures) ? rs.pictures as Record<string, unknown>[] : []
+  const pictures = o.settings.pictures.map((p, i) => ({ ...p, ...(picks[i] && typeof picks[i] === 'object' ? picks[i] : {}), url: p.url }))
+  const settings = cleanSettings(rs ? { ...o.settings, ...rs, kind: o.settings.kind, logo: { ...(o.settings.logo || {}), ...(rs.logo as object || {}) }, title: { ...o.settings.title, ...(rs.title as object || {}) }, pictures } : o.settings, o.settings)
   const restore = new Set((Array.isArray(raw.restore) ? raw.restore : []).map(Number))
   const plan: Plan = { ...o.plan, cuts: o.plan.cuts.map((c, k) => (restore.has(k) ? { ...c, restored: true } : c)) }
   const added = cleanPlan({ cuts: Array.isArray(raw.cut) ? raw.cut.map((c: Record<string, unknown>) => ({ ...c, kind: 'chatter' })) : [] }, o.lines, [], o.words).cuts

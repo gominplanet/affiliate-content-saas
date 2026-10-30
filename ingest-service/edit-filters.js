@@ -159,6 +159,8 @@ function placeAt(position, W, H, w, h) {
  *   zooms, color,
  *   logo: { input, w, h, position, widthPct: { wide, vertical }, opacity? (0 to 1) },
  *   title: { input, w, h, position, startSec, endSec, widthPct: { wide, vertical } },
+ *   pictures: [{ input, w, h, position, widthPct, opacity?, startSec?, endSec? }],
+ *                                  the creator's PNGs; without a start and end, on the whole video
  *   ass,                           captions file (vertical only)
  * }
  * Returns { graph, outputs: { wide?: { v, a }, vertical?: { v, a } }, seconds, inserts, zooms }.
@@ -215,6 +217,8 @@ function buildEditGraph(opts) {
   }
   const logoIn = pngIn(o.logo, 'lg')
   const titleIn = pngIn(o.title, 'tt')
+  const pictures = (Array.isArray(o.pictures) ? o.pictures : []).filter((p) => p && Number.isInteger(p.input)).slice(0, 4)
+  const picIn = pictures.map((p, i) => pngIn(p, `pc${i}`))
 
   const outputs = {}
   for (const f of formats) {
@@ -242,10 +246,12 @@ function buildEditGraph(opts) {
       const fade = Number.isFinite(op) && op > 0 && op < 1 ? `,format=rgba,colorchannelmixer=aa=${Math.round(op * 100) / 100}` : ''
       g.push(`[${input}]scale=${w}:${h}${fade}[${sized}]`)
       const next = `${name}${f}o`
-      const when = timed ? `:enable='between(t,${r3(spec.startSec)},${r3(spec.endSec)})'` : ''
+      const when = timed && Number.isFinite(Number(spec.startSec)) && Number.isFinite(Number(spec.endSec)) ? `:enable='between(t,${r3(spec.startSec)},${r3(spec.endSec)})'` : ''
       g.push(`[${cur}][${sized}]overlay=${x}:${y}${when}[${next}]`)
       cur = next
     }
+    // Pictures under the logo and the title, so a big sticker never hides them.
+    pictures.forEach((p, i) => put(p, picIn[i][f], `pc${i}`, true))
     put(o.logo, logoIn[f], 'lg', false)
     put(o.title, titleIn[f], 'tt', true)
     if (f === 'vertical' && o.ass) {

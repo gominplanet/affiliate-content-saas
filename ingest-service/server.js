@@ -1438,6 +1438,12 @@ async function renderEditJob(body, report = () => {}) {
     }
     const logo = await png(body.logo, 'logo')
     const title = await png(body.title, 'title')
+    // The creator's own pictures (PNGs), up to four.
+    const pictures = []
+    for (const [i, p] of (Array.isArray(body.pictures) ? body.pictures : []).slice(0, 4).entries()) {
+      const got = await png(p, `picture${i}`)
+      if (got) pictures.push(got)
+    }
     let ass = null
     if (formats.includes('vertical') && Array.isArray(body.words) && body.words.length) {
       ass = path.join(dir, 'captions.ass')
@@ -1445,7 +1451,7 @@ async function renderEditJob(body, report = () => {}) {
     }
     const built = buildEditGraph({
       segments: body.segments, srcW: info.w, srcH: info.h, hasAudio: info.hasAudio, transfer: hdrFallback ? '' : info.transfer, formats, cropX: body.cropX,
-      inserts, brollSec, track, zooms: body.zooms, color: body.color === true, logo, title, ass,
+      inserts, brollSec, track, zooms: body.zooms, color: body.color === true, logo, title, pictures, ass,
     })
     fs.writeFileSync(path.join(dir, 'graph.txt'), built.graph)
     const outArgs = []

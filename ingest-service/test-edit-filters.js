@@ -37,6 +37,22 @@ check('both formats come out of one graph, each with its own sound', both.output
 check('colour and zoom go in once, before the formats split', both.graph.indexOf('eq=') < both.graph.indexOf('split=2') && both.graph.indexOf('zoompan') < both.graph.indexOf('split=2'))
 check('a take with no sound still gets a sound track', /anullsrc/.test(E.buildEditGraph({ segments: [[0, 5]], srcW: 1920, srcH: 1080, hasAudio: false, formats: ['wide'] }).graph))
 
+// ── The creator's pictures (Seb, 2026-10-30: "add things to the screen by uploads, like PNGs") ──
+{
+  const pic = (i, extra) => ({ input: i, w: 100, h: 100, position: 'lower-right', widthPct: { wide: 0.2, vertical: 0.4 }, ...extra })
+  const g = E.buildEditGraph({
+    segments: [[0, 10]], srcW: 1920, srcH: 1080, hasAudio: true, formats: ['wide'],
+    logo: { input: 1, w: 100, h: 50, position: 'upper-left', widthPct: { wide: 0.1, vertical: 0.2 } },
+    title: { input: 2, w: 400, h: 80, position: 'top', startSec: 0.3, endSec: 4.3, widthPct: { wide: 0.3, vertical: 0.45 } },
+    pictures: [pic(3, { startSec: 6, endSec: 8.5 }), pic(4, { position: 'center', opacity: 0.5 }), pic(5, {}), pic(6, {}), pic(7, {})],
+  }).graph
+  check('a picture with a moment shows only then', /\[3:v\]scale=384:384\[pc0wides\]/.test(g) && /overlay=1459:642:enable='between\(t,6,8\.5\)'\[pc0wideo\]/.test(g), g)
+  const pc1 = g.split(';').find((l) => l.includes('[pc1wideo]')) || ''
+  check('a picture for the whole video has no moment, and a see-through one keeps its own transparency', !!pc1 && !/enable/.test(pc1) && /\[4:v\]scale=384:384,format=rgba,colorchannelmixer=aa=0\.5/.test(g), pc1)
+  check('pictures go under the logo and the title, so a big one never hides them', g.indexOf('[pc0wideo]') < g.indexOf('[lgwideo]') && g.indexOf('[lgwideo]') < g.indexOf('[ttwideo]'))
+  check('four pictures at most', /pc3wideo/.test(g) && !/pc4wide/.test(g))
+}
+
 // ── iPhone HDR takes are brought to normal colour ────────────────────────────
 check('HDR (HLG or PQ) gets the conversion, a normal take none', !!E.hdrChain('arib-std-b67') && /tin=smpte2084/.test(E.hdrChain('smpte2084')) && E.hdrChain('') === null && E.hdrChain('bt709') === null)
 {
@@ -90,10 +106,11 @@ if (ffmpeg) {
     return c.map((v) => Math.round(v / (raw.length / 3)))
   }
   try {
-    const main = path.join(dir, 'main.mp4'), broll = path.join(dir, 'broll.mp4'), logo = path.join(dir, 'logo.png')
+    const main = path.join(dir, 'main.mp4'), broll = path.join(dir, 'broll.mp4'), logo = path.join(dir, 'logo.png'), sticker = path.join(dir, 'sticker.png')
     run(['-f', 'lavfi', '-i', 'color=c=red:s=1280x720:r=30:d=12', '-f', 'lavfi', '-i', 'sine=f=440:d=12', '-shortest', '-c:v', 'libx264', '-preset', 'ultrafast', '-c:a', 'aac', '-y', main])
     run(['-f', 'lavfi', '-i', 'color=c=blue:s=1280x720:r=30:d=8', '-c:v', 'libx264', '-preset', 'ultrafast', '-y', broll])
     run(['-f', 'lavfi', '-i', 'color=c=white:s=200x100', '-frames:v', '1', '-y', logo])
+    run(['-f', 'lavfi', '-i', 'color=c=0x00FF00:s=100x100', '-frames:v', '1', '-y', sticker])
     const segments = [[0, 3], [4, 7], [8, 11]] // 9 seconds kept
     const inserts = E.cleanInserts([{ at: 4, len: 2, from: 1 }], 9, 8)
     // The B-roll track, as server.js makes it.
@@ -105,11 +122,12 @@ if (ffmpeg) {
     const built = E.buildEditGraph({
       segments, srcW: 1280, srcH: 720, hasAudio: true, formats: ['wide', 'vertical'], inserts, brollSec: 8, track: 1,
       zooms: [[0.5, 2.5]], color: true, logo: { input: 2, w: 200, h: 100, position: 'upper-left', widthPct: { wide: 0.1, vertical: 0.2 }, opacity: 0.5 },
+      pictures: [{ input: 3, w: 100, h: 100, position: 'lower-right', widthPct: { wide: 0.2, vertical: 0.3 }, startSec: 6.5, endSec: 8.5 }],
     })
     fs.writeFileSync(path.join(dir, 'graph.txt'), built.graph)
     const out = { wide: path.join(dir, 'w.mp4'), vertical: path.join(dir, 'v.mp4') }
     const t0 = Date.now()
-    run(['-i', main, '-i', path.join(dir, 'track.mp4'), '-i', logo, '-filter_complex_script', path.join(dir, 'graph.txt'),
+    run(['-i', main, '-i', path.join(dir, 'track.mp4'), '-i', logo, '-i', sticker, '-filter_complex_script', path.join(dir, 'graph.txt'),
       ...['wide', 'vertical'].flatMap((f) => ['-map', `[${built.outputs[f].v}]`, '-map', `[${built.outputs[f].a}]`, '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-y', out[f]])])
     const secs = (Date.now() - t0) / 1000
     for (const f of ['wide', 'vertical']) {
@@ -127,6 +145,12 @@ if (ffmpeg) {
       const W = f === 'wide' ? 1920 : 1080
       const stamp = rgbIn(out[f], 1.5, Math.round(W * 0.04) + 8, Math.round((f === 'wide' ? 1080 : 1920) * 0.05) + 8, 24, 16)
       check(`${f}: the logo is a see-through stamp in its corner`, stamp[0] > 200 && stamp[1] > 90 && stamp[1] < 190 && stamp[2] > 90 && stamp[2] < 190, stamp)
+      // The green picture, bottom right, from 6.5 to 8.5 seconds only.
+      const H = f === 'wide' ? 1080 : 1920
+      const corner = (t) => rgbIn(out[f], t, W - Math.round(W * 0.04) - 40, H - Math.round(H * 0.05) - 40, 24, 24)
+      const before = corner(3.5), during = corner(7.5)
+      check(`${f}: a picture shows at its moment, in its corner`, during[1] > 200 && during[0] < 60, during)
+      check(`${f}: and not before it`, before[1] < 60, before)
     }
     console.log(`   (real edit of a 12 second take into two formats: ${secs.toFixed(1)}s)`)
   } catch (e) {
@@ -143,4 +167,4 @@ if (fails.length) {
   for (const f of fails) console.error(`   • ${f}`)
   process.exit(1)
 }
-console.log('✅ edit-filters: cuts, B-roll, zooms, colour, logo and both formats in one pass, the B-roll exactly where it was placed')
+console.log('✅ edit-filters: cuts, B-roll, zooms, colour, logo, pictures and both formats in one pass, the B-roll and pictures exactly where they were placed')

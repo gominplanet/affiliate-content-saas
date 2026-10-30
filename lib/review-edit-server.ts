@@ -19,8 +19,8 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 import { transcribeToCues, transcriptionConfigured } from '@/lib/shorts-transcribe'
 import { makeRenderJob } from '@/lib/render-job'
-import { drawTextPill } from '@/lib/text-pill'
-import { cleanSettings, cleanWords, clock, linesOf, renderSpec, LOGO_WIDTH, type Plan, type Shot, type Word } from '@/lib/review-edit'
+import { drawTitle } from '@/lib/title-looks'
+import { cleanSettings, cleanWords, clock, linesOf, renderSpec, LOGO_WIDTH, PICTURE_WIDTH, type EditSettings, type PictureTime, type Plan, type Shot, type Word } from '@/lib/review-edit'
 import { planEdit, readShots } from '@/lib/review-edit-plan'
 import { driveAccessToken, driveMediaUrl } from '@/lib/google-drive'
 
@@ -61,7 +61,7 @@ async function takes(db: Db, row: Pick<EditRow, 'user_id' | 'review_src' | 'brol
 export interface EditRow {
   id: string; user_id: string; name: string | null; status: string; note: string | null
   review_src: Src; broll_src: Src | null; product: string | null
-  settings: unknown; info: { review?: { duration: number; width: number; height: number; hasAudio: boolean; silences?: [number, number][] }; broll?: { duration: number } } | null
+  settings: unknown; info: { review?: { duration: number; width: number; height: number; hasAudio: boolean; silences?: [number, number][] }; broll?: { duration: number }; placed?: Placed } | null
   words: Word[] | null; shots: Shot[] | null; plan: Plan | null; outputs: Record<string, { url: string; seconds: number }> | null
   attempts: number; made_at: string | null; raw_deleted_at: string | null; created_at: string; updated_at: string
 }
@@ -160,12 +160,18 @@ export async function readTakes(db: Db, row: EditRow): Promise<void> {
   }
 }
 
+/** What was put on the video when it was last sent to be made, in finished
+ *  video seconds, and what was left out and why: the card shows this, not
+ *  the settings, so a title that could not be drawn or a picture waiting for
+ *  words never said is seen as missing (Seb's rule: report what happened). */
+export interface Placed { title: { from: number; to: number } | { missed: string } | null; pictures: PictureTime[] }
+
 /** The title as a picture, in the creator's folder, overwritten on each make. */
 /** Drawn for a 1920 wide frame: on the wide version it keeps its own size,
  *  on the vertical one it is half as big again, so it reads on a phone. */
-async function titleImage(db: Db, row: EditRow, text: string): Promise<{ url: string; widthPct: { wide: number; vertical: number } } | null> {
+async function titleImage(db: Db, row: EditRow, t: EditSettings['title']): Promise<{ url: string; widthPct: { wide: number; vertical: number } } | null> {
   try {
-    const { png, width } = await drawTextPill(text, { fontPx: 64, color: '#FFFFFF', background: 'rgba(0,0,0,0.62)', radius: 18, padX: 34, padY: 18, maxWidth: 1500, shadow: false })
+    const { png, width } = await drawTitle(t.text, { look: t.look, color: t.color, size: t.size, position: t.position })
     const path = `${row.user_id}/edit-title-${row.id}.png`
     const { error } = await db.storage.from(EDIT_BUCKET).upload(path, png, { contentType: 'image/png', upsert: true })
     if (error) return null
@@ -186,6 +192,7 @@ export async function startMaking(db: Db, row: EditRow): Promise<void> {
   if (!row.words?.length || !row.plan || !row.info?.review) return set(db, row.id, { status: 'queued', note: 'Reading your takes again' })
   const settings = cleanSettings(row.settings)
   const words = row.words
+  let info = row.info
   // A video read before the dead air was found from the sound: found now.
   let silences = row.info.review.silences
   if (!Array.isArray(silences)) {
@@ -195,7 +202,8 @@ export async function startMaking(db: Db, row: EditRow): Promise<void> {
       if (p) await db.storage.from(EDIT_BUCKET).remove([p])
       if (Array.isArray(a.data.silences)) {
         silences = a.data.silences
-        await set(db, row.id, { info: { ...row.info, review: { ...row.info.review, silences } } })
+        info = { ...info, review: { ...row.info.review, silences } }
+        await set(db, row.id, { info })
       }
     }
   }
@@ -203,7 +211,17 @@ export async function startMaking(db: Db, row: EditRow): Promise<void> {
   if (spec.seconds < 3) return set(db, row.id, { status: 'failed', note: 'Almost everything was cut. Put some cuts back and make it again.' })
   const job = makeRenderJob({ shortId: `edit-${row.id}`, userId: row.user_id, reservationId: null })
   if (!job) return set(db, row.id, { status: 'failed', note: 'MVP’s video server is not set up for background work.' })
-  const title = settings.title.on && settings.title.text ? await titleImage(db, row, settings.title.text) : null
+  const title = settings.title.on && settings.title.text ? await titleImage(db, row, settings.title) : null
+  // A title on for the whole video (a disclosure) stays to the last frame.
+  const titleTo = settings.title.seconds === 0 ? spec.seconds + 1 : 0.3 + settings.title.seconds
+  const shown = spec.pictures.filter((p): p is Extract<PictureTime, { from: number }> => 'from' in p)
+  const placed: Placed = {
+    title: !settings.title.on || !settings.title.text ? null
+      : title ? { from: settings.title.seconds === 0 ? 0 : 0.3, to: Math.min(spec.seconds, titleTo) }
+      : { missed: 'The title could not be drawn, so it is not on this video. Make it again to try once more.' },
+    pictures: spec.pictures,
+  }
+  await set(db, row.id, { info: { ...info, placed } })
   const sent = await videoServer<{ accepted?: boolean }>('/render-edit', {
     mainUrl: src.review.url, mainAuth: src.review.auth,
     brollUrl: spec.inserts.length ? src.broll?.url : undefined, brollAuth: spec.inserts.length ? src.broll?.auth : undefined,
@@ -211,7 +229,12 @@ export async function startMaking(db: Db, row: EditRow): Promise<void> {
     segments: spec.segments, inserts: spec.inserts, zooms: spec.zooms, color: settings.color,
     formats: settings.formats, cropX: settings.cropX, words: spec.words,
     logo: spec.logo ? { url: spec.logo.url, position: spec.logo.position, widthPct: LOGO_WIDTH[spec.logo.size], opacity: spec.logo.opacity } : undefined,
-    title: title ? { url: title.url, position: settings.title.position, startSec: 0.3, endSec: 0.3 + settings.title.seconds, widthPct: title.widthPct } : undefined,
+    title: title ? { url: title.url, position: settings.title.position, startSec: settings.title.seconds === 0 ? 0 : 0.3, endSec: titleTo, widthPct: title.widthPct } : undefined,
+    pictures: shown.map((p) => {
+      const pic = settings.pictures[p.k]
+      // On for the whole video: no timing, so it is there from the first frame to the last.
+      return { url: p.url, position: pic.position, widthPct: PICTURE_WIDTH[pic.size], opacity: pic.opacity, ...(pic.when === 'whole' ? {} : { startSec: p.from, endSec: p.to }) }
+    }),
   }, 60_000)
   if (!sent.ok) {
     // Not there yet (the server is updating): back in line, not a failure.

@@ -325,9 +325,12 @@ export function zoomsFor(keys: number[], lines: Line[], segs: Segment[]): Segmen
 
 export type Position = 'upper-left' | 'upper-right' | 'lower-left' | 'lower-right' | 'top' | 'bottom'
 export const POSITIONS: Position[] = ['upper-left', 'top', 'upper-right', 'lower-left', 'bottom', 'lower-right']
-export const POSITION_WORDS: Record<Position, string> = {
+/** A picture can also sit in the middle of the frame. */
+export type Spot = Position | 'center'
+export const SPOTS: Spot[] = [...POSITIONS, 'center']
+export const POSITION_WORDS: Record<Spot, string> = {
   'upper-left': 'Top left', top: 'Top', 'upper-right': 'Top right',
-  'lower-left': 'Bottom left', bottom: 'Bottom', 'lower-right': 'Bottom right',
+  'lower-left': 'Bottom left', bottom: 'Bottom', 'lower-right': 'Bottom right', center: 'Middle',
 }
 export type Format = 'wide' | 'vertical'
 export const FORMAT_WORDS: Record<Format, string> = {
@@ -345,6 +348,40 @@ export const LOGO_WIDTH: Record<LogoSize, { wide: number; vertical: number }> = 
 export const LOGO_OPACITY = [1, 0.7, 0.5, 0.3]
 const nearestOpacity = (v: number) => LOGO_OPACITY.reduce((a, b) => (Math.abs(b - v) < Math.abs(a - v) ? b : a), 1)
 
+// TITLE LOOKS (Seb, 2026-10-30: "different fonts, different ways to write
+// those titles"). Each look is a font MVP ships with its own treatment; the
+// creator picks one, a colour and a size. lib/title-looks draws it.
+export type TitleLook = 'clean' | 'bold' | 'caps' | 'highlight' | 'marker' | 'tech' | 'fun'
+export const TITLE_LOOKS: TitleLook[] = ['clean', 'bold', 'caps', 'highlight', 'marker', 'tech', 'fun']
+export const TITLE_LOOK_WORDS: Record<TitleLook, string> = {
+  clean: 'Clean box', bold: 'Bold outline', caps: 'Tall capitals', highlight: 'Highlighter',
+  marker: 'Marker pen', tech: 'Tech badge', fun: 'Comic',
+}
+/** The colour picked: the text's, or the box's on a look with a box. */
+export type TitleColor = 'white' | 'yellow' | 'black' | 'red' | 'blue' | 'purple' | 'green'
+export const TITLE_COLORS: Record<TitleColor, string> = {
+  white: '#FFFFFF', yellow: '#FFD400', black: '#111111', red: '#E11D48', blue: '#2563EB', purple: '#7C3AED', green: '#16A34A',
+}
+/** The text's height in pixels on a 1920 wide frame, before the look's own scale. */
+export const TITLE_PX: Record<LogoSize, number> = { small: 46, medium: 64, large: 86 }
+/** Seconds a title stays; 0 is the whole video (a disclosure, Seb's
+ *  "PROVIDED SAMPLE IN EXCHANGE FOR VIDEO REVIEW #AD"). */
+export const TITLE_SECONDS = [3, 4, 5, 6, 8, 10, 0]
+
+// PICTURES ON SCREEN (Seb, 2026-10-30: "add things to the screen by
+// uploads, like PNGs"). A PNG from the creator's own library, in a spot, for
+// the whole video, the start, the end, or from the moment they say a phrase.
+export type PictureWhen = 'whole' | 'start' | 'end' | 'say'
+export const PICTURE_WHEN_WORDS: Record<PictureWhen, string> = {
+  whole: 'The whole video', start: 'At the start', end: 'At the end', say: 'When I say…',
+}
+export interface Picture { url: string; on: boolean; position: Spot; size: LogoSize; opacity: number; when: PictureWhen; seconds: number; say: string }
+export const MAX_PICTURES = 4
+/** How wide a picture is, as a share of the frame's width. */
+export const PICTURE_WIDTH: Record<LogoSize, { wide: number; vertical: number }> = {
+  small: { wide: 0.12, vertical: 0.25 }, medium: { wide: 0.2, vertical: 0.4 }, large: { wide: 0.3, vertical: 0.6 },
+}
+
 export interface EditSettings {
   /** Chosen first, and never changed after: it decides the format. */
   kind: VideoKind
@@ -352,7 +389,10 @@ export interface EditSettings {
   formats: Format[]
   /** On the whole video, in its corner, as solid or as a see-through stamp. */
   logo: { url: string; position: Position; on: boolean; opacity: number; size: LogoSize } | null
-  title: { text: string; position: Position; seconds: number; on: boolean }
+  /** seconds 0 is the whole video. */
+  title: { text: string; position: Position; seconds: number; on: boolean; look: TitleLook; color: TitleColor; size: LogoSize }
+  /** PNGs from the creator's library, each with its spot and its moment. */
+  pictures: Picture[]
   /** Word by word captions, on a TRYBE ad. */
   captions: boolean
   zooms: boolean
@@ -366,7 +406,8 @@ export const DEFAULT_SETTINGS: EditSettings = {
   kind: 'review',
   formats: ['wide'],
   logo: null,
-  title: { text: '', position: 'top', seconds: 4, on: false },
+  title: { text: '', position: 'top', seconds: 4, on: false, look: 'clean', color: 'white', size: 'medium' },
+  pictures: [],
   captions: true,
   zooms: true,
   color: true,
@@ -375,6 +416,28 @@ export const DEFAULT_SETTINGS: EditSettings = {
 }
 
 const isPos = (v: unknown): v is Position => typeof v === 'string' && (POSITIONS as string[]).includes(v)
+const isSpot = (v: unknown): v is Spot => typeof v === 'string' && (SPOTS as string[]).includes(v)
+const pick = <T extends string>(v: unknown, all: readonly T[], fallback: T): T => (typeof v === 'string' && (all as readonly string[]).includes(v) ? v as T : fallback)
+
+/** A picture from anywhere, made safe; null when it has no https address. Pure. */
+function cleanPicture(raw: unknown, base?: Picture): Picture | null {
+  const p = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>
+  const url = typeof p.url === 'string' && /^https:\/\//.test(p.url) ? p.url : base?.url
+  if (!url) return null
+  const when = pick<PictureWhen>(p.when, ['whole', 'start', 'end', 'say'], base?.when ?? 'whole')
+  const say = typeof p.say === 'string' ? p.say.replace(/[\u2013\u2014]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 60) : base?.say ?? ''
+  return {
+    url,
+    on: typeof p.on === 'boolean' ? p.on : base?.on ?? true,
+    position: isSpot(p.position) ? p.position : base?.position ?? 'lower-right',
+    size: pick<LogoSize>(p.size, LOGO_SIZES, base?.size ?? 'medium'),
+    opacity: Number.isFinite(Number(p.opacity)) && p.opacity != null ? nearestOpacity(Number(p.opacity)) : base?.opacity ?? 1,
+    // A moment with no words to wait for is shown at the start instead.
+    when: when === 'say' && !say ? 'start' : when,
+    seconds: Math.max(1, Math.min(15, Math.round(Number(p.seconds)) || base?.seconds || 4)),
+    say,
+  }
+}
 
 /** Settings from anywhere (the page, a saved row, the prompt box), made safe.
  *  Pure. */
@@ -396,11 +459,18 @@ export function cleanSettings(raw: unknown, base: EditSettings = DEFAULT_SETTING
       size: LOGO_SIZES.includes(lr?.size as LogoSize) ? lr!.size as LogoSize : base.logo?.size ?? 'medium',
     } : null,
     title: {
-      text: typeof tr.text === 'string' ? tr.text.replace(/\s*[–—]\s*/g, ', ').replace(/\s+-\s+/g, ', ').trim().slice(0, 60) : base.title.text,
+      text: typeof tr.text === 'string' ? tr.text.replace(/\s*[–—]\s*/g, ', ').replace(/\s+-\s+/g, ', ').trim().slice(0, 80) : base.title.text,
       position: isPos(tr.position) ? tr.position : base.title.position,
-      seconds: Math.max(2, Math.min(15, Number(tr.seconds) || base.title.seconds)),
+      // 0 keeps it on for the whole video.
+      seconds: tr.seconds == null || tr.seconds === '' ? base.title.seconds : Number(tr.seconds) === 0 ? 0 : Math.max(2, Math.min(15, Number(tr.seconds) || 4)),
       on: typeof tr.on === 'boolean' ? tr.on : base.title.on,
+      look: pick<TitleLook>(tr.look, TITLE_LOOKS, base.title.look ?? 'clean'),
+      color: pick<TitleColor>(tr.color, Object.keys(TITLE_COLORS) as TitleColor[], base.title.color ?? 'white'),
+      size: pick<LogoSize>(tr.size, LOGO_SIZES, base.title.size ?? 'medium'),
     },
+    pictures: (Array.isArray(r.pictures) ? r.pictures : base.pictures ?? [])
+      .map((p) => cleanPicture(p)).filter((p): p is Picture => !!p)
+      .filter((p, i, all) => all.findIndex((q) => q.url === p.url) === i).slice(0, MAX_PICTURES),
     captions: bool('captions'),
     zooms: bool('zooms'),
     color: bool('color'),
@@ -419,7 +489,45 @@ export function renderSpec(o: { words: Word[]; lines: Line[]; plan: Plan; shots:
   const words = o.settings.captions && o.settings.kind === 'trybe' ? outputWords(o.words, segments) : []
   // A TRYBE ad runs as the brand's ad: never the creator's logo on it.
   const logo = o.settings.kind === 'review' && o.settings.logo?.on ? o.settings.logo : null
-  return { segments, inserts, zooms, words, logo, seconds: editLength(segments) }
+  const seconds = editLength(segments)
+  const pictures = pictureTimes(o.settings.pictures ?? [], o.words, segments, seconds)
+  return { segments, inserts, zooms, words, logo, seconds, pictures }
+}
+
+/** The words of a phrase, wherever they are said, ignoring case and
+ *  punctuation: the first time they are said in a part that was kept. Pure. */
+export function whenSaid(words: Word[], segs: Segment[], phrase: string): number | null {
+  const want = String(phrase || '').split(/\s+/).map(norm).filter(Boolean)
+  if (!want.length) return null
+  for (let k = 0; k + want.length <= words.length; k++) {
+    let ok = true
+    for (let j = 0; j < want.length && ok; j++) ok = norm(words[k + j].text) === want[j]
+    if (!ok) continue
+    const at = toOutput(segs, words[k].start)
+    if (at != null) return at
+  }
+  return null
+}
+
+export type PictureTime = { k: number; url: string; from: number; to: number } | { k: number; url: string; missed: string }
+/** When each picture is on screen in the finished video, in its seconds, or
+ *  why it is not: a picture waiting for words never said is left out and
+ *  said so, never quietly dropped. Pictures switched off are not listed. Pure. */
+export function pictureTimes(pictures: Picture[], words: Word[], segs: Segment[], length: number): PictureTime[] {
+  const out: PictureTime[] = []
+  pictures.forEach((p, k) => {
+    if (!p.on) return
+    const len = Math.min(p.seconds, length)
+    if (p.when === 'whole') out.push({ k, url: p.url, from: 0, to: r3(length) })
+    else if (p.when === 'start') out.push({ k, url: p.url, from: 0.3, to: r3(Math.min(length, 0.3 + len)) })
+    else if (p.when === 'end') out.push({ k, url: p.url, from: r3(Math.max(0, length - len)), to: r3(length) })
+    else {
+      const at = whenSaid(words, segs, p.say)
+      if (at == null) out.push({ k, url: p.url, missed: `"${p.say}" is not said in the finished video, so this picture was left out.` })
+      else out.push({ k, url: p.url, from: at, to: r3(Math.min(length, at + len)) })
+    }
+  })
+  return out
 }
 
 /** "1:05" for a second count. */

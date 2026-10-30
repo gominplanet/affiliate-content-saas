@@ -5,7 +5,7 @@
 // B-roll lands under its line, never in the opening, never overlapping;
 // zooms run from a strong line to the next cut; captions follow the cuts; a
 // planner answer is checked against the take; settings are made safe.
-import { cleanWords, linesOf, keepSegments, snapSegments, editLength, toOutput, outputWords, insertsFor, zoomsFor, cleanSettings, renderSpec, findWords, cutLines, PACE, DEFAULT_SETTINGS, withoutSilences, type Word } from '../lib/review-edit'
+import { cleanWords, linesOf, keepSegments, snapSegments, editLength, toOutput, outputWords, insertsFor, zoomsFor, cleanSettings, renderSpec, findWords, cutLines, PACE, DEFAULT_SETTINGS, withoutSilences, whenSaid, pictureTimes, MAX_PICTURES, type Word } from '../lib/review-edit'
 import { cleanPlan, jsonIn } from '../lib/review-edit-plan'
 import { snapSegments as serverSnap, editSeconds as serverSeconds } from '../ingest-service/edit-filters'
 
@@ -109,6 +109,45 @@ check('a TRYBE ad never carries the creator\u2019s logo; a review does when it i
 check('a TRYBE ad is cut tighter: shorter pauses, so a shorter video from the same take', adSpec.seconds < renderSpec({ words, lines, plan: plain, shots, duration: 14, settings: cleanSettings({ kind: 'review' }), hasBroll: false }).seconds)
 check('an ad\u2019s B-roll may come sooner and is shorter', PACE.trybe.brollNotBefore < PACE.review.brollNotBefore && PACE.trybe.brollMax < PACE.review.brollMax && PACE.trybe.maxPause < PACE.review.maxPause)
 check('B-roll switched off, or no B-roll take, sends none', renderSpec({ words, lines, plan: { cuts, keys: [], placements: [{ shot: 1, line: 3, why: '' }], title: '' }, shots, duration: 14, settings: { ...DEFAULT_SETTINGS, broll: false }, hasBroll: true }).inserts.length === 0 && spec.inserts.length === 1)
+
+// ── Title looks and pictures (Seb, 2026-10-30) ──────────────────────────────
+{
+  const t = cleanSettings({ title: { text: 'PROVIDED SAMPLE IN EXCHANGE FOR VIDEO REVIEW #AD', position: 'lower-left', seconds: 0, on: true, look: 'caps', color: 'yellow', size: 'large' } }).title
+  check('a title has a look, a colour and a size, and can stay for the whole video', t.look === 'caps' && t.color === 'yellow' && t.size === 'large' && t.seconds === 0 && t.position === 'lower-left' && t.text.length === 48, t)
+  const odd = cleanSettings({ title: { look: 'wingdings', color: 'chartreuse', size: 'huge', seconds: 99 } }).title
+  check('an unknown look, colour or size falls back to the plain ones, and a time is kept between 2 and 15 seconds', odd.look === 'clean' && odd.color === 'white' && odd.size === 'medium' && odd.seconds === 15, odd)
+  const kept = cleanSettings({ zooms: false }, cleanSettings({ title: { seconds: 0, look: 'marker' } }))
+  check('a change that does not touch the title keeps its whole video timing and its look', kept.title.seconds === 0 && kept.title.look === 'marker', kept.title)
+  check('an older saved video, from before looks, gets the plain look', cleanSettings({ title: { text: 'x', position: 'top', seconds: 4, on: true } }).title.look === 'clean')
+
+  const u = (n: number) => `https://x.supabase.co/storage/v1/object/public/instagram-videos/u1/pic-${n}.png`
+  const ps = cleanSettings({ pictures: [{ url: u(1), position: 'center', size: 'large', opacity: 0.52, when: 'say', say: 'link \u2014 below', seconds: 40 }, { url: 'javascript:alert(1)' }, { url: u(1) }, { url: u(2), when: 'say', say: '  ' }, { url: u(3) }, { url: u(4) }, { url: u(5) }] }).pictures
+  check('pictures are made safe: https only, no twice, four at most', ps.length === MAX_PICTURES && ps.every((p) => p.url.startsWith('https://')) && new Set(ps.map((p) => p.url)).size === ps.length, ps.map((p) => p.url))
+  check('a picture keeps its spot, size and see-through look, and a time up to 15 seconds', ps[0].position === 'center' && ps[0].size === 'large' && ps[0].opacity === 0.5 && ps[0].seconds === 15 && ps[0].say === 'link below', ps[0])
+  check('a picture told to wait for no words shows at the start instead', ps[1].when === 'start', ps[1])
+  check('no pictures unless added', cleanSettings({}).pictures.length === 0)
+
+  // A take: "this hoodie is great, link below for the price"; "great" cut.
+  const w2: Word[] = say(0, 'this hoodie is great link below for the price', 0.05, 0.3)
+  const segs2: [number, number][] = [[0, 1.0], [1.4, 3.2]]
+  check('words said in a kept part are found, ignoring case and punctuation, at their place in the finished video', whenSaid(w2, segs2, 'Link, below!') === toOutput(segs2, w2[4].start) && whenSaid(w2, segs2, 'link below') !== null)
+  check('words cut from the video, or never said, are not found', whenSaid(w2, segs2, 'great') === null && whenSaid(w2, segs2, 'free shipping') === null && whenSaid(w2, segs2, '') === null)
+  const base = { url: 'https://x/p.png', on: true, position: 'lower-right' as const, size: 'medium' as const, opacity: 1, seconds: 4, say: '' }
+  const len = editLength(segs2)
+  const times = pictureTimes([
+    { ...base, when: 'whole' }, { ...base, when: 'start' }, { ...base, when: 'end' },
+    { ...base, when: 'say', say: 'link below' }, { ...base, when: 'say', say: 'free shipping' }, { ...base, when: 'whole', on: false },
+  ], w2, segs2, len)
+  const at = (k: number) => times.find((x) => x.k === k)! as { k: number; url: string; from: number; to: number; missed?: string }
+  check('the whole video, the start, the end', 'from' in at(0) && at(0).from === 0 && 'to' in at(0) && Math.abs(at(0).to - len) < 0.01
+    && 'from' in at(1) && at(1).from === 0.3 && 'from' in at(2) && Math.abs(at(2).from - Math.max(0, len - 4)) < 0.01, times)
+  const sayIt = at(3)
+  check('when I say: from the moment the words are said, for its seconds, never past the end', 'from' in sayIt && Math.abs(sayIt.from - whenSaid(w2, segs2, 'link below')!) < 0.001 && sayIt.to <= len + 0.001, sayIt)
+  check('words never said leave the picture out and say why, never quietly', 'missed' in at(4) && /free shipping/.test((at(4) as { missed: string }).missed))
+  check('a picture switched off is not listed', !times.some((x) => x.k === 5))
+  const withPics = renderSpec({ words, lines, plan: plain, shots, duration: 14, settings: cleanSettings({ kind: 'trybe', pictures: [{ url: 'https://x/p.png' }] }), hasBroll: false })
+  check('pictures go on a TRYBE ad too: they are the creator\u2019s choice, not their logo', withPics.pictures.length === 1 && 'from' in withPics.pictures[0])
+}
 
 if (fails.length) { console.error(`\n❌ review-edit: ${fails.length} failure(s)\n`); for (const f of fails) console.error(`   • ${f}`); process.exit(1) }
 console.log('✅ review-edit: mistakes and long pauses cut, B-roll under its line, zooms to the next cut, captions on the new timing, plans checked')

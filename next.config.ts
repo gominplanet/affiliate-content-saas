@@ -46,6 +46,10 @@ import type { NextConfig } from 'next'
 // cache: that one lives on the machine, is never uploaded, and is the one place
 // the speed is actually felt.
 
+/** The review editor's title fonts (lib/title-looks TITLE_FONTS; Arimo ships with every API route). */
+const TITLE_FONTS = ['anton', 'bebas-neue', 'permanent-marker', 'russo-one', 'bangers']
+  .map((f) => `./node_modules/@fontsource/${f}/files/${f}-latin-400-normal.woff`)
+
 const nextConfig: NextConfig = {
   typescript: {
     // Was `true`, with a note about Supabase generic inference breaking under
@@ -88,6 +92,11 @@ const nextConfig: NextConfig = {
     // Arimo (lib/text-pill), from many routes and crons, so every API route
     // ships the font file (15 KB).
     '/api/**': ['./node_modules/@fontsource/arimo/files/*.woff'],
+    // The review editor's title looks (lib/title-looks) draw in five more
+    // fonts, wherever a video is sent to be made or a title is previewed.
+    '/api/review-edit': TITLE_FONTS,
+    '/api/review-edit/**': TITLE_FONTS,
+    '/api/cron/review-edits': TITLE_FONTS,
   },
   // Tree-shake big barrel packages (lucide-react is imported in ~38 files);
   // only the icons actually used get bundled. Near-zero risk, big bundle win.

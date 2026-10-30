@@ -19,7 +19,11 @@ import { freshAccessToken, saysExpired } from '@/lib/fresh-token'
 import { storageSizeRefusal, BULK_VIDEO_MAX_BYTES } from '@/lib/clip-source-limits'
 import { pickFromDrive, type DriveState } from '@/components/review-editor/drive-picker'
 import DriveBatch from '@/components/review-editor/DriveBatch'
-import { DEFAULT_SETTINGS, FORMAT_WORDS, KIND_WORDS, LOGO_OPACITY, LOGO_SIZES, POSITIONS, POSITION_WORDS, cleanSettings, type EditSettings, type Format, type Position, type VideoKind } from '@/lib/review-edit'
+import {
+  DEFAULT_SETTINGS, FORMAT_WORDS, KIND_WORDS, LOGO_OPACITY, LOGO_SIZES, LOGO_WIDTH, MAX_PICTURES, PICTURE_WHEN_WORDS, PICTURE_WIDTH, POSITIONS, POSITION_WORDS, SPOTS,
+  TITLE_COLORS, TITLE_LOOKS, TITLE_LOOK_WORDS, TITLE_SECONDS, clock, cleanSettings,
+  type EditSettings, type Format, type LogoSize, type Picture, type PictureTime, type PictureWhen, type Position, type Spot, type TitleColor, type VideoKind,
+} from '@/lib/review-edit'
 
 const PURPLE = '#7C3AED'
 const GREEN = '#15803D'
@@ -47,6 +51,8 @@ interface EditView {
   cuts: { k: number; kind: string; why: string; restored: boolean; at: string; text: string }[]
   broll: { k: number; off: boolean; why: string; shot: string; line: string; at: string }[]
   zooms: number
+  /** What went on the video when it was last sent to be made, and what was left out. */
+  placed: { title: { from: number; to: number } | { missed: string } | null; pictures: PictureTime[] } | null
 }
 
 const STATUS: Record<string, { words: string; color: string; busy?: boolean }> = {
@@ -100,12 +106,99 @@ function Toggle({ on, set, label, hint }: { on: boolean; set: (v: boolean) => vo
   )
 }
 
+/** The creator's picture library, shared by every video's choices. */
+interface Library { pictures: string[]; busy: boolean; add: (f: File) => Promise<string | null>; forget: (url: string) => Promise<void> }
+const checker = { background: 'repeating-conic-gradient(#ddd 0% 25%, #fff 0% 50%) 50% / 12px 12px' }
+const newPicture = (url: string): Picture => ({ url, on: true, position: 'lower-right', size: 'medium', opacity: 1, when: 'whole', seconds: 4, say: '' })
+const sizeWords = (z: LogoSize) => (z === 'small' ? 'Small' : z === 'medium' ? 'Medium' : 'Large')
+const selectStyle = { borderColor: 'var(--border)', background: 'var(--surface)', color: 'var(--text)' }
+
+/** The title exactly as MVP draws it for the video (/api/review-edit/title),
+ *  a moment after the typing stops. */
+function useTitleUrl(t: EditSettings['title']): string {
+  const want = `/api/review-edit/title?${new URLSearchParams({ text: t.text || 'Your title here', look: t.look, color: t.color, size: t.size, position: t.position })}`
+  const [url, setUrl] = useState(want)
+  useEffect(() => { const h = setTimeout(() => setUrl(want), 450); return () => clearTimeout(h) }, [want])
+  return url
+}
+
+/** Where an overlay sits on a frame, the same spots the video server uses
+ *  (edit-filters placeAt: 4% in from the side, 5% from the top or bottom). */
+function spotStyle(p: Spot, widthPct: number, opacity = 1): React.CSSProperties {
+  const left = p.includes('left'), right = p.includes('right'), mid = p === 'top' || p === 'bottom' || p === 'center'
+  const up = p.startsWith('upper') || p === 'top', down = p.startsWith('lower') || p === 'bottom'
+  return {
+    position: 'absolute', width: `${Math.round(widthPct * 1000) / 10}%`, height: 'auto', opacity,
+    ...(left ? { left: '4%' } : right ? { right: '4%' } : { left: '50%' }),
+    ...(up ? { top: '5%' } : down ? { bottom: '5%' } : { top: '50%' }),
+    transform: `${mid ? 'translateX(-50%)' : ''} ${p === 'center' ? 'translateY(-50%)' : ''}`.trim() || undefined,
+  }
+}
+
+/** Everything that goes on the video, in its place on a blank frame, at its
+ *  real size. Each shows at its own moment on the video; here, all at once. */
+function FramePreview({ s, titleUrl }: { s: EditSettings; titleUrl: string }) {
+  const vertical = s.kind === 'trybe'
+  const [titleW, setTitleW] = useState<number | null>(null)
+  const share = titleW ? Math.min(0.9, Math.max(0.1, titleW / 1920)) : 0.4
+  const logo = !vertical && s.logo?.on ? s.logo : null
+  const pics = s.pictures.filter((p) => p.on)
+  return (
+    <div className="relative overflow-hidden rounded-lg" aria-label="How it sits on your video"
+      style={{ width: vertical ? 170 : 'min(100%, 420px)', aspectRatio: vertical ? '9 / 16' : '16 / 9', background: 'radial-gradient(circle at 35% 40%, #cdb8a0, #7d6a5c 55%, #2b2623)' }}>
+      {pics.map((p, i) => <img key={i} src={p.url} alt="" style={spotStyle(p.position, PICTURE_WIDTH[p.size][vertical ? 'vertical' : 'wide'], p.opacity)} />)}
+      {logo && <img src={logo.url} alt="" style={spotStyle(logo.position, LOGO_WIDTH[logo.size].wide, logo.opacity)} />}
+      {s.title.on && <img src={titleUrl} alt="" onLoad={(ev) => setTitleW(ev.currentTarget.naturalWidth)} style={spotStyle(s.title.position, vertical ? Math.min(0.9, share * 1.5) : share)} />}
+    </div>
+  )
+}
+
+/** One picture on this video: where, how big, how solid, and when. */
+function PictureRow({ p, set, remove }: { p: Picture; set: (p: Picture) => void; remove: () => void }) {
+  return (
+    <div className="flex flex-wrap items-center gap-2 rounded-lg border p-2 text-[12.5px]" style={{ borderColor: 'var(--border)' }}>
+      <img src={p.url} alt="" className="h-9 w-auto max-w-[4.5rem] rounded" style={checker} />
+      <Toggle on={p.on} set={(v) => set({ ...p, on: v })} label="Show" />
+      <select aria-label="Where" value={p.position} onChange={(ev) => set({ ...p, position: ev.target.value as Spot })} className="rounded border px-1 py-0.5" style={selectStyle}>
+        {SPOTS.map((x) => <option key={x} value={x}>{POSITION_WORDS[x]}</option>)}
+      </select>
+      <select aria-label="Size" value={p.size} onChange={(ev) => set({ ...p, size: ev.target.value as LogoSize })} className="rounded border px-1 py-0.5" style={selectStyle}>
+        {LOGO_SIZES.map((z) => <option key={z} value={z}>{sizeWords(z)}</option>)}
+      </select>
+      <select aria-label="Look" value={p.opacity} onChange={(ev) => set({ ...p, opacity: Number(ev.target.value) })} className="rounded border px-1 py-0.5" style={selectStyle}>
+        {LOGO_OPACITY.map((o) => <option key={o} value={o}>{o === 1 ? 'Solid' : `See-through ${Math.round(o * 100)}%`}</option>)}
+      </select>
+      <select aria-label="When" value={p.when} onChange={(ev) => set({ ...p, when: ev.target.value as PictureWhen })} className="rounded border px-1 py-0.5" style={selectStyle}>
+        {(Object.keys(PICTURE_WHEN_WORDS) as PictureWhen[]).map((w) => <option key={w} value={w}>{PICTURE_WHEN_WORDS[w]}</option>)}
+      </select>
+      {p.when === 'say' && <input value={p.say} onChange={(ev) => set({ ...p, say: ev.target.value.slice(0, 60) })} placeholder="the words, e.g. link below" className="rounded border px-2 py-0.5 w-40 bg-transparent" style={{ borderColor: 'var(--border)', color: 'var(--text)' }} />}
+      {p.when !== 'whole' && (
+        <select aria-label="For how long" value={p.seconds} onChange={(ev) => set({ ...p, seconds: Number(ev.target.value) })} className="rounded border px-1 py-0.5" style={selectStyle}>
+          {[2, 3, 4, 5, 6, 8, 10].map((n) => <option key={n} value={n}>for {n} seconds</option>)}
+        </select>
+      )}
+      <button type="button" onClick={remove} className="underline" style={soft}>Take it off this video</button>
+    </div>
+  )
+}
+
 /** The choices for a video, new or made. */
-function Choices({ s, set, onLogo, logoBusy }: { s: EditSettings; set: (s: EditSettings) => void; onLogo: (f: File) => void; logoBusy: boolean }) {
+function Choices({ s, set, onLogo, logoBusy, lib }: { s: EditSettings; set: (s: EditSettings) => void; onLogo: (f: File) => void; logoBusy: boolean; lib: Library }) {
   const ad = s.kind === 'trybe'
+  const titleUrl = useTitleUrl(s.title)
+  const [titleBad, setTitleBad] = useState(false)
+  useEffect(() => setTitleBad(false), [titleUrl])
+  const t = s.title
+  const setT = (v: Partial<EditSettings['title']>) => set({ ...s, title: { ...t, ...v } })
   const pos = (cur: Position, pick: (p: Position) => void) => (
     <div className="flex flex-wrap gap-1.5 mt-1">{POSITIONS.map((p) => <Chip key={p} on={cur === p} onClick={() => pick(p)}>{POSITION_WORDS[p]}</Chip>)}</div>
   )
+  const unused = lib.pictures.filter((u) => !s.pictures.some((p) => p.url === u))
+  const full = s.pictures.length >= MAX_PICTURES
+  const addPicture = async (f: File) => {
+    const url = await lib.add(f)
+    if (url && !full) set({ ...s, pictures: [...s.pictures, newPicture(url)] })
+  }
   return (
     <div className="flex flex-col gap-3">
       <div className="grid sm:grid-cols-2 gap-2">
@@ -114,12 +207,19 @@ function Choices({ s, set, onLogo, logoBusy }: { s: EditSettings; set: (s: EditS
         <Toggle on={s.color} set={(v) => set({ ...s, color: v })} label="Colour boost" hint="A little more colour and contrast." />
         {ad && <Toggle on={s.captions} set={(v) => set({ ...s, captions: v })} label="Captions" hint="Word by word, the way ads are watched with the sound off." />}
       </div>
+      {(s.title.on || s.pictures.some((p) => p.on) || (!ad && s.logo?.on)) && (
+        <div>
+          <p className="text-[12px] font-bold uppercase tracking-wider" style={soft}>How it sits on your video</p>
+          <div className="mt-1"><FramePreview s={s} titleUrl={titleUrl} /></div>
+          <p className="text-[11.5px] mt-1" style={soft}>All at once here. On the video, each shows at its own time.</p>
+        </div>
+      )}
       {!ad && <div>
         <p className="text-[12px] font-bold uppercase tracking-wider" style={soft}>Logo</p>
         {s.logo ? (
           <div className="mt-1">
             <div className="flex items-center gap-2">
-              <img src={s.logo.url} alt="Your logo" className="h-8 w-auto rounded" style={{ background: 'repeating-conic-gradient(#ddd 0% 25%, #fff 0% 50%) 50% / 12px 12px' }} />
+              <img src={s.logo.url} alt="Your logo" className="h-8 w-auto rounded" style={checker} />
               <Toggle on={s.logo.on} set={(v) => set({ ...s, logo: { ...s.logo!, on: v } })} label="Show my logo" />
             </div>
             {s.logo.on && (
@@ -131,7 +231,7 @@ function Choices({ s, set, onLogo, logoBusy }: { s: EditSettings; set: (s: EditS
                 </div>
                 <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
                   <span className="text-[12px]" style={soft}>Size:</span>
-                  {LOGO_SIZES.map((z) => <Chip key={z} on={s.logo!.size === z} onClick={() => set({ ...s, logo: { ...s.logo!, size: z } })}>{z === 'small' ? 'Small' : z === 'medium' ? 'Medium' : 'Large'}</Chip>)}
+                  {LOGO_SIZES.map((z) => <Chip key={z} on={s.logo!.size === z} onClick={() => set({ ...s, logo: { ...s.logo!, size: z } })}>{sizeWords(z)}</Chip>)}
                 </div>
                 <p className="text-[12px] mt-1" style={soft}>It stays in its corner for the whole video.</p>
               </>
@@ -146,19 +246,68 @@ function Choices({ s, set, onLogo, logoBusy }: { s: EditSettings; set: (s: EditS
       {ad && <p className="text-[12px]" style={soft}>No logo on a TRYBE ad: the brand runs it as its own ad.</p>}
       <div>
         <p className="text-[12px] font-bold uppercase tracking-wider" style={soft}>{ad ? 'Hook on screen' : 'Title'}</p>
-        <Toggle on={s.title.on} set={(v) => set({ ...s, title: { ...s.title, on: v } })} label={ad ? 'Show the hook as text at the start' : 'Show a title at the start'} />
-        {s.title.on && (
+        <Toggle on={t.on} set={(v) => setT({ on: v })} label={ad ? 'Show the hook as text' : 'Show a title, or a line such as your disclosure'} />
+        {t.on && (
           <>
-            <input value={s.title.text} onChange={(e) => set({ ...s, title: { ...s.title, text: e.target.value.slice(0, 60) } })} placeholder={ad ? 'Leave empty and MVP writes the hook from what you say' : 'Leave empty and MVP writes it from the product'}
+            <input value={t.text} onChange={(e) => setT({ text: e.target.value.slice(0, 80) })} placeholder={ad ? 'Leave empty and MVP writes the hook from what you say' : 'Leave empty and MVP writes it from the product'}
               className="mt-1 w-full max-w-md rounded-lg border px-3 py-1.5 text-[13px] bg-transparent" style={{ borderColor: 'var(--border)', color: 'var(--text)' }} />
-            {pos(s.title.position, (p) => set({ ...s, title: { ...s.title, position: p } }))}
-            <label className="text-[12.5px] mt-1 inline-flex items-center gap-2" style={soft}>For
-              <select value={s.title.seconds} onChange={(e) => set({ ...s, title: { ...s.title, seconds: Number(e.target.value) } })} className="rounded border px-1 py-0.5 bg-transparent" style={{ borderColor: 'var(--border)' }}>
-                {[3, 4, 5, 6, 8, 10].map((n) => <option key={n} value={n}>{n} seconds</option>)}
+            <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+              <span className="text-[12px]" style={soft}>Look:</span>
+              {TITLE_LOOKS.map((l) => <Chip key={l} on={t.look === l} onClick={() => setT({ look: l })}>{TITLE_LOOK_WORDS[l]}</Chip>)}
+            </div>
+            <div className="flex flex-wrap items-center gap-1.5 mt-1.5" role="group" aria-label="Colour">
+              <span className="text-[12px]" style={soft}>Colour:</span>
+              {(Object.keys(TITLE_COLORS) as TitleColor[]).map((c) => (
+                <button key={c} type="button" onClick={() => setT({ color: c })} aria-pressed={t.color === c} aria-label={c} title={c}
+                  className="h-6 w-6 rounded-full border-2" style={{ background: TITLE_COLORS[c], borderColor: t.color === c ? PURPLE : 'var(--border)', boxShadow: t.color === c ? `0 0 0 2px ${PURPLE}` : undefined }} />
+              ))}
+            </div>
+            <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+              <span className="text-[12px]" style={soft}>Size:</span>
+              {LOGO_SIZES.map((z) => <Chip key={z} on={t.size === z} onClick={() => setT({ size: z })}>{sizeWords(z)}</Chip>)}
+            </div>
+            <div className="mt-2 rounded-lg p-3 inline-block max-w-full" style={{ background: '#3a3330' }}>
+              {titleBad
+                ? <p className="text-[12.5px]" style={{ color: '#FCA5A5' }}>The preview could not be drawn. Try another look, or check your connection.</p>
+                : <img src={titleUrl} alt={`The title as it will look: ${t.text || 'Your title here'}`} onError={() => setTitleBad(true)} className="max-w-full h-auto" style={{ maxHeight: 90 }} />}
+            </div>
+            <p className="text-[11.5px] mt-1" style={soft}>This is the picture MVP puts on the video, drawn the same way.</p>
+            {pos(t.position, (p) => setT({ position: p }))}
+            <label className="text-[12.5px] mt-1 inline-flex items-center gap-2" style={soft}>On screen for
+              <select value={t.seconds} onChange={(e) => setT({ seconds: Number(e.target.value) })} className="rounded border px-1 py-0.5" style={selectStyle}>
+                {TITLE_SECONDS.map((n) => <option key={n} value={n}>{n === 0 ? 'the whole video' : `${n} seconds`}</option>)}
               </select>
             </label>
           </>
         )}
+      </div>
+      <div>
+        <p className="text-[12px] font-bold uppercase tracking-wider" style={soft}>Pictures on screen</p>
+        <p className="text-[12px] mt-0.5" style={soft}>Your own PNGs: a badge, an arrow, a sticker. A PNG with a see-through background sits best. Each one you add stays in your library for your next videos. Calls to action are added in Drop, so Amazon gets a clean copy.</p>
+        <div className="mt-1.5 flex flex-col gap-1.5">
+          {s.pictures.map((p, i) => (
+            <PictureRow key={p.url} p={p} set={(v) => set({ ...s, pictures: s.pictures.map((x, j) => (j === i ? v : x)) })} remove={() => set({ ...s, pictures: s.pictures.filter((_, j) => j !== i) })} />
+          ))}
+        </div>
+        {unused.length > 0 && (
+          <div className="mt-2">
+            <p className="text-[12px]" style={soft}>{full ? `Up to ${MAX_PICTURES} on one video. Take one off to use another.` : 'From your library, tap to put it on this video:'}</p>
+            <div className="mt-1 flex flex-wrap gap-2">
+              {unused.map((u) => (
+                <div key={u} className="flex flex-col items-center gap-0.5">
+                  <button type="button" disabled={full} onClick={() => set({ ...s, pictures: [...s.pictures, newPicture(u)] })} className="rounded border p-1 disabled:opacity-40" style={{ borderColor: 'var(--border)' }}>
+                    <img src={u} alt="A picture from your library" className="h-10 w-auto max-w-[5rem] rounded" style={checker} />
+                  </button>
+                  <button type="button" onClick={() => void lib.forget(u)} className="text-[11px] underline" style={soft}>Delete</button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+        <label className={`mt-1.5 inline-flex items-center gap-1.5 text-[12.5px] font-semibold underline ${full ? 'opacity-50' : 'cursor-pointer'}`} style={{ color: PURPLE }}>
+          {lib.busy ? <Loader2 size={13} className="animate-spin" /> : <ImagePlus size={13} />} Add a PNG
+          <input type="file" accept="image/png,image/webp" className="hidden" disabled={full || lib.busy} onChange={(e) => { const f = e.target.files?.[0]; if (f) void addPicture(f); e.target.value = '' }} />
+        </label>
       </div>
     </div>
   )
@@ -175,6 +324,8 @@ export default function ReviewEditor() {
   const [product, setProduct] = useState('')
   const [adding, setAdding] = useState(false)
   const [logoBusy, setLogoBusy] = useState(false)
+  const [library, setLibrary] = useState<string[]>([])
+  const [picBusy, setPicBusy] = useState(false)
   const [drive, setDrive] = useState<DriveState | null>(null)
   const [picking, setPicking] = useState<'review' | 'broll' | null>(null)
   const seeded = useRef(false)
@@ -226,6 +377,7 @@ export default function ReviewEditor() {
       if (!r.ok) { setNeedsSql(!!d.needsSql); setLoadError(d.error || 'Your videos could not be read.'); return }
       setLoadError(null); setNeedsSql(false)
       setEdits(d.edits || [])
+      if (Array.isArray(d.pictures)) setLibrary(d.pictures)
       if (!seeded.current && d.defaults) { setSettings(d.defaults); seeded.current = true }
     } catch { setLoadError('Your videos could not be read. Check your connection.') }
   }, [])
@@ -281,6 +433,30 @@ export default function ReviewEditor() {
       then(supabase.storage.from('instagram-videos').getPublicUrl(path).data.publicUrl)
     } catch (e) { toast.error(`The logo was not saved: ${e instanceof Error ? e.message : 'upload failed'}`) } finally { setLogoBusy(false) }
   }
+
+  // THE PICTURE LIBRARY (Seb, 2026-10-30: "add things to the screen by
+  // uploads, like PNGs"): each PNG is kept in the creator's folder as pic-*,
+  // for every video after.
+  const addPicture = async (file: File): Promise<string | null> => {
+    if (!/^image\/(png|webp)$/.test(file.type)) { toast.error('Use a PNG (or WebP), so the see-through parts stay see-through.'); return null }
+    if (file.size > 5 * 1048576) { toast.error('That picture is over 5 MB.'); return null }
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) { toast.error('Sign in again, then add the picture.'); return null }
+    setPicBusy(true)
+    try {
+      const path = `${user.id}/pic-${crypto.randomUUID()}.${file.type === 'image/png' ? 'png' : 'webp'}`
+      const { error } = await supabase.storage.from('instagram-videos').upload(path, file, { contentType: file.type, upsert: false })
+      if (error) throw new Error(error.message)
+      const url = supabase.storage.from('instagram-videos').getPublicUrl(path).data.publicUrl
+      setLibrary((l) => [url, ...l])
+      return url
+    } catch (e) { toast.error(`The picture was not saved: ${e instanceof Error ? e.message : 'upload failed'}`); return null } finally { setPicBusy(false) }
+  }
+  const forgetPicture = async (url: string) => {
+    if (!confirm('Delete this picture from your library? Videos already made keep it.')) return
+    try { const d = await api({ action: 'forget_picture', url }); if (Array.isArray(d.pictures)) setLibrary(d.pictures) } catch (e) { toast.error(e instanceof Error ? e.message : 'Not deleted.') }
+  }
+  const lib: Library = { pictures: library, busy: picBusy, add: addPicture, forget: forgetPicture }
 
   const ready = (u: Upl | null) => !!u && !u.error && (!!u.url || !!u.driveId)
   const asTake = (u: Upl) => (u.driveId ? { driveId: u.driveId, name: u.name, bytes: u.bytes } : { url: u.url, name: u.name, bytes: u.bytes })
@@ -389,7 +565,7 @@ export default function ReviewEditor() {
           <input value={product} onChange={(e) => setProduct(e.target.value)} placeholder="Bassdash UPF 50 hoodie" className="mt-1 w-full max-w-md rounded-lg border px-3 py-1.5 text-[13px] bg-transparent" style={{ borderColor: 'var(--border)', color: 'var(--text)' }} />
         </div>
         <div className="mt-4 pt-3 border-t" style={{ borderColor: 'var(--border)' }}>
-          <Choices s={settings} set={setSettings} logoBusy={logoBusy} onLogo={(f) => void uploadLogo(f, (url) => setSettings((s) => ({ ...s, logo: { url, position: s.logo?.position ?? 'upper-left', on: true, opacity: s.logo?.opacity ?? 1, size: s.logo?.size ?? 'medium' } })))} />
+          <Choices s={settings} set={setSettings} lib={lib} logoBusy={logoBusy} onLogo={(f) => void uploadLogo(f, (url) => setSettings((s) => ({ ...s, logo: { url, position: s.logo?.position ?? 'upper-left', on: true, opacity: s.logo?.opacity ?? 1, size: s.logo?.size ?? 'medium' } })))} />
         </div>
         <div className="mt-4 flex flex-wrap items-center gap-2">
           <button type="button" onClick={() => void add()} disabled={!ready(review) || !!uploading || adding}
@@ -406,13 +582,13 @@ export default function ReviewEditor() {
         {loadError && !needsSql && <p className="text-[13px]" style={{ color: RED }}>{loadError}</p>}
         {edits === null && !loadError && <p className="text-[13px] inline-flex items-center gap-1.5" style={soft}><Loader2 size={13} className="animate-spin" /> Reading your videos</p>}
         {edits?.length === 0 && <p className="text-[13px]" style={soft}>None yet. Add your first one above.</p>}
-        {(edits || []).map((e) => <EditCard key={e.id} e={e} reload={load} uploadLogo={uploadLogo} logoBusy={logoBusy} />)}
+        {(edits || []).map((e) => <EditCard key={e.id} e={e} reload={load} uploadLogo={uploadLogo} logoBusy={logoBusy} lib={lib} />)}
       </section>
     </div>
   )
 }
 
-function EditCard({ e, reload, uploadLogo, logoBusy }: { e: EditView; reload: () => Promise<void>; uploadLogo: (f: File, then: (url: string) => void) => Promise<void>; logoBusy: boolean }) {
+function EditCard({ e, reload, uploadLogo, logoBusy, lib }: { e: EditView; reload: () => Promise<void>; uploadLogo: (f: File, then: (url: string) => void) => Promise<void>; logoBusy: boolean; lib: Library }) {
   const st = STATUS[e.status] || { words: e.status, color: 'var(--text-3)' }
   const [s, setS] = useState<EditSettings>(e.settings)
   const [changed, setChanged] = useState(false)
@@ -505,6 +681,21 @@ function EditCard({ e, reload, uploadLogo, logoBusy }: { e: EditView; reload: ()
           ))}
         </div>
       )}
+      {/* WHAT IS ON THE VIDEO, AS MADE: a title that could not be drawn or a
+          picture waiting for words never said shows as missing, not as done. */}
+      {(e.status === 'done' || e.status === 'making') && e.placed && (e.placed.title || e.placed.pictures.length > 0) && (
+        <ul className="mt-2 flex flex-col gap-1 text-[12px]" style={{ color: 'var(--text-2)' }}>
+          {e.placed.title && ('missed' in e.placed.title
+            ? <li className="inline-flex items-center gap-1.5" style={{ color: AMBER }}><AlertTriangle size={12} /> {e.placed.title.missed}</li>
+            : <li>{e.settings.kind === 'trybe' ? 'Hook' : 'Title'} on screen {clock(e.placed.title.from)} to {clock(e.placed.title.to)}</li>)}
+          {e.placed.pictures.map((p) => (
+            <li key={p.k} className="inline-flex items-center gap-1.5">
+              <img src={p.url} alt="" className="h-5 w-auto rounded" style={checker} />
+              {'missed' in p ? <span style={{ color: AMBER }}>{p.missed}</span> : <span>On screen {clock(p.from)} to {clock(p.to)}</span>}
+            </li>
+          ))}
+        </ul>
+      )}
       {e.status === 'done' && (
         <div className="mt-3 flex flex-wrap gap-2">
           <button type="button" onClick={() => void sendToDrop()} disabled={!!work} className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12.5px] font-semibold text-white disabled:opacity-50" style={{ background: PURPLE }}>
@@ -544,7 +735,7 @@ function EditCard({ e, reload, uploadLogo, logoBusy }: { e: EditView; reload: ()
         <details className="mt-3">
           <summary className="text-[13px] font-semibold cursor-pointer">Change the look</summary>
           <div className="mt-2">
-            <Choices s={s} set={(v) => { setS(v); setChanged(true) }} logoBusy={logoBusy} onLogo={(f) => void uploadLogo(f, (url) => { setS((x) => ({ ...x, logo: { url, position: x.logo?.position ?? 'upper-left', on: true, opacity: x.logo?.opacity ?? 1, size: x.logo?.size ?? 'medium' } })); setChanged(true) })} />
+            <Choices s={s} set={(v) => { setS(v); setChanged(true) }} lib={lib} logoBusy={logoBusy} onLogo={(f) => void uploadLogo(f, (url) => { setS((x) => ({ ...x, logo: { url, position: x.logo?.position ?? 'upper-left', on: true, opacity: x.logo?.opacity ?? 1, size: x.logo?.size ?? 'medium' } })); setChanged(true) })} />
           </div>
         </details>
       )}

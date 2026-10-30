@@ -13,6 +13,7 @@
  *   retry    { id }  start a failed video over.
  *   finish   { id }  done with it: the raw takes are deleted now.
  *   remove   { id }  the video, its takes and its files, gone.
+ *   forget_picture { url }  a PNG out of the creator's picture library.
  */
 import { NextResponse, after } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
@@ -74,8 +75,21 @@ function view(r: EditRow, server?: ServerView | null) {
       at: clock(lines[p.line]?.start ?? 0),
     })),
     zooms: (plan?.keys ?? []).length,
+    /** What went on the video when it was last sent to be made, and what was left out. */
+    placed: r.info?.placed ?? null,
     onServer,
   }
+}
+
+/** A picture in the library is a PNG the creator added here, kept in their
+ *  own folder as pic-*. */
+const PICTURE_NAME = /^pic-[\w-]+\.(png|webp)$/
+
+/** The creator's picture library, newest first. */
+async function pictureLibrary(db: ReturnType<typeof editDb>, userId: string): Promise<string[]> {
+  const { data } = await db.storage.from(EDIT_BUCKET).list(userId, { search: 'pic-', limit: 40, sortBy: { column: 'created_at', order: 'desc' } })
+  return ((data ?? []) as { name: string }[]).filter((f) => PICTURE_NAME.test(f.name))
+    .map((f) => db.storage.from(EDIT_BUCKET).getPublicUrl(`${userId}/${f.name}`).data.publicUrl)
 }
 
 export async function GET() {
@@ -96,7 +110,7 @@ export async function GET() {
     for (const r of heard) await finishMaking(db, r.id, r.user_id, { ...server.done[`edit-${r.id}`] })
     if (heard.length) rows = ((await db.from('review_edits').select('*').eq('user_id', g.userId).order('created_at', { ascending: false }).limit(40)).data ?? rows) as EditRow[]
   }
-  return NextResponse.json({ edits: rows.map((r: EditRow) => view(r, server)), defaults: last ? cleanSettings(last.settings) : DEFAULT_SETTINGS })
+  return NextResponse.json({ edits: rows.map((r: EditRow) => view(r, server)), defaults: last ? cleanSettings(last.settings) : DEFAULT_SETTINGS, pictures: await pictureLibrary(db, g.userId) })
 }
 
 export async function POST(request: Request) {
@@ -107,6 +121,14 @@ export async function POST(request: Request) {
   const action = String(body.action || '')
   const now = new Date().toISOString()
   const own = (u: unknown) => typeof u === 'string' && ownPath(u, g.userId) !== null
+
+  if (action === 'forget_picture') {
+    const p = typeof body.url === 'string' ? ownPath(body.url, g.userId) : null
+    if (!p || !PICTURE_NAME.test(p.split('/').pop() || '')) return NextResponse.json({ error: 'That picture is not in your library.' }, { status: 404 })
+    const { error } = await db.storage.from(EDIT_BUCKET).remove([p])
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    return NextResponse.json({ ok: true, pictures: await pictureLibrary(db, g.userId) })
+  }
 
   if (action === 'add') {
     // A take picked in Google Drive is checked with Google first: MVP can
@@ -136,6 +158,7 @@ export async function POST(request: Request) {
     if (broll && 'error' in broll) return NextResponse.json({ error: `The B-roll take: ${broll.error}` }, { status: 400 })
     const settings = cleanSettings(body.settings)
     if (settings.logo && !own(settings.logo.url)) settings.logo = null
+    settings.pictures = settings.pictures.filter((p) => own(p.url))
     const { data, error } = await db.from('review_edits').insert({
       user_id: g.userId, name: String(body.name || review.name || 'Review').slice(0, 120), status: 'queued', note: 'In line to be read',
       review_src: review, broll_src: broll, product: typeof body.product === 'string' ? body.product.trim().slice(0, 300) || null : null, settings,
@@ -167,6 +190,8 @@ export async function POST(request: Request) {
       const out = await promptChange({ prompt: body.prompt, settings, plan, words: row.words, lines: linesOf(row.words), who: { userId: g.userId, tier: g.tier } })
       settings = out.settings; plan = out.plan; said = out.said
     }
+    // Only the creator's own pictures, whatever was sent or typed.
+    settings.pictures = settings.pictures.filter((p) => own(p.url))
     const { error } = await db.from('review_edits').update({ settings, plan, updated_at: now }).eq('id', row.id)
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
     return NextResponse.json({ ok: true, said, edit: view({ ...row, settings, plan } as EditRow) })
