@@ -1395,12 +1395,27 @@ async function renderEditJob(body) {
   }
 }
 
+// WHAT THIS SERVER IS WORKING ON (Seb, 2026-10-30: a video "being made" for
+// half an hour). The queue lives in memory, so a restart (every deploy) loses
+// it without a word. MVP asks here; a video it sent that is not on the list
+// was lost, and MVP sends it again instead of waiting for it to go stale.
+const BOOT_AT = new Date().toISOString()
+const editJobs = new Map() // video id → when it was taken
+const editIdOf = (job) => String(job || '').split('.')[0]
+
+app.get('/jobs', (req, res) => {
+  if (SECRET && req.get('x-ingest-secret') !== SECRET) return res.status(401).json({ error: 'unauthorized' })
+  res.json({ bootAt: BOOT_AT, edits: [...editJobs.keys()] })
+})
+
 app.post('/render-edit', async (req, res) => {
   if (SECRET && req.get('x-ingest-secret') !== SECRET) return res.status(401).json({ error: 'unauthorized' })
   const body = req.body || {}
   const callbackUrl = String(body.callbackUrl || '')
   if (!/^https:\/\//i.test(callbackUrl)) return res.status(400).json({ error: 'callbackUrl required' })
   const job = String(body.job || '').slice(0, 300)
+  const id = editIdOf(job)
+  editJobs.set(id, Date.now())
   res.status(202).json({ accepted: true })
   renderQueue = renderQueue.then(async () => {
     try {
@@ -1409,6 +1424,8 @@ app.post('/render-edit', async (req, res) => {
     } catch (e) {
       console.error('[render-edit] failed', e && e.message)
       await postRenderCallback(callbackUrl, { job, ok: false, error: String((e && e.message) || e).slice(0, 400) })
+    } finally {
+      editJobs.delete(id)
     }
   })
 })

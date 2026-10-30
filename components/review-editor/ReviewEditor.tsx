@@ -35,6 +35,8 @@ interface Upl { name: string; bytes: number; sent: number; url: string | null; d
 interface EditView {
   id: string; name: string | null; status: string; note: string | null; product: string | null
   createdAt: string; madeAt: string | null; rawDeleted: boolean; hasBroll: boolean
+  /** When the step it is on began. */
+  since: string
   /** Takes uploaded to MVP that are still kept; a Drive take is never kept by MVP. */
   rawInMvp: boolean; fromDrive: boolean
   settings: EditSettings
@@ -444,6 +446,23 @@ function EditCard({ e, reload, uploadLogo, logoBusy }: { e: EditView; reload: ()
         <span className="text-[11.5px]" style={soft}>added {new Date(e.createdAt).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</span>
       </div>
       {e.note && <p className="text-[12.5px] mt-1" style={{ color: e.status === 'failed' ? RED : 'var(--text-2)' }}>{e.note}</p>}
+      {/* HOW LONG, SAID (Seb, 2026-10-30: "How long is this supposed to take?"). */}
+      {st.busy && (() => {
+        const mins = Math.max(0, Math.floor((Date.now() - Date.parse(e.since)) / 60_000))
+        const normal = e.status === 'reading' ? 'Reading takes 1 to 3 minutes.' : e.status === 'making' ? 'Making takes 2 to 10 minutes, longer for a long or 4K take.' : 'It starts when the videos before it are done.'
+        const stuck = (e.status === 'reading' || e.status === 'making') && mins >= 20
+        return (
+          <div className="mt-1 text-[12px]" style={{ color: stuck ? AMBER : 'var(--text-3)' }}>
+            {mins < 1 ? 'This step just started.' : `This step started ${mins} ${mins === 1 ? 'minute' : 'minutes'} ago.`} {normal}
+            {stuck && (
+              <>
+                {' '}That is far longer than it should take.{' '}
+                <button type="button" onClick={() => void act('retry', { action: 'retry', id: e.id }, 'Started again.')} disabled={!!work} className="underline font-semibold" style={{ color: PURPLE }}>Start it again</button>
+              </>
+            )}
+          </div>
+        )
+      })()}
 
       {e.status === 'done' && outs.length > 0 && (
         <div className="mt-3 grid sm:grid-cols-2 gap-3">

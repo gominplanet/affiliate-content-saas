@@ -26,6 +26,8 @@ export const runtime = 'nodejs'
 export const maxDuration = 300
 
 const NEEDS_SQL = 'The review editor needs migration 459 in Supabase first.'
+/** A step still going after this long is stuck, and can be started again. */
+const STUCK_AFTER_MS = 20 * 60_000
 const missing = (m?: string) => !!m && /review_edits/.test(m) && /does not exist|schema cache/i.test(m)
 
 async function gate() {
@@ -48,6 +50,8 @@ function view(r: EditRow) {
   return {
     id: r.id, name: r.name, status: r.status, note: r.note, product: r.product,
     createdAt: r.created_at, madeAt: r.made_at, hasBroll: !!r.broll_src,
+    /** When the step it is on began: how long it has been going. */
+    since: r.updated_at,
     // Uploads are deleted when done; a Drive take is the creator's and stays.
     rawDeleted: !!r.raw_deleted_at && hasUpload(r), rawInMvp: hasUpload(r) && !r.raw_deleted_at,
     fromDrive: r.review_src?.kind === 'drive',
@@ -155,8 +159,11 @@ export async function POST(request: Request) {
 
   if (action === 'make' || action === 'retry') {
     if (row.raw_deleted_at && hasUpload(row)) return NextResponse.json({ error: 'The raw takes for this video were deleted, so it cannot be made again. Add them again.' }, { status: 409 })
-    if (['reading', 'making'].includes(row.status)) return NextResponse.json({ error: 'MVP is working on this one right now.' }, { status: 409 })
-    const status = action === 'retry' && !row.plan ? 'queued' : 'ready_to_make'
+    // Working on it, unless that step has gone on far too long: then it is
+    // stuck (a restart lost it), and the creator may start it again.
+    const stuck = Date.now() - Date.parse(row.updated_at) > STUCK_AFTER_MS
+    if (['reading', 'making'].includes(row.status) && !stuck) return NextResponse.json({ error: 'MVP is working on this one right now.' }, { status: 409 })
+    const status = (action === 'retry' && !row.plan) || row.status === 'reading' ? 'queued' : 'ready_to_make'
     await db.from('review_edits').update({ status, attempts: 0, note: status === 'queued' ? 'In line to be read' : 'In line to be made', updated_at: now }).eq('id', row.id)
     after(async () => { try { await moveQueue(db, { userId: g.userId, readBudget: status === 'queued' ? 1 : 0 }) } catch { /* the cron picks it up */ } })
     return NextResponse.json({ ok: true })

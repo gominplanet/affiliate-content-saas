@@ -237,11 +237,39 @@ export async function deleteRaw(db: Db, row: Pick<EditRow, 'id' | 'user_id' | 'r
 
 const BUSY = ['reading', 'making', 'queued', 'ready_to_make']
 
+/** A make sent this long ago is checked against what the video server says
+ *  it is working on. */
+export const LOST_CHECK_MS = 4 * 60_000
+
+/** The videos the video server is working on (its in-memory queue), or null
+ *  when it cannot say (not answering, or a build before /jobs). */
+async function serverJobs(): Promise<Set<string> | null> {
+  if (!base()) return null
+  try {
+    const r = await fetch(`${base()}/jobs`, { headers: process.env.YOUTUBE_INGEST_SECRET ? { 'x-ingest-secret': process.env.YOUTUBE_INGEST_SECRET } : {}, signal: AbortSignal.timeout(15_000) })
+    if (!r.ok) return null
+    const d = await r.json() as { edits?: string[] }
+    return Array.isArray(d.edits) ? new Set(d.edits) : null
+  } catch { return null }
+}
+
 /** One turn of the queue: stuck work back in line, the next video made, the
  *  next video read, old raw uploads deleted. userId: that creator's video is
  *  read first (they just added it). */
 export async function moveQueue(db: Db, o: { userId?: string; readBudget?: number } = {}): Promise<{ read: number; started: number; cleaned: number }> {
   const t = Date.now()
+  // LOST IN A RESTART (Seb, 2026-10-30: half an hour "being made"). Every
+  // deploy restarts the video server and empties its queue. A make it no
+  // longer has is sent again now, not after MAKE_STALE_MS, and the restart
+  // does not count as a try.
+  const { data: making0 } = await db.from('review_edits').select('id,attempts,updated_at').eq('status', 'making').lt('updated_at', new Date(t - LOST_CHECK_MS).toISOString()).limit(20)
+  if (making0?.length) {
+    const jobs = await serverJobs()
+    if (jobs) for (const m of making0) {
+      if (jobs.has(`edit-${m.id}`)) continue
+      await set(db, m.id, { status: 'ready_to_make', attempts: Math.max(0, (m.attempts || 1) - 1), note: 'MVP\u2019s video server restarted and lost this one, so it is being made again.' })
+    }
+  }
   // Stuck: a read or a make that never came back.
   const { data: stuck } = await db.from('review_edits').select('id,status,attempts,updated_at')
     .in('status', ['reading', 'making']).lt('updated_at', new Date(t - READ_STALE_MS).toISOString()).limit(20)
