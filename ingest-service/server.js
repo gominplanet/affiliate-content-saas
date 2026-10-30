@@ -1235,7 +1235,7 @@ app.post('/dub', async (req, res) => {
 // pass (edit-filters.js): wide for Amazon and YouTube, vertical for TRYBE and
 // TikTok, or both from the same decode. The raw takes are only ever in this
 // job's own temp folder, removed when the job ends, whatever happened.
-const { buildEditGraph, cleanInserts, snapSegments, editSeconds, masterSize, driveAuth, authArgs, hdrChain, FPS: EDIT_FPS } = require('./edit-filters')
+const { buildEditGraph, cleanInserts, snapSegments, editSeconds, masterSize, driveAuth, authArgs, hdrChain, filmedAtFrom, FPS: EDIT_FPS } = require('./edit-filters')
 // Encoder threads per format. A small box stays at 2; a bigger one goes faster.
 const EDIT_THREADS = String(Math.max(1, Math.min(8, Number(process.env.EDIT_THREADS) || 2)))
 const EDIT_MAX_SOURCE_SEC = 60 * 60
@@ -1361,6 +1361,39 @@ app.post('/probe', async (req, res) => {
   } finally {
     try { fs.rmSync(dir, { recursive: true, force: true }) } catch { /* ignore */ }
   }
+})
+
+// POST /filmed — when each clip was filmed, from the file itself, for pairing
+// a batch of talking takes with their B-roll whatever the files are called
+// and whenever they reached Drive. Body: { items: [{ url, auth? }] } (60 at
+// most). Reads only the file's header. Answers { times: [ISO or null] }.
+function ffprobeTags(input, auth = null) {
+  return new Promise((resolve) => {
+    execFile('ffprobe', ['-v', 'error', ...authArgs(auth), '-show_entries', 'format_tags', '-of', 'json', input],
+      { timeout: 30_000, killSignal: 'SIGKILL', maxBuffer: 1024 * 1024 }, (err, stdout) => {
+        if (err) return resolve(null)
+        try { resolve((JSON.parse(String(stdout)).format || {}).tags || {}) } catch { resolve(null) }
+      })
+  })
+}
+app.post('/filmed', async (req, res) => {
+  if (SECRET && req.get('x-ingest-secret') !== SECRET) return res.status(401).json({ error: 'unauthorized' })
+  const items = (Array.isArray(req.body?.items) ? req.body.items : []).slice(0, 60)
+  const times = new Array(items.length).fill(null)
+  let next = 0
+  const worker = async () => {
+    while (next < items.length) {
+      const i = next++
+      const url = String(items[i]?.url || '').trim()
+      if (!/^https:\/\//i.test(url)) continue
+      try {
+        await assertPublicHttpUrl(url)
+        times[i] = filmedAtFrom(await ffprobeTags(url, driveAuth(url, items[i]?.auth)))
+      } catch { /* not known: paired another way */ }
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(6, items.length) }, worker))
+  return res.json({ times })
 })
 
 // POST /render-edit — the edit, in the background (one at a time, with every

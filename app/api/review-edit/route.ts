@@ -77,6 +77,8 @@ function view(r: EditRow, server?: ServerView | null) {
     zooms: (plan?.keys ?? []).length,
     /** What went on the video when it was last sent to be made, and what was left out. */
     placed: r.info?.placed ?? null,
+    /** The B-roll checked against the talk: a different product is said. */
+    brollCheck: r.info?.brollCheck ?? null,
     onServer,
   }
 }

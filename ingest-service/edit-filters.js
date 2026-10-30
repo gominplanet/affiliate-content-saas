@@ -157,7 +157,8 @@ function placeAt(position, W, H, w, h) {
  *   cropX,                         0 left to 1 right, where vertical is cut from a sideways take
  *   inserts, brollSec, track,      track: input index of the B-roll track (pieces back to back)
  *   zooms, color,
- *   logo: { input, w, h, position, widthPct: { wide, vertical }, opacity? (0 to 1) },
+ *   logo: { input, w, h, position, widthPct: { wide, vertical }, opacity? (0 to 1), startSec?, endSec? },
+ *                                  without a start and end, on the whole video
  *   title: { input, w, h, position, startSec, endSec, widthPct: { wide, vertical } },
  *   pictures: [{ input, w, h, position, widthPct, opacity?, startSec?, endSec? }],
  *                                  the creator's PNGs; without a start and end, on the whole video
@@ -252,7 +253,7 @@ function buildEditGraph(opts) {
     }
     // Pictures under the logo and the title, so a big sticker never hides them.
     pictures.forEach((p, i) => put(p, picIn[i][f], `pc${i}`, true))
-    put(o.logo, logoIn[f], 'lg', false)
+    put(o.logo, logoIn[f], 'lg', true)
     put(o.title, titleIn[f], 'tt', true)
     if (f === 'vertical' && o.ass) {
       g.push(`[${cur}]ass=${o.ass}[${f}c]`)
@@ -308,4 +309,19 @@ function parseMeanDb(stderr) {
   return m ? Number(m[1]) : null
 }
 
-module.exports = { silenceNoiseDb, parseSilences, parseMeanDb, hdrChain, driveAuth, authArgs, FPS, snapSegments, editSeconds, outputWindows, cleanInserts, trackSetpts, insertEnable, zoomExpr, cleanZooms, masterSize, placeAt, buildEditGraph }
+/** When a clip was filmed, from the tags the camera wrote into the file
+ *  (ffprobe format tags): an iPhone's own creation date with its time zone
+ *  first, then the file's creation_time. Null when there is none, or when it
+ *  is a clock that was never set (before 2005). Pure. */
+function filmedAtFrom(tags) {
+  const t = tags && typeof tags === 'object' ? tags : {}
+  const read = (v) => {
+    if (typeof v !== 'string' || !v.trim()) return null
+    // "2026-10-30T14:22:33-0400" is read as "-04:00".
+    const ms = Date.parse(v.trim().replace(/([+-]\d{2})(\d{2})$/, '$1:$2'))
+    return Number.isFinite(ms) && ms >= Date.UTC(2005, 0, 1) && ms < Date.now() + 2 * 86400_000 ? new Date(ms).toISOString() : null
+  }
+  return read(t['com.apple.quicktime.creationdate']) || read(t.creation_time) || null
+}
+
+module.exports = { filmedAtFrom, silenceNoiseDb, parseSilences, parseMeanDb, hdrChain, driveAuth, authArgs, FPS, snapSegments, editSeconds, outputWindows, cleanInserts, trackSetpts, insertEnable, zoomExpr, cleanZooms, masterSize, placeAt, buildEditGraph }

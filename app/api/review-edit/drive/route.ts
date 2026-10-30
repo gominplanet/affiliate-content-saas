@@ -8,15 +8,19 @@
  *       { action: 'folders', aRoll?, bRoll? }: remember the A-roll and B-roll
  *       folders ({ id, name }).
  *       { action: 'files', ids }: the picked files as Drive describes them
- *       (name, size, shape, length, when added), for pairing a batch.
+ *       (name, size, shape, length, when added), with when each was filmed
+ *       (read from the file by the video server), for pairing a batch, and
+ *       the ones already in the creator's review editor (used), so picking a
+ *       whole folder again never makes a video twice.
  */
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { canUsePreview } from '@/lib/labs-preview'
 import { driveAccessToken, driveAppId, driveLink, disconnectDrive, saveDriveFolders, driveFile, isDriveId, type DriveFile } from '@/lib/google-drive'
-import { editDb } from '@/lib/review-edit-server'
+import { editDb, filmedTimes } from '@/lib/review-edit-server'
 
 export const runtime = 'nodejs'
+export const maxDuration = 180
 
 async function gate() {
   const supabase = await createServerClient()
@@ -68,7 +72,22 @@ export async function POST(request: Request) {
       const part = await Promise.all(ids.slice(i, i + 6).map(async (id) => ({ id, r: await driveFile(t.token, id) })))
       for (const { id, r } of part) { if (r.ok) files.push(r.file); else problems.push({ id, error: r.error }) }
     }
-    return NextResponse.json({ files, problems })
+    // Takes already in the review editor, as a talking take or as B-roll.
+    const db = editDb()
+    const ids2 = files.map((f) => f.id)
+    const [asA, asB] = ids2.length ? await Promise.all([
+      db.from('review_edits').select('review_src').eq('user_id', g.userId).in('review_src->>fileId', ids2),
+      db.from('review_edits').select('broll_src').eq('user_id', g.userId).in('broll_src->>fileId', ids2),
+    ]) : [{ data: [] }, { data: [] }]
+    const used = Array.from(new Set([
+      ...((asA.data ?? []) as { review_src: { fileId?: string } | null }[]).map((r) => r.review_src?.fileId),
+      ...((asB.data ?? []) as { broll_src: { fileId?: string } | null }[]).map((r) => r.broll_src?.fileId),
+    ].filter((x): x is string => !!x)))
+    // When each was filmed, from the file itself (the video server reads its header).
+    const fresh = files.filter((f) => !used.includes(f.id))
+    const filmed = await filmedTimes(t.token, fresh.map((f) => f.id))
+    const at = new Map(fresh.map((f, i) => [f.id, filmed.times[i]]))
+    return NextResponse.json({ files: files.map((f) => ({ ...f, filmedAt: at.get(f.id) ?? null })), problems, used, filmedRead: filmed.read })
   }
   return NextResponse.json({ error: 'Unknown action' }, { status: 400 })
 }

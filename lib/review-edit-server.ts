@@ -21,7 +21,7 @@ import { transcribeToCues, transcriptionConfigured } from '@/lib/shorts-transcri
 import { makeRenderJob } from '@/lib/render-job'
 import { drawTitle } from '@/lib/title-looks'
 import { cleanSettings, cleanWords, clock, linesOf, renderSpec, LOGO_WIDTH, PICTURE_WIDTH, type EditSettings, type PictureTime, type Plan, type Shot, type Word } from '@/lib/review-edit'
-import { planEdit, readShots } from '@/lib/review-edit-plan'
+import { brollFits, planEdit, readShots } from '@/lib/review-edit-plan'
 import { driveAccessToken, driveMediaUrl } from '@/lib/google-drive'
 
 export const EDIT_BUCKET = 'instagram-videos'
@@ -61,7 +61,7 @@ async function takes(db: Db, row: Pick<EditRow, 'user_id' | 'review_src' | 'brol
 export interface EditRow {
   id: string; user_id: string; name: string | null; status: string; note: string | null
   review_src: Src; broll_src: Src | null; product: string | null
-  settings: unknown; info: { review?: { duration: number; width: number; height: number; hasAudio: boolean; silences?: [number, number][] }; broll?: { duration: number }; placed?: Placed } | null
+  settings: unknown; info: { review?: { duration: number; width: number; height: number; hasAudio: boolean; silences?: [number, number][] }; broll?: { duration: number }; placed?: Placed; brollCheck?: { fits: boolean; talk: string; shows: string } } | null
   words: Word[] | null; shots: Shot[] | null; plan: Plan | null; outputs: Record<string, { url: string; seconds: number }> | null
   attempts: number; made_at: string | null; raw_deleted_at: string | null; created_at: string; updated_at: string
 }
@@ -145,19 +145,34 @@ export async function readTakes(db: Db, row: EditRow): Promise<void> {
         shots = await readShots(bp.data.frames, bp.data.duration, who)
       }
     }
+    // A B-roll of another product (a batch paired wrong) is caught here, not
+    // put over the talk: its moments are planned but left off, and said.
+    const check = shots.length ? await brollFits({ words, shots, product: row.product, who }) : null
     await set(db, row.id, { note: 'Deciding the cuts' })
     const plan = await planEdit({ words, lines, shots, product: row.product, kind: kindNow, who })
+    if (check && !check.fits) plan.placements = plan.placements.map((p) => ({ ...p, off: true }))
     const settings = cleanSettings(row.settings)
     if (!settings.title.text && plan.title) settings.title.text = plan.title
-    const brollNote = (row.broll_src && !brollInfo ? ' MVP could not open your B-roll take, so this one has none.' : '') + sideNote
+    const brollNote = (row.broll_src && !brollInfo ? ' MVP could not open your B-roll take, so this one has none.' : '')
+      + (check && !check.fits ? ' The B-roll looks like a different product, so it was left out: see below.' : '') + sideNote
     await set(db, row.id, {
       status: 'ready_to_make', attempts: 0,
       note: `Read: ${plan.cuts.length} ${plan.cuts.length === 1 ? 'cut' : 'cuts'}${shots.length ? `, ${plan.placements.length} B-roll ${plan.placements.length === 1 ? 'moment' : 'moments'}` : ''}. Waiting for its turn on the video server.${brollNote}`,
-      info: { review: { ...probe.data, silences: Array.isArray(audio.data.silences) ? audio.data.silences : undefined }, ...(brollInfo ? { broll: brollInfo } : {}) }, words, shots, plan, settings,
+      info: { review: { ...probe.data, silences: Array.isArray(audio.data.silences) ? audio.data.silences : undefined }, ...(brollInfo ? { broll: brollInfo } : {}), ...(check ? { brollCheck: check } : {}) }, words, shots, plan, settings,
     })
   } catch (e) {
     await fail(`MVP stopped while reading your takes: ${e instanceof Error ? e.message.slice(0, 200) : 'unknown'}.`)
   }
+}
+
+/** When each Drive file was filmed, read from the file itself by the video
+ *  server (for pairing a batch). Null for a file it could not read; all null
+ *  when the server could not be asked, and `read` says so. */
+export async function filmedTimes(token: string, fileIds: string[]): Promise<{ read: boolean; times: (string | null)[] }> {
+  if (!fileIds.length) return { read: true, times: [] }
+  const r = await videoServer<{ times?: unknown[] }>('/filmed', { items: fileIds.map((id) => ({ url: driveMediaUrl(id), auth: `Bearer ${token}` })) }, 110_000)
+  if (!r.ok || !Array.isArray(r.data.times)) return { read: false, times: fileIds.map(() => null) }
+  return { read: true, times: fileIds.map((_, i) => (typeof r.data.times![i] === 'string' && !Number.isNaN(Date.parse(r.data.times![i] as string)) ? r.data.times![i] as string : null)) }
 }
 
 /** What was put on the video when it was last sent to be made, in finished
@@ -228,7 +243,12 @@ export async function startMaking(db: Db, row: EditRow): Promise<void> {
     userId: row.user_id, job, callbackUrl: `${appUrl()}/api/review-edit/callback`,
     segments: spec.segments, inserts: spec.inserts, zooms: spec.zooms, color: settings.color,
     formats: settings.formats, cropX: settings.cropX, words: spec.words,
-    logo: spec.logo ? { url: spec.logo.url, position: spec.logo.position, widthPct: LOGO_WIDTH[spec.logo.size], opacity: spec.logo.opacity } : undefined,
+    logo: spec.logo ? {
+      url: spec.logo.url, position: spec.logo.position, widthPct: LOGO_WIDTH[spec.logo.size], opacity: spec.logo.opacity,
+      // The first or the last seconds; on the whole video it has no timing.
+      ...(spec.logo.when === 'start' ? { startSec: 0, endSec: Math.min(spec.seconds, spec.logo.seconds) }
+        : spec.logo.when === 'end' ? { startSec: Math.max(0, spec.seconds - spec.logo.seconds), endSec: spec.seconds + 1 } : {}),
+    } : undefined,
     title: title ? { url: title.url, position: settings.title.position, startSec: settings.title.seconds === 0 ? 0 : 0.3, endSec: titleTo, widthPct: title.widthPct } : undefined,
     pictures: shown.map((p) => {
       const pic = settings.pictures[p.k]

@@ -53,6 +53,20 @@ check('a take with no sound still gets a sound track', /anullsrc/.test(E.buildEd
   check('four pictures at most', /pc3wideo/.test(g) && !/pc4wide/.test(g))
 }
 
+// ── The logo for the whole video, the first or the last seconds ─────────────
+{
+  const logo = (extra) => ({ input: 1, w: 100, h: 50, position: 'upper-left', widthPct: { wide: 0.1, vertical: 0.2 }, ...extra })
+  const line = (g) => g.split(';').find((l) => l.includes('[lgwideo]')) || ''
+  const whole = E.buildEditGraph({ segments: [[0, 20]], srcW: 1920, srcH: 1080, hasAudio: true, formats: ['wide'], logo: logo({}) }).graph
+  const first = E.buildEditGraph({ segments: [[0, 20]], srcW: 1920, srcH: 1080, hasAudio: true, formats: ['wide'], logo: logo({ startSec: 0, endSec: 5 }) }).graph
+  check('a logo on the whole video has no timing; the first five seconds is timed', !/enable/.test(line(whole)) && /enable='between\(t,0,5\)'/.test(line(first)), [line(whole), line(first)])
+}
+
+// ── When each clip was filmed, from the file itself ─────────────────────────
+check('an iPhone\u2019s own date wins, with its time zone', E.filmedAtFrom({ 'com.apple.quicktime.creationdate': '2026-10-30T14:22:33-0400', creation_time: '2026-10-30T18:22:40.000000Z' }) === '2026-10-30T18:22:33.000Z')
+check('else the file\u2019s creation time', E.filmedAtFrom({ creation_time: '2026-10-30T18:22:40.000000Z' }) === '2026-10-30T18:22:40.000Z')
+check('a clock never set, a date to come, or no date at all is not a filming time', E.filmedAtFrom({ creation_time: '1970-01-01T00:00:00.000000Z' }) === null && E.filmedAtFrom({ creation_time: '1904-01-01T00:00:00Z' }) === null && E.filmedAtFrom({ creation_time: '2099-01-01T00:00:00Z' }) === null && E.filmedAtFrom({}) === null && E.filmedAtFrom(null) === null)
+
 // ── iPhone HDR takes are brought to normal colour ────────────────────────────
 check('HDR (HLG or PQ) gets the conversion, a normal take none', !!E.hdrChain('arib-std-b67') && /tin=smpte2084/.test(E.hdrChain('smpte2084')) && E.hdrChain('') === null && E.hdrChain('bt709') === null)
 {
@@ -153,6 +167,11 @@ if (ffmpeg) {
       check(`${f}: and not before it`, before[1] < 60, before)
     }
     console.log(`   (real edit of a 12 second take into two formats: ${secs.toFixed(1)}s)`)
+    // A filming time written by a camera is read back the way /filmed reads it.
+    const stamped = path.join(dir, 'stamped.mov')
+    run(['-i', main, '-c', 'copy', '-metadata', 'creation_time=2026-10-30T18:22:40Z', '-y', stamped])
+    const tags = JSON.parse(execFileSync('ffprobe', ['-v', 'error', '-show_entries', 'format_tags', '-of', 'json', stamped]).toString()).format.tags
+    check('the filming time a camera wrote is read from the file', E.filmedAtFrom(tags) === '2026-10-30T18:22:40.000Z', tags)
   } catch (e) {
     fails.push(`the real edit failed: ${String(e.stderr || e.message).slice(0, 600)}`)
   } finally {

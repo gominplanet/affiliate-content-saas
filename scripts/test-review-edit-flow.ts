@@ -82,10 +82,15 @@ check('what went on the video is saved when it is sent, and the card shows it, w
 check('a typed change can restyle the title and move pictures, never add one or swap its file', /"look" \(\$\{TITLE_LOOKS/.test(P) && /url: p\.url \}\)\)/.test(P) && /You cannot add a new picture/.test(P))
 check('calls to action stay in Drop, so Amazon gets a clean copy', /Calls to action are added in Drop/.test(U))
 
+check('the logo is timed for the first or last seconds, and on the whole video otherwise', /spec\.logo\.when === 'start' \? \{ startSec: 0, endSec: Math\.min\(spec\.seconds, spec\.logo\.seconds\) \}/.test(W) && /put\(o\.logo, logoIn\[f\], 'lg', true\)/.test(read('ingest-service/edit-filters.js')) && /Untick Show my logo for none/.test(U))
+check('a B-roll of a different product is caught while reading, left out, and said on the card', /const check = shots\.length \? await brollFits/.test(W) && /plan\.placements = plan\.placements\.map\(\(p\) => \(\{ \.\.\.p, off: true \}\)\)/.test(W) && /The B-roll looks like a different product/.test(U) && /brollCheck: r\.info\?\.brollCheck/.test(R))
+check('the B-roll check only says no when it is clearly another product', /Generic shots \(hands, a box, packaging, a table\) or not being sure is "same": true/.test(P) && /fits: raw\.same !== false/.test(P))
+check('the video server reads when each clip was filmed from the file, a few at a time, its header only', /app\.post\('\/filmed'/.test(S) && /'-show_entries', 'format_tags'/.test(S) && /Math\.min\(6, items\.length\)/.test(S))
+
 // ── Cost ─────────────────────────────────────────────────────────────────────
 check('the plan on Sonnet 5, the B-roll and typed changes on Haiku', /PLAN_MODEL = 'claude-sonnet-5'/.test(P) && /QUICK_MODEL = 'claude-haiku-4-5-20251001'/.test(P) && /model: QUICK_MODEL[\s\S]{0,40}max_tokens: 900/.test(P))
 check('the B-roll is seen from 36 small frames, sent in the answer, never stored', /frames: 36, width: 320/.test(W) && /jpg: fs\.readFileSync\(out\)\.toString\('base64'\)/.test(S))
-check('every AI call is counted', (P.match(/recordAnthropicUsage\(/g) ?? []).length === 3)
+check('every AI call is counted', (P.match(/recordAnthropicUsage\(/g) ?? []).length === (P.match(/messages\.create\(/g) ?? []).length && (P.match(/recordAnthropicUsage\(/g) ?? []).length === 4)
 
 // ── Every stop says why ──────────────────────────────────────────────────────
 const fails2 = (W.match(/status: 'failed', note: /g) ?? []).length + (W.match(/return await fail\(/g) ?? []).length

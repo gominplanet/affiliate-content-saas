@@ -110,6 +110,14 @@ check('a TRYBE ad is cut tighter: shorter pauses, so a shorter video from the sa
 check('an ad\u2019s B-roll may come sooner and is shorter', PACE.trybe.brollNotBefore < PACE.review.brollNotBefore && PACE.trybe.brollMax < PACE.review.brollMax && PACE.trybe.maxPause < PACE.review.maxPause)
 check('B-roll switched off, or no B-roll take, sends none', renderSpec({ words, lines, plan: { cuts, keys: [], placements: [{ shot: 1, line: 3, why: '' }], title: '' }, shots, duration: 14, settings: { ...DEFAULT_SETTINGS, broll: false }, hasBroll: true }).inserts.length === 0 && spec.inserts.length === 1)
 
+// ── The logo's moment (Seb, 2026-10-30: first 5 seconds, last 5, the whole video, or none) ──
+{
+  const l = (x: object) => cleanSettings({ logo: { url: 'https://x/l.png', ...x } }).logo!
+  check('a logo is on the whole video unless chosen, and five seconds when at the start or the end', l({}).when === 'whole' && l({ when: 'start' }).seconds === 5 && l({ when: 'end', seconds: 8 }).seconds === 8 && l({ when: 'sometimes' }).when === 'whole')
+  check('none at all is the logo switched off', renderSpec({ words, lines, plan: plain, shots, duration: 14, settings: cleanSettings({ kind: 'review', logo: { url: 'https://x/l.png', on: false } }), hasBroll: false }).logo === null)
+  check('a picture shows five seconds at the start or the end unless chosen', cleanSettings({ pictures: [{ url: 'https://x/p.png', when: 'start' }] }).pictures[0].seconds === 5)
+}
+
 // ── Title looks and pictures (Seb, 2026-10-30) ──────────────────────────────
 {
   const t = cleanSettings({ title: { text: 'PROVIDED SAMPLE IN EXCHANGE FOR VIDEO REVIEW #AD', position: 'lower-left', seconds: 0, on: true, look: 'caps', color: 'yellow', size: 'large' } }).title

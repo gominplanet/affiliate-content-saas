@@ -36,6 +36,19 @@ const byTime = pairTakes([take('a1', 'Review one.mov', { createdAt: t(9) }), tak
 check('then by when each reached Drive', byTime[0].b?.id === 'b1' && byTime[1].b?.id === 'b2', byTime.map((p) => p.b?.id))
 check('nothing to go by and the counts differ: no guessing', pairTakes([take('a1', 'One.mov'), take('a2', 'Two.mov')], [take('b1', 'Shots.mov')]).every((p) => p.b === null))
 
+// When each was filmed, read from the file: names and upload order say nothing.
+// Seb's 20 and 20: a phone's talk and B-roll for each product, uploaded at once.
+const f = (m: number) => new Date(Date.UTC(2026, 9, 30, 14, m)).toISOString()
+const up = '2026-10-30T20:00:00Z'
+const As = Array.from({ length: 20 }, (_, i) => take(`a${i}`, `Copy of video ${(i * 7) % 20}.mov`, { filmedAt: f(i * 3), createdAt: up }))
+const Bs = Array.from({ length: 20 }, (_, i) => take(`b${i}`, `Shots ${(i * 11) % 20}.mov`, { filmedAt: f(i * 3 + 1), createdAt: up })).reverse()
+const twenty = pairTakes(As, Bs)
+check('20 talking takes and 20 B-roll, uploaded together and named anything, pair by when they were filmed', twenty.length === 20 && twenty.every((p, i) => p.b?.id === `b${i}` && p.how === 'filmed'), twenty.map((p) => p.b?.id))
+const first = pairTakes([take('a1', 'x.mov', { filmedAt: f(2) }), take('a2', 'y.mov', { filmedAt: f(6) })], [take('b1', 'p.mov', { filmedAt: f(1) }), take('b2', 'q.mov', { filmedAt: f(5) })])
+check('B-roll filmed before its talk pairs too, when that is how the creator films', first[0].b?.id === 'b1' && first[1].b?.id === 'b2', first.map((p) => p.b?.id))
+const mixed = pairTakes([take('a1', 'IMG_2001.MOV'), take('a2', 'talk.mov', { filmedAt: f(10) })], [take('b1', 'IMG_2002.MOV'), take('b2', 'shots.mov', { filmedAt: f(12) })])
+check('a filming time is only compared with a filming time, a camera number with a camera number', mixed[0].b?.id === 'b1' && mixed[0].how === 'order' && mixed[1].b?.id === 'b2' && mixed[1].how === 'filmed', mixed.map((p) => [p.b?.id, p.how]))
+
 const U = readFileSync('components/review-editor/DriveBatch.tsx', 'utf8')
 const E = readFileSync('components/review-editor/ReviewEditor.tsx', 'utf8')
 const P = readFileSync('components/review-editor/drive-picker.ts', 'utf8')
@@ -44,6 +57,9 @@ check('a batch opens the picker in each folder, many files at once', /MULTISELEC
 check('the batch is on the page once Drive is connected', /\{drive\?\.connected && <DriveBatch /.test(E))
 check('each video in a batch gets its own title, not the one typed for a single video', /title: \{ \.\.\.settings\.title, text: '' \}/.test(U))
 check('a pair that could not be added says why, and stays to try again', /failed\.push\(`\$\{p\.a\.name\}: /.test(U) && /not added: \$\{added\.failed\.join/.test(U))
+const D = readFileSync('app/api/review-edit/drive/route.ts', 'utf8')
+check('takes already made or in the queue are left out and listed, so selecting a whole folder each time is safe', /in\('review_src->>fileId', ids2\)/.test(D) && /in\('broll_src->>fileId', ids2\)/.test(D) && /filter\(\(f\) => !used\.has\(f\.id\)\)/.test(U) && /Left out, already made or in the queue/.test(U))
+check('when the filming times could not be read, the page says the pairs need checking', /filmedRead: filmed\.read/.test(D) && /MVP could not read when these were filmed/.test(U))
 check('the pairs are shown to check before anything is queued', /Check the pairs/.test(U) && /Add all \$\{pairs\.length\}/.test(U))
 
 if (fails.length) { console.error(`\n❌ review-edit-batch: ${fails.length} failure(s)\n`); for (const f of fails) console.error(`   • ${f}`); process.exit(1) }

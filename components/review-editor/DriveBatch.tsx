@@ -7,7 +7,8 @@
 // picker opens in each, Shift or Ctrl to pick many). MVP pairs them, reads
 // from each take's shape whether it is a review or a TRYBE ad, and shows the
 // pairs to check and change before any of them is queued. Every pair that
-// could not be added says why.
+// could not be added says why. Takes already made are left out and listed,
+// so picking everything in the folders each time is safe.
 
 import { useState } from 'react'
 import { toast } from 'sonner'
@@ -19,7 +20,7 @@ import { cleanSettings, clock, KIND_WORDS, type EditSettings, type VideoKind } f
 const PURPLE = '#7C3AED'
 const BLUE = '#1a73e8'
 const soft = { color: 'var(--text-3)' }
-const HOW: Record<Pair['how'], string> = { name: 'Paired by name', order: 'Paired by filming order', none: 'No B-roll found for it' }
+const HOW: Record<Pair['how'], string> = { name: 'Paired by name', filmed: 'Paired by when they were filmed', order: 'Paired by file order', none: 'No B-roll found for it' }
 
 export default function DriveBatch({ drive, loadDrive, settings, onAdded }: {
   drive: DriveState
@@ -32,6 +33,10 @@ export default function DriveBatch({ drive, loadDrive, settings, onAdded }: {
   const [pairs, setPairs] = useState<Pair[] | null>(null)
   const [pool, setPool] = useState<DriveTake[]>([])
   const [problems, setProblems] = useState<string[]>([])
+  /** Takes left out because they are already made or in the queue. */
+  const [skipped, setSkipped] = useState<string[]>([])
+  /** False when the video server could not say when the takes were filmed. */
+  const [filmedRead, setFilmedRead] = useState(true)
   const [added, setAdded] = useState<{ ok: number; failed: string[] } | null>(null)
 
   const fresh = async () => {
@@ -57,7 +62,7 @@ export default function DriveBatch({ drive, loadDrive, settings, onAdded }: {
 
   const pickBatch = async () => {
     if (!drive.aRoll) return
-    setBusy('pick'); setAdded(null); setProblems([])
+    setBusy('pick'); setAdded(null); setProblems([]); setSkipped([]); setFilmedRead(true)
     try {
       const st = await fresh()
       if (!st) return
@@ -66,9 +71,13 @@ export default function DriveBatch({ drive, loadDrive, settings, onAdded }: {
       const b = drive.bRoll ? await pickMany({ token: st.token, appId: st.appId, key: st.key, folderId: drive.bRoll.id, title: `Now select their B-roll, in ${drive.bRoll.name} (or close this for none)` }) : []
       setBusy('read')
       const r = await fetch('/api/review-edit/drive', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'files', ids: [...a, ...b].map((f) => f.id) }) })
-      const d = await r.json().catch(() => ({})) as { files?: DriveTake[]; problems?: { id: string; error: string }[]; error?: string }
+      const d = await r.json().catch(() => ({})) as { files?: DriveTake[]; problems?: { id: string; error: string }[]; used?: string[]; filmedRead?: boolean; error?: string }
       if (!r.ok) { toast.error(d.error || 'MVP could not read the files you picked.'); return }
-      const files = d.files ?? []
+      // Already made, or in the queue: left out, and said.
+      const used = new Set(d.used ?? [])
+      setSkipped((d.files ?? []).filter((f) => used.has(f.id)).map((f) => f.name))
+      setFilmedRead(d.filmedRead !== false)
+      const files = (d.files ?? []).filter((f) => !used.has(f.id))
       const aIds = new Set(a.map((f) => f.id)), bIds = new Set(b.map((f) => f.id))
       const aT = files.filter((f) => aIds.has(f.id)), bT = files.filter((f) => bIds.has(f.id))
       const named = new Map([...a, ...b].map((f) => [f.id, f.name]))
@@ -124,7 +133,7 @@ export default function DriveBatch({ drive, loadDrive, settings, onAdded }: {
     <div className="rounded-xl border p-3 mb-3" style={{ borderColor: `${BLUE}55`, background: `${BLUE}08` }} aria-label="A batch from Google Drive">
       <p className="text-[14px] font-bold flex items-center gap-1.5"><Layers size={15} /> A batch from Google Drive</p>
       <p className="text-[12.5px] mt-0.5 mb-2" style={{ color: 'var(--text-2)' }}>
-        Keep your talking takes in one Drive folder (A-roll) and your B-roll in another. Film each product&rsquo;s talking take, then its B-roll, so MVP can pair them, or give a pair the same name. Upright takes become TRYBE ads; sideways ones, Amazon and YouTube reviews.
+        Keep your talking takes in one Drive folder (A-roll) and your B-roll in another. Film one product at a time: its talking take, then its B-roll (or the B-roll first, as long as you always do it the same way). No renaming needed: MVP reads when each was filmed from the file itself. Each time, select everything in each folder; anything already made is left out. Upright takes become TRYBE ads; sideways ones, Amazon and YouTube reviews.
       </p>
       <div className="flex flex-col gap-1.5">
         {folderRow('aRoll', 'A-roll folder:', 'not set yet (your talking takes)')}
@@ -136,6 +145,8 @@ export default function DriveBatch({ drive, loadDrive, settings, onAdded }: {
       </button>
       {!drive.aRoll && <span className="ml-2 text-[12px]" style={soft}>Choose your A-roll folder first.</span>}
 
+      {skipped.length > 0 && <p className="mt-2 text-[12.5px]" style={soft}>Left out, already made or in the queue ({skipped.length}): {skipped.join(', ')}.</p>}
+      {pairs && !filmedRead && <p className="mt-2 text-[12.5px] inline-flex items-start gap-1.5" style={{ color: '#B45309' }}><AlertTriangle size={13} className="mt-0.5 shrink-0" /> MVP could not read when these were filmed, so they are paired by name and file order. Check each pair.</p>}
       {problems.length > 0 && (
         <ul className="mt-2 text-[12.5px] flex flex-col gap-0.5" style={{ color: '#B45309' }}>
           {problems.map((p) => <li key={p} className="inline-flex items-start gap-1.5"><AlertTriangle size={13} className="mt-0.5 shrink-0" /> {p}</li>)}

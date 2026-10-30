@@ -8,9 +8,13 @@
 // inside a folder on its own, which is what keeps Google's permission to
 // the files picked). MVP then pairs each talking take with its B-roll:
 //   1. the same name in both folders ("Hoodie.mov" and "Hoodie broll.mov");
-//   2. else filming order: the B-roll filmed after a talking take and
-//      before the next one, by the camera's file number or the time in its
-//      name, then by when it reached Drive.
+//   2. else filming order (Seb, 2026-10-30: 20 talking takes and 20 B-roll
+//      in Drive, made into 20 videos): the B-roll filmed between one talking
+//      take and the next. When each was filmed is read from inside the file
+//      (the camera's own date, so names and upload order do not matter),
+//      else the camera's file number or the time in its name, else when it
+//      reached Drive. Only like is compared with like. B-roll filmed after
+//      its talk or before it both work: whichever pairs more is used.
 // What the video is for comes from how it was filmed: upright is a TRYBE
 // ad, sideways an Amazon and YouTube review. The creator checks the pairs
 // before anything is queued. Pure, tested in scripts/test-review-edit-batch.
@@ -26,9 +30,11 @@ export interface DriveTake {
   seconds: number | null
   /** When it reached Drive (ISO). */
   createdAt: string | null
+  /** When it was filmed, read from the file itself (ISO), when known. */
+  filmedAt?: string | null
 }
 
-export interface Pair { a: DriveTake; b: DriveTake | null; how: 'name' | 'order' | 'none'; kind: VideoKind; product: string }
+export interface Pair { a: DriveTake; b: DriveTake | null; how: 'name' | 'filmed' | 'order' | 'none'; kind: VideoKind; product: string }
 
 /** Names a camera or phone gives a file, which say nothing about the product. */
 const CAMERA = /^(img|mvi|mov|vid|dsc|dji|gopr|gh\d|gx\d|pxl|c\d{3,}|clip|video|screen ?recording|untitled)[\s_-]*\d/i
@@ -56,7 +62,16 @@ export function filmedKey(name: string): number | null {
   return num ? Number(num[1]) : null
 }
 
-const orderOf = (t: DriveTake): number | null => filmedKey(t.name) ?? (t.createdAt ? Date.parse(t.createdAt) || null : null)
+/** What a take's place in filming order is measured on, and its place.
+ *  Two takes are only compared on the same measure. Pure. */
+export function orderOf(t: DriveTake): { scale: 'filmed' | 'name' | 'drive'; at: number } | null {
+  const filmed = t.filmedAt ? Date.parse(t.filmedAt) : NaN
+  if (Number.isFinite(filmed)) return { scale: 'filmed', at: filmed }
+  const key = filmedKey(t.name)
+  if (key != null) return { scale: 'name', at: key }
+  const drive = t.createdAt ? Date.parse(t.createdAt) : NaN
+  return Number.isFinite(drive) ? { scale: 'drive', at: drive } : null
+}
 
 /** Upright is a TRYBE ad; sideways (or not known) a review. Pure. */
 export function kindOf(t: DriveTake): VideoKind {
@@ -82,16 +97,31 @@ export function pairTakes(aRoll: DriveTake[], bRoll: DriveTake[]): Pair[] {
     const b = bRoll.find((x) => !used.has(x.id) && baseName(x.name) === key)
     if (b) { used.add(b.id); byA.set(a.id, { b, how: 'name' }) }
   }
-  // 2. Filming order: the B-roll after a talking take and before the next.
-  const sortedA = [...aRoll].filter((a) => !byA.has(a.id) && orderOf(a) != null).sort((x, y) => orderOf(x)! - orderOf(y)!)
-  const freeB = () => bRoll.filter((b) => !used.has(b.id) && orderOf(b) != null).sort((x, y) => orderOf(x)! - orderOf(y)!)
-  // Only compare like with like: camera numbers with numbers, times with times.
-  const sameScale = (x: DriveTake, y: DriveTake) => (filmedKey(x.name) != null) === (filmedKey(y.name) != null)
-  sortedA.forEach((a, i) => {
-    const next = sortedA[i + 1]
-    const b = freeB().find((x) => sameScale(a, x) && orderOf(x)! > orderOf(a)! && (!next || !sameScale(a, next) || orderOf(x)! < orderOf(next)!))
-    if (b) { used.add(b.id); byA.set(a.id, { b, how: 'order' }) }
-  })
+  // 2. Filming order, on each measure in turn: the B-roll between a talking
+  // take and the next (filmed after its talk), or between the one before
+  // and it (filmed before its talk), whichever pairs more.
+  for (const scale of ['filmed', 'name', 'drive'] as const) {
+    const As = aRoll.filter((a) => !byA.has(a.id) && orderOf(a)?.scale === scale).sort((x, y) => orderOf(x)!.at - orderOf(y)!.at)
+    const Bs = bRoll.filter((b) => !used.has(b.id) && orderOf(b)?.scale === scale).sort((x, y) => orderOf(x)!.at - orderOf(y)!.at)
+    if (!As.length || !Bs.length) continue
+    const match = (after: boolean) => {
+      const taken = new Set<string>()
+      const got = new Map<string, DriveTake>()
+      As.forEach((a, i) => {
+        const t = orderOf(a)!.at
+        const lo = after ? t : i > 0 ? orderOf(As[i - 1])!.at : -Infinity
+        const hi = after ? (i + 1 < As.length ? orderOf(As[i + 1])!.at : Infinity) : t
+        // The nearest one to its talk inside the window.
+        const inside = Bs.filter((b) => !taken.has(b.id) && orderOf(b)!.at > lo && orderOf(b)!.at < hi)
+        const b = after ? inside[0] : inside[inside.length - 1]
+        if (b) { taken.add(b.id); got.set(a.id, b) }
+      })
+      return got
+    }
+    const after = match(true), before = match(false)
+    const best = before.size > after.size ? before : after
+    for (const [aId, b] of best) { used.add(b.id); byA.set(aId, { b, how: scale === 'filmed' ? 'filmed' : 'order' }) }
+  }
   // 3. Nothing to go by but the count: as many of each, in the order picked.
   const leftA = aRoll.filter((a) => !byA.has(a.id))
   const leftB = bRoll.filter((b) => !used.has(b.id))

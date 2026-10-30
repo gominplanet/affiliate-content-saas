@@ -372,6 +372,13 @@ export const TITLE_SECONDS = [3, 4, 5, 6, 8, 10, 0]
 // uploads, like PNGs"). A PNG from the creator's own library, in a spot, for
 // the whole video, the start, the end, or from the moment they say a phrase.
 export type PictureWhen = 'whole' | 'start' | 'end' | 'say'
+/** The logo: the whole video, the first seconds, or the last (Seb,
+ *  2026-10-30: "either the first 5 seconds, the last 5 seconds, or the
+ *  entire video, or nothing at all"; nothing at all is switching it off). */
+export type LogoWhen = 'whole' | 'start' | 'end'
+export const LOGO_WHEN_WORDS: Record<LogoWhen, string> = { whole: 'The whole video', start: 'The first seconds', end: 'The last seconds' }
+/** Seconds a logo or picture shows at the start or the end, unless chosen. */
+export const SHOW_SECONDS = 5
 export const PICTURE_WHEN_WORDS: Record<PictureWhen, string> = {
   whole: 'The whole video', start: 'At the start', end: 'At the end', say: 'When I say…',
 }
@@ -388,7 +395,7 @@ export interface EditSettings {
   /** From the kind: a review is wide, a TRYBE ad vertical. */
   formats: Format[]
   /** On the whole video, in its corner, as solid or as a see-through stamp. */
-  logo: { url: string; position: Position; on: boolean; opacity: number; size: LogoSize } | null
+  logo: { url: string; position: Position; on: boolean; opacity: number; size: LogoSize; when: LogoWhen; seconds: number } | null
   /** seconds 0 is the whole video. */
   title: { text: string; position: Position; seconds: number; on: boolean; look: TitleLook; color: TitleColor; size: LogoSize }
   /** PNGs from the creator's library, each with its spot and its moment. */
@@ -434,7 +441,7 @@ function cleanPicture(raw: unknown, base?: Picture): Picture | null {
     opacity: Number.isFinite(Number(p.opacity)) && p.opacity != null ? nearestOpacity(Number(p.opacity)) : base?.opacity ?? 1,
     // A moment with no words to wait for is shown at the start instead.
     when: when === 'say' && !say ? 'start' : when,
-    seconds: Math.max(1, Math.min(15, Math.round(Number(p.seconds)) || base?.seconds || 4)),
+    seconds: Math.max(1, Math.min(15, Math.round(Number(p.seconds)) || base?.seconds || SHOW_SECONDS)),
     say,
   }
 }
@@ -457,6 +464,8 @@ export function cleanSettings(raw: unknown, base: EditSettings = DEFAULT_SETTING
       on: typeof lr?.on === 'boolean' ? lr.on as boolean : base.logo?.on ?? true,
       opacity: Number.isFinite(Number(lr?.opacity)) && lr?.opacity != null ? nearestOpacity(Number(lr.opacity)) : base.logo?.opacity ?? 1,
       size: LOGO_SIZES.includes(lr?.size as LogoSize) ? lr!.size as LogoSize : base.logo?.size ?? 'medium',
+      when: pick<LogoWhen>(lr?.when, ['whole', 'start', 'end'], base.logo?.when ?? 'whole'),
+      seconds: lr?.seconds == null ? base.logo?.seconds ?? SHOW_SECONDS : Math.max(1, Math.min(15, Math.round(Number(lr.seconds)) || SHOW_SECONDS)),
     } : null,
     title: {
       text: typeof tr.text === 'string' ? tr.text.replace(/\s*[–—]\s*/g, ', ').replace(/\s+-\s+/g, ', ').trim().slice(0, 80) : base.title.text,

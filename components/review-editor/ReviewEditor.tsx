@@ -20,9 +20,9 @@ import { storageSizeRefusal, BULK_VIDEO_MAX_BYTES } from '@/lib/clip-source-limi
 import { pickFromDrive, type DriveState } from '@/components/review-editor/drive-picker'
 import DriveBatch from '@/components/review-editor/DriveBatch'
 import {
-  DEFAULT_SETTINGS, FORMAT_WORDS, KIND_WORDS, LOGO_OPACITY, LOGO_SIZES, LOGO_WIDTH, MAX_PICTURES, PICTURE_WHEN_WORDS, PICTURE_WIDTH, POSITIONS, POSITION_WORDS, SPOTS,
+  DEFAULT_SETTINGS, FORMAT_WORDS, KIND_WORDS, LOGO_OPACITY, LOGO_SIZES, LOGO_WHEN_WORDS, LOGO_WIDTH, MAX_PICTURES, SHOW_SECONDS, PICTURE_WHEN_WORDS, PICTURE_WIDTH, POSITIONS, POSITION_WORDS, SPOTS,
   TITLE_COLORS, TITLE_LOOKS, TITLE_LOOK_WORDS, TITLE_SECONDS, clock, cleanSettings,
-  type EditSettings, type Format, type LogoSize, type Picture, type PictureTime, type PictureWhen, type Position, type Spot, type TitleColor, type VideoKind,
+  type EditSettings, type Format, type LogoSize, type LogoWhen, type Picture, type PictureTime, type PictureWhen, type Position, type Spot, type TitleColor, type VideoKind,
 } from '@/lib/review-edit'
 
 const PURPLE = '#7C3AED'
@@ -53,6 +53,7 @@ interface EditView {
   zooms: number
   /** What went on the video when it was last sent to be made, and what was left out. */
   placed: { title: { from: number; to: number } | { missed: string } | null; pictures: PictureTime[] } | null
+  brollCheck: { fits: boolean; talk: string; shows: string } | null
 }
 
 const STATUS: Record<string, { words: string; color: string; busy?: boolean }> = {
@@ -109,7 +110,7 @@ function Toggle({ on, set, label, hint }: { on: boolean; set: (v: boolean) => vo
 /** The creator's picture library, shared by every video's choices. */
 interface Library { pictures: string[]; busy: boolean; add: (f: File) => Promise<string | null>; forget: (url: string) => Promise<void> }
 const checker = { background: 'repeating-conic-gradient(#ddd 0% 25%, #fff 0% 50%) 50% / 12px 12px' }
-const newPicture = (url: string): Picture => ({ url, on: true, position: 'lower-right', size: 'medium', opacity: 1, when: 'whole', seconds: 4, say: '' })
+const newPicture = (url: string): Picture => ({ url, on: true, position: 'lower-right', size: 'medium', opacity: 1, when: 'whole', seconds: SHOW_SECONDS, say: '' })
 const sizeWords = (z: LogoSize) => (z === 'small' ? 'Small' : z === 'medium' ? 'Medium' : 'Large')
 const selectStyle = { borderColor: 'var(--border)', background: 'var(--surface)', color: 'var(--text)' }
 
@@ -174,7 +175,7 @@ function PictureRow({ p, set, remove }: { p: Picture; set: (p: Picture) => void;
       {p.when === 'say' && <input value={p.say} onChange={(ev) => set({ ...p, say: ev.target.value.slice(0, 60) })} placeholder="the words, e.g. link below" className="rounded border px-2 py-0.5 w-40 bg-transparent" style={{ borderColor: 'var(--border)', color: 'var(--text)' }} />}
       {p.when !== 'whole' && (
         <select aria-label="For how long" value={p.seconds} onChange={(ev) => set({ ...p, seconds: Number(ev.target.value) })} className="rounded border px-1 py-0.5" style={selectStyle}>
-          {[2, 3, 4, 5, 6, 8, 10].map((n) => <option key={n} value={n}>for {n} seconds</option>)}
+          {[2, 3, 4, 5, 6, 8, 10, 15].map((n) => <option key={n} value={n}>for {n} seconds</option>)}
         </select>
       )}
       <button type="button" onClick={remove} className="underline" style={soft}>Take it off this video</button>
@@ -233,7 +234,16 @@ function Choices({ s, set, onLogo, logoBusy, lib }: { s: EditSettings; set: (s: 
                   <span className="text-[12px]" style={soft}>Size:</span>
                   {LOGO_SIZES.map((z) => <Chip key={z} on={s.logo!.size === z} onClick={() => set({ ...s, logo: { ...s.logo!, size: z } })}>{sizeWords(z)}</Chip>)}
                 </div>
-                <p className="text-[12px] mt-1" style={soft}>It stays in its corner for the whole video.</p>
+                <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+                  <span className="text-[12px]" style={soft}>When:</span>
+                  {(Object.keys(LOGO_WHEN_WORDS) as LogoWhen[]).map((w) => <Chip key={w} on={s.logo!.when === w} onClick={() => set({ ...s, logo: { ...s.logo!, when: w } })}>{w === 'whole' ? LOGO_WHEN_WORDS.whole : w === 'start' ? `The first ${s.logo!.seconds} seconds` : `The last ${s.logo!.seconds} seconds`}</Chip>)}
+                  {s.logo.when !== 'whole' && (
+                    <select aria-label="How many seconds" value={s.logo.seconds} onChange={(ev) => set({ ...s, logo: { ...s.logo!, seconds: Number(ev.target.value) } })} className="rounded border px-1 py-0.5 text-[12.5px]" style={selectStyle}>
+                      {[3, 4, 5, 6, 8, 10, 15].map((n) => <option key={n} value={n}>{n} seconds</option>)}
+                    </select>
+                  )}
+                </div>
+                <p className="text-[12px] mt-1" style={soft}>{s.logo.when === 'whole' ? 'It stays in its corner for the whole video.' : s.logo.when === 'start' ? `It shows for the first ${s.logo.seconds} seconds, then goes.` : `It comes in for the last ${s.logo.seconds} seconds.`} Untick Show my logo for none.</p>
               </>
             )}
           </div>
@@ -565,7 +575,7 @@ export default function ReviewEditor() {
           <input value={product} onChange={(e) => setProduct(e.target.value)} placeholder="Bassdash UPF 50 hoodie" className="mt-1 w-full max-w-md rounded-lg border px-3 py-1.5 text-[13px] bg-transparent" style={{ borderColor: 'var(--border)', color: 'var(--text)' }} />
         </div>
         <div className="mt-4 pt-3 border-t" style={{ borderColor: 'var(--border)' }}>
-          <Choices s={settings} set={setSettings} lib={lib} logoBusy={logoBusy} onLogo={(f) => void uploadLogo(f, (url) => setSettings((s) => ({ ...s, logo: { url, position: s.logo?.position ?? 'upper-left', on: true, opacity: s.logo?.opacity ?? 1, size: s.logo?.size ?? 'medium' } })))} />
+          <Choices s={settings} set={setSettings} lib={lib} logoBusy={logoBusy} onLogo={(f) => void uploadLogo(f, (url) => setSettings((s) => ({ ...s, logo: { url, position: s.logo?.position ?? 'upper-left', on: true, opacity: s.logo?.opacity ?? 1, size: s.logo?.size ?? 'medium', when: s.logo?.when ?? 'whole', seconds: s.logo?.seconds ?? SHOW_SECONDS } })))} />
         </div>
         <div className="mt-4 flex flex-wrap items-center gap-2">
           <button type="button" onClick={() => void add()} disabled={!ready(review) || !!uploading || adding}
@@ -709,6 +719,13 @@ function EditCard({ e, reload, uploadLogo, logoBusy, lib }: { e: EditView; reloa
         <button type="button" onClick={() => void act('retry', { action: 'retry', id: e.id }, 'Trying again.')} disabled={!!work || e.rawDeleted} className="mt-2 inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[12.5px] font-semibold" style={{ borderColor: 'var(--border)' }}><RotateCcw size={13} /> Try again</button>
       )}
 
+      {/* A B-ROLL OF ANOTHER PRODUCT (a batch paired wrong) is said, and left out until the creator says it is right. */}
+      {e.brollCheck && !e.brollCheck.fits && (
+        <p className="mt-2 text-[12.5px] inline-flex items-start gap-1.5" style={{ color: AMBER }}>
+          <AlertTriangle size={13} className="mt-0.5 shrink-0" />
+          <span>The B-roll looks like a different product{e.brollCheck.shows ? <>: it shows {e.brollCheck.shows}</> : null}{e.brollCheck.talk ? <>, and you talk about {e.brollCheck.talk}</> : null}. MVP left it out of this video. If it is the right B-roll after all, press Use it on its moments below and Make it again.</span>
+        </p>
+      )}
       {(e.cuts.length > 0 || e.broll.length > 0) && (
         <details className="mt-3">
           <summary className="text-[13px] font-semibold cursor-pointer">What MVP cut ({e.cuts.filter((c) => !c.restored).length}){e.hasBroll ? ` and where the B-roll went (${e.broll.filter((b) => !b.off).length})` : ''}</summary>
@@ -735,7 +752,7 @@ function EditCard({ e, reload, uploadLogo, logoBusy, lib }: { e: EditView; reloa
         <details className="mt-3">
           <summary className="text-[13px] font-semibold cursor-pointer">Change the look</summary>
           <div className="mt-2">
-            <Choices s={s} set={(v) => { setS(v); setChanged(true) }} lib={lib} logoBusy={logoBusy} onLogo={(f) => void uploadLogo(f, (url) => { setS((x) => ({ ...x, logo: { url, position: x.logo?.position ?? 'upper-left', on: true, opacity: x.logo?.opacity ?? 1, size: x.logo?.size ?? 'medium' } })); setChanged(true) })} />
+            <Choices s={s} set={(v) => { setS(v); setChanged(true) }} lib={lib} logoBusy={logoBusy} onLogo={(f) => void uploadLogo(f, (url) => { setS((x) => ({ ...x, logo: { url, position: x.logo?.position ?? 'upper-left', on: true, opacity: x.logo?.opacity ?? 1, size: x.logo?.size ?? 'medium', when: x.logo?.when ?? 'whole', seconds: x.logo?.seconds ?? SHOW_SECONDS } })); setChanged(true) })} />
           </div>
         </details>
       )}

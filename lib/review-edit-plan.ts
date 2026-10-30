@@ -100,6 +100,25 @@ export async function readShots(frames: { at: number; jpg: string }[], duration:
   return out
 }
 
+/** Whether the B-roll shows the product the talk is about (Seb, 2026-10-30:
+ *  20 talking takes and 20 B-roll paired by MVP). Says no only when the
+ *  shots clearly show a different product; unsure, or shots of hands, a box
+ *  or a table, is a yes. A failed check is a yes too: the pair was already
+ *  shown to the creator. */
+export async function brollFits(o: { words: Word[]; shots: Shot[]; product?: string | null; who: Who }): Promise<{ fits: boolean; talk: string; shows: string }> {
+  if (!o.shots.length) return { fits: true, talk: '', shows: '' }
+  try {
+    const said = o.words.map((w) => w.text).join(' ').slice(0, 1500)
+    const msg = await createAnthropicClient().messages.create({
+      model: QUICK_MODEL, max_tokens: 200,
+      messages: [{ role: 'user', content: `A creator filmed a product review talking to the camera, and separately filmed B-roll. Check the B-roll is of the same product.\n\n${o.product ? `The product, as they named it: ${o.product}\n` : ''}What they say (the start):\n${said}\n\nWhat the B-roll shots show:\n${o.shots.map((x) => `- ${x.what}`).join('\n')}\n\nAnswer "same": false only when the shots clearly show a different product (a fishing reel in the shots, a hoodie in the talk). Generic shots (hands, a box, packaging, a table) or not being sure is "same": true. Reply with JSON only: {"same":true,"talk":"the product they talk about, in under eight words","shows":"what the B-roll shows, in under eight words"}` }],
+    })
+    recordAnthropicUsage(msg, { userId: o.who.userId, tier: o.who.tier, feature: 'review_edit_broll_check', model: QUICK_MODEL })
+    const raw = jsonIn(textOf(msg as never)) || {}
+    return { fits: raw.same !== false, talk: noDash(raw.talk, 80), shows: noDash(raw.shows, 80) }
+  } catch { return { fits: true, talk: '', shows: '' } }
+}
+
 const PLAN_SYSTEM = [
   'You edit a creator\'s product review video. They filmed it in one take, talking to the camera, so it has mistakes, restarts and chatter in it. You see what they said, line by line, with the time of each line.',
   'Mark what to cut:',
@@ -147,7 +166,7 @@ export async function planEdit(o: { words: Word[]; lines: Line[]; shots: Shot[];
 const CHANGE_SYSTEM = [
   'A creator is editing a product review video in MVP and types a change. Turn it into JSON, changing only what they asked for.',
   `Positions: ${POSITIONS.join(', ')} (upper-left is top left, lower-right is bottom right).`,
-  'You can set: "logo": {"position", "on", "opacity" (1 solid, 0.7, 0.5 or 0.3 for a see-through stamp), "size" ("small", "medium" or "large")}; "title": {"text", "position", "seconds" (0 keeps it on for the whole video), "on", "look" (${TITLE_LOOKS.join(', ')}), "color" (${Object.keys(TITLE_COLORS).join(', ')}), "size" ("small", "medium" or "large")}; "captions", "zooms", "color", "broll" (true or false); "cropX" (0 left to 1 right, where an upright ad is cut from a sideways take). Whether it is a review or a TRYBE ad cannot be changed: say so if asked.',
+  'You can set: "logo": {"position", "on", "opacity" (1 solid, 0.7, 0.5 or 0.3 for a see-through stamp), "size" ("small", "medium" or "large"), "when" ("whole" for the whole video, "start" for the first seconds, "end" for the last), "seconds"}; "title": {"text", "position", "seconds" (0 keeps it on for the whole video), "on", "look" (${TITLE_LOOKS.join(', ')}), "color" (${Object.keys(TITLE_COLORS).join(', ')}), "size" ("small", "medium" or "large")}; "captions", "zooms", "color", "broll" (true or false); "cropX" (0 left to 1 right, where an upright ad is cut from a sideways take). Whether it is a review or a TRYBE ad cannot be changed: say so if asked.',
   'The pictures already on the video are in NOW as "pictures", in order. You can change one by giving "pictures" as a list in the same order, each item only the fields to change: "position" (also "center"), "on", "opacity", "size", "when" ("whole", "start", "end", or "say" with "say": the words to wait for), "seconds". You cannot add a new picture: the creator adds those on the page.',
   'You can also "restore" cuts by number (put the part back) or add "cut" with line numbers {"from","to","why"}.',
   'Reply with JSON only: {"settings":{...},"restore":[],"cut":[],"said":"one short plain sentence saying what you changed"}. If the request is not something you can do, change nothing and say so in "said".',
