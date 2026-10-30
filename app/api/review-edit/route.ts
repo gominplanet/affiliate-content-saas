@@ -19,7 +19,8 @@ import { createServerClient } from '@/lib/supabase/server'
 import { canUsePreview } from '@/lib/labs-preview'
 import { cleanSettings, clock, linesOf, DEFAULT_SETTINGS, type Plan, type Word } from '@/lib/review-edit'
 import { promptChange } from '@/lib/review-edit-plan'
-import { moveQueue, deleteRaw, ownPath, EDIT_BUCKET, type EditRow, editDb } from '@/lib/review-edit-server'
+import { moveQueue, deleteRaw, ownPath, hasUpload, EDIT_BUCKET, type EditRow, type Src, editDb } from '@/lib/review-edit-server'
+import { driveAccessToken, driveFile, isDriveId } from '@/lib/google-drive'
 
 export const runtime = 'nodejs'
 export const maxDuration = 300
@@ -46,7 +47,10 @@ function view(r: EditRow) {
     : lines.slice(from, to + 1).map((l) => l.text).join(' '))
   return {
     id: r.id, name: r.name, status: r.status, note: r.note, product: r.product,
-    createdAt: r.created_at, madeAt: r.made_at, rawDeleted: !!r.raw_deleted_at, hasBroll: !!r.broll_src,
+    createdAt: r.created_at, madeAt: r.made_at, hasBroll: !!r.broll_src,
+    // Uploads are deleted when done; a Drive take is the creator's and stays.
+    rawDeleted: !!r.raw_deleted_at && hasUpload(r), rawInMvp: hasUpload(r) && !r.raw_deleted_at,
+    fromDrive: r.review_src?.kind === 'drive',
     settings: cleanSettings(r.settings),
     review: r.info?.review ?? null,
     outputs: r.outputs ?? null,
@@ -86,15 +90,31 @@ export async function POST(request: Request) {
   const own = (u: unknown) => typeof u === 'string' && ownPath(u, g.userId) !== null
 
   if (action === 'add') {
-    const src = (v: unknown) => {
+    // A take picked in Google Drive is checked with Google first: MVP can
+    // open it, and it is a video. An upload must be in this creator's folder.
+    let token: string | null = null
+    const src = async (v: unknown): Promise<Src | { error: string } | null> => {
       const o = (v && typeof v === 'object' ? v : null) as Record<string, unknown> | null
-      if (!o || !own(o.url)) return null
-      return { kind: 'upload' as const, url: String(o.url), path: ownPath(String(o.url), g.userId)!, name: String(o.name || '').slice(0, 200), bytes: Number(o.bytes) || null }
+      if (!o) return null
+      if (isDriveId(o.driveId)) {
+        if (!token) {
+          const t = await driveAccessToken(db, g.userId)
+          if (!t.ok) return { error: t.error }
+          token = t.token
+        }
+        const f = await driveFile(token, o.driveId)
+        if (!f.ok) return { error: f.error }
+        return { kind: 'drive', fileId: f.file.id, name: f.file.name.slice(0, 200), bytes: f.file.bytes ?? undefined }
+      }
+      if (!own(o.url)) return null
+      return { kind: 'upload', url: String(o.url), path: ownPath(String(o.url), g.userId)!, name: String(o.name || '').slice(0, 200), bytes: Number(o.bytes) || undefined }
     }
-    const review = src(body.review)
-    if (!review) return NextResponse.json({ error: 'Add your review take first.' }, { status: 400 })
-    const broll = body.broll ? src(body.broll) : null
+    const review = await src(body.review)
+    if (!review) return NextResponse.json({ error: 'Add your talking take first.' }, { status: 400 })
+    if ('error' in review) return NextResponse.json({ error: review.error }, { status: 400 })
+    const broll = body.broll ? await src(body.broll) : null
     if (body.broll && !broll) return NextResponse.json({ error: 'That B-roll file is not one of your uploads in MVP. Add it again.' }, { status: 400 })
+    if (broll && 'error' in broll) return NextResponse.json({ error: `The B-roll take: ${broll.error}` }, { status: 400 })
     const settings = cleanSettings(body.settings)
     if (settings.logo && !own(settings.logo.url)) settings.logo = null
     const { data, error } = await db.from('review_edits').insert({
@@ -134,7 +154,7 @@ export async function POST(request: Request) {
   }
 
   if (action === 'make' || action === 'retry') {
-    if (row.raw_deleted_at) return NextResponse.json({ error: 'The raw takes for this video were deleted, so it cannot be made again. Add them again.' }, { status: 409 })
+    if (row.raw_deleted_at && hasUpload(row)) return NextResponse.json({ error: 'The raw takes for this video were deleted, so it cannot be made again. Add them again.' }, { status: 409 })
     if (['reading', 'making'].includes(row.status)) return NextResponse.json({ error: 'MVP is working on this one right now.' }, { status: 409 })
     const status = action === 'retry' && !row.plan ? 'queued' : 'ready_to_make'
     await db.from('review_edits').update({ status, attempts: 0, note: status === 'queued' ? 'In line to be read' : 'In line to be made', updated_at: now }).eq('id', row.id)

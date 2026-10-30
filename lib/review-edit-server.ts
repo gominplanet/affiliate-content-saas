@@ -22,6 +22,7 @@ import { makeRenderJob } from '@/lib/render-job'
 import { drawTextPill } from '@/lib/text-pill'
 import { cleanSettings, cleanWords, clock, linesOf, renderSpec, type Plan, type Shot, type Word } from '@/lib/review-edit'
 import { planEdit, readShots } from '@/lib/review-edit-plan'
+import { driveAccessToken, driveMediaUrl } from '@/lib/google-drive'
 
 export const EDIT_BUCKET = 'instagram-videos'
 /** Videos on the video server at once, across everyone. */
@@ -36,7 +37,27 @@ export const MAX_ATTEMPTS = 3
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type Db = any
 export const editDb = (): Db => createAdminClient()
-export interface Src { kind: 'upload'; url: string; path: string; name?: string; bytes?: number }
+/** Where a take is: uploaded to MVP (deleted when done), or in the
+ *  creator's Google Drive (never copied, never deleted by MVP). */
+export type Src =
+  | { kind: 'upload'; url: string; path: string; name?: string; bytes?: number }
+  | { kind: 'drive'; fileId: string; name?: string; bytes?: number }
+
+/** Any take uploaded to MVP: only those are ever deleted. Pure. */
+export const hasUpload = (row: { review_src: Src; broll_src: Src | null }) => [row.review_src, row.broll_src].some((s) => s?.kind === 'upload')
+
+/** Where the video server reads each take from, with a fresh Drive token
+ *  when one is from Drive; or why it cannot. */
+async function takes(db: Db, row: Pick<EditRow, 'user_id' | 'review_src' | 'broll_src'>): Promise<{ ok: true; review: { url: string; auth?: string }; broll: { url: string; auth?: string } | null } | { ok: false; error: string }> {
+  let auth: string | undefined
+  if ([row.review_src, row.broll_src].some((s) => s?.kind === 'drive')) {
+    const t = await driveAccessToken(db, row.user_id)
+    if (!t.ok) return { ok: false, error: t.error }
+    auth = `Bearer ${t.token}`
+  }
+  const one = (s: Src) => (s.kind === 'drive' ? { url: driveMediaUrl(s.fileId), auth } : { url: s.url })
+  return { ok: true, review: one(row.review_src), broll: row.broll_src ? one(row.broll_src) : null }
+}
 export interface EditRow {
   id: string; user_id: string; name: string | null; status: string; note: string | null
   review_src: Src; broll_src: Src | null; product: string | null
@@ -93,8 +114,10 @@ export async function readTakes(db: Db, row: EditRow): Promise<void> {
   const fail = (note: string) => set(db, row.id, { status: 'failed', note })
   try {
     if (!transcriptionConfigured()) return await fail('MVP cannot write down what you say right now (no speech service set up).')
+    const src = await takes(db, row)
+    if (!src.ok) return await fail(src.error)
     const who = { userId: row.user_id, tier: await tierOf(db, row.user_id) }
-    const probe = await videoServer<{ duration: number; width: number; height: number; hasAudio: boolean }>('/probe', { url: row.review_src.url, frames: 0 }, 90_000)
+    const probe = await videoServer<{ duration: number; width: number; height: number; hasAudio: boolean }>('/probe', { ...src.review, frames: 0 }, 90_000)
     if (!probe.ok) return await fail(probe.status === 404 ? 'MVP’s video server is being updated. Press Try again in half an hour.' : `MVP could not open your review take: ${probe.error}.`)
     if (!probe.data.hasAudio) return await fail('Your take has no sound, so MVP cannot hear what to cut.')
     // Filmed the way its kind is made: a review sideways, an ad upright.
@@ -103,7 +126,7 @@ export async function readTakes(db: Db, row: EditRow): Promise<void> {
     if (kindNow === 'review' && upright) return await fail('This take was filmed upright. An Amazon and YouTube review is filmed sideways: film it again sideways, or add it as a TRYBE ad.')
     const sideNote = kindNow === 'trybe' && !upright ? ' It was filmed sideways, so the upright ad is cut from the middle of the picture.' : ''
     // The sound alone, small, for the transcript; deleted straight after.
-    const audio = await videoServer<{ url: string }>('/stream-audio', { url: row.review_src.url, userId: row.user_id }, 295_000)
+    const audio = await videoServer<{ url: string }>('/stream-audio', { ...src.review, userId: row.user_id }, 295_000)
     if (!audio.ok) return await fail(`MVP could not take the sound from your review take: ${audio.error}.`)
     const cues = await transcribeToCues(audio.data.url)
     const audioPath = ownPath(audio.data.url, row.user_id)
@@ -113,9 +136,9 @@ export async function readTakes(db: Db, row: EditRow): Promise<void> {
     const lines = linesOf(words)
     let shots: Shot[] = []
     let brollInfo: { duration: number } | undefined
-    if (row.broll_src) {
+    if (src.broll) {
       await set(db, row.id, { note: 'Looking through your B-roll' })
-      const bp = await videoServer<{ duration: number; frames: { at: number; jpg: string }[] }>('/probe', { url: row.broll_src.url, frames: 36, width: 320 }, 240_000)
+      const bp = await videoServer<{ duration: number; frames: { at: number; jpg: string }[] }>('/probe', { ...src.broll, frames: 36, width: 320 }, 240_000)
       if (bp.ok) {
         brollInfo = { duration: bp.data.duration }
         shots = await readShots(bp.data.frames, bp.data.duration, who)
@@ -156,7 +179,9 @@ export async function startMaking(db: Db, row: EditRow): Promise<void> {
     .update({ status: 'making', note: 'Being made on MVP’s video server', attempts: (row.attempts || 0) + 1, updated_at: now() })
     .eq('id', row.id).eq('status', 'ready_to_make').select('id')
   if (!claimed?.length) return
-  if (row.raw_deleted_at) return set(db, row.id, { status: 'failed', note: 'The raw takes were deleted, so this cannot be made again. Add them again.' })
+  if (row.raw_deleted_at && hasUpload(row)) return set(db, row.id, { status: 'failed', note: 'The raw takes were deleted, so this cannot be made again. Add them again.' })
+  const src = await takes(db, row)
+  if (!src.ok) return set(db, row.id, { status: 'failed', note: src.error })
   if (!row.words?.length || !row.plan || !row.info?.review) return set(db, row.id, { status: 'queued', note: 'Reading your takes again' })
   const settings = cleanSettings(row.settings)
   const words = row.words
@@ -166,7 +191,8 @@ export async function startMaking(db: Db, row: EditRow): Promise<void> {
   if (!job) return set(db, row.id, { status: 'failed', note: 'MVP’s video server is not set up for background work.' })
   const title = settings.title.on && settings.title.text ? await titleImage(db, row, settings.title.text) : null
   const sent = await videoServer<{ accepted?: boolean }>('/render-edit', {
-    mainUrl: row.review_src.url, brollUrl: spec.inserts.length ? row.broll_src?.url : undefined,
+    mainUrl: src.review.url, mainAuth: src.review.auth,
+    brollUrl: spec.inserts.length ? src.broll?.url : undefined, brollAuth: spec.inserts.length ? src.broll?.auth : undefined,
     userId: row.user_id, job, callbackUrl: `${appUrl()}/api/review-edit/callback`,
     segments: spec.segments, inserts: spec.inserts, zooms: spec.zooms, color: settings.color,
     formats: settings.formats, cropX: settings.cropX, words: spec.words,
@@ -203,7 +229,8 @@ export async function finishMaking(db: Db, id: string, userId: string, body: Rec
 /** Delete a video's raw uploads now. */
 export async function deleteRaw(db: Db, row: Pick<EditRow, 'id' | 'user_id' | 'review_src' | 'broll_src' | 'raw_deleted_at'>): Promise<void> {
   if (row.raw_deleted_at) return
-  const paths = [row.review_src, row.broll_src].map((s) => (s ? ownPath(s.url, row.user_id) : null)).filter((p): p is string => !!p)
+  // Only takes uploaded to MVP: a Drive file is the creator's, never touched.
+  const paths = [row.review_src, row.broll_src].map((s) => (s?.kind === 'upload' ? ownPath(s.url, row.user_id) : null)).filter((p): p is string => !!p)
   if (paths.length) await db.storage.from(EDIT_BUCKET).remove(paths)
   await set(db, row.id, { raw_deleted_at: now() })
 }

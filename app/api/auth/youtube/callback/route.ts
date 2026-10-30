@@ -6,6 +6,8 @@ import { normalizeTier } from '@/lib/tier'
 import { fetchWithTimeout } from '@/lib/fetch-timeout'
 import { ytFetch, isQuotaRefusalBody } from '@/lib/youtube-quota'
 import { consumeOAuthState, OAUTH_STATE_EXPIRED_MESSAGE } from '@/lib/oauth-state'
+import { createAdminClient } from '@/lib/supabase/admin'
+import { finishDriveConnect } from '@/lib/google-drive'
 
 export async function GET(request: NextRequest) {
   const appUrl = process.env.NEXT_PUBLIC_APP_URL!
@@ -53,6 +55,14 @@ export async function GET(request: NextRequest) {
       console.warn('[youtube/callback] state mismatch, possible CSRF', { hasState: !!userId, sessionUid: user.id })
       return NextResponse.redirect(dest(`youtube_error=${encodeURIComponent(OAUTH_STATE_EXPIRED_MESSAGE)}`))
     }
+  }
+
+  // A GOOGLE DRIVE CONNECT (app/api/auth/google-drive), which comes back here
+  // because this is the address registered with Google. Its own exchange and
+  // its own table; nothing below runs for it.
+  if (verified?.data.drive === true) {
+    const done = await finishDriveConnect(createAdminClient(), userId!, code, `${appUrl}/api/auth/youtube/callback`)
+    return NextResponse.redirect(`${appUrl}/review-editor?${done.ok ? 'drive=connected' : `drive_error=${encodeURIComponent(done.error)}`}`)
   }
 
   let step = 'token_exchange'

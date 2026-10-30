@@ -765,12 +765,14 @@ app.post('/stream-audio', async (req, res) => {
   const url = String(req.body?.url || '').trim()
   const userId = String(req.body?.userId || '').trim()
   if (!/^https:\/\//i.test(url)) return res.status(400).json({ error: 'bad url' })
+  // A review editor take in Google Drive (driveAuth): its sound only.
+  const auth = driveAuth(url, req.body?.auth)
   const tmp = path.join(os.tmpdir(), `saud-${Date.now()}.m4a`)
   try {
     await assertPublicHttpUrl(url)
     await new Promise((resolve, reject) => {
       execFile('ffmpeg', [
-        '-hide_banner', '-loglevel', 'error', '-i', url, '-t', String(MAX_SECONDS),
+        '-hide_banner', '-loglevel', 'error', ...authArgs(auth), '-i', url, '-t', String(MAX_SECONDS),
         '-vn', '-map', '0:a:0', '-ac', '1', '-ar', '16000', '-c:a', 'aac', '-b:a', '32k', '-y', tmp,
       ], { timeout: 285_000, killSignal: 'SIGKILL', maxBuffer: 8 * 1024 * 1024 }, (err, _o, stderr) => {
         if (err) return reject(new Error(`could not read the stream: ${String(stderr || err.message).slice(0, 200)}`))
@@ -1205,14 +1207,18 @@ app.post('/dub', async (req, res) => {
 // pass (edit-filters.js): wide for Amazon and YouTube, vertical for TRYBE and
 // TikTok, or both from the same decode. The raw takes are only ever in this
 // job's own temp folder, removed when the job ends, whatever happened.
-const { buildEditGraph, cleanInserts, snapSegments, editSeconds, masterSize, FPS: EDIT_FPS } = require('./edit-filters')
+const { buildEditGraph, cleanInserts, snapSegments, editSeconds, masterSize, driveAuth, authArgs, FPS: EDIT_FPS } = require('./edit-filters')
 // Encoder threads per format. A small box stays at 2; a bigger one goes faster.
 const EDIT_THREADS = String(Math.max(1, Math.min(8, Number(process.env.EDIT_THREADS) || 2)))
 const EDIT_MAX_SOURCE_SEC = 60 * 60
 const EDIT_MAX_OUTPUT_SEC = 20 * 60
 
-async function downloadLarge(url, dest, timeoutMs = 15 * 60_000) {
-  const res = await fetch(url, { signal: AbortSignal.timeout(timeoutMs) })
+// A take in the creator's Google Drive comes with an hour-long token of
+// theirs (edit-filters driveAuth: only ever sent to Google's Drive address,
+// never logged); ffmpeg and ffprobe read it with the token as a header.
+
+async function downloadLarge(url, dest, timeoutMs = 15 * 60_000, auth = null) {
+  const res = await fetch(url, { signal: AbortSignal.timeout(timeoutMs), ...(auth ? { headers: { Authorization: auth } } : {}) })
   if (!res.ok || !res.body) throw new Error(`source fetch ${res.status}`)
   await pipeline(Readable.fromWeb(res.body), fs.createWriteStream(dest))
   return fs.statSync(dest).size
@@ -1220,9 +1226,9 @@ async function downloadLarge(url, dest, timeoutMs = 15 * 60_000) {
 
 /** A video's picture size as it plays (a phone's rotation applied), its
  *  length, and whether it has sound. */
-function ffprobeInfo(input) {
+function ffprobeInfo(input, auth = null) {
   return new Promise((resolve) => {
-    execFile('ffprobe', ['-v', 'error', '-show_entries', 'stream=codec_type,width,height:stream_tags=rotate:stream_side_data=rotation:format=duration', '-of', 'json', input],
+    execFile('ffprobe', ['-v', 'error', ...authArgs(auth), '-show_entries', 'stream=codec_type,width,height:stream_tags=rotate:stream_side_data=rotation:format=duration', '-of', 'json', input],
       { timeout: 60_000, killSignal: 'SIGKILL', maxBuffer: 4 * 1024 * 1024 }, (err, stdout) => {
         if (err) return resolve(null)
         try {
@@ -1260,10 +1266,11 @@ app.post('/probe', async (req, res) => {
   const n = Math.max(0, Math.min(40, Math.floor(Number(req.body?.frames) || 0)))
   const width = Math.max(160, Math.min(480, Math.floor(Number(req.body?.width) || 320)))
   if (!/^https:\/\//i.test(url)) return res.status(400).json({ error: 'bad url' })
+  const auth = driveAuth(url, req.body?.auth)
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'probe-'))
   try {
     await assertPublicHttpUrl(url)
-    const info = await ffprobeInfo(url)
+    const info = await ffprobeInfo(url, auth)
     if (!info || !info.w) return res.status(422).json({ error: 'That file could not be read as a video.' })
     const frames = []
     const times = Array.from({ length: n }, (_, i) => Math.round(((i + 0.5) * info.duration / n) * 100) / 100)
@@ -1271,7 +1278,7 @@ app.post('/probe', async (req, res) => {
       await Promise.all(times.slice(i, i + 4).map(async (at, j) => {
         const out = path.join(dir, `f${i + j}.jpg`)
         try {
-          await runFfmpeg(['-ss', String(at), '-i', url, '-frames:v', '1', '-vf', `scale=${width}:-2`, '-q:v', '5', '-y', out], 60_000, 'frame')
+          await runFfmpeg(['-ss', String(at), ...authArgs(auth), '-i', url, '-frames:v', '1', '-vf', `scale=${width}:-2`, '-q:v', '5', '-y', out], 60_000, 'frame')
           if (fs.existsSync(out)) frames.push({ at, jpg: fs.readFileSync(out).toString('base64') })
         } catch { /* a frame that would not come is left out */ }
       }))
@@ -1303,7 +1310,7 @@ async function renderEditJob(body) {
   try {
     const main = path.join(dir, 'main.mp4')
     await assertPublicHttpUrl(mainUrl)
-    await downloadLarge(mainUrl, main)
+    await downloadLarge(mainUrl, main, 15 * 60_000, driveAuth(mainUrl, body.mainAuth))
     const info = await ffprobeInfo(main)
     if (!info || !info.w) throw new Error('The review take could not be read as a video.')
     if (info.duration > EDIT_MAX_SOURCE_SEC) throw new Error(`The review take is ${Math.round(info.duration / 60)} minutes; the editor takes up to ${EDIT_MAX_SOURCE_SEC / 60}.`)
@@ -1321,7 +1328,7 @@ async function renderEditJob(body) {
     if (/^https:\/\//i.test(brollUrl) && Array.isArray(body.inserts) && body.inserts.length) {
       const broll = path.join(dir, 'broll.mp4')
       await assertPublicHttpUrl(brollUrl)
-      await downloadLarge(brollUrl, broll)
+      await downloadLarge(brollUrl, broll, 15 * 60_000, driveAuth(brollUrl, body.brollAuth))
       const bi = await ffprobeInfo(broll)
       brollSec = bi ? bi.duration : 0
       inserts = cleanInserts(body.inserts, seconds, brollSec)

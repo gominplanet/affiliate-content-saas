@@ -37,6 +37,18 @@ check('both formats come out of one graph, each with its own sound', both.output
 check('colour and zoom go in once, before the formats split', both.graph.indexOf('eq=') < both.graph.indexOf('split=2') && both.graph.indexOf('zoompan') < both.graph.indexOf('split=2'))
 check('a take with no sound still gets a sound track', /anullsrc/.test(E.buildEditGraph({ segments: [[0, 5]], srcW: 1920, srcH: 1080, hasAudio: false, formats: ['wide'] }).graph))
 
+// ── A Drive token only ever goes to Google's Drive ───────────────────────────
+{
+  const tok = 'Bearer ya29.' + 'a'.repeat(40)
+  check('a Drive take gets the token', E.driveAuth('https://www.googleapis.com/drive/v3/files/abc?alt=media', tok) === tok)
+  check('any other address never does', [
+    'https://evil.example/drive/v3/files/abc', 'http://www.googleapis.com/drive/v3/files/abc', 'https://www.googleapis.com/youtube/v3/x',
+    'https://www.googleapis.com.evil.example/drive/v3/files/abc', 'https://x.supabase.co/storage/v1/object/public/instagram-videos/u/a.mp4',
+  ].every((u) => E.driveAuth(u, tok) === null))
+  check('something that is not a token is never passed on', E.driveAuth('https://www.googleapis.com/drive/v3/files/abc', 'Bearer x\r\nX-Evil: 1') === null && E.driveAuth('https://www.googleapis.com/drive/v3/files/abc', '') === null)
+  check('ffmpeg gets the token as a header only when there is one', E.authArgs(null).length === 0 && E.authArgs(tok)[0] === '-headers')
+}
+
 // ── The server's own files are in its image ──────────────────────────────────
 // The Dockerfile copies named files. A file server.js requires that is not
 // copied crashes the video server on start, and every render with it.

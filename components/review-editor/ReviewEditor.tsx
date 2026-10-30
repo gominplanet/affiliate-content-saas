@@ -11,12 +11,13 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
-import { Loader2, UploadCloud, Check, AlertTriangle, Film, Scissors, Clapperboard, Download, Send, Trash2, RotateCcw, Wand2, ImagePlus } from 'lucide-react'
+import { Loader2, UploadCloud, Check, AlertTriangle, Film, Scissors, Clapperboard, Download, Send, Trash2, RotateCcw, Wand2, ImagePlus, HardDrive } from 'lucide-react'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { uploadResumable, ResumableUnavailable } from '@/lib/upload-resumable'
 import { uploadWithProgress } from '@/lib/upload-progress'
 import { freshAccessToken, saysExpired } from '@/lib/fresh-token'
 import { storageSizeRefusal, BULK_VIDEO_MAX_BYTES } from '@/lib/clip-source-limits'
+import { pickFromDrive, type DriveState } from '@/components/review-editor/drive-picker'
 import { DEFAULT_SETTINGS, FORMAT_WORDS, KIND_WORDS, POSITIONS, POSITION_WORDS, cleanSettings, type EditSettings, type Format, type Position, type VideoKind } from '@/lib/review-edit'
 
 const PURPLE = '#7C3AED'
@@ -28,10 +29,13 @@ const card = 'rounded-2xl border p-4'
 const cardStyle = { borderColor: 'var(--border)', background: 'var(--surface)' }
 const mb = (n: number) => `${Math.round(n / 1048576)} MB`
 
-interface Upl { name: string; bytes: number; sent: number; url: string | null; error: string | null }
+/** A take: uploading to MVP (url once up), or picked in Google Drive (driveId). */
+interface Upl { name: string; bytes: number; sent: number; url: string | null; driveId?: string; error: string | null }
 interface EditView {
   id: string; name: string | null; status: string; note: string | null; product: string | null
   createdAt: string; madeAt: string | null; rawDeleted: boolean; hasBroll: boolean
+  /** Takes uploaded to MVP that are still kept; a Drive take is never kept by MVP. */
+  rawInMvp: boolean; fromDrive: boolean
   settings: EditSettings
   review: { duration: number; width: number; height: number } | null
   outputs: Partial<Record<Format, { url: string; seconds: number }>> | null
@@ -134,7 +138,49 @@ export default function ReviewEditor() {
   const [product, setProduct] = useState('')
   const [adding, setAdding] = useState(false)
   const [logoBusy, setLogoBusy] = useState(false)
+  const [drive, setDrive] = useState<DriveState | null>(null)
+  const [picking, setPicking] = useState<'review' | 'broll' | null>(null)
   const seeded = useRef(false)
+
+  // GOOGLE DRIVE (Seb, 2026-10-30): the takes stay in the creator's Drive.
+  const loadDrive = useCallback(async (): Promise<DriveState | null> => {
+    try {
+      const r = await fetch('/api/review-edit/drive', { cache: 'no-store' })
+      const d = await r.json().catch(() => ({}))
+      const st: DriveState = r.ok ? d : { connected: false, appId: null, key: null, error: d.error || 'Google Drive could not be checked.' }
+      setDrive(st)
+      return st
+    } catch { setDrive({ connected: false, appId: null, key: null, error: 'Google Drive could not be checked. Check your connection.' }); return null }
+  }, [])
+  useEffect(() => {
+    void loadDrive()
+    // Back from Google: say how the connect went, then tidy the address.
+    const q = new URLSearchParams(window.location.search)
+    if (q.get('drive') === 'connected') toast.success('Google Drive is connected. Choose your takes from it below.')
+    const bad = q.get('drive_error') || (q.get('youtube_error') ? `Google did not connect Drive (${q.get('youtube_error')}). Press Connect Google Drive again.` : null)
+    if (bad) toast.error(bad, { duration: 15000 })
+    if (q.has('drive') || q.has('drive_error') || q.has('youtube_error')) window.history.replaceState(null, '', window.location.pathname)
+  }, [loadDrive])
+
+  const fromDrive = async (kind: 'review' | 'broll') => {
+    setPicking(kind)
+    try {
+      // A fresh token each time: the last one may be over an hour old.
+      const st = await loadDrive()
+      if (!st?.connected || !st.token) { toast.error(st?.error || 'Connect Google Drive first.'); return }
+      if (!st.appId) { toast.error('MVP’s Google project number is missing, so the picker cannot open.'); return }
+      const f = await pickFromDrive({ token: st.token, appId: st.appId, key: st.key, title: kind === 'review' ? 'Choose your talking take' : 'Choose your B-roll take' })
+      if (!f) return
+      if (!f.mimeType.startsWith('video/')) { toast.error(`${f.name} is not a video.`); return }
+      const set = kind === 'review' ? setReview : setBroll
+      set({ name: f.name, bytes: f.bytes ?? 0, sent: f.bytes ?? 0, url: null, driveId: f.id, error: null })
+    } catch (e) { toast.error(e instanceof Error ? e.message : 'Google’s picker did not open.') } finally { setPicking(null) }
+  }
+  const disconnectDrive = async () => {
+    if (!confirm('Disconnect Google Drive? Videos already in the queue from Drive will stop until you connect it again.')) return
+    await fetch('/api/review-edit/drive', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'disconnect' }) })
+    await loadDrive()
+  }
 
   const load = useCallback(async () => {
     try {
@@ -199,11 +245,13 @@ export default function ReviewEditor() {
     } catch (e) { toast.error(`The logo was not saved: ${e instanceof Error ? e.message : 'upload failed'}`) } finally { setLogoBusy(false) }
   }
 
+  const ready = (u: Upl | null) => !!u && !u.error && (!!u.url || !!u.driveId)
+  const asTake = (u: Upl) => (u.driveId ? { driveId: u.driveId, name: u.name, bytes: u.bytes } : { url: u.url, name: u.name, bytes: u.bytes })
   const add = async () => {
-    if (!review?.url) return
+    if (!review || !ready(review)) return
     setAdding(true)
     try {
-      await api({ action: 'add', name: review.name.replace(/\.[^.]+$/, ''), review: { url: review.url, name: review.name, bytes: review.bytes }, broll: broll?.url ? { url: broll.url, name: broll.name, bytes: broll.bytes } : undefined, product, settings })
+      await api({ action: 'add', name: review.name.replace(/\.[^.]+$/, ''), review: asTake(review), broll: broll && ready(broll) ? asTake(broll) : undefined, product, settings })
       toast.success('Added. MVP works on it in the background; you can add the next one now.')
       setReview(null); setBroll(null); setProduct('')
       await load()
@@ -212,9 +260,28 @@ export default function ReviewEditor() {
 
   const progress = (u: Upl | null) => !u ? null : u.error
     ? <p className="text-[12.5px] mt-1" style={{ color: RED }}>{u.name}: {u.error}</p>
+    : u.driveId ? <p className="text-[12.5px] mt-1 inline-flex items-center gap-1" style={{ color: GREEN }}><Check size={13} /> {u.name}, from Google Drive{u.bytes ? ` (${mb(u.bytes)})` : ''}. It stays in your Drive.</p>
     : u.url ? <p className="text-[12.5px] mt-1 inline-flex items-center gap-1" style={{ color: GREEN }}><Check size={13} /> {u.name} is up ({mb(u.bytes)})</p>
     : <p className="text-[12.5px] mt-1 inline-flex items-center gap-1.5" style={soft}><Loader2 size={12} className="animate-spin" /> Uploading {u.name}: {Math.round((u.sent / Math.max(1, u.bytes)) * 100)}%</p>
-  const uploading = (review && !review.url && !review.error) || (broll && !broll.url && !broll.error)
+  const uploading = (review && !ready(review) && !review.error) || (broll && !ready(broll) && !broll.error)
+  // Each take: from Google Drive (when connected), or uploaded from this computer.
+  const takeButtons = (kind: 'review' | 'broll') => {
+    const cur = kind === 'review' ? review : broll
+    return (
+      <div className="mt-1 flex flex-wrap gap-2">
+        {drive?.connected && (
+          <button type="button" onClick={() => void fromDrive(kind)} disabled={!!picking}
+            className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[13px] font-semibold text-white disabled:opacity-50" style={{ background: '#1a73e8' }}>
+            {picking === kind ? <Loader2 size={14} className="animate-spin" /> : <HardDrive size={14} />} {cur ? 'Choose another from Google Drive' : 'Choose from Google Drive'}
+          </button>
+        )}
+        <label className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[13px] font-semibold cursor-pointer" style={{ borderColor: 'var(--border)' }}>
+          {kind === 'review' ? <UploadCloud size={14} /> : <Film size={14} />} {drive?.connected ? 'Or upload from this computer' : cur ? 'Choose another' : 'Upload from this computer'}
+          <input type="file" accept="video/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) void upload(f, kind); e.target.value = '' }} />
+        </label>
+      </div>
+    )
+  }
 
   return (
     <div className="max-w-4xl mx-auto px-4 py-6 flex flex-col gap-4">
@@ -241,6 +308,21 @@ export default function ReviewEditor() {
 
       <section className={card} style={cardStyle} aria-label="Add a video">
         <p className="text-[15px] font-bold mb-2">Add a video</p>
+        <div className="rounded-xl border p-3 mb-3 flex flex-wrap items-center gap-2" style={{ borderColor: 'var(--border)' }}>
+          <HardDrive size={16} style={{ color: '#1a73e8' }} />
+          {drive === null ? <span className="text-[13px] inline-flex items-center gap-1.5" style={soft}><Loader2 size={12} className="animate-spin" /> Checking Google Drive</span>
+            : drive.connected ? (
+              <>
+                <span className="text-[13px]"><b>Google Drive is connected</b>{drive.email ? ` as ${drive.email}` : ''}. Your takes stay in your Drive; MVP opens only the files you choose.</span>
+                <button type="button" onClick={() => void disconnectDrive()} className="text-[12px] underline" style={soft}>Disconnect</button>
+              </>
+            ) : (
+              <>
+                <span className="text-[13px] flex-1 min-w-[14rem]">{drive.needsSql ? drive.error : <>Keep your takes in <b>Google Drive</b> and choose them here. MVP opens only the files you choose, nothing else in your Drive.{drive.error ? <span className="block text-[12px]" style={{ color: AMBER }}>{drive.error}</span> : null}</>}</span>
+                {!drive.needsSql && <a href="/api/auth/google-drive" className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[13px] font-semibold text-white" style={{ background: '#1a73e8' }}>Connect Google Drive</a>}
+              </>
+            )}
+        </div>
         <p className="text-[13px] font-semibold">1. What is this video for?</p>
         <div className="grid sm:grid-cols-2 gap-2 mt-1 mb-3" role="group" aria-label="What this video is for">
           {(['review', 'trybe'] as VideoKind[]).map((k) => (
@@ -254,18 +336,12 @@ export default function ReviewEditor() {
         <div className="grid sm:grid-cols-2 gap-3">
           <div>
             <p className="text-[13px] font-semibold">2. Your talking take <span className="font-normal" style={soft}>({settings.kind === 'trybe' ? 'filmed upright' : 'filmed sideways'})</span></p>
-            <label className="mt-1 inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[13px] font-semibold cursor-pointer" style={{ borderColor: 'var(--border)' }}>
-              <UploadCloud size={14} /> {review ? 'Choose another' : 'Choose the file'}
-              <input type="file" accept="video/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) void upload(f, 'review'); e.target.value = '' }} />
-            </label>
+            {takeButtons('review')}
             {progress(review)}
           </div>
           <div>
             <p className="text-[13px] font-semibold">3. Your B-roll take <span className="font-normal" style={soft}>(optional)</span></p>
-            <label className="mt-1 inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[13px] font-semibold cursor-pointer" style={{ borderColor: 'var(--border)' }}>
-              <Film size={14} /> {broll ? 'Choose another' : 'Choose the file'}
-              <input type="file" accept="video/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) void upload(f, 'broll'); e.target.value = '' }} />
-            </label>
+            {takeButtons('broll')}
             {progress(broll)}
           </div>
         </div>
@@ -277,11 +353,11 @@ export default function ReviewEditor() {
           <Choices s={settings} set={setSettings} logoBusy={logoBusy} onLogo={(f) => void uploadLogo(f, (url) => setSettings((s) => ({ ...s, logo: { url, position: s.logo?.position ?? 'upper-left', on: true } })))} />
         </div>
         <div className="mt-4 flex flex-wrap items-center gap-2">
-          <button type="button" onClick={() => void add()} disabled={!review?.url || !!uploading || adding}
+          <button type="button" onClick={() => void add()} disabled={!ready(review) || !!uploading || adding}
             className="inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-[13.5px] font-semibold text-white disabled:opacity-50" style={{ background: PURPLE }}>
             {adding ? <Loader2 size={14} className="animate-spin" /> : <Scissors size={14} />} Add to the queue
           </button>
-          {!review?.url && <span className="text-[12.5px]" style={soft}>Add your review take first.</span>}
+          {!review && <span className="text-[12.5px]" style={soft}>Add your talking take first.</span>}
           {uploading && <span className="text-[12.5px]" style={soft}>Waiting for the upload to finish.</span>}
         </div>
       </section>
@@ -369,7 +445,8 @@ function EditCard({ e, reload, uploadLogo, logoBusy }: { e: EditView; reload: ()
           <button type="button" onClick={() => void sendToDrop()} disabled={!!work} className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12.5px] font-semibold text-white disabled:opacity-50" style={{ background: PURPLE }}>
             {work === 'drop' ? <Loader2 size={13} className="animate-spin" /> : <Send size={13} />} Send to Drop
           </button>
-          {!e.rawDeleted && <button type="button" onClick={() => void act('finish', { action: 'finish', id: e.id }, 'Your raw takes are deleted. The finished video stays.')} disabled={!!work} className="rounded-lg border px-3 py-1.5 text-[12.5px] font-semibold" style={{ borderColor: 'var(--border)' }}>I am happy with it: delete the raw takes</button>}
+          {e.fromDrive && !e.rawInMvp && <span className="text-[12px] self-center" style={soft}>Your takes stay in your Google Drive; MVP kept no copy.</span>}
+          {e.rawInMvp && <button type="button" onClick={() => void act('finish', { action: 'finish', id: e.id }, 'Your uploaded takes are deleted. The finished video stays.')} disabled={!!work} className="rounded-lg border px-3 py-1.5 text-[12.5px] font-semibold" style={{ borderColor: 'var(--border)' }}>I am happy with it: delete the uploaded takes</button>}
         </div>
       )}
       {e.status === 'failed' && (

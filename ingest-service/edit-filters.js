@@ -234,4 +234,15 @@ function buildEditGraph(opts) {
   return { graph: g.join(';\n'), outputs, seconds, inserts, zooms, master: m, formats }
 }
 
-module.exports = { FPS, snapSegments, editSeconds, outputWindows, cleanInserts, trackSetpts, insertEnable, zoomExpr, cleanZooms, masterSize, placeAt, buildEditGraph }
+/** A creator's Google Drive token, only when the address is Google's Drive
+ *  and the token looks like one: never sent anywhere else. */
+function driveAuth(url, auth) {
+  try {
+    const u = new URL(String(url))
+    return u.protocol === 'https:' && u.hostname === 'www.googleapis.com' && u.pathname.startsWith('/drive/') && /^Bearer [\w.\-~+/=]{20,}$/.test(String(auth || '')) ? String(auth) : null
+  } catch { return null }
+}
+/** ffmpeg and ffprobe read a Drive file with the token as a header. */
+const authArgs = (auth) => (auth ? ['-headers', `Authorization: ${auth}\r\n`] : [])
+
+module.exports = { driveAuth, authArgs, FPS, snapSegments, editSeconds, outputWindows, cleanInserts, trackSetpts, insertEnable, zoomExpr, cleanZooms, masterSize, placeAt, buildEditGraph }
