@@ -37,7 +37,7 @@ WORKDIR /app
 COPY package.json ./
 RUN npm install --omit=dev
 # server.js requires ./render-filters.js at runtime — both must be in the image.
-COPY server.js render-filters.js ./
+COPY server.js render-filters.js edit-filters.js ./
 
 ENV PORT=8080
 EXPOSE 8080

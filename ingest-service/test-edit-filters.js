@@ -37,6 +37,17 @@ check('both formats come out of one graph, each with its own sound', both.output
 check('colour and zoom go in once, before the formats split', both.graph.indexOf('eq=') < both.graph.indexOf('split=2') && both.graph.indexOf('zoompan') < both.graph.indexOf('split=2'))
 check('a take with no sound still gets a sound track', /anullsrc/.test(E.buildEditGraph({ segments: [[0, 5]], srcW: 1920, srcH: 1080, hasAudio: false, formats: ['wide'] }).graph))
 
+// ── The server's own files are in its image ──────────────────────────────────
+// The Dockerfile copies named files. A file server.js requires that is not
+// copied crashes the video server on start, and every render with it.
+{
+  const docker = fs.readFileSync(path.join(__dirname, 'Dockerfile'), 'utf8')
+  const copied = new Set((docker.match(/^COPY\s+(.+?)\s+\.\/\s*$/gm) || []).flatMap((l) => l.replace(/^COPY\s+/, '').replace(/\s+\.\/\s*$/, '').split(/\s+/)))
+  const needed = Array.from(fs.readFileSync(path.join(__dirname, 'server.js'), 'utf8').matchAll(/require\('\.\/([^']+)'\)/g)).map((m) => m[1].endsWith('.js') ? m[1] : `${m[1]}.js`)
+  const missing = needed.filter((f) => !copied.has(f))
+  check('every file server.js needs is copied into the image', missing.length === 0 && needed.length > 0, missing)
+}
+
 // ── A real edit, where ffmpeg is installed ───────────────────────────────────
 let ffmpeg = true
 try { execFileSync('ffmpeg', ['-version'], { stdio: 'ignore' }) } catch { ffmpeg = false }
