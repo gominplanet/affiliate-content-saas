@@ -13,6 +13,8 @@ export interface DriveState { connected: boolean; email?: string | null; appId: 
 declare global { interface Window { gapi?: any; google?: any } }
 
 let loading: Promise<void> | null = null
+/** The video files a phone or camera makes. */
+const VIDEO_TYPES = 'video/mp4,video/quicktime,video/x-m4v,video/webm,video/3gpp,video/x-msvideo,video/x-matroska,video/mpeg'
 
 /** Google's picker script, loaded once. */
 function loadPicker(): Promise<void> {
@@ -38,11 +40,18 @@ export async function pickFromDrive(o: { token: string; appId: string; key: stri
   await loadPicker()
   const g = window.google
   return new Promise((resolve) => {
-    const view = new g.picker.DocsView(g.picker.ViewId.DOCS_VIDEOS).setIncludeFolders(true).setSelectFolderEnabled(false).setMode(g.picker.DocsViewMode.LIST)
+    // YOUR OWN DRIVE, NOT EVERYTHING SHARED WITH YOU (Seb, 2026-10-30: "I'm
+    // seeing old videos, videos that don't belong to me"). The first view
+    // opens in My Drive with its folders; the second is your own videos,
+    // newest first. Files others shared with you are in neither.
+    const mine = new g.picker.DocsView(g.picker.ViewId.DOCS).setParent('root').setIncludeFolders(true).setSelectFolderEnabled(false)
+      .setMimeTypes(VIDEO_TYPES).setMode(g.picker.DocsViewMode.LIST).setLabel('My Drive')
+    const recent = new g.picker.DocsView(g.picker.ViewId.DOCS_VIDEOS).setOwnedByMe(true).setMode(g.picker.DocsViewMode.LIST).setLabel('My videos')
     let b = new g.picker.PickerBuilder()
       .setAppId(o.appId)
       .setOAuthToken(o.token)
-      .addView(view)
+      .addView(mine)
+      .addView(recent)
       .setTitle(o.title)
       .setCallback((data: any) => {
         const action = data?.[g.picker.Response.ACTION]

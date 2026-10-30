@@ -47,5 +47,7 @@ check('the page offers Connect Google Drive, then Choose from Google Drive on ea
 check('the picker opens with a fresh token and MVP’s project, so the file is opened for MVP', /const st = await loadDrive\(\)/.test(U) && /\.setAppId\(o\.appId\)/.test(P) && /\.setOAuthToken\(o\.token\)/.test(P))
 check('a Drive take says it stays in the creator’s Drive', /It stays in your Drive/.test(U) && /MVP kept no copy/.test(U))
 
+check('the picker shows the creator\u2019s own Drive, never everything shared with them', /setParent\('root'\)/.test(P) && /setOwnedByMe\(true\)/.test(P) && !/DOCS_VIDEOS\)\.setIncludeFolders/.test(P))
+
 if (fails.length) { console.error(`\n❌ google-drive: ${fails.length} failure(s)\n`); for (const f of fails) console.error(`   • ${f}`); process.exit(1) }
 console.log('✅ google-drive: drive.file only, back through the checked callback, token encrypted, files checked, never copied or deleted')
