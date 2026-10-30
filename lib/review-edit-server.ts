@@ -61,7 +61,7 @@ async function takes(db: Db, row: Pick<EditRow, 'user_id' | 'review_src' | 'brol
 export interface EditRow {
   id: string; user_id: string; name: string | null; status: string; note: string | null
   review_src: Src; broll_src: Src | null; product: string | null
-  settings: unknown; info: { review?: { duration: number; width: number; height: number; hasAudio: boolean }; broll?: { duration: number } } | null
+  settings: unknown; info: { review?: { duration: number; width: number; height: number; hasAudio: boolean; silences?: [number, number][] }; broll?: { duration: number } } | null
   words: Word[] | null; shots: Shot[] | null; plan: Plan | null; outputs: Record<string, { url: string; seconds: number }> | null
   attempts: number; made_at: string | null; raw_deleted_at: string | null; created_at: string; updated_at: string
 }
@@ -126,7 +126,8 @@ export async function readTakes(db: Db, row: EditRow): Promise<void> {
     if (kindNow === 'review' && upright) return await fail('This take was filmed upright. An Amazon and YouTube review is filmed sideways: film it again sideways, or add it as a TRYBE ad.')
     const sideNote = kindNow === 'trybe' && !upright ? ' It was filmed sideways, so the upright ad is cut from the middle of the picture.' : ''
     // The sound alone, small, for the transcript; deleted straight after.
-    const audio = await videoServer<{ url: string }>('/stream-audio', { ...src.review, userId: row.user_id }, 295_000)
+    // The sound, and where it is quiet (the dead air, lib/review-edit PACE).
+    const audio = await videoServer<{ url: string; silences?: [number, number][] }>('/stream-audio', { ...src.review, userId: row.user_id, silences: true }, 295_000)
     if (!audio.ok) return await fail(`MVP could not take the sound from your review take: ${audio.error}.`)
     const cues = await transcribeToCues(audio.data.url)
     const audioPath = ownPath(audio.data.url, row.user_id)
@@ -152,7 +153,7 @@ export async function readTakes(db: Db, row: EditRow): Promise<void> {
     await set(db, row.id, {
       status: 'ready_to_make', attempts: 0,
       note: `Read: ${plan.cuts.length} ${plan.cuts.length === 1 ? 'cut' : 'cuts'}${shots.length ? `, ${plan.placements.length} B-roll ${plan.placements.length === 1 ? 'moment' : 'moments'}` : ''}. Waiting for its turn on the video server.${brollNote}`,
-      info: { review: probe.data, ...(brollInfo ? { broll: brollInfo } : {}) }, words, shots, plan, settings,
+      info: { review: { ...probe.data, silences: Array.isArray(audio.data.silences) ? audio.data.silences : undefined }, ...(brollInfo ? { broll: brollInfo } : {}) }, words, shots, plan, settings,
     })
   } catch (e) {
     await fail(`MVP stopped while reading your takes: ${e instanceof Error ? e.message.slice(0, 200) : 'unknown'}.`)
@@ -185,7 +186,20 @@ export async function startMaking(db: Db, row: EditRow): Promise<void> {
   if (!row.words?.length || !row.plan || !row.info?.review) return set(db, row.id, { status: 'queued', note: 'Reading your takes again' })
   const settings = cleanSettings(row.settings)
   const words = row.words
-  const spec = renderSpec({ words, lines: linesOf(words), plan: row.plan, shots: row.shots || [], duration: row.info.review.duration, settings, hasBroll: !!row.broll_src })
+  // A video read before the dead air was found from the sound: found now.
+  let silences = row.info.review.silences
+  if (!Array.isArray(silences)) {
+    const a = await videoServer<{ url: string; silences?: [number, number][] }>('/stream-audio', { ...src.review, userId: row.user_id, silences: true }, 240_000)
+    if (a.ok) {
+      const p = ownPath(a.data.url, row.user_id)
+      if (p) await db.storage.from(EDIT_BUCKET).remove([p])
+      if (Array.isArray(a.data.silences)) {
+        silences = a.data.silences
+        await set(db, row.id, { info: { ...row.info, review: { ...row.info.review, silences } } })
+      }
+    }
+  }
+  const spec = renderSpec({ words, lines: linesOf(words), plan: row.plan, shots: row.shots || [], duration: row.info.review.duration, settings, hasBroll: !!row.broll_src, silences: silences ?? [] })
   if (spec.seconds < 3) return set(db, row.id, { status: 'failed', note: 'Almost everything was cut. Put some cuts back and make it again.' })
   const job = makeRenderJob({ shortId: `edit-${row.id}`, userId: row.user_id, reservationId: null })
   if (!job) return set(db, row.id, { status: 'failed', note: 'MVP’s video server is not set up for background work.' })

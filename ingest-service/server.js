@@ -29,6 +29,7 @@ const fs = require('fs')
 const os = require('os')
 const path = require('path')
 const { buildAss, assTime, assEscape, keepSegments, trimFilters } = require('./render-filters')
+const { parseSilences, parseMeanDb, silenceNoiseDb } = require('./edit-filters')
 const zlib = require('zlib')
 const { pipeline } = require('stream/promises')
 const { Readable, Transform } = require('stream')
@@ -758,6 +759,23 @@ app.post('/frame', async (req, res) => {
   }
 })
 
+/** The quiet stretches of a sound file: its loudness first, then silences
+ *  under a level set from it. Null when ffmpeg could not say. */
+function findSilences(file, duration) {
+  const run = (af) => new Promise((resolve) => {
+    execFile('ffmpeg', ['-hide_banner', '-nostats', '-i', file, '-af', af, '-f', 'null', '-'], { timeout: 120_000, killSignal: 'SIGKILL', maxBuffer: 16 * 1024 * 1024 }, (err, _o, se) => resolve(err ? null : String(se || '')))
+  })
+  return (async () => {
+    const vol = await run('volumedetect')
+    if (vol == null) return null
+    const meanDb = parseMeanDb(vol)
+    const noise = silenceNoiseDb(meanDb)
+    const sil = await run(`silencedetect=noise=${noise}dB:d=0.15`)
+    if (sil == null) return null
+    return { silences: parseSilences(sil, duration), meanDb, noiseDb: noise }
+  })()
+}
+
 // POST /stream-audio — the audio of a long stream, small enough to transcribe.
 //   body: { url, userId }  →  { url, durationSeconds }
 app.post('/stream-audio', async (req, res) => {
@@ -781,9 +799,11 @@ app.post('/stream-audio', async (req, res) => {
     })
     if (!fs.existsSync(tmp)) throw new Error('the stream gave no audio')
     const durationSeconds = await ffprobeDuration(tmp)
+    // Where it is quiet, for the review editor's dead air (edit-filters).
+    const quiet = req.body?.silences === true ? await findSilences(tmp, durationSeconds) : null
     const key = `${userId || 'ingest'}/live-audio-${Date.now()}.m4a`
     await uploadToSupabase(key, tmp, 'audio/mp4')
-    return res.json({ url: publicUrl(key), durationSeconds })
+    return res.json({ url: publicUrl(key), durationSeconds, ...(quiet || {}) })
   } catch (e) {
     console.error('[stream-audio] failed', e && e.message)
     return res.status(502).json({ error: String((e && e.message) || e).slice(0, 300) })

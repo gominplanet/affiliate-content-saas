@@ -68,6 +68,8 @@ check('a video the server does not have is said, not shown as being made', /The 
 check('the server keeps each result and whether MVP heard it; MVP takes one it missed', /rememberDone\(id, \{ \.\.\.rec, at: new Date\(\)\.toISOString\(\), delivered: cb\.delivered/.test(S) && /done: Object\.fromEntries\(editDone\)/.test(S) && /await finishMaking\(db, m\.id, m\.user_id, \{ \.\.\.done \}\)/.test(W) && /await finishMaking\(db, r\.id, r\.user_id/.test(R))
 check('a video that keeps stopping the server stops with a reason, never going round for ever', /if \(\(m\.attempts \|\| 0\) >= MAX_ATTEMPTS\) await set\(db, m\.id, \{ status: 'failed'/.test(W) && !/attempts: Math\.max\(0, \(m\.attempts \|\| 1\) - 1\)/.test(W))
 
+check('the dead air is found from the sound itself, when reading and for a video read before', /silences: true \}, 295_000\)/.test(W) && /A video read before the dead air was found from the sound/.test(W) && /function findSilences\(file, duration\)/.test(S) && /silencedetect=noise=\$\{noise\}dB/.test(S))
+
 // ── Cost ─────────────────────────────────────────────────────────────────────
 check('the plan on Sonnet 5, the B-roll and typed changes on Haiku', /PLAN_MODEL = 'claude-sonnet-5'/.test(P) && /QUICK_MODEL = 'claude-haiku-4-5-20251001'/.test(P) && /model: QUICK_MODEL[\s\S]{0,40}max_tokens: 900/.test(P))
 check('the B-roll is seen from 36 small frames, sent in the answer, never stored', /frames: 36, width: 320/.test(W) && /jpg: fs\.readFileSync\(out\)\.toString\('base64'\)/.test(S))

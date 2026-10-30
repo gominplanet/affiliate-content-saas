@@ -56,7 +56,7 @@ export function cleanPlan(raw: Record<string, unknown> | null, lines: Line[], sh
   const whole = new Set<number>()
   for (const c of cuts) if (!c.words) for (let i = c.from; i <= c.to; i++) whole.add(i)
   const safeCuts = whole.size >= n ? [] : cuts.sort((a, b) => a.from - b.from || (a.words?.[0] ?? 0) - (b.words?.[0] ?? 0))
-  const keys = Array.from(new Set((Array.isArray(raw?.keys) ? raw!.keys : []).map(int).filter((k) => k >= 0 && k < n))).slice(0, 8)
+  const keys = Array.from(new Set((Array.isArray(raw?.keys) ? raw!.keys : []).map(int).filter((k) => k >= 0 && k < n))).slice(0, 16)
   const shotIds = new Set(shots.map((s) => s.n))
   const used = new Set<number>()
   const placements = []
@@ -107,8 +107,9 @@ const PLAN_SYSTEM = [
   '- mistake: they misspoke and corrected themselves ("no wait", "sorry", "let me redo that"). Cut the wrong part and the correction words.',
   '- repeat: they made the same point twice in a row in almost the same words. Cut the weaker one.',
   '- chatter: talk that is not the review, usually at the start or end ("is it recording?", "okay go", counting down, talking to someone off camera).',
+  '- filler: "um", "uh", and an "okay so" or "so yeah" that opens a line. Quote them in "text" on their line. The creator wants it tight.',
   'Never cut for length, never cut the verdict, the price, pros and cons, or anything said once and said well. When unsure, keep it.',
-  'Also pick 2 to 6 "keys": lines that land a strong point (the verdict, a surprise, the main benefit). The video slowly zooms in on them.',
+  'Also pick "keys": lines that land a strong point (the verdict, a surprise, the main benefit, a key detail), about one every 20 to 30 seconds of video, at least 4. The video slowly zooms in on each.',
   'If B-roll shots are listed, place shots under the lines that talk about what the shot shows, each shot once, not on the first two lines. Skip a shot that fits nothing.',
   'Suggest a short on-screen "title": 2 to 5 words, usually the product, never a year, no dashes.',
   'Each "why" is one short plain sentence to the creator, like "You started this sentence over; the second try is kept."',
@@ -124,7 +125,7 @@ const TRYBE_SYSTEM = [
   '- filler: "um", "uh", "you know", "so yeah", and a "like" or "okay so" that opens a line. Quote them in "text" on their line.',
   '- rambling: a sentence that wanders before it gets to the point, when a tighter version of the same point is said elsewhere.',
   'Keep the hook (the first strong line about the problem or the product), what the product does, the proof, and the call to action. Never cut the brand or product name.',
-  'Pick 2 to 6 "keys": the hook, the strongest benefits and the call to action. The video slowly zooms in on them.',
+  'Pick "keys": the hook, the strongest benefits and the call to action, about one every 10 to 15 seconds, at least 3. The video slowly zooms in on each.',
   'If B-roll shots are listed, place a shot under each line that talks about what the shot shows, each shot once, not on the first line. Ads use B-roll often.',
   'Write a "title": the hook as on-screen text for the first seconds, under 7 words, no year, no dashes, no price.',
   'Each "why" is one short plain sentence to the creator.',

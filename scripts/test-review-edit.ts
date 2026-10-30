@@ -5,7 +5,7 @@
 // B-roll lands under its line, never in the opening, never overlapping;
 // zooms run from a strong line to the next cut; captions follow the cuts; a
 // planner answer is checked against the take; settings are made safe.
-import { cleanWords, linesOf, keepSegments, snapSegments, editLength, toOutput, outputWords, insertsFor, zoomsFor, cleanSettings, renderSpec, findWords, cutLines, PACE, DEFAULT_SETTINGS, type Word } from '../lib/review-edit'
+import { cleanWords, linesOf, keepSegments, snapSegments, editLength, toOutput, outputWords, insertsFor, zoomsFor, cleanSettings, renderSpec, findWords, cutLines, PACE, DEFAULT_SETTINGS, withoutSilences, type Word } from '../lib/review-edit'
 import { cleanPlan, jsonIn } from '../lib/review-edit-plan'
 import { snapSegments as serverSnap, editSeconds as serverSeconds } from '../ingest-service/edit-filters'
 
@@ -61,7 +61,23 @@ check('never in the opening seconds, never longer than four seconds, never overl
 check('a shot too short, or under a cut line, is not used', !ins.some((x) => x.from >= 6 && x.from < 7))
 
 const zooms = zoomsFor([4, 1, 99], lines, segs)
-check('a slow zoom runs from a strong line to the next cut', zooms.length >= 1 && zooms.every(([a, b]) => b - a >= 1.5 && b - a <= 8), zooms)
+check('a zoom lasts long enough to see: 2 to 8 seconds, from the strong line', zooms.length >= 1 && zooms.every(([a, b]) => b - a >= 2 && b - a <= 8), zooms)
+
+// ── Dead air from the sound itself (Seb, 2026-10-30: "still a lot of dead air") ─
+{
+  // Word timings stretch into the pause, so the words alone keep it; the
+  // sound says 6.0 to 7.2 is quiet.
+  // "part" is said 5.68 to 6.08, but its timing runs on to 7.2.
+  const ws = cleanWords([...say(4, 'This is the best', 0.02, 0.4), { start: 5.68, end: 7.2, text: 'part' }, ...say(7.25, 'and it lasts all day.', 0.02, 0.4)])
+  const ls = linesOf(ws)
+  const kept = keepSegments(ws, ls, [], 12, PACE.review)
+  const tight = keepSegments(ws, ls, [], 12, PACE.review, [[6.1, 7.2]])
+  const gapOut = (seg: [number, number][]) => (toOutput(seg, 7.25) ?? 0) - (toOutput(seg, 6.09) ?? 0)
+  check('a quiet stretch the sound shows is cut, though the word timings hid it', gapOut(tight) < gapOut(kept) - 0.8 && gapOut(tight) < 0.35, [gapOut(kept), gapOut(tight)])
+  check('a little is kept after the last sound and before the next', withoutSilences([[0, 10]], [[4, 5]], PACE.review).map(([a, b]) => [a, b].map((x) => Math.round(x * 100) / 100)).join() === '0,4.1,4.95,10')
+  check('a short breath is left alone', withoutSilences([[0, 10]], [[4, 4.25]], PACE.review).length === 1 && withoutSilences([[0, 10]], [[4, 4.25]], PACE.trybe).length === 2)
+  check('a TRYBE ad keeps less around each cut than a review', PACE.trybe.tailKeep < PACE.review.tailKeep && PACE.trybe.minSilence < PACE.review.minSilence)
+}
 
 // ── The planner's answer is checked ──────────────────────────────────────────
 const quoted = cleanPlan({ cuts: [{ from: 1, to: 1, text: 'it keeps the sun off and', kind: 'restart' }, { from: 1, to: 1, text: 'not said', kind: 'restart' }] }, runLines, [], run)

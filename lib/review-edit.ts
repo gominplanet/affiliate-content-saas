@@ -37,10 +37,18 @@ export const KIND_WORDS: Record<VideoKind, { name: string; line: string }> = {
   review: { name: 'Amazon and YouTube review', line: 'Filmed sideways. Edited as a review, wide, for Amazon and YouTube. Its Shorts, TikTok and Reels come from it later, through Drop.' },
   trybe: { name: 'TRYBE ad', line: 'Filmed upright. Edited as an ad: tight, captions on, a hook at the start, no logo. Vertical, for the TRYBE brand.' },
 }
-export interface Pace { padIn: number; padOut: number; maxPause: number; brollNotBefore: number; brollMax: number }
+/** TIGHT (Seb, 2026-10-30: "there's still a lot of dead air ... I think we
+ *  should really focus on making it ... tighter"). Besides the gaps between
+ *  words, every quiet stretch the sound itself shows (the video server's
+ *  silencedetect) longer than minSilence is cut, keeping tailKeep after the
+ *  last sound so a word's soft ending stays, and headKeep before the next. */
+export interface Pace {
+  padIn: number; padOut: number; maxPause: number; brollNotBefore: number; brollMax: number
+  minSilence: number; tailKeep: number; headKeep: number
+}
 export const PACE: Record<VideoKind, Pace> = {
-  review: { padIn: PAD_IN, padOut: PAD_OUT, maxPause: MAX_PAUSE, brollNotBefore: 2.5, brollMax: 4 },
-  trybe: { padIn: 0.06, padOut: 0.1, maxPause: 0.25, brollNotBefore: 1.5, brollMax: 3 },
+  review: { padIn: 0.06, padOut: 0.12, maxPause: 0.3, brollNotBefore: 2.5, brollMax: 4, minSilence: 0.3, tailKeep: 0.1, headKeep: 0.05 },
+  trybe: { padIn: 0.05, padOut: 0.08, maxPause: 0.18, brollNotBefore: 1.5, brollMax: 3, minSilence: 0.22, tailKeep: 0.07, headKeep: 0.04 },
 }
 
 export interface Word { start: number; end: number; text: string }
@@ -165,7 +173,7 @@ export function snapSegments(segs: Segment[]): Segment[] {
 /** The parts of the review take to keep, in seconds of the take: every word
  *  not cut, with a little room either side that never reaches into a cut
  *  word, and pauses over MAX_PAUSE shortened. Pure. */
-export function keepSegments(words: Word[], lines: Line[], cuts: Cut[], duration: number, pace: Pace = PACE.review): Segment[] {
+export function keepSegments(words: Word[], lines: Line[], cuts: Cut[], duration: number, pace: Pace = PACE.review, silences: Segment[] = []): Segment[] {
   const gone = cutWords(lines, cuts)
   const segs: Segment[] = []
   let prevKept = -2
@@ -183,7 +191,27 @@ export function keepSegments(words: Word[], lines: Line[], cuts: Cut[], duration
     lastEnd = w.end
   })
   if (segs.length && prevKept === words.length - 1) segs[segs.length - 1][1] = Math.min(duration, Math.max(segs[segs.length - 1][1], lastEnd + END_TAIL))
-  return snapSegments(segs)
+  return snapSegments(withoutSilences(segs, silences, pace))
+}
+
+/** The kept parts with every long quiet stretch taken out, but for a little
+ *  at each side: what jump cuts the dead air. Pure. */
+export function withoutSilences(segs: Segment[], silences: Segment[], pace: Pace): Segment[] {
+  const gaps = (Array.isArray(silences) ? silences : [])
+    .filter((x) => Array.isArray(x) && Number.isFinite(x[0]) && Number.isFinite(x[1]) && x[1] - x[0] > pace.minSilence)
+    .map(([a, b]) => [a + pace.tailKeep, b - pace.headKeep] as Segment)
+    .filter(([a, b]) => b - a > 0.05)
+  if (!gaps.length) return segs
+  const out: Segment[] = []
+  for (const [a0, b0] of segs) {
+    let pieces: Segment[] = [[a0, b0]]
+    for (const [ga, gb] of gaps) {
+      if (gb <= a0 || ga >= b0) continue
+      pieces = pieces.flatMap(([a, b]) => (gb <= a || ga >= b ? [[a, b] as Segment] : [[a, Math.min(b, ga)] as Segment, [Math.max(a, gb), b] as Segment].filter(([x, y]) => y - x > 0.04)))
+    }
+    out.push(...pieces)
+  }
+  return out
 }
 
 export function editLength(segs: Segment[]): number {
@@ -245,11 +273,14 @@ export function insertsFor(placements: Placement[], shots: Shot[], lines: Line[]
     const at0 = toOutput(segs, line.start + 0.2) ?? toOutput(segs, line.start)
     if (at0 == null) continue // the line was cut
     const shotLen = shot.end - shot.start
-    const len = Math.min(pace.brollMax, shotLen, total - at0)
+    // Never in the opening: a moment there moves to just after it, and its
+    // length is measured from where it now starts.
+    const at = onGrid(Math.max(at0, pace.brollNotBefore))
+    const len = Math.min(pace.brollMax, shotLen, total - at)
     if (len < 1.5) continue
     // Start a little into the shot, past the moment the camera settles.
     const from = shotLen - len > 0.6 ? shot.start + 0.3 : shot.start
-    want.push({ at: r3(onGrid(Math.max(at0, pace.brollNotBefore))), len: r3(Math.floor(len * FPS + 0.01) / FPS), from: r3(from) })
+    want.push({ at: r3(at), len: r3(Math.floor(len * FPS + 0.01) / FPS), from: r3(from) })
   }
   want.sort((a, b) => a.at - b.at)
   const out: Insert[] = []
@@ -264,18 +295,28 @@ export function insertsFor(placements: Placement[], shots: Shot[], lines: Line[]
 
 /** Slow push-in on each strong line, from the line to the next cut (where
  *  the picture comes back to normal), when that is 1.5 to 8 seconds. Pure. */
+/** Slow push-in on each strong line (Seb, 2026-10-30: "very, very short
+ *  and almost not ... I couldn't even see them"): from the line, over the
+ *  whole line and a little after, 3 to 7 seconds, ending at the next cut
+ *  when one comes within two seconds, so the picture returns on a cut. The
+ *  video server eases in and out of each (edit-filters zoomExpr). Pure. */
 export function zoomsFor(keys: number[], lines: Line[], segs: Segment[]): Segment[] {
+  const total = editLength(segs)
   const out: Segment[] = []
   for (const k of [...new Set(keys)].sort((a, b) => a - b)) {
     const line = lines[k]
     if (!line) continue
     const a = toOutput(segs, line.start)
-    const b = partEnd(segs, line.start)
-    if (a == null || b == null) continue
+    if (a == null) continue
     const za = r3(Math.max(0, a - 0.1))
-    if (b - za < 1.5 || b - za > 8) continue
-    if (out.length && za < out[out.length - 1][1]) continue
-    out.push([za, b])
+    const lineEnd = toOutput(segs, Math.max(line.start, line.end - 0.02)) ?? za + 3
+    let zb = Math.min(za + 7, Math.max(za + 3, lineEnd + 0.6))
+    const cut = partEnd(segs, Math.max(line.start, line.end - 0.02))
+    if (cut != null && cut >= zb && cut - zb <= 2 && cut - za <= 8) zb = cut
+    zb = r3(Math.min(zb, total))
+    if (zb - za < 2) continue
+    if (out.length && za < out[out.length - 1][1] + 1) continue
+    out.push([za, zb])
   }
   return out
 }
@@ -370,9 +411,9 @@ export function cleanSettings(raw: unknown, base: EditSettings = DEFAULT_SETTING
 
 /** Everything the video server needs for one edit, worked out from the plan
  *  and the settings. Pure. */
-export function renderSpec(o: { words: Word[]; lines: Line[]; plan: Plan; shots: Shot[]; duration: number; settings: EditSettings; hasBroll: boolean }) {
+export function renderSpec(o: { words: Word[]; lines: Line[]; plan: Plan; shots: Shot[]; duration: number; settings: EditSettings; hasBroll: boolean; silences?: Segment[] }) {
   const pace = PACE[o.settings.kind]
-  const segments = keepSegments(o.words, o.lines, o.plan.cuts, o.duration, pace)
+  const segments = keepSegments(o.words, o.lines, o.plan.cuts, o.duration, pace, o.silences ?? [])
   const inserts = o.settings.broll && o.hasBroll ? insertsFor(o.plan.placements, o.shots, o.lines, segments, pace) : []
   const zooms = o.settings.zooms ? zoomsFor(o.plan.keys, o.lines, segments) : []
   const words = o.settings.captions && o.settings.kind === 'trybe' ? outputWords(o.words, segments) : []

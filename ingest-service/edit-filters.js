@@ -87,17 +87,20 @@ function trackSetpts(inserts) {
 }
 const insertEnable = (inserts) => inserts.map((x) => `between(t,${x.at},${r3(x.at + x.len - 0.001)})`).join('+')
 
-/** Slow push-in: 1 to 1.07 across each window (seconds into the finished
- *  video), back to 1 at the window's end, which is a cut. */
+/** Slow push-in on each window (seconds into the finished video): eases to
+ *  ZOOM_IN over the first 1.5 seconds, holds, and eases back over the last
+ *  0.35 (Seb, 2026-10-30: the 7% ones were too slight to see). */
+const ZOOM_IN = 0.12
 function zoomExpr(zooms) {
-  const terms = zooms.map(([a, b]) => `between(on/${FPS},${a},${b})*(on/${FPS}-${a})/${r3(b - a)}`)
-  return `1+0.07*(${terms.join('+')})`
+  const T = `on/${FPS}`
+  const terms = zooms.map(([a, b]) => `between(${T},${a},${b})*min(1,(${T}-${a})/1.5)*min(1,(${b}-${T})/0.35)`)
+  return `1+${ZOOM_IN}*(${terms.join('+')})`
 }
 function cleanZooms(raw, totalSec) {
   const out = []
   for (const z of Array.isArray(raw) ? raw.slice(0, 40) : []) {
     const a = r3(Number(z && z[0])), b = r3(Math.min(Number(z && z[1]), totalSec))
-    if (!Number.isFinite(a) || !Number.isFinite(b) || b - a < 1.5) continue
+    if (!Number.isFinite(a) || !Number.isFinite(b) || b - a < 1.5) continue // too short to see
     if (out.length && a < out[out.length - 1][1]) continue
     out.push([a, b])
   }
@@ -265,4 +268,38 @@ function driveAuth(url, auth) {
 /** ffmpeg and ffprobe read a Drive file with the token as a header. */
 const authArgs = (auth) => (auth ? ['-headers', `Authorization: ${auth}\r\n`] : [])
 
-module.exports = { hdrChain, driveAuth, authArgs, FPS, snapSegments, editSeconds, outputWindows, cleanInserts, trackSetpts, insertEnable, zoomExpr, cleanZooms, masterSize, placeAt, buildEditGraph }
+// ── Dead air (Seb, 2026-10-30: "there's still a lot of dead air instead of
+// cutting straight into the next sentence") ───────────────────────────────
+// Word timings from speech to text stretch a word's end into the silence
+// after it, so pauses hide inside them. The sound itself says where it is
+// quiet: silencedetect, with a threshold set from how loud this take is.
+
+/** The quiet level for a take: 14 dB under its average loudness, kept
+ *  between -50 and -30 dB so a hiss or a whisper never decides it. */
+function silenceNoiseDb(meanDb) {
+  const m = Number(meanDb)
+  return Number.isFinite(m) ? Math.round(Math.min(-30, Math.max(-50, m - 14))) : -40
+}
+
+/** silencedetect's lines as [start, end] seconds, in order. A silence still
+ *  open at the end of the take ends at `duration`. */
+function parseSilences(stderr, duration) {
+  const out = []
+  let open = null
+  for (const line of String(stderr || '').split('\n')) {
+    const a = /silence_start:\s*(-?[\d.]+)/.exec(line)
+    if (a) { open = Math.max(0, Number(a[1])); continue }
+    const b = /silence_end:\s*([\d.]+)/.exec(line)
+    if (b && open != null) { out.push([r3(open), r3(Number(b[1]))]); open = null }
+  }
+  if (open != null && Number.isFinite(Number(duration)) && Number(duration) > open) out.push([r3(open), r3(Number(duration))])
+  return out.filter(([x, y]) => y > x)
+}
+
+/** The mean loudness volumedetect reports, in dB, or null. */
+function parseMeanDb(stderr) {
+  const m = /mean_volume:\s*(-?[\d.]+) dB/.exec(String(stderr || ''))
+  return m ? Number(m[1]) : null
+}
+
+module.exports = { silenceNoiseDb, parseSilences, parseMeanDb, hdrChain, driveAuth, authArgs, FPS, snapSegments, editSeconds, outputWindows, cleanInserts, trackSetpts, insertEnable, zoomExpr, cleanZooms, masterSize, placeAt, buildEditGraph }
