@@ -106,6 +106,18 @@ function cleanZooms(raw, totalSec) {
 
 const even = (n) => Math.max(2, Math.round(n / 2) * 2)
 
+/** IPHONE HDR (Seb, 2026-10-30, an iPhone 18 Pro take): phones film HDR by
+ *  default (HLG, or PQ), and HDR shown as an ordinary video looks grey and
+ *  washed out. Such a take is brought to normal colour (tone mapped to
+ *  BT.709) after it is made small, so the heavy part runs on fewer pixels.
+ *  The transfer is named, so it works whatever tags survive the resize.
+ *  Null for a normal take. Pure. */
+function hdrChain(transfer) {
+  const tin = transfer === 'arib-std-b67' ? 'arib-std-b67' : transfer === 'smpte2084' ? 'smpte2084' : null
+  if (!tin) return null
+  return `zscale=tin=${tin}:pin=bt2020:min=bt2020nc:t=linear:npl=100,format=gbrpf32le,zscale=p=bt709,tonemap=tonemap=hable:desat=0,zscale=t=bt709:m=bt709:r=tv,format=yuv420p`
+}
+
 /** The size everything is put together at, before each format is made.
  *  Sideways takes: 16:9, 1080 tall, or 1440 when a vertical version is cut
  *  from it so that one stays sharp. Upright takes: 1080x1920, vertical only. */
@@ -137,6 +149,7 @@ function placeAt(position, W, H, w, h) {
  * opts: {
  *   segments,                      kept parts of the take (seconds)
  *   srcW, srcH, hasAudio,          the take's picture as played (rotation applied), and whether it has sound
+ *   transfer,                      its colour transfer: 'arib-std-b67' or 'smpte2084' is HDR (hdrChain)
  *   formats: ['wide'|'vertical'],
  *   cropX,                         0 left to 1 right, where vertical is cut from a sideways take
  *   inserts, brollSec, track,      track: input index of the B-roll track (pieces back to back)
@@ -161,7 +174,8 @@ function buildEditGraph(opts) {
 
   const g = []
   // The take: constant 30 frames a second, the kept frames only, at the master size.
-  g.push(`[0:v]setpts=PTS-STARTPTS,fps=${FPS},select='${videoKeep(snapped)}',setpts=N/${FPS}/TB,scale=${m.w}:${m.h}:force_original_aspect_ratio=increase,crop=${m.w}:${m.h},setsar=1[m0]`)
+  const hdr = hdrChain(o.transfer)
+  g.push(`[0:v]setpts=PTS-STARTPTS,fps=${FPS},select='${videoKeep(snapped)}',setpts=N/${FPS}/TB,scale=${m.w}:${m.h}:force_original_aspect_ratio=increase,crop=${m.w}:${m.h},setsar=1${hdr ? `,${hdr}` : ''}[m0]`)
   // A take with no sound gets silence, so every output still has a sound track.
   g.push(o.hasAudio === false
     ? `anullsrc=r=48000:cl=stereo,atrim=0:${seconds}[a0]`
@@ -172,6 +186,8 @@ function buildEditGraph(opts) {
     v = 'mz'
   }
   if (inserts.length) {
+    // The B-roll track is already in normal colour (server.js cuts its
+    // pieces with the same conversion when the B-roll take is HDR).
     g.push(`[${o.track}:v]setpts='(${trackSetpts(inserts)})/TB',scale=${m.w}:${m.h}:force_original_aspect_ratio=increase,crop=${m.w}:${m.h},setsar=1[br]`)
     g.push(`[${v}][br]overlay=0:0:enable='${insertEnable(inserts)}':eof_action=pass:repeatlast=0[mb]`)
     v = 'mb'
@@ -235,7 +251,7 @@ function buildEditGraph(opts) {
     }
     outputs[f] = { v: cur, a: alab[f] }
   }
-  return { graph: g.join(';\n'), outputs, seconds, inserts, zooms, master: m, formats }
+  return { graph: g.join(';\n'), outputs, seconds, inserts, zooms, master: m, formats, hdr: !!hdr }
 }
 
 /** A creator's Google Drive token, only when the address is Google's Drive
@@ -249,4 +265,4 @@ function driveAuth(url, auth) {
 /** ffmpeg and ffprobe read a Drive file with the token as a header. */
 const authArgs = (auth) => (auth ? ['-headers', `Authorization: ${auth}\r\n`] : [])
 
-module.exports = { driveAuth, authArgs, FPS, snapSegments, editSeconds, outputWindows, cleanInserts, trackSetpts, insertEnable, zoomExpr, cleanZooms, masterSize, placeAt, buildEditGraph }
+module.exports = { hdrChain, driveAuth, authArgs, FPS, snapSegments, editSeconds, outputWindows, cleanInserts, trackSetpts, insertEnable, zoomExpr, cleanZooms, masterSize, placeAt, buildEditGraph }

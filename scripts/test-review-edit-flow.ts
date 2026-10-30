@@ -60,6 +60,8 @@ check('a make the server lost in a restart is sent again within minutes, and the
 check('each busy card says how long its step has run and what is normal', /This step started \$\{mins\}/.test(U) && /Making takes 2 to 10 minutes/.test(U))
 check('a step stuck for 20 minutes can be started again by the creator', /STUCK_AFTER_MS = 20 \* 60_000/.test(R) && /Start it again/.test(U))
 
+check('an HDR take and its B-roll are converted, and a server that cannot convert still makes the video', /color_transfer/.test(S) && /transfer: hdrFallback \? '' : info\.transfer/.test(S) && /hdrChain\(bi && bi\.transfer\)/.test(S) && /hdr: built\.hdr \? 'converted'/.test(S))
+
 // ── Cost ─────────────────────────────────────────────────────────────────────
 check('the plan on Sonnet 5, the B-roll and typed changes on Haiku', /PLAN_MODEL = 'claude-sonnet-5'/.test(P) && /QUICK_MODEL = 'claude-haiku-4-5-20251001'/.test(P) && /model: QUICK_MODEL[\s\S]{0,40}max_tokens: 900/.test(P))
 check('the B-roll is seen from 36 small frames, sent in the answer, never stored', /frames: 36, width: 320/.test(W) && /jpg: fs\.readFileSync\(out\)\.toString\('base64'\)/.test(S))

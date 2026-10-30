@@ -37,6 +37,14 @@ check('both formats come out of one graph, each with its own sound', both.output
 check('colour and zoom go in once, before the formats split', both.graph.indexOf('eq=') < both.graph.indexOf('split=2') && both.graph.indexOf('zoompan') < both.graph.indexOf('split=2'))
 check('a take with no sound still gets a sound track', /anullsrc/.test(E.buildEditGraph({ segments: [[0, 5]], srcW: 1920, srcH: 1080, hasAudio: false, formats: ['wide'] }).graph))
 
+// ── iPhone HDR takes are brought to normal colour ────────────────────────────
+check('HDR (HLG or PQ) gets the conversion, a normal take none', !!E.hdrChain('arib-std-b67') && /tin=smpte2084/.test(E.hdrChain('smpte2084')) && E.hdrChain('') === null && E.hdrChain('bt709') === null)
+{
+  const plain = E.buildEditGraph({ segments: [[0, 5]], srcW: 1920, srcH: 1080, hasAudio: true, formats: ['wide'] })
+  const hdr = E.buildEditGraph({ segments: [[0, 5]], srcW: 3840, srcH: 2160, hasAudio: true, formats: ['wide'], transfer: 'arib-std-b67' })
+  check('the conversion runs after the picture is made small, on the take only', !plain.hdr && !/zscale/.test(plain.graph) && hdr.hdr && /crop=1920:1080,setsar=1,zscale=tin=arib-std-b67/.test(hdr.graph))
+}
+
 // ── A Drive token only ever goes to Google's Drive ───────────────────────────
 {
   const tok = 'Bearer ya29.' + 'a'.repeat(40)

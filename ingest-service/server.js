@@ -1207,7 +1207,7 @@ app.post('/dub', async (req, res) => {
 // pass (edit-filters.js): wide for Amazon and YouTube, vertical for TRYBE and
 // TikTok, or both from the same decode. The raw takes are only ever in this
 // job's own temp folder, removed when the job ends, whatever happened.
-const { buildEditGraph, cleanInserts, snapSegments, editSeconds, masterSize, driveAuth, authArgs, FPS: EDIT_FPS } = require('./edit-filters')
+const { buildEditGraph, cleanInserts, snapSegments, editSeconds, masterSize, driveAuth, authArgs, hdrChain, FPS: EDIT_FPS } = require('./edit-filters')
 // Encoder threads per format. A small box stays at 2; a bigger one goes faster.
 const EDIT_THREADS = String(Math.max(1, Math.min(8, Number(process.env.EDIT_THREADS) || 2)))
 const EDIT_MAX_SOURCE_SEC = 60 * 60
@@ -1216,6 +1216,18 @@ const EDIT_MAX_OUTPUT_SEC = 20 * 60
 // A take in the creator's Google Drive comes with an hour-long token of
 // theirs (edit-filters driveAuth: only ever sent to Google's Drive address,
 // never logged); ffmpeg and ffprobe read it with the token as a header.
+
+// Whether this ffmpeg has the filters HDR conversion needs (zscale, tonemap).
+let toneMapOk = null
+function canToneMap() {
+  if (toneMapOk !== null) return Promise.resolve(toneMapOk)
+  return new Promise((resolve) => {
+    execFile('ffmpeg', ['-hide_banner', '-filters'], { timeout: 20_000, maxBuffer: 4 * 1024 * 1024 }, (err, stdout) => {
+      toneMapOk = !err && / zscale /.test(String(stdout)) && / tonemap /.test(String(stdout))
+      resolve(toneMapOk)
+    })
+  })
+}
 
 async function downloadLarge(url, dest, timeoutMs = 15 * 60_000, auth = null) {
   const res = await fetch(url, { signal: AbortSignal.timeout(timeoutMs), ...(auth ? { headers: { Authorization: auth } } : {}) })
@@ -1228,7 +1240,7 @@ async function downloadLarge(url, dest, timeoutMs = 15 * 60_000, auth = null) {
  *  length, and whether it has sound. */
 function ffprobeInfo(input, auth = null) {
   return new Promise((resolve) => {
-    execFile('ffprobe', ['-v', 'error', ...authArgs(auth), '-show_entries', 'stream=codec_type,width,height:stream_tags=rotate:stream_side_data=rotation:format=duration', '-of', 'json', input],
+    execFile('ffprobe', ['-v', 'error', ...authArgs(auth), '-show_entries', 'stream=codec_type,width,height,color_transfer:stream_tags=rotate:stream_side_data=rotation:format=duration', '-of', 'json', input],
       { timeout: 60_000, killSignal: 'SIGKILL', maxBuffer: 4 * 1024 * 1024 }, (err, stdout) => {
         if (err) return resolve(null)
         try {
@@ -1242,6 +1254,8 @@ function ffprobeInfo(input, auth = null) {
             w: rot === 90 ? h : w, h: rot === 90 ? w : h,
             duration: Number(j.format && j.format.duration) || 0,
             hasAudio: streams.some((x) => x.codec_type === 'audio'),
+            // HDR from a phone (edit-filters hdrChain): 'arib-std-b67' or 'smpte2084'.
+            transfer: String(v.color_transfer || ''),
           })
         } catch { resolve(null) }
       })
@@ -1319,6 +1333,8 @@ async function renderEditJob(body) {
     const seconds = editSeconds(snapped)
     if (seconds > EDIT_MAX_OUTPUT_SEC) throw new Error(`The edit is ${Math.round(seconds / 60)} minutes; the editor makes up to ${EDIT_MAX_OUTPUT_SEC / 60}.`)
     const m = masterSize(info.w, info.h, formats.includes('vertical'))
+    // A server whose ffmpeg cannot convert HDR makes the video as it is.
+    const hdrFallback = !(await canToneMap())
 
     const inputs = ['-i', main]
     let next = 1
@@ -1336,8 +1352,9 @@ async function renderEditJob(body) {
         const list = []
         for (let i = 0; i < inserts.length; i++) {
           const piece = path.join(dir, `piece${i}.mp4`)
+          const bHdr = hdrFallback ? null : hdrChain(bi && bi.transfer)
           await runFfmpeg(['-ss', String(inserts[i].from), '-i', broll, '-an',
-            '-vf', `setpts=PTS-STARTPTS,fps=${EDIT_FPS},scale=${m.w}:${m.h}:force_original_aspect_ratio=increase,crop=${m.w}:${m.h},setsar=1`,
+            '-vf', `setpts=PTS-STARTPTS,fps=${EDIT_FPS},scale=${m.w}:${m.h}:force_original_aspect_ratio=increase,crop=${m.w}:${m.h},setsar=1${bHdr ? `,${bHdr}` : ''}`,
             '-frames:v', String(Math.round(inserts[i].len * EDIT_FPS)),
             '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '18', '-pix_fmt', 'yuv420p', '-x264-params', 'bframes=0:ref=1',
             '-threads', EDIT_THREADS, '-y', piece], 5 * 60_000, 'B-roll')
@@ -1367,7 +1384,7 @@ async function renderEditJob(body) {
       fs.writeFileSync(ass, buildAss(body.words, {}))
     }
     const built = buildEditGraph({
-      segments: body.segments, srcW: info.w, srcH: info.h, hasAudio: info.hasAudio, formats, cropX: body.cropX,
+      segments: body.segments, srcW: info.w, srcH: info.h, hasAudio: info.hasAudio, transfer: hdrFallback ? '' : info.transfer, formats, cropX: body.cropX,
       inserts, brollSec, track, zooms: body.zooms, color: body.color === true, logo, title, ass,
     })
     fs.writeFileSync(path.join(dir, 'graph.txt'), built.graph)
@@ -1389,7 +1406,7 @@ async function renderEditJob(body) {
       await uploadToSupabase(key, files[f])
       outputs[f] = { url: publicUrl(key), seconds: built.seconds }
     }
-    return { outputs, seconds: built.seconds, formats: built.formats, inserts: built.inserts.length, zooms: built.zooms.length, master: `${built.master.w}x${built.master.h}` }
+    return { outputs, seconds: built.seconds, formats: built.formats, inserts: built.inserts.length, zooms: built.zooms.length, master: `${built.master.w}x${built.master.h}`, hdr: built.hdr ? 'converted' : /arib|2084/.test(info.transfer) ? 'not converted' : 'no' }
   } finally {
     try { fs.rmSync(dir, { recursive: true, force: true }) } catch { /* ignore */ }
   }
