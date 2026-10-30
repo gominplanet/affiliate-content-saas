@@ -5,11 +5,15 @@
  *       Google's picker. token is an hour-long Drive token for this creator's
  *       own picker, limited to the files they pick (drive.file).
  * POST  { action: 'disconnect' }: forget the connection and revoke it at Google.
+ *       { action: 'folders', aRoll?, bRoll? }: remember the A-roll and B-roll
+ *       folders ({ id, name }).
+ *       { action: 'files', ids }: the picked files as Drive describes them
+ *       (name, size, shape, length, when added), for pairing a batch.
  */
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { canUsePreview } from '@/lib/labs-preview'
-import { driveAccessToken, driveAppId, driveLink, disconnectDrive } from '@/lib/google-drive'
+import { driveAccessToken, driveAppId, driveLink, disconnectDrive, saveDriveFolders, driveFile, isDriveId, type DriveFile } from '@/lib/google-drive'
 import { editDb } from '@/lib/review-edit-server'
 
 export const runtime = 'nodejs'
@@ -38,16 +42,33 @@ export async function GET() {
   if (!link) return NextResponse.json({ connected: false, appId, key })
   const t = await driveAccessToken(db, g.userId)
   if (!t.ok) return NextResponse.json({ connected: false, appId, key, error: t.error })
-  return NextResponse.json({ connected: true, email: link.email, appId, key, token: t.token })
+  return NextResponse.json({ connected: true, email: link.email, appId, key, token: t.token, aRoll: link.aRoll, bRoll: link.bRoll })
 }
 
 export async function POST(request: Request) {
   const g = await gate()
   if ('error' in g) return g.error
-  const body = await request.json().catch(() => ({})) as { action?: string }
+  const body = await request.json().catch(() => ({})) as { action?: string; aRoll?: unknown; bRoll?: unknown; ids?: unknown }
   if (body.action === 'disconnect') {
     await disconnectDrive(editDb(), g.userId)
     return NextResponse.json({ ok: true })
+  }
+  if (body.action === 'folders') {
+    const r = await saveDriveFolders(editDb(), g.userId, { aRoll: body.aRoll, bRoll: body.bRoll })
+    return r.ok ? NextResponse.json({ ok: true }) : NextResponse.json({ error: r.error }, { status: 500 })
+  }
+  if (body.action === 'files') {
+    const ids = Array.from(new Set((Array.isArray(body.ids) ? body.ids : []).filter(isDriveId))).slice(0, 80)
+    if (!ids.length) return NextResponse.json({ error: 'No files were picked.' }, { status: 400 })
+    const t = await driveAccessToken(editDb(), g.userId)
+    if (!t.ok) return NextResponse.json({ error: t.error }, { status: 409 })
+    const files: DriveFile[] = []
+    const problems: { id: string; error: string }[] = []
+    for (let i = 0; i < ids.length; i += 6) {
+      const part = await Promise.all(ids.slice(i, i + 6).map(async (id) => ({ id, r: await driveFile(t.token, id) })))
+      for (const { id, r } of part) { if (r.ok) files.push(r.file); else problems.push({ id, error: r.error }) }
+    }
+    return NextResponse.json({ files, problems })
   }
   return NextResponse.json({ error: 'Unknown action' }, { status: 400 })
 }

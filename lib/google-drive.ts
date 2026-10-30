@@ -75,11 +75,28 @@ export async function finishDriveConnect(db: Db, userId: string, code: string, r
   return { ok: true, email }
 }
 
-export interface DriveLink { email: string | null; connectedAt: string }
+export interface DriveFolder { id: string; name: string }
+export interface DriveLink { email: string | null; connectedAt: string; aRoll: DriveFolder | null; bRoll: DriveFolder | null }
+
+const folderOf = (v: unknown): DriveFolder | null => {
+  const o = (v && typeof v === 'object' ? v : null) as Record<string, unknown> | null
+  return o && isDriveId(o.id) ? { id: o.id, name: String(o.name || 'Folder').slice(0, 120) } : null
+}
 
 export async function driveLink(db: Db, userId: string): Promise<DriveLink | null> {
-  const { data } = await db.from('google_drive_links').select('email,connected_at').eq('user_id', userId).maybeSingle()
-  return data ? { email: data.email ?? null, connectedAt: data.connected_at } : null
+  // '*' so a link read before migration 461 (no folder columns) still reads.
+  const { data } = await db.from('google_drive_links').select('*').eq('user_id', userId).maybeSingle()
+  return data ? { email: data.email ?? null, connectedAt: data.connected_at, aRoll: folderOf(data.a_roll), bRoll: folderOf(data.b_roll) } : null
+}
+
+/** Remember the creator's A-roll and B-roll folders. */
+export async function saveDriveFolders(db: Db, userId: string, f: { aRoll?: unknown; bRoll?: unknown }): Promise<{ ok: true } | { ok: false; error: string }> {
+  const patch: Record<string, unknown> = { updated_at: new Date().toISOString() }
+  if (f.aRoll !== undefined) patch.a_roll = folderOf(f.aRoll)
+  if (f.bRoll !== undefined) patch.b_roll = folderOf(f.bRoll)
+  const { error } = await db.from('google_drive_links').update(patch).eq('user_id', userId)
+  if (error) return { ok: false, error: /a_roll|b_roll/.test(error.message) ? 'Remembering your folders needs migration 461 in Supabase first.' : 'Your folders were not saved.' }
+  return { ok: true }
 }
 
 /** A fresh hour-long token for this creator's Drive, or why there is none.
@@ -104,19 +121,19 @@ export async function driveAccessToken(db: Db, userId: string): Promise<{ ok: tr
   } catch { return { ok: false, error: 'Google gave no access. Connect Google Drive again.' } }
 }
 
-export interface DriveFile { id: string; name: string; mimeType: string; bytes: number | null; width: number | null; height: number | null; seconds: number | null }
+export interface DriveFile { id: string; name: string; mimeType: string; bytes: number | null; width: number | null; height: number | null; seconds: number | null; createdAt: string | null }
 
 /** A picked file as Drive describes it: confirms MVP can open it and that it
  *  is a video. */
 export async function driveFile(token: string, fileId: string): Promise<{ ok: true; file: DriveFile } | { ok: false; error: string }> {
-  const res = await fetchWithTimeout(`https://${DRIVE_HOST}/drive/v3/files/${encodeURIComponent(fileId)}?fields=id,name,mimeType,size,videoMediaMetadata&supportsAllDrives=true`, { headers: { Authorization: `Bearer ${token}` } })
+  const res = await fetchWithTimeout(`https://${DRIVE_HOST}/drive/v3/files/${encodeURIComponent(fileId)}?fields=id,name,mimeType,size,createdTime,videoMediaMetadata&supportsAllDrives=true`, { headers: { Authorization: `Bearer ${token}` } })
   const raw = await res.text().catch(() => '')
   if (!res.ok) return { ok: false, error: driveWords(res.status, raw) }
   try {
-    const f = JSON.parse(raw) as { id: string; name?: string; mimeType?: string; size?: string; videoMediaMetadata?: { width?: number; height?: number; durationMillis?: string } }
+    const f = JSON.parse(raw) as { id: string; name?: string; mimeType?: string; size?: string; createdTime?: string; videoMediaMetadata?: { width?: number; height?: number; durationMillis?: string } }
     if (!String(f.mimeType || '').startsWith('video/')) return { ok: false, error: `${f.name || 'That file'} is not a video.` }
     const v = f.videoMediaMetadata || {}
-    return { ok: true, file: { id: f.id, name: f.name || 'video', mimeType: f.mimeType || 'video/mp4', bytes: f.size ? Number(f.size) : null, width: v.width ?? null, height: v.height ?? null, seconds: v.durationMillis ? Number(v.durationMillis) / 1000 : null } }
+    return { ok: true, file: { id: f.id, name: f.name || 'video', mimeType: f.mimeType || 'video/mp4', bytes: f.size ? Number(f.size) : null, width: v.width ?? null, height: v.height ?? null, seconds: v.durationMillis ? Number(v.durationMillis) / 1000 : null, createdAt: f.createdTime ?? null } }
   } catch { return { ok: false, error: 'Google Drive gave an answer MVP could not read.' } }
 }
 

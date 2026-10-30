@@ -18,6 +18,7 @@ import { uploadWithProgress } from '@/lib/upload-progress'
 import { freshAccessToken, saysExpired } from '@/lib/fresh-token'
 import { storageSizeRefusal, BULK_VIDEO_MAX_BYTES } from '@/lib/clip-source-limits'
 import { pickFromDrive, type DriveState } from '@/components/review-editor/drive-picker'
+import DriveBatch from '@/components/review-editor/DriveBatch'
 import { DEFAULT_SETTINGS, FORMAT_WORDS, KIND_WORDS, LOGO_OPACITY, LOGO_SIZES, POSITIONS, POSITION_WORDS, cleanSettings, type EditSettings, type Format, type Position, type VideoKind } from '@/lib/review-edit'
 
 const PURPLE = '#7C3AED'
@@ -336,6 +337,8 @@ export default function ReviewEditor() {
               </>
             )}
         </div>
+        {drive?.connected && <DriveBatch drive={drive} loadDrive={loadDrive} settings={settings} onAdded={load} />}
+        {drive?.connected && <p className="text-[14px] font-bold mb-2 mt-1">Or add one video</p>}
         <p className="text-[13px] font-semibold">1. What is this video for?</p>
         <div className="grid sm:grid-cols-2 gap-2 mt-1 mb-3" role="group" aria-label="What this video is for">
           {(['review', 'trybe'] as VideoKind[]).map((k) => (
