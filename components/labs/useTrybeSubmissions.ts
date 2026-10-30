@@ -57,14 +57,14 @@ const words = (error?: string, status?: number) =>
 // list (useTrybeSubList) read it once between them.
 const lists = new Map<string, { subs: Submission[]; at: number }>()
 
-async function listOf(id: string, period: AdPeriod, fresh = false): Promise<Submission[] | null> {
+async function listOf(id: string, period: AdPeriod | 'all', fresh = false): Promise<Submission[] | null> {
   const key = `${period}:${id}`
   const kept = lists.get(key)
   if (!fresh && kept && Date.now() - kept.at < TTL) return kept.subs
   const base = `/backend/api/creator/v2/brands/${encodeURIComponent(id)}/submissions?page=1&limit=100`
   let r = await requestTrybeApi('GET', `${base}&period=${period}`)
   // A period TRYBE does not take here: everything, counted by date.
-  if (!r.ok && (r.status === 400 || r.status === 422)) r = await requestTrybeApi('GET', `${base}&period=all`)
+  if (!r.ok && (r.status === 400 || r.status === 422)) r = await requestTrybeApi('GET', period === 'all' ? base : `${base}&period=all`)
   if (!r.ok) return null
   const subs = readSubmissions(r.json)
   lists.set(key, { subs, at: Date.now() })
@@ -168,6 +168,8 @@ export interface SubList {
   /** Brands past MAX_LIST_BRANDS, not read. */
   skipped: number
   loading: boolean
+  /** The brands could not be read at all: why, in words. */
+  error?: string
 }
 
 /** YOUR VIDEOS, LISTED (Seb, 2026-10-29: "filter and do searches to check for
@@ -197,5 +199,47 @@ export function useTrybeSubList(read: SubsRead | null, open: boolean) {
     }
   }, [read])
   useEffect(() => { if (open && read) void load(false) }, [open, read, load])
+  return { state, reload: () => void load(true) }
+}
+
+/** Brands whose videos the Submissions tab reads, the busiest first. */
+export const ALL_TIME_BRANDS = 60
+const ALL_TIME = 36_500
+
+/** EVERY VIDEO SENT TO A BRAND (Seb, 2026-10-30: "a tab where we can see our
+ *  submissions to brands ... where we can filter through rejections,
+ *  submissions that were approved, and also ones that are requiring
+ *  revisions"). All time: the brands TRYBE says you sent to, then each one's
+ *  own list, four at a time, the busiest first. */
+export function useTrybeAllSubs(canRead: boolean) {
+  const [state, setState] = useState<SubList | null>(null)
+  const run = useRef(0)
+  const load = useCallback(async (fresh: boolean) => {
+    if (!canRead) return
+    const mine = ++run.current
+    setState({ list: [], done: 0, of: 0, failed: [], skipped: 0, loading: true })
+    const s = await requestTrybeApi('GET', '/backend/api/creator/v2/brands/stats?period=all')
+    if (mine !== run.current) return
+    if (!s.ok) { setState({ list: [], done: 0, of: 0, failed: [], skipped: 0, loading: false, error: words(s.error, s.status) }); return }
+    const brands = readBrandStats(s.json)
+    const sent = brands.filter((b) => (b.submitted ?? 0) > 0)
+    // TRYBE's totals say who you sent to; without them, every brand is read.
+    const want = (sent.length ? sent : brands).sort((x, y) => (y.submitted ?? 0) - (x.submitted ?? 0))
+    const go = want.slice(0, ALL_TIME_BRANDS)
+    const skipped = want.length - go.length
+    const list: ListedSub[] = []
+    const failed: string[] = []
+    setState({ list: [], done: 0, of: go.length, failed: [], skipped, loading: go.length > 0 })
+    for (let i = 0; i < go.length; i += 4) {
+      const part = await Promise.all(go.slice(i, i + 4).map(async (b) => ({ b, subs: await listOf(b.id, 'all', fresh).catch(() => null) })))
+      if (mine !== run.current) return
+      for (const { b, subs } of part) {
+        if (subs) list.push(...listedOf({ id: b.id, name: b.name, logo: b.logo }, subs, ALL_TIME))
+        else failed.push(b.name)
+      }
+      setState({ list: [...list], done: Math.min(i + 4, go.length), of: go.length, failed: [...failed], skipped, loading: i + 4 < go.length })
+    }
+  }, [canRead])
+  useEffect(() => { void load(false) }, [load])
   return { state, reload: () => void load(true) }
 }

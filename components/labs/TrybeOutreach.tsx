@@ -25,7 +25,7 @@ import { useEffectiveTier } from '@/lib/useEffectiveTier'
 import { toast } from 'sonner'
 import { Loader2, Lock, Search, Sparkles, Send, Square, ExternalLink, Check, AlertTriangle, Globe, Star, Handshake, RotateCcw, X, Trash2, Tag,
   Dumbbell, Shirt, House, UtensilsCrossed, Baby, PawPrint, Gem, Cpu, Tent, Plane, BookOpen, Church, Palette, SprayCan, Moon, Pill, HeartPulse,
-  Scissors, Droplet, Coffee, Leaf, Wand2, MessageCircle, Pencil, ChevronUp, Bell, Lightbulb, CalendarDays, Inbox, ArrowRight, Clapperboard, UploadCloud, BarChart3, Rocket, type LucideIcon } from 'lucide-react'
+  Scissors, Droplet, Coffee, Leaf, Wand2, MessageCircle, Pencil, ChevronUp, Bell, Lightbulb, CalendarDays, Inbox, ArrowRight, Clapperboard, UploadCloud, BarChart3, Rocket, ListChecks, type LucideIcon } from 'lucide-react'
 import { requestTrybeTab, requestTrybeTabOpen, requestTrybeApi, requestTrybeAccess, requestTrybeScan, requestTrybeSend, requestTrybeHarvest, requestTrybeRun, requestTrybeRunStatus, requestTrybeRunStop, type TrybeScanPass, type TrybeRun } from '@/lib/extension-frame'
 import { readMetaAds, readMetaAdsAll, metaAdsWords, type MetaAdsRun } from '@/components/labs/metaAdsRead'
 import TrybeTabGate from '@/components/labs/TrybeTabGate'
@@ -51,6 +51,7 @@ import TrybeWorking from '@/components/labs/TrybeWorking'
 import TrybeCreate from '@/components/labs/TrybeCreate'
 import TrybeStage from '@/components/labs/TrybeStage'
 import TrybeAds from '@/components/labs/TrybeAds'
+import TrybeSubmissions from '@/components/labs/TrybeSubmissions'
 import TrybeRetainers from '@/components/labs/TrybeRetainers'
 import TrybeIntroVideo from '@/components/labs/TrybeIntroVideo'
 import TrybeSampleGuard from '@/components/labs/TrybeSampleGuard'
@@ -118,7 +119,7 @@ type Access = 'checking' | 'granted' | 'not-granted' | 'no-scout' | 'old' | 'no-
 interface Directory { brands: number; listed?: number | null; firstCountAt?: string | null; joinedSinceFirst?: number | null; joinedStillListed?: number | null; withWebsite: number; websitesRead: number; lastCollectedAt: string | null; lastPartial?: { at: string; pages: number | null; totalPages: number | null } | null; categories: string[]; top100?: { at?: string; entries?: number; brands?: number; matched?: number } | null }
 /** The whole list is collected again after this long. */
 const RECOLLECT_MS = 20 * 3600_000
-export type Tab = 'create' | 'upload' | 'find' | 'stars' | 'queue' | 'sent' | 'inbox' | 'analytics' | 'brands' | 'week' | 'changes' | 'working'
+export type Tab = 'create' | 'upload' | 'find' | 'stars' | 'queue' | 'sent' | 'inbox' | 'analytics' | 'submissions' | 'brands' | 'week' | 'changes' | 'working'
 /** One brand from MVP's copy of TRYBE, as the live list shows it. */
 interface LiveBrand {
   brand_id: string; name: string; website: string | null; categories: string[]; about: string | null
@@ -351,6 +352,7 @@ const TABS: Array<{ id: Tab; label: string; icon: LucideIcon; group: TabGroup; s
   // how your videos do as ads, for all brands or one. Was "Your ads, live"
   // at the top of My brands, where it was not found.
   { id: 'analytics', label: 'Analytics', icon: BarChart3, group: 'track', says: 'Your submissions, earnings and how your videos do as ads, for all your brands or one, like TRYBE\u2019s Analytics.' },
+  { id: 'submissions', label: 'Submissions', icon: ListChecks, group: 'track', says: 'Every video you sent to a brand: pending, needing changes, rejected or approved, with what the brand wrote.' },
   { id: 'brands', label: 'My brands', icon: Star, group: 'track', says: 'What each brand paid you and approved, which to focus on, and what MVP members see together.' },
   { id: 'changes', label: 'What changed', icon: Bell, group: 'track', says: 'What changed on TRYBE this week: new brands, pay changes, more Meta ads, the Top 100, with yours marked.' },
 ]
@@ -373,6 +375,8 @@ const TILES: Tile[] = [
   { id: 'outreach', label: 'Outreach', icon: Send, group: 'brands', color: '#4F46E5', line: 'Ready to send and sent, in one place', tabs: ['queue', 'sent'] },
   { id: 'inbox', label: 'Inbox', icon: Inbox, group: 'brands', color: '#9333EA', line: 'Brand chats, a reply suggested', tabs: ['inbox'] },
   { id: 'earnings', label: 'Earnings', icon: BarChart3, group: 'track', color: '#059669', line: 'Pay, approvals and ads, by brand', tabs: ['analytics', 'brands'] },
+  // Its own tile (Seb, 2026-10-30: "a tab where we can see our submissions to brands").
+  { id: 'submissions', label: 'Submissions', icon: ListChecks, group: 'track', color: '#16A34A', line: 'Every video sent: approved, pending, changes, rejected', tabs: ['submissions'] },
   { id: 'changes', label: 'What changed', icon: Bell, group: 'track', color: '#0284C7', line: 'New brands and pay changes', tabs: ['changes'] },
 ]
 
@@ -2608,6 +2612,13 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
         directory={inboxDirectory} />}
 
       {tab === 'analytics' && canMyBrands && <TrybeAds canRead={canMyBrands} isAdmin={isAdmin} onPlan={() => go('week')} />}
+      {tab === 'submissions' && canMyBrands && <TrybeSubmissions canRead={canMyBrands} />}
+      {tab === 'submissions' && !canMyBrands && (
+        <p className="text-[13px] rounded-xl border p-4" style={{ borderColor: 'var(--border-2)', color: 'var(--text-2)' }}>
+          {access === 'no-scout' ? 'Your submissions are read from your own TRYBE through SCOUT, MVP\u2019s Chrome extension. Install SCOUT from the Chrome Web Store (top of this page), and they show here.'
+            : 'Your submissions are read from your own TRYBE through SCOUT. Allow SCOUT on TRYBE at the top of this page (or let Chrome update it), and they show here.'}
+        </p>
+      )}
       {tab === 'analytics' && !canMyBrands && (
         <p className="text-[13px] rounded-xl border p-4" style={{ borderColor: 'var(--border-2)', color: 'var(--text-2)' }}>
           {access === 'granted'

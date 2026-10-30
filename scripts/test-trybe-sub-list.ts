@@ -59,6 +59,16 @@ check('a search with no match says so, not a blank list', /No brand you sent to 
 
 // Comments and the code inside ${...} are not copy.
 const code = L.split('\n').filter((l) => !/^\s*\/\//.test(l)).join('\n').replace(/\$\{[^}]*\}/g, '')
+// ── Submissions, its own tab (Seb, 2026-10-30) ──────────────────────────────
+const T = read('components/labs/TrybeSubmissions.tsx')
+check('Submissions is its own tab and its own tile in Track', /\{ id: 'submissions', label: 'Submissions', icon: ListChecks, group: 'track'/.test(O) && /tabs: \['submissions'\]/.test(O) && /tab === 'submissions' && canMyBrands && <TrybeSubmissions/.test(O))
+check('without SCOUT the tab says what it needs, not a blank page', /tab === 'submissions' && !canMyBrands/.test(O))
+check('it reads every brand sent to, all time, each brand\u2019s own list', /brands\/stats\?period=all/.test(H) && /listOf\(b\.id, 'all', fresh\)/.test(H) && /ALL_TIME_BRANDS = 60/.test(H))
+check('status chips, a brand pick, a window and a search', /<TrybeSubList state=\{\{ \.\.\.state, list: inWindow \}\}/.test(T) && /aria-label="Brand"/.test(T) && /label: 'All time'/.test(T) && /type="search"/.test(T))
+check('all time is said as all time, not as a number of days', /days \? `last \$\{days\} days` : 'all time'/.test(L))
+check('a video waiting on the brand says for how long, and links to the brand on TRYBE', /in review \$\{waited\(s\.at\)\}/.test(L) && /brandPageUrl\(s\.brandId\)/.test(L))
+check('a read that failed outright is said, never an empty list', /state\?\.error && <p/.test(L) && /error: words\(s\.error, s\.status\)/.test(H))
+
 const copy = code.match(/"[^"\n]{12,}"|`[^`]{12,}`|>[^<>{}\n]{12,}</g)?.join(' ') ?? ''
 check('no dashes in what a creator reads', !/[–—]| - /.test(copy) && !/[–—]/.test('Search your videos: product, brand, or what the brand wrote See all your videos'), (copy.match(/.{20}(?:[–—]| - ).{20}/g) ?? []).slice(0, 3))
 

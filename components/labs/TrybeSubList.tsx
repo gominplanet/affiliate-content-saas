@@ -9,11 +9,14 @@
 
 import { Loader2, X, AlertTriangle } from 'lucide-react'
 import { filterSubs, statusTally, STATUS_WORDS, FILTER_ORDER, type SubFilter } from '@/lib/trybe-sub-list'
-import { MAX_LIST_BRANDS, type SubList } from '@/components/labs/useTrybeSubmissions'
+import { MAX_LIST_BRANDS, ALL_TIME_BRANDS, type SubList } from '@/components/labs/useTrybeSubmissions'
+import { brandPageUrl } from '@/lib/trybe-brand-page'
 
 const PURPLE = '#7C3AED'
 const soft = { color: 'var(--text-3)' }
 const COLORS: Record<string, string> = { approved: '#16A34A', pending: '#3B82F6', revision: '#CA8A04', rejected: '#DC2626', other: '#6B7280' }
+/** Whole days since a video was sent. */
+const waited = (at: number | null) => (at ? Math.floor((Date.now() - at) / 86_400_000) : 0)
 const day = (ms: number | null) => (ms == null ? null : new Date(ms).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }))
 
 export default function TrybeSubList({ state, filter, setFilter, query, brandId, brandName, days, onClose }: {
@@ -24,8 +27,10 @@ export default function TrybeSubList({ state, filter, setFilter, query, brandId,
   query: string
   brandId: string | null
   brandName: string | null
-  days: number
-  onClose: () => void
+  /** The window shown; null is all time (the Submissions tab). */
+  days: number | null
+  /** Analytics closes it; the Submissions tab is always open. */
+  onClose?: () => void
 }) {
   const list = state?.list ?? []
   const tally = statusTally(list, query, brandId)
@@ -37,8 +42,8 @@ export default function TrybeSubList({ state, filter, setFilter, query, brandId,
     <div className="rounded-lg border p-3 mb-3" style={{ borderColor: 'var(--border-2)' }} aria-label="Your videos">
       <div className="flex flex-wrap items-center gap-2 mb-2">
         <p className="text-[13px] font-bold">Your videos{brandName ? `, ${brandName}` : ''}</p>
-        <span className="text-[11.5px]" style={soft}>last {days} days</span>
-        <button type="button" onClick={onClose} className="ml-auto inline-flex items-center gap-1 text-[12px]" style={soft}><X size={12} /> Close</button>
+        <span className="text-[11.5px]" style={soft}>{days ? `last ${days} days` : 'all time'}</span>
+        {onClose && <button type="button" onClick={onClose} className="ml-auto inline-flex items-center gap-1 text-[12px]" style={soft}><X size={12} /> Close</button>}
       </div>
       <div className="flex flex-wrap gap-1.5 mb-2" role="group" aria-label="Status">
         {FILTER_ORDER.filter((f) => f !== 'other' || tally.other > 0).map((f) => (
@@ -58,16 +63,17 @@ export default function TrybeSubList({ state, filter, setFilter, query, brandId,
           <AlertTriangle size={13} className="mt-0.5 shrink-0" /><span>TRYBE did not give the videos for {state.failed.slice(0, 5).join(', ')}{state.failed.length > 5 ? ` and ${state.failed.length - 5} more` : ''}, so they are missing here. Press Read again.</span>
         </p>
       )}
+      {state?.error && <p className="text-[12px] mb-2" style={{ color: '#B91C1C' }}>{state.error}</p>}
       {state && state.skipped > 0 && (
-        <p className="text-[12px] mb-2" style={soft}>MVP read your {MAX_LIST_BRANDS} busiest brands; {state.skipped} more are not in this list.</p>
+        <p className="text-[12px] mb-2" style={soft}>MVP read your {days ? MAX_LIST_BRANDS : ALL_TIME_BRANDS} busiest brands; {state.skipped} more are not in this list.</p>
       )}
 
       {!state?.loading && shown.length === 0 && (
         <p className="text-[12.5px] py-2" style={soft}>
-          {state && state.of === 0
-            ? `No videos sent in the last ${days} days.`
-            : `No ${word}videos${brandName ? ` for ${brandName}` : ''} in the last ${days} days${q ? ` match “${q}”` : ''}.`}
-          {days < 30 ? ' Pick 30 days above to look further back.' : ''}
+          {state?.error ? null : state && state.of === 0
+            ? (days ? `No videos sent in the last ${days} days.` : 'TRYBE lists no videos you sent to a brand.')
+            : `No ${word}videos${brandName ? ` for ${brandName}` : ''}${days ? ` in the last ${days} days` : ''}${q ? ` match “${q}”` : ''}.`}
+          {days && days < 30 ? ' Pick 30 days above to look further back.' : ''}
         </p>
       )}
 
@@ -82,6 +88,8 @@ export default function TrybeSubList({ state, filter, setFilter, query, brandId,
                 <p className="text-[13px] font-semibold leading-snug">{s.product || 'No product tagged'}</p>
                 <p className="text-[12px]" style={soft}>
                   {s.brand}{s.at ? `, sent ${day(s.at)}` : ''}{s.decidedAt && (s.status === 'approved' || s.status === 'rejected') ? `, ${s.status} ${day(s.decidedAt)}` : ''}
+                  {s.status === 'pending' && waited(s.at) > 0 ? `, in review ${waited(s.at)} ${waited(s.at) === 1 ? 'day' : 'days'}` : ''}
+                  {' '}<a href={brandPageUrl(s.brandId)} target="_blank" rel="noopener noreferrer" className="underline">Open {s.brand} on TRYBE</a>
                 </p>
                 {s.reason && <p className="text-[12px] mt-0.5" style={{ color: 'var(--text-2)' }}>{s.brand} wrote: &ldquo;{s.reason}&rdquo;</p>}
               </div>
