@@ -14,6 +14,7 @@
  *   finish   { id }  done with it: the raw takes are deleted now.
  *   remove   { id }  the video, its takes and its files, gone.
  *   forget_picture { url }  a PNG out of the creator's picture library.
+ *   save_look { settings }  the look every new video starts from (migration 462).
  */
 import { NextResponse, after } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
@@ -100,8 +101,12 @@ export async function GET() {
   const db = editDb()
   const { data, error } = await db.from('review_edits').select('*').eq('user_id', g.userId).order('created_at', { ascending: false }).limit(40)
   if (error) return NextResponse.json({ error: missing(error.message) ? NEEDS_SQL : error.message, needsSql: missing(error.message) }, { status: missing(error.message) ? 503 : 500 })
-  // The settings a new video starts from: the last ones used.
+  // The settings a new video starts from: the creator's saved look, else the
+  // last ones used. lookSaved says which, so the page never calls a borrowed
+  // look saved.
   const last = (data ?? [])[0]
+  const { data: lookRow, error: lookErr } = await db.from('review_edit_looks').select('settings').eq('user_id', g.userId).maybeSingle()
+  const lookMissing = !!lookErr && /review_edit_looks/.test(lookErr.message)
   // WHAT THE VIDEO SERVER IS DOING WITH IT (Seb, 2026-10-30: "I don't know if
   // it's stuck somewhere"): asked only when a video is being made.
   const server = (data ?? []).some((r: EditRow) => r.status === 'making') ? await serverJobs() : null
@@ -112,7 +117,12 @@ export async function GET() {
     for (const r of heard) await finishMaking(db, r.id, r.user_id, { ...server.done[`edit-${r.id}`] })
     if (heard.length) rows = ((await db.from('review_edits').select('*').eq('user_id', g.userId).order('created_at', { ascending: false }).limit(40)).data ?? rows) as EditRow[]
   }
-  return NextResponse.json({ edits: rows.map((r: EditRow) => view(r, server)), defaults: last ? cleanSettings(last.settings) : DEFAULT_SETTINGS, pictures: await pictureLibrary(db, g.userId) })
+  return NextResponse.json({
+    edits: rows.map((r: EditRow) => view(r, server)),
+    defaults: lookRow ? cleanSettings(lookRow.settings) : last ? cleanSettings(last.settings) : DEFAULT_SETTINGS,
+    lookSaved: !!lookRow, lookNeedsSql: lookMissing,
+    pictures: await pictureLibrary(db, g.userId),
+  })
 }
 
 export async function POST(request: Request) {
@@ -123,6 +133,18 @@ export async function POST(request: Request) {
   const action = String(body.action || '')
   const now = new Date().toISOString()
   const own = (u: unknown) => typeof u === 'string' && ownPath(u, g.userId) !== null
+
+  if (action === 'save_look') {
+    const settings = cleanSettings(body.settings)
+    if (settings.logo && !own(settings.logo.url)) settings.logo = null
+    settings.pictures = settings.pictures.filter((p) => own(p.url))
+    const { error } = await db.from('review_edit_looks').upsert({ user_id: g.userId, settings, updated_at: now }, { onConflict: 'user_id' })
+    if (error) {
+      const needs = /review_edit_looks/.test(error.message)
+      return NextResponse.json({ error: needs ? 'Saving your look needs migration 462 in Supabase first.' : `Your look was not saved: ${error.message}`, needsSql: needs }, { status: needs ? 503 : 500 })
+    }
+    return NextResponse.json({ ok: true, settings })
+  }
 
   if (action === 'forget_picture') {
     const p = typeof body.url === 'string' ? ownPath(body.url, g.userId) : null

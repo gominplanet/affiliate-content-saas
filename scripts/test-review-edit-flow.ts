@@ -47,7 +47,7 @@ check('finished videos are named for the 30 day clean-up', /edit-\$\{stamp\}-\$\
 
 // ── A review and a TRYBE ad are different videos from the start ─────────────
 const E = read('lib/review-edit.ts')
-check('the page asks what the video is for first', /1\. What is this video for\?/.test(U) && /\(\['review', 'trybe'\] as VideoKind\[\]\)/.test(U))
+check('one video asks what it is for first', /What is this video for\?/.test(U) && /\(\['review', 'trybe'\] as VideoKind\[\]\)/.test(U) && /settings: look/.test(U))
 check('no wide and vertical choice: the kind decides the format', !/Make it<\/p>/.test(U) && /formats: kind === 'trybe' \? \['vertical'\] : \['wide'\]/.test(E))
 check('a TRYBE ad has its own brief: an ad, cut harder, opening on a hook', /system: o\.kind === 'trybe' \? TRYBE_SYSTEM : PLAN_SYSTEM/.test(P) && /It is not a review/.test(P) && /filler/.test(P))
 check('a take filmed the wrong way round for a review is said before any work', /This take was filmed upright\. An Amazon and YouTube review is filmed sideways/.test(W))
@@ -74,7 +74,7 @@ check('the dead air is found from the sound itself, when reading and for a video
 check('the title is drawn in its look, colour and size, and the page previews that same drawing', /drawTitle\(t\.text, \{ look: t\.look/.test(W) && /\/api\/review-edit\/title\?/.test(U) && /This is the picture MVP puts on the video/.test(U))
 check('a preview that cannot be drawn says so, never a blank', /The preview could not be drawn/.test(U) && /onError=\{\(\) => setTitleBad\(true\)\}/.test(U))
 check('a title can stay on for the whole video', /n === 0 \? 'the whole video'/.test(U) && /settings\.title\.seconds === 0 \? spec\.seconds \+ 1/.test(W))
-check('pictures are only ever the creator\u2019s own files, in a library of their own', (R.match(/settings\.pictures = settings\.pictures\.filter\(\(p\) => own\(p\.url\)\)/g) ?? []).length === 2 && /const PICTURE_NAME = \/\^pic-/.test(R) && /pic-\$\{crypto\.randomUUID\(\)\}/.test(U))
+check('pictures are only ever the creator\u2019s own files, in a library of their own', (R.match(/settings\.pictures = settings\.pictures\.filter\(\(p\) => own\(p\.url\)\)/g) ?? []).length === 3 && /const PICTURE_NAME = \/\^pic-/.test(R) && /pic-\$\{crypto\.randomUUID\(\)\}/.test(U))
 check('deleting from the library touches only a library picture of this creator', /action === 'forget_picture'[\s\S]{0,200}ownPath\(body\.url, g\.userId\)[\s\S]{0,120}PICTURE_NAME\.test/.test(R))
 check('no clean-up job deletes library pictures', !/pic/.test((read('app/api/cron/purge-shorts-sources/route.ts').match(/\^\(([^)]*)\)-/) ?? [''])[0]))
 check('the server lays up to four pictures over the video, each at its moment', /body\.pictures[\s\S]{0,80}\.slice\(0, 4\)/.test(S) && /pictures, ass,/.test(S))
@@ -87,6 +87,14 @@ check('a B-roll of a different product is caught while reading, left out, and sa
 check('the B-roll check only says no when it is clearly another product', /Generic shots \(hands, a box, packaging, a table\) or not being sure is "same": true/.test(P) && /fits: raw\.same !== false/.test(P))
 check('the video server reads when each clip was filmed from the file, a few at a time, its header only', /app\.post\('\/filmed'/.test(S) && /'-show_entries', 'format_tags'/.test(S) && /Math\.min\(6, items\.length\)/.test(S))
 
+// ── The page (Seb, 2026-10-30: "Can we clean this up?") ──────────────────────
+const M = read('supabase/migrations/462_review_edit_looks.sql')
+check('the look is saved once, in its own table, safe to run twice and closed to the browser', /create table if not exists public\.review_edit_looks/.test(M) && /enable row level security/.test(M) && !/create policy/.test(M))
+check('a saved look is what new videos start from, and the page says when it is borrowed from the last video instead', /defaults: lookRow \? cleanSettings\(lookRow\.settings\) : last \?/.test(R) && /lookSaved: !!lookRow/.test(R) && /Not saved yet: this is the look of the last video you added/.test(U))
+check('saving the look keeps only the creator\u2019s own logo and pictures, and says when the table is missing', /action === 'save_look'[\s\S]{0,300}own\(settings\.logo\.url\)[\s\S]{0,200}own\(p\.url\)/.test(R) && /Saving your look needs migration 462 in Supabase first/.test(R))
+check('three parts: your look, add videos, your videos', /aria-label="Your look"/.test(U) && /aria-label="Add videos"/.test(U) && /aria-label="Your videos"/.test(U) && /A batch from Google Drive/.test(U) && /'One video'/.test(U))
+check('a card folds its changes away until Edit this video is pressed', /Edit this video/.test(U) && /\{open && editable && \(/.test(U))
+
 // ── Cost ─────────────────────────────────────────────────────────────────────
 check('the plan on Sonnet 5, the B-roll and typed changes on Haiku', /PLAN_MODEL = 'claude-sonnet-5'/.test(P) && /QUICK_MODEL = 'claude-haiku-4-5-20251001'/.test(P) && /model: QUICK_MODEL[\s\S]{0,40}max_tokens: 900/.test(P))
 check('the B-roll is seen from 36 small frames, sent in the answer, never stored', /frames: 36, width: 320/.test(W) && /jpg: fs\.readFileSync\(out\)\.toString\('base64'\)/.test(S))
@@ -95,7 +103,7 @@ check('every AI call is counted', (P.match(/recordAnthropicUsage\(/g) ?? []).len
 // ── Every stop says why ──────────────────────────────────────────────────────
 const fails2 = (W.match(/status: 'failed', note: /g) ?? []).length + (W.match(/return await fail\(/g) ?? []).length
 check('each way a video stops writes its reason', fails2 >= 8)
-check('the page shows every status in words, and the note under it', ['queued', 'reading', 'ready_to_make', 'making', 'done', 'failed'].every((k) => new RegExp(`${k}: \\{ words: '`).test(U)) && /\{e\.note && <p/.test(U))
+check('the page shows every status in words, and the note under it', ['queued', 'reading', 'ready_to_make', 'making', 'done', 'failed'].every((k) => new RegExp(`${k}: \\{ words: '`).test(U)) && /e\.status !== 'done' && line && <p/.test(U) && /: e\.note$/m.test(U))
 check('a cut is never silent: each is listed with why, and can be put back', /What MVP cut/.test(U) && /c\.restored \? 'Cut it again' : 'Put it back'/.test(U))
 check('changes are said to need Make it again', /Changes here show once you press Make it again/.test(U))
 check('Send to Drop goes through Drop’s own draft', /action: 'draft_start'/.test(U) && /action: 'draft_add', dropId: d\.id/.test(U))

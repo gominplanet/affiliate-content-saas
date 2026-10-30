@@ -43,7 +43,7 @@ check('a Drive video can be made again any time: only uploads can be gone', /row
 
 const U = read('components/review-editor/ReviewEditor.tsx')
 const P = read('components/review-editor/drive-picker.ts')
-check('the page offers Connect Google Drive, then Choose from Google Drive on each take', /href="\/api\/auth\/google-drive"/.test(U) && /Choose from Google Drive/.test(U) && /takeButtons\('review'\)/.test(U) && /takeButtons\('broll'\)/.test(U))
+check('the page offers Connect Google Drive, then From Google Drive on each take', /href="\/api\/auth\/google-drive"/.test(U) && /'From Google Drive'/.test(U) && /takeBox\('review', /.test(U) && /takeBox\('broll', /.test(U))
 check('the picker opens with a fresh token and MVP’s project, so the file is opened for MVP', /const st = await loadDrive\(\)/.test(U) && /\.setAppId\(o\.appId\)/.test(P) && /\.setOAuthToken\(o\.token\)/.test(P))
 check('a Drive take says it stays in the creator’s Drive', /It stays in your Drive/.test(U) && /MVP kept no copy/.test(U))
 

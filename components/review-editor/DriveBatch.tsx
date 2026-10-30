@@ -99,8 +99,9 @@ export default function DriveBatch({ drive, loadDrive, settings, onAdded }: {
       const p = pairs[i]
       setBusy(`add:${i + 1}`)
       try {
-        // Each video gets its own title from what is said in it.
-        const look = cleanSettings({ ...settings, kind: p.kind, title: { ...settings.title, text: '' } }, settings)
+        // The look on every video. A title left empty is written by MVP for
+        // each video; one typed (a disclosure) is the same on all of them.
+        const look = cleanSettings({ ...settings, kind: p.kind }, settings)
         const r = await fetch('/api/review-edit', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ action: 'add', name: p.product || p.a.name.replace(/\.[^.]+$/, ''), review: { driveId: p.a.id, name: p.a.name }, broll: p.b ? { driveId: p.b.id, name: p.b.name } : undefined, product: p.product, settings: look }),
@@ -115,14 +116,16 @@ export default function DriveBatch({ drive, loadDrive, settings, onAdded }: {
     setBusy(null)
   }
 
-  const folderRow = (which: 'aRoll' | 'bRoll', label: string, hint: string) => {
+  const folderTile = (which: 'aRoll' | 'bRoll', label: string, hint: string) => {
     const f = which === 'aRoll' ? drive.aRoll : drive.bRoll
     return (
-      <div className="flex flex-wrap items-center gap-2 text-[13px]">
-        <FolderOpen size={14} style={{ color: BLUE }} />
-        <b>{label}</b>
-        {f ? <span>{f.name}</span> : <span style={soft}>{hint}</span>}
-        <button type="button" onClick={() => void setFolder(which)} disabled={!!busy} className="underline font-semibold" style={{ color: BLUE }}>
+      <div className="rounded-xl border p-3 flex items-center gap-3" style={{ borderColor: f ? 'var(--border-2)' : `${BLUE}55`, background: 'var(--surface)' }}>
+        <FolderOpen size={18} style={{ color: BLUE }} className="shrink-0" />
+        <div className="min-w-0 flex-1">
+          <p className="text-[11.5px] font-semibold uppercase tracking-wider" style={soft}>{label}</p>
+          <p className="text-[13.5px] font-semibold truncate">{f ? f.name : <span className="font-normal" style={soft}>{hint}</span>}</p>
+        </div>
+        <button type="button" onClick={() => void setFolder(which)} disabled={!!busy} className="text-[12.5px] font-semibold underline shrink-0" style={{ color: BLUE }}>
           {busy === which ? <Loader2 size={12} className="animate-spin inline" /> : null} {f ? 'Change' : which === 'aRoll' ? 'Choose your A-roll folder' : 'Choose your B-roll folder'}
         </button>
       </div>
@@ -130,20 +133,23 @@ export default function DriveBatch({ drive, loadDrive, settings, onAdded }: {
   }
 
   return (
-    <div className="rounded-xl border p-3 mb-3" style={{ borderColor: `${BLUE}55`, background: `${BLUE}08` }} aria-label="A batch from Google Drive">
-      <p className="text-[14px] font-bold flex items-center gap-1.5"><Layers size={15} /> A batch from Google Drive</p>
-      <p className="text-[12.5px] mt-0.5 mb-2" style={{ color: 'var(--text-2)' }}>
-        Keep your talking takes in one Drive folder (A-roll) and your B-roll in another. Film one product at a time: its talking take, then its B-roll (or the B-roll first, as long as you always do it the same way). No renaming needed: MVP reads when each was filmed from the file itself. Each time, select everything in each folder; anything already made is left out. Upright takes become TRYBE ads; sideways ones, Amazon and YouTube reviews.
-      </p>
-      <div className="flex flex-col gap-1.5">
-        {folderRow('aRoll', 'A-roll folder:', 'not set yet (your talking takes)')}
-        {folderRow('bRoll', 'B-roll folder:', 'not set yet (optional)')}
+    <div aria-label="A batch from Google Drive">
+      <ol className="text-[13px] flex flex-col gap-1 list-decimal pl-5" style={{ color: 'var(--text-2)' }}>
+        <li>Film one product at a time: its talking take, then its B-roll (or the B-roll first, as long as you always do it the same way).</li>
+        <li>Put the talking takes in your A-roll folder and the B-roll in your B-roll folder. Any names: MVP reads when each was filmed from the file itself.</li>
+        <li>Press <b>Pick this batch</b> and select everything in each folder. MVP pairs them and leaves out anything already made.</li>
+      </ol>
+      <div className="grid sm:grid-cols-2 gap-2 mt-3">
+        {folderTile('aRoll', 'A-roll folder', 'Your talking takes')}
+        {folderTile('bRoll', 'B-roll folder', 'Optional')}
       </div>
-      <button type="button" onClick={() => void pickBatch()} disabled={!drive.aRoll || !!busy}
-        className="mt-3 inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[13px] font-semibold text-white disabled:opacity-50" style={{ background: BLUE }}>
-        {busy === 'pick' || busy === 'read' ? <Loader2 size={14} className="animate-spin" /> : <Layers size={14} />} {busy === 'read' ? 'Reading the files you picked' : 'Pick this batch'}
-      </button>
-      {!drive.aRoll && <span className="ml-2 text-[12px]" style={soft}>Choose your A-roll folder first.</span>}
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <button type="button" onClick={() => void pickBatch()} disabled={!drive.aRoll || !!busy}
+          className="inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-[13.5px] font-semibold text-white disabled:opacity-50" style={{ background: BLUE }}>
+          {busy === 'pick' || busy === 'read' ? <Loader2 size={14} className="animate-spin" /> : <Layers size={14} />} {busy === 'read' ? 'Reading the files you picked' : 'Pick this batch'}
+        </button>
+        <span className="text-[12px]" style={soft}>{drive.aRoll ? 'Upright takes become TRYBE ads; sideways ones, Amazon and YouTube reviews. They use your look above.' : 'Choose your A-roll folder first.'}</span>
+      </div>
 
       {skipped.length > 0 && <p className="mt-2 text-[12.5px]" style={soft}>Left out, already made or in the queue ({skipped.length}): {skipped.join(', ')}.</p>}
       {pairs && !filmedRead && <p className="mt-2 text-[12.5px] inline-flex items-start gap-1.5" style={{ color: '#B45309' }}><AlertTriangle size={13} className="mt-0.5 shrink-0" /> MVP could not read when these were filmed, so they are paired by name and file order. Check each pair.</p>}
@@ -156,27 +162,28 @@ export default function DriveBatch({ drive, loadDrive, settings, onAdded }: {
       {pairs && pairs.length > 0 && (
         <div className="mt-3">
           <p className="text-[13.5px] font-bold">Check the pairs ({pairs.length} {pairs.length === 1 ? 'video' : 'videos'})</p>
+          <p className="text-[12px]" style={soft}>Change a B-roll or what a video is for here, then add them all.</p>
           <ul className="mt-1.5 flex flex-col gap-2">
             {pairs.map((p, i) => (
-              <li key={p.a.id} className="rounded-lg border p-2.5" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
+              <li key={p.a.id} className="rounded-xl border p-3" style={{ borderColor: 'var(--border-2)', background: 'var(--surface)' }}>
                 <p className="text-[13px] font-semibold">{i + 1}. {p.a.name} <span className="font-normal" style={soft}>{p.a.seconds ? `${clock(p.a.seconds)}, ` : ''}{p.a.width && p.a.height ? (p.a.height > p.a.width ? 'filmed upright' : 'filmed sideways') : 'shape unknown'}</span></p>
                 <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
                   {(['review', 'trybe'] as VideoKind[]).map((k) => (
                     <button key={k} type="button" onClick={() => change(i, { kind: k })} aria-pressed={p.kind === k} className="rounded-full border px-2.5 py-0.5 text-[12px] font-semibold"
-                      style={p.kind === k ? { background: PURPLE, borderColor: PURPLE, color: '#fff' } : { borderColor: 'var(--border)', color: 'var(--text-2)' }}>{KIND_WORDS[k].name}</button>
+                      style={p.kind === k ? { background: PURPLE, borderColor: PURPLE, color: '#fff' } : { borderColor: 'var(--border-2)', color: 'var(--text-2)' }}>{KIND_WORDS[k].name}</button>
                   ))}
                 </div>
                 <div className="grid sm:grid-cols-2 gap-2 mt-1.5">
                   <label className="text-[12px]" style={soft}>B-roll
                     <select value={p.b?.id ?? ''} onChange={(e) => change(i, { b: pool.find((x) => x.id === e.target.value) ?? null, how: e.target.value ? p.how === 'none' ? 'order' : p.how : 'none' })}
-                      className="mt-0.5 w-full rounded-lg border px-2 py-1 text-[12.5px] bg-transparent" style={{ borderColor: 'var(--border)', color: 'var(--text)' }}>
+                      className="mt-0.5 w-full rounded-lg border px-2 py-1 text-[12.5px] bg-transparent" style={{ borderColor: 'var(--border-2)', color: 'var(--text)' }}>
                       <option value="">No B-roll</option>
                       {pool.map((b) => <option key={b.id} value={b.id}>{b.name}{usedB.has(b.id) && b.id !== p.b?.id ? ' (used by another)' : ''}</option>)}
                     </select>
                   </label>
                   <label className="text-[12px]" style={soft}>The product (optional)
                     <input value={p.product} onChange={(e) => change(i, { product: e.target.value.slice(0, 120) })} placeholder="MVP hears it in your take if empty"
-                      className="mt-0.5 w-full rounded-lg border px-2 py-1 text-[12.5px] bg-transparent" style={{ borderColor: 'var(--border)', color: 'var(--text)' }} />
+                      className="mt-0.5 w-full rounded-lg border px-2 py-1 text-[12.5px] bg-transparent" style={{ borderColor: 'var(--border-2)', color: 'var(--text)' }} />
                   </label>
                 </div>
                 <p className="text-[11.5px] mt-1" style={{ color: p.b ? 'var(--text-3)' : '#B45309' }}>{p.b ? `${HOW[p.how]}: ${p.b.name}` : HOW.none}</p>
@@ -188,7 +195,7 @@ export default function DriveBatch({ drive, loadDrive, settings, onAdded }: {
             className="mt-3 inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-[13.5px] font-semibold text-white disabled:opacity-50" style={{ background: PURPLE }}>
             {busy?.startsWith('add') ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />} {busy?.startsWith('add:') ? `Adding ${busy.slice(4)} of ${pairs.length}` : `Add all ${pairs.length} to the queue`}
           </button>
-          <p className="text-[12px] mt-1" style={soft}>They use the look chosen below (logo, zooms, colour), and each gets its own title from what you say.</p>
+          <p className="text-[12px] mt-1" style={soft}>They use your look above.</p>
         </div>
       )}
       {added && (
