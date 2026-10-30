@@ -19,9 +19,11 @@ export const BURN_KEEP_DAYS = 30
 export const BURN_BUCKET = 'instagram-videos'
 const DAY_MS = 24 * 60 * 60 * 1000
 
-/** A video the overlay burner saved. */
+/** A video the overlay burner saved, or a review editor video
+ *  (<user>/edit-<time>-wide|vertical.mp4, lib/review-edit-server): the same
+ *  30 days, the same "unless still scheduled". */
 export function isBurnedVideo(name: string | null | undefined): boolean {
-  return /^burned-\d+\.mp4$/.test(String(name || ''))
+  return /^burned-\d+\.mp4$/.test(String(name || '')) || /^edit-\d+-(wide|vertical)\.mp4$/.test(String(name || ''))
 }
 
 /** Every storage path in the bucket these rows point at, read from the whole

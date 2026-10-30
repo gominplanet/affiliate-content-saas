@@ -14,6 +14,7 @@ const now = Date.parse('2026-12-01T12:00:00Z')
 const daysAgo = (d: number) => new Date(now - d * 86_400_000).toISOString()
 
 check('only the burner\'s own videos', isBurnedVideo('burned-1793210034614.mp4') && !isBurnedVideo('cta-1793210034614.mp4') && !isBurnedVideo('short-1.mp4') && !isBurnedVideo('burner-1.mp4') && !isBurnedVideo('trybe-intro-x.mp4') && !isBurnedVideo('caption-abc.png'))
+check('review editor videos follow the same 30 days', isBurnedVideo('edit-1793210034614-wide.mp4') && isBurnedVideo('edit-1793210034614-vertical.mp4') && !isBurnedVideo('edit-title-x.png') && !isBurnedVideo('source-edit-x.mp4'))
 check('the window is 30 days', BURN_KEEP_DAYS === 30)
 
 const base = 'https://x.supabase.co/storage/v1/object/public/instagram-videos/'

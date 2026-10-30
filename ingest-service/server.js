@@ -260,7 +260,7 @@ function probeProxy() {
 
 app.get('/health', async (_req, res) => {
   const p = await probeProxy()
-  res.json({ ok: true, lastProxyFallback, cookies: cookiesReady, cookiesUpdatedAt, cookieVars: cookieDiag.vars, cookieLines: cookieDiag.lines, cookieError: cookieDiag.error, proxy: !!PROXY, proxyOk: p.ok, proxyError: p.error, ytDlp: ytDlpVersion, ytDlpChannel: YT_DLP_CHANNEL, potProvider: !!POT_BASE_URL, build: BUILD })
+  res.json({ ok: true, lastProxyFallback, cookies: cookiesReady, cookiesUpdatedAt, cookieVars: cookieDiag.vars, cookieLines: cookieDiag.lines, cookieError: cookieDiag.error, proxy: !!PROXY, proxyOk: p.ok, proxyError: p.error, ytDlp: ytDlpVersion, ytDlpChannel: YT_DLP_CHANNEL, potProvider: !!POT_BASE_URL, build: BUILD, edit: true })
 })
 
 // Hot-swap the yt-dlp cookies at runtime — SCOUT reads the operator's fresh
@@ -1197,6 +1197,213 @@ app.post('/dub', async (req, res) => {
   } finally {
     cleanupTmp(vTmp, aTmp, outTmp)
   }
+})
+
+// ── REVIEW EDITOR (Seb, 2026-10-30) ──────────────────────────────────────────
+// The creator shoots the review in one take and the B-roll in another; MVP
+// decides the cuts and where the B-roll goes, and this makes the video in one
+// pass (edit-filters.js): wide for Amazon and YouTube, vertical for TRYBE and
+// TikTok, or both from the same decode. The raw takes are only ever in this
+// job's own temp folder, removed when the job ends, whatever happened.
+const { buildEditGraph, cleanInserts, snapSegments, editSeconds, masterSize, FPS: EDIT_FPS } = require('./edit-filters')
+// Encoder threads per format. A small box stays at 2; a bigger one goes faster.
+const EDIT_THREADS = String(Math.max(1, Math.min(8, Number(process.env.EDIT_THREADS) || 2)))
+const EDIT_MAX_SOURCE_SEC = 60 * 60
+const EDIT_MAX_OUTPUT_SEC = 20 * 60
+
+async function downloadLarge(url, dest, timeoutMs = 15 * 60_000) {
+  const res = await fetch(url, { signal: AbortSignal.timeout(timeoutMs) })
+  if (!res.ok || !res.body) throw new Error(`source fetch ${res.status}`)
+  await pipeline(Readable.fromWeb(res.body), fs.createWriteStream(dest))
+  return fs.statSync(dest).size
+}
+
+/** A video's picture size as it plays (a phone's rotation applied), its
+ *  length, and whether it has sound. */
+function ffprobeInfo(input) {
+  return new Promise((resolve) => {
+    execFile('ffprobe', ['-v', 'error', '-show_entries', 'stream=codec_type,width,height:stream_tags=rotate:stream_side_data=rotation:format=duration', '-of', 'json', input],
+      { timeout: 60_000, killSignal: 'SIGKILL', maxBuffer: 4 * 1024 * 1024 }, (err, stdout) => {
+        if (err) return resolve(null)
+        try {
+          const j = JSON.parse(String(stdout))
+          const streams = Array.isArray(j.streams) ? j.streams : []
+          const v = streams.find((x) => x.codec_type === 'video') || {}
+          const side = (Array.isArray(v.side_data_list) ? v.side_data_list : []).find((d) => d && d.rotation != null)
+          const rot = Math.abs(Number(side ? side.rotation : (v.tags && v.tags.rotate)) || 0) % 180
+          const w = Number(v.width) || 0, h = Number(v.height) || 0
+          resolve({
+            w: rot === 90 ? h : w, h: rot === 90 ? w : h,
+            duration: Number(j.format && j.format.duration) || 0,
+            hasAudio: streams.some((x) => x.codec_type === 'audio'),
+          })
+        } catch { resolve(null) }
+      })
+  })
+}
+
+function runFfmpeg(args, timeoutMs, label) {
+  return new Promise((resolve, reject) => {
+    execFile('ffmpeg', ['-hide_banner', '-loglevel', 'error', ...args], { maxBuffer: 1024 * 1024 * 64, timeout: timeoutMs, killSignal: 'SIGKILL' }, (err, _so, se) => {
+      if (err) reject(new Error(`${label}: ` + (((se && se.trim()) || err.message || 'failed') + (err.signal ? ` [signal ${err.signal}]` : '')).slice(-400)))
+      else resolve()
+    })
+  })
+}
+
+// POST /probe — what a take is: { url, frames?: 0..40, width?: 160..480 }
+//   → { duration, width, height, hasAudio, frames: [{ at, jpg (base64) }] }.
+// The frames come back in the answer, so nothing is stored for them.
+app.post('/probe', async (req, res) => {
+  if (SECRET && req.get('x-ingest-secret') !== SECRET) return res.status(401).json({ error: 'unauthorized' })
+  const url = String(req.body?.url || '').trim()
+  const n = Math.max(0, Math.min(40, Math.floor(Number(req.body?.frames) || 0)))
+  const width = Math.max(160, Math.min(480, Math.floor(Number(req.body?.width) || 320)))
+  if (!/^https:\/\//i.test(url)) return res.status(400).json({ error: 'bad url' })
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'probe-'))
+  try {
+    await assertPublicHttpUrl(url)
+    const info = await ffprobeInfo(url)
+    if (!info || !info.w) return res.status(422).json({ error: 'That file could not be read as a video.' })
+    const frames = []
+    const times = Array.from({ length: n }, (_, i) => Math.round(((i + 0.5) * info.duration / n) * 100) / 100)
+    for (let i = 0; i < times.length; i += 4) {
+      await Promise.all(times.slice(i, i + 4).map(async (at, j) => {
+        const out = path.join(dir, `f${i + j}.jpg`)
+        try {
+          await runFfmpeg(['-ss', String(at), '-i', url, '-frames:v', '1', '-vf', `scale=${width}:-2`, '-q:v', '5', '-y', out], 60_000, 'frame')
+          if (fs.existsSync(out)) frames.push({ at, jpg: fs.readFileSync(out).toString('base64') })
+        } catch { /* a frame that would not come is left out */ }
+      }))
+    }
+    frames.sort((a, b) => a.at - b.at)
+    return res.json({ duration: Math.round(info.duration * 100) / 100, width: info.w, height: info.h, hasAudio: info.hasAudio, frames })
+  } catch (e) {
+    return res.status(502).json({ error: String((e && e.message) || e).slice(0, 300) })
+  } finally {
+    try { fs.rmSync(dir, { recursive: true, force: true }) } catch { /* ignore */ }
+  }
+})
+
+// POST /render-edit — the edit, in the background (one at a time, with every
+// other render). Body: { mainUrl, brollUrl?, userId, job, callbackUrl,
+//   segments, inserts?, zooms?, color?, formats, cropX?,
+//   logo?: { url, position, widthPct }, title?: { url, position, startSec, endSec, widthPct },
+//   words? (captions on vertical, on the finished timeline) }
+// Posts { job, ok, outputs: { wide?|vertical?: { url, seconds } }, ... } back.
+async function renderEditJob(body) {
+  const bad = (msg) => Object.assign(new Error(msg), { status: 400 })
+  const mainUrl = String(body.mainUrl || '').trim()
+  const brollUrl = String(body.brollUrl || '').trim()
+  const userId = String(body.userId || '').trim() || 'ingest'
+  if (!/^https:\/\//i.test(mainUrl)) throw bad('bad source')
+  const formats = (Array.isArray(body.formats) ? body.formats : []).filter((f) => f === 'wide' || f === 'vertical')
+  if (!formats.length) throw bad('no format')
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'edit-'))
+  try {
+    const main = path.join(dir, 'main.mp4')
+    await assertPublicHttpUrl(mainUrl)
+    await downloadLarge(mainUrl, main)
+    const info = await ffprobeInfo(main)
+    if (!info || !info.w) throw new Error('The review take could not be read as a video.')
+    if (info.duration > EDIT_MAX_SOURCE_SEC) throw new Error(`The review take is ${Math.round(info.duration / 60)} minutes; the editor takes up to ${EDIT_MAX_SOURCE_SEC / 60}.`)
+    const snapped = snapSegments(body.segments, info.duration)
+    if (!snapped) throw bad('nothing to keep')
+    const seconds = editSeconds(snapped)
+    if (seconds > EDIT_MAX_OUTPUT_SEC) throw new Error(`The edit is ${Math.round(seconds / 60)} minutes; the editor makes up to ${EDIT_MAX_OUTPUT_SEC / 60}.`)
+    const m = masterSize(info.w, info.h, formats.includes('vertical'))
+
+    const inputs = ['-i', main]
+    let next = 1
+    // B-roll: each moment cut from the take in turn, then joined into one
+    // track in the order it is used, so the one pass reads it straight through.
+    let track = null, inserts = [], brollSec = 0
+    if (/^https:\/\//i.test(brollUrl) && Array.isArray(body.inserts) && body.inserts.length) {
+      const broll = path.join(dir, 'broll.mp4')
+      await assertPublicHttpUrl(brollUrl)
+      await downloadLarge(brollUrl, broll)
+      const bi = await ffprobeInfo(broll)
+      brollSec = bi ? bi.duration : 0
+      inserts = cleanInserts(body.inserts, seconds, brollSec)
+      if (inserts.length) {
+        const list = []
+        for (let i = 0; i < inserts.length; i++) {
+          const piece = path.join(dir, `piece${i}.mp4`)
+          await runFfmpeg(['-ss', String(inserts[i].from), '-i', broll, '-an',
+            '-vf', `setpts=PTS-STARTPTS,fps=${EDIT_FPS},scale=${m.w}:${m.h}:force_original_aspect_ratio=increase,crop=${m.w}:${m.h},setsar=1`,
+            '-frames:v', String(Math.round(inserts[i].len * EDIT_FPS)),
+            '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '18', '-pix_fmt', 'yuv420p', '-x264-params', 'bframes=0:ref=1',
+            '-threads', EDIT_THREADS, '-y', piece], 5 * 60_000, 'B-roll')
+          list.push(`file '${piece}'`)
+        }
+        fs.writeFileSync(path.join(dir, 'pieces.txt'), list.join('\n'))
+        await runFfmpeg(['-f', 'concat', '-safe', '0', '-i', path.join(dir, 'pieces.txt'), '-c', 'copy', '-y', path.join(dir, 'track.mp4')], 5 * 60_000, 'B-roll track')
+        inputs.push('-i', path.join(dir, 'track.mp4'))
+        track = next++
+      }
+      try { fs.unlinkSync(broll) } catch { /* ignore */ }
+    }
+    const png = async (spec, name) => {
+      if (!spec || !/^https:\/\//i.test(String(spec.url || ''))) return null
+      const file = path.join(dir, `${name}.png`)
+      await assertPublicHttpUrl(spec.url)
+      await downloadToFile(spec.url, file)
+      const wh = await ffprobeWH(file)
+      inputs.push('-i', file)
+      return { ...spec, input: next++, w: wh ? wh.w : 1, h: wh ? wh.h : 1 }
+    }
+    const logo = await png(body.logo, 'logo')
+    const title = await png(body.title, 'title')
+    let ass = null
+    if (formats.includes('vertical') && Array.isArray(body.words) && body.words.length) {
+      ass = path.join(dir, 'captions.ass')
+      fs.writeFileSync(ass, buildAss(body.words, {}))
+    }
+    const built = buildEditGraph({
+      segments: body.segments, srcW: info.w, srcH: info.h, hasAudio: info.hasAudio, formats, cropX: body.cropX,
+      inserts, brollSec, track, zooms: body.zooms, color: body.color === true, logo, title, ass,
+    })
+    fs.writeFileSync(path.join(dir, 'graph.txt'), built.graph)
+    const outArgs = []
+    const files = {}
+    for (const f of built.formats) {
+      files[f] = path.join(dir, `out-${f}.mp4`)
+      outArgs.push('-map', `[${built.outputs[f].v}]`, '-map', `[${built.outputs[f].a}]`,
+        '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '21', '-pix_fmt', 'yuv420p', '-threads', EDIT_THREADS,
+        '-x264-params', 'rc-lookahead=10:sync-lookahead=0',
+        '-c:a', 'aac', '-b:a', '160k', '-movflags', '+faststart', '-y', files[f])
+    }
+    await runFfmpeg([...inputs, '-filter_complex_script', path.join(dir, 'graph.txt'), ...outArgs], 45 * 60_000, 'edit')
+    const stamp = Date.now()
+    const outputs = {}
+    for (const f of built.formats) {
+      if (!fs.existsSync(files[f])) throw new Error(`the ${f} version was not made`)
+      const key = `${userId}/edit-${stamp}-${f}.mp4`
+      await uploadToSupabase(key, files[f])
+      outputs[f] = { url: publicUrl(key), seconds: built.seconds }
+    }
+    return { outputs, seconds: built.seconds, formats: built.formats, inserts: built.inserts.length, zooms: built.zooms.length, master: `${built.master.w}x${built.master.h}` }
+  } finally {
+    try { fs.rmSync(dir, { recursive: true, force: true }) } catch { /* ignore */ }
+  }
+}
+
+app.post('/render-edit', async (req, res) => {
+  if (SECRET && req.get('x-ingest-secret') !== SECRET) return res.status(401).json({ error: 'unauthorized' })
+  const body = req.body || {}
+  const callbackUrl = String(body.callbackUrl || '')
+  if (!/^https:\/\//i.test(callbackUrl)) return res.status(400).json({ error: 'callbackUrl required' })
+  const job = String(body.job || '').slice(0, 300)
+  res.status(202).json({ accepted: true })
+  renderQueue = renderQueue.then(async () => {
+    try {
+      const out = await renderEditJob(body)
+      await postRenderCallback(callbackUrl, { job, ok: true, ...out })
+    } catch (e) {
+      console.error('[render-edit] failed', e && e.message)
+      await postRenderCallback(callbackUrl, { job, ok: false, error: String((e && e.message) || e).slice(0, 400) })
+    }
+  })
 })
 
 // BUILD marker: bump this string when the service code changes so the Railway
