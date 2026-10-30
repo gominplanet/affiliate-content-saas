@@ -81,6 +81,8 @@ check('a logo that is not a web address is no logo', s1.logo === null)
 check('title: no dashes, a known position, 2 to 15 seconds', s1.title.text === 'Best, hoodie' && s1.title.position === 'top' && s1.title.seconds === 15)
 const s2 = cleanSettings({ logo: { url: 'https://x/logo.png', position: 'lower-right' } })
 check('a logo keeps its place and is on', !!s2.logo && s2.logo.position === 'lower-right' && s2.logo.on === true)
+const stamp = cleanSettings({ logo: { url: 'https://x/logo.png', position: 'upper-right', opacity: 0.48, size: 'large' } })
+check('the logo can be a see-through stamp, at a size, and snaps to the looks offered', !!stamp.logo && stamp.logo.opacity === 0.5 && stamp.logo.size === 'large' && cleanSettings({ logo: { url: 'https://x/l.png' } }).logo!.opacity === 1 && cleanSettings({ logo: { url: 'https://x/l.png', size: 'huge' } }).logo!.size === 'medium')
 check('switches off stay off', cleanSettings({ zooms: false, color: false }).zooms === false && cleanSettings({ zooms: false }).color === true)
 
 const spec = renderSpec({ words, lines, plan: { cuts, keys: [4], placements: [{ shot: 1, line: 3, why: '' }], title: '' }, shots, duration: 14, settings: cleanSettings({ kind: 'review' }), hasBroll: true })

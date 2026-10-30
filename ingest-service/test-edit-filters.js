@@ -74,6 +74,13 @@ if (ffmpeg) {
     for (let i = 0; i < raw.length; i += 3) { c[0] += raw[i]; c[1] += raw[i + 1]; c[2] += raw[i + 2] }
     return c.map((x) => Math.round(x / (raw.length / 3)))
   }
+  // Mean colour of a small box of one frame.
+  const rgbIn = (f, at, x, y, w, h) => {
+    const raw = execFileSync('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-ss', String(at), '-i', f, '-frames:v', '1', '-vf', `crop=${w}:${h}:${x}:${y}`, '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-'])
+    const c = [0, 0, 0]
+    for (let i = 0; i < raw.length; i += 3) { c[0] += raw[i]; c[1] += raw[i + 1]; c[2] += raw[i + 2] }
+    return c.map((v) => Math.round(v / (raw.length / 3)))
+  }
   try {
     const main = path.join(dir, 'main.mp4'), broll = path.join(dir, 'broll.mp4'), logo = path.join(dir, 'logo.png')
     run(['-f', 'lavfi', '-i', 'color=c=red:s=1280x720:r=30:d=12', '-f', 'lavfi', '-i', 'sine=f=440:d=12', '-shortest', '-c:v', 'libx264', '-preset', 'ultrafast', '-c:a', 'aac', '-y', main])
@@ -89,7 +96,7 @@ if (ffmpeg) {
     run(['-f', 'concat', '-safe', '0', '-i', path.join(dir, 'pieces.txt'), '-c', 'copy', '-y', path.join(dir, 'track.mp4')])
     const built = E.buildEditGraph({
       segments, srcW: 1280, srcH: 720, hasAudio: true, formats: ['wide', 'vertical'], inserts, brollSec: 8, track: 1,
-      zooms: [[0.5, 2.5]], color: true, logo: { input: 2, w: 200, h: 100, position: 'upper-left', widthPct: { wide: 0.1, vertical: 0.2 } },
+      zooms: [[0.5, 2.5]], color: true, logo: { input: 2, w: 200, h: 100, position: 'upper-left', widthPct: { wide: 0.1, vertical: 0.2 }, opacity: 0.5 },
     })
     fs.writeFileSync(path.join(dir, 'graph.txt'), built.graph)
     const out = { wide: path.join(dir, 'w.mp4'), vertical: path.join(dir, 'v.mp4') }
@@ -108,6 +115,10 @@ if (ffmpeg) {
       check(`${f}: the take shows before the B-roll`, talk[0] > 150 && talk[2] < 90, talk)
       check(`${f}: the B-roll shows at its moment`, br[2] > 150 && br[0] < 90, br)
       check(`${f}: the take comes back after it`, after[0] > 150 && after[2] < 90, after)
+      // The logo (white, at 50%) over the red take, top left: pink, not white, not red.
+      const W = f === 'wide' ? 1920 : 1080
+      const stamp = rgbIn(out[f], 1.5, Math.round(W * 0.04) + 8, Math.round((f === 'wide' ? 1080 : 1920) * 0.05) + 8, 24, 16)
+      check(`${f}: the logo is a see-through stamp in its corner`, stamp[0] > 200 && stamp[1] > 90 && stamp[1] < 190 && stamp[2] > 90 && stamp[2] < 190, stamp)
     }
     console.log(`   (real edit of a 12 second take into two formats: ${secs.toFixed(1)}s)`)
   } catch (e) {

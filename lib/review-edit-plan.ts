@@ -146,7 +146,7 @@ export async function planEdit(o: { words: Word[]; lines: Line[]; shots: Shot[];
 const CHANGE_SYSTEM = [
   'A creator is editing a product review video in MVP and types a change. Turn it into JSON, changing only what they asked for.',
   `Positions: ${POSITIONS.join(', ')} (upper-left is top left, lower-right is bottom right).`,
-  'You can set: "logo": {"position", "on"}; "title": {"text", "position", "seconds", "on"}; "captions", "zooms", "color", "broll" (true or false); "cropX" (0 left to 1 right, where an upright ad is cut from a sideways take). Whether it is a review or a TRYBE ad cannot be changed: say so if asked.',
+  'You can set: "logo": {"position", "on", "opacity" (1 solid, 0.7, 0.5 or 0.3 for a see-through stamp), "size" ("small", "medium" or "large")}; "title": {"text", "position", "seconds", "on"}; "captions", "zooms", "color", "broll" (true or false); "cropX" (0 left to 1 right, where an upright ad is cut from a sideways take). Whether it is a review or a TRYBE ad cannot be changed: say so if asked.',
   'You can also "restore" cuts by number (put the part back) or add "cut" with line numbers {"from","to","why"}.',
   'Reply with JSON only: {"settings":{...},"restore":[],"cut":[],"said":"one short plain sentence saying what you changed"}. If the request is not something you can do, change nothing and say so in "said".',
 ].join('\n')

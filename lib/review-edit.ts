@@ -294,12 +294,23 @@ export const FORMAT_WORDS: Record<Format, string> = {
   vertical: 'Vertical, for the TRYBE brand',
 }
 
+export type LogoSize = 'small' | 'medium' | 'large'
+export const LOGO_SIZES: LogoSize[] = ['small', 'medium', 'large']
+/** How wide the logo is, as a share of the frame's width. */
+export const LOGO_WIDTH: Record<LogoSize, { wide: number; vertical: number }> = {
+  small: { wide: 0.08, vertical: 0.15 }, medium: { wide: 0.12, vertical: 0.22 }, large: { wide: 0.18, vertical: 0.32 },
+}
+/** Solid, or a see-through stamp (Seb, 2026-10-30: "a 50% transparency stamp"). */
+export const LOGO_OPACITY = [1, 0.7, 0.5, 0.3]
+const nearestOpacity = (v: number) => LOGO_OPACITY.reduce((a, b) => (Math.abs(b - v) < Math.abs(a - v) ? b : a), 1)
+
 export interface EditSettings {
   /** Chosen first, and never changed after: it decides the format. */
   kind: VideoKind
   /** From the kind: a review is wide, a TRYBE ad vertical. */
   formats: Format[]
-  logo: { url: string; position: Position; on: boolean } | null
+  /** On the whole video, in its corner, as solid or as a see-through stamp. */
+  logo: { url: string; position: Position; on: boolean; opacity: number; size: LogoSize } | null
   title: { text: string; position: Position; seconds: number; on: boolean }
   /** Word by word captions, on a TRYBE ad. */
   captions: boolean
@@ -340,6 +351,8 @@ export function cleanSettings(raw: unknown, base: EditSettings = DEFAULT_SETTING
       url: logoUrl,
       position: isPos(lr?.position) ? lr!.position as Position : base.logo?.position ?? 'upper-left',
       on: typeof lr?.on === 'boolean' ? lr.on as boolean : base.logo?.on ?? true,
+      opacity: Number.isFinite(Number(lr?.opacity)) && lr?.opacity != null ? nearestOpacity(Number(lr.opacity)) : base.logo?.opacity ?? 1,
+      size: LOGO_SIZES.includes(lr?.size as LogoSize) ? lr!.size as LogoSize : base.logo?.size ?? 'medium',
     } : null,
     title: {
       text: typeof tr.text === 'string' ? tr.text.replace(/\s*[–—]\s*/g, ', ').replace(/\s+-\s+/g, ', ').trim().slice(0, 60) : base.title.text,

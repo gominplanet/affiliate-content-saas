@@ -18,7 +18,7 @@ import { uploadWithProgress } from '@/lib/upload-progress'
 import { freshAccessToken, saysExpired } from '@/lib/fresh-token'
 import { storageSizeRefusal, BULK_VIDEO_MAX_BYTES } from '@/lib/clip-source-limits'
 import { pickFromDrive, type DriveState } from '@/components/review-editor/drive-picker'
-import { DEFAULT_SETTINGS, FORMAT_WORDS, KIND_WORDS, POSITIONS, POSITION_WORDS, cleanSettings, type EditSettings, type Format, type Position, type VideoKind } from '@/lib/review-edit'
+import { DEFAULT_SETTINGS, FORMAT_WORDS, KIND_WORDS, LOGO_OPACITY, LOGO_SIZES, POSITIONS, POSITION_WORDS, cleanSettings, type EditSettings, type Format, type Position, type VideoKind } from '@/lib/review-edit'
 
 const PURPLE = '#7C3AED'
 const GREEN = '#15803D'
@@ -98,7 +98,20 @@ function Choices({ s, set, onLogo, logoBusy }: { s: EditSettings; set: (s: EditS
               <img src={s.logo.url} alt="Your logo" className="h-8 w-auto rounded" style={{ background: 'repeating-conic-gradient(#ddd 0% 25%, #fff 0% 50%) 50% / 12px 12px' }} />
               <Toggle on={s.logo.on} set={(v) => set({ ...s, logo: { ...s.logo!, on: v } })} label="Show my logo" />
             </div>
-            {s.logo.on && pos(s.logo.position, (p) => set({ ...s, logo: { ...s.logo!, position: p } }))}
+            {s.logo.on && (
+              <>
+                {pos(s.logo.position, (p) => set({ ...s, logo: { ...s.logo!, position: p } }))}
+                <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+                  <span className="text-[12px]" style={soft}>Look:</span>
+                  {LOGO_OPACITY.map((o) => <Chip key={o} on={s.logo!.opacity === o} onClick={() => set({ ...s, logo: { ...s.logo!, opacity: o } })}>{o === 1 ? 'Solid' : `See-through ${Math.round(o * 100)}%`}</Chip>)}
+                </div>
+                <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+                  <span className="text-[12px]" style={soft}>Size:</span>
+                  {LOGO_SIZES.map((z) => <Chip key={z} on={s.logo!.size === z} onClick={() => set({ ...s, logo: { ...s.logo!, size: z } })}>{z === 'small' ? 'Small' : z === 'medium' ? 'Medium' : 'Large'}</Chip>)}
+                </div>
+                <p className="text-[12px] mt-1" style={soft}>It stays in its corner for the whole video.</p>
+              </>
+            )}
           </div>
         ) : null}
         <label className="mt-1 inline-flex items-center gap-1.5 text-[12.5px] font-semibold underline cursor-pointer" style={{ color: PURPLE }}>
@@ -350,7 +363,7 @@ export default function ReviewEditor() {
           <input value={product} onChange={(e) => setProduct(e.target.value)} placeholder="Bassdash UPF 50 hoodie" className="mt-1 w-full max-w-md rounded-lg border px-3 py-1.5 text-[13px] bg-transparent" style={{ borderColor: 'var(--border)', color: 'var(--text)' }} />
         </div>
         <div className="mt-4 pt-3 border-t" style={{ borderColor: 'var(--border)' }}>
-          <Choices s={settings} set={setSettings} logoBusy={logoBusy} onLogo={(f) => void uploadLogo(f, (url) => setSettings((s) => ({ ...s, logo: { url, position: s.logo?.position ?? 'upper-left', on: true } })))} />
+          <Choices s={settings} set={setSettings} logoBusy={logoBusy} onLogo={(f) => void uploadLogo(f, (url) => setSettings((s) => ({ ...s, logo: { url, position: s.logo?.position ?? 'upper-left', on: true, opacity: s.logo?.opacity ?? 1, size: s.logo?.size ?? 'medium' } })))} />
         </div>
         <div className="mt-4 flex flex-wrap items-center gap-2">
           <button type="button" onClick={() => void add()} disabled={!ready(review) || !!uploading || adding}
@@ -479,7 +492,7 @@ function EditCard({ e, reload, uploadLogo, logoBusy }: { e: EditView; reload: ()
         <details className="mt-3">
           <summary className="text-[13px] font-semibold cursor-pointer">Change the look</summary>
           <div className="mt-2">
-            <Choices s={s} set={(v) => { setS(v); setChanged(true) }} logoBusy={logoBusy} onLogo={(f) => void uploadLogo(f, (url) => { setS((x) => ({ ...x, logo: { url, position: x.logo?.position ?? 'upper-left', on: true } })); setChanged(true) })} />
+            <Choices s={s} set={(v) => { setS(v); setChanged(true) }} logoBusy={logoBusy} onLogo={(f) => void uploadLogo(f, (url) => { setS((x) => ({ ...x, logo: { url, position: x.logo?.position ?? 'upper-left', on: true, opacity: x.logo?.opacity ?? 1, size: x.logo?.size ?? 'medium' } })); setChanged(true) })} />
           </div>
         </details>
       )}

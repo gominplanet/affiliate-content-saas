@@ -20,7 +20,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { transcribeToCues, transcriptionConfigured } from '@/lib/shorts-transcribe'
 import { makeRenderJob } from '@/lib/render-job'
 import { drawTextPill } from '@/lib/text-pill'
-import { cleanSettings, cleanWords, clock, linesOf, renderSpec, type Plan, type Shot, type Word } from '@/lib/review-edit'
+import { cleanSettings, cleanWords, clock, linesOf, renderSpec, LOGO_WIDTH, type Plan, type Shot, type Word } from '@/lib/review-edit'
 import { planEdit, readShots } from '@/lib/review-edit-plan'
 import { driveAccessToken, driveMediaUrl } from '@/lib/google-drive'
 
@@ -196,7 +196,7 @@ export async function startMaking(db: Db, row: EditRow): Promise<void> {
     userId: row.user_id, job, callbackUrl: `${appUrl()}/api/review-edit/callback`,
     segments: spec.segments, inserts: spec.inserts, zooms: spec.zooms, color: settings.color,
     formats: settings.formats, cropX: settings.cropX, words: spec.words,
-    logo: spec.logo ? { url: spec.logo.url, position: spec.logo.position, widthPct: { wide: 0.12, vertical: 0.22 } } : undefined,
+    logo: spec.logo ? { url: spec.logo.url, position: spec.logo.position, widthPct: LOGO_WIDTH[spec.logo.size], opacity: spec.logo.opacity } : undefined,
     title: title ? { url: title.url, position: settings.title.position, startSec: 0.3, endSec: 0.3 + settings.title.seconds, widthPct: title.widthPct } : undefined,
   }, 60_000)
   if (!sent.ok) {

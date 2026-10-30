@@ -141,7 +141,7 @@ function placeAt(position, W, H, w, h) {
  *   cropX,                         0 left to 1 right, where vertical is cut from a sideways take
  *   inserts, brollSec, track,      track: input index of the B-roll track (pieces back to back)
  *   zooms, color,
- *   logo: { input, w, h, position, widthPct: { wide, vertical } },
+ *   logo: { input, w, h, position, widthPct: { wide, vertical }, opacity? (0 to 1) },
  *   title: { input, w, h, position, startSec, endSec, widthPct: { wide, vertical } },
  *   ass,                           captions file (vertical only)
  * }
@@ -217,7 +217,11 @@ function buildEditGraph(opts) {
       const h = even(w * (spec.h > 0 && spec.w > 0 ? spec.h / spec.w : 1))
       const { x, y } = placeAt(spec.position, W, H, w, h)
       const sized = `${name}${f}s`
-      g.push(`[${input}]scale=${w}:${h}[${sized}]`)
+      // A see-through stamp (Seb, 2026-10-30: "a 50% transparency stamp"):
+      // the picture's own transparency kept, times the opacity asked for.
+      const op = Number(spec.opacity)
+      const fade = Number.isFinite(op) && op > 0 && op < 1 ? `,format=rgba,colorchannelmixer=aa=${Math.round(op * 100) / 100}` : ''
+      g.push(`[${input}]scale=${w}:${h}${fade}[${sized}]`)
       const next = `${name}${f}o`
       const when = timed ? `:enable='between(t,${r3(spec.startSec)},${r3(spec.endSec)})'` : ''
       g.push(`[${cur}][${sized}]overlay=${x}:${y}${when}[${next}]`)
