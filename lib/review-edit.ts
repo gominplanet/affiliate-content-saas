@@ -46,9 +46,14 @@ export interface Pace {
   padIn: number; padOut: number; maxPause: number; brollNotBefore: number; brollMax: number
   minSilence: number; tailKeep: number; headKeep: number
 }
+/** WITH SLACK (Seb, 2026-11-02: "it has cut ... the ends of words and starts
+ *  of words ... Can we give it a little bit more slack so it doesn't seem so
+ *  abrupt?"). Twice the room round each word, a pause under half a second
+ *  left as a breath, and about a third of a second of it kept where a longer
+ *  one is cut (tailKeep + headKeep). An ad stays tighter than a review. */
 export const PACE: Record<VideoKind, Pace> = {
-  review: { padIn: 0.06, padOut: 0.12, maxPause: 0.3, brollNotBefore: 2.5, brollMax: 4, minSilence: 0.3, tailKeep: 0.1, headKeep: 0.05 },
-  trybe: { padIn: 0.05, padOut: 0.08, maxPause: 0.18, brollNotBefore: 1.5, brollMax: 3, minSilence: 0.22, tailKeep: 0.07, headKeep: 0.04 },
+  review: { padIn: 0.12, padOut: 0.2, maxPause: 0.4, brollNotBefore: 2.5, brollMax: 4, minSilence: 0.45, tailKeep: 0.2, headKeep: 0.12 },
+  trybe: { padIn: 0.08, padOut: 0.14, maxPause: 0.25, brollNotBefore: 1.5, brollMax: 3, minSilence: 0.32, tailKeep: 0.13, headKeep: 0.08 },
 }
 
 export interface Word { start: number; end: number; text: string }

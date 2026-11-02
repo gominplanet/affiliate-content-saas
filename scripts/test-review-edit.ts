@@ -40,7 +40,7 @@ check('words not in the line are not found', findWords(run, runLines[1], 'totall
 
 const cuts = [{ from: 0, to: 0, kind: 'chatter' as const, why: 'Talk before the review.' }, { from: 2, to: 2, kind: 'restart' as const, why: 'You started over.' }]
 const segs = keepSegments(words, lines, cuts, 14)
-check('cut lines go, the rest is kept with a little room either side', segs.length === 3 && Math.abs(segs[0][0] - (3.0 - 0.08)) < 0.04, segs)
+check('cut lines go, the rest is kept with a little room either side', segs.length === 3 && Math.abs(segs[0][0] - (3.0 - PACE.review.padIn)) < 0.04, segs)
 check('nothing kept is from a cut line', toOutput(segs, 0.8) === null && toOutput(segs, 5.5) === null)
 check('the long pause before the verdict is shortened, not kept', (() => { const gapOut = toOutput(segs, lines[4].start)! - toOutput(segs, lines[3].end - 0.01)!; return gapOut < 0.4 })())
 check('the last line keeps half a second after the last word', Math.abs(segs[segs.length - 1][1] - Math.round((lines[4].end + 0.5) * 30) / 30) < 0.04, segs)
@@ -73,9 +73,11 @@ check('a zoom lasts long enough to see: 2 to 8 seconds, from the strong line', z
   const kept = keepSegments(ws, ls, [], 12, PACE.review)
   const tight = keepSegments(ws, ls, [], 12, PACE.review, [[6.1, 7.2]])
   const gapOut = (seg: [number, number][]) => (toOutput(seg, 7.25) ?? 0) - (toOutput(seg, 6.09) ?? 0)
-  check('a quiet stretch the sound shows is cut, though the word timings hid it', gapOut(tight) < gapOut(kept) - 0.8 && gapOut(tight) < 0.35, [gapOut(kept), gapOut(tight)])
-  check('a little is kept after the last sound and before the next', withoutSilences([[0, 10]], [[4, 5]], PACE.review).map(([a, b]) => [a, b].map((x) => Math.round(x * 100) / 100)).join() === '0,4.1,4.95,10')
-  check('a short breath is left alone', withoutSilences([[0, 10]], [[4, 4.25]], PACE.review).length === 1 && withoutSilences([[0, 10]], [[4, 4.25]], PACE.trybe).length === 2)
+  check('a quiet stretch the sound shows is cut, though the word timings hid it, leaving a breath, not a splice', gapOut(tight) < gapOut(kept) - 0.6 && gapOut(tight) > 0.3 && gapOut(tight) < 0.45, [gapOut(kept), gapOut(tight)])
+  check('a little is kept after the last sound and before the next', withoutSilences([[0, 10]], [[4, 5]], PACE.review).map(([a, b]) => [a, b].map((x) => Math.round(x * 100) / 100)).join() === '0,4.2,4.88,10')
+  check('a breath under half a second is left alone in a review; an ad cuts it', withoutSilences([[0, 10]], [[4, 4.4]], PACE.review).length === 1 && withoutSilences([[0, 10]], [[4, 4.4]], PACE.trybe).length === 2)
+  // Seb, 2026-11-02: "it has cut ... the ends of words and starts of words".
+  check('with slack: room round each word, and a third of a second left where a pause is cut', PACE.review.padIn >= 0.12 && PACE.review.padOut >= 0.2 && PACE.review.tailKeep + PACE.review.headKeep >= 0.3 && PACE.review.minSilence >= 0.45 && PACE.trybe.padIn >= 0.08 && PACE.trybe.tailKeep + PACE.trybe.headKeep >= 0.2)
   check('a TRYBE ad keeps less around each cut than a review', PACE.trybe.tailKeep < PACE.review.tailKeep && PACE.trybe.minSilence < PACE.review.minSilence)
 }
 

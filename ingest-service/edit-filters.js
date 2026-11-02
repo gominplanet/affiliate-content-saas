@@ -54,6 +54,17 @@ function outputWindows(snapped) {
 const videoKeep = (snapped) => snapped.map((s) => `between(n,${s.ka},${s.kb - 1})`).join('+')
 const audioKeep = (snapped) => snapped.map((s) => `gte(t,${s.a})*lt(t,${s.b})`).join('+')
 
+/** A join's fade, each side, in seconds: so a cut never clicks. */
+const JOIN_FADE = 0.012
+/** The sound dipped for JOIN_FADE either side of every join in the finished
+ *  video (a volume expression on its time, evaluated each millisecond), or
+ *  null when nothing was cut. Pure. */
+function joinFade(snapped) {
+  const joins = outputWindows(snapped).slice(1).map((w) => w.start)
+  if (!joins.length) return null
+  return joins.map((j) => `min(1,abs(t-${j})/${JOIN_FADE})`).join('*')
+}
+
 /** B-roll moments, cleaned: inside the video, not overlapping, at most 24,
  *  each 1 to 8 seconds. at = seconds into the finished video, from = seconds
  *  into the B-roll take. */
@@ -185,7 +196,7 @@ function buildEditGraph(opts) {
   // A take with no sound gets silence, so every output still has a sound track.
   g.push(o.hasAudio === false
     ? `anullsrc=r=48000:cl=stereo,atrim=0:${seconds}[a0]`
-    : `[0:a]asetpts=PTS-STARTPTS,aresample=48000,asetnsamples=n=${AUDIO_STEP}:p=0,aselect='${audioKeep(snapped)}',asetpts=N/SR/TB[a0]`)
+    : `[0:a]asetpts=PTS-STARTPTS,aresample=48000,asetnsamples=n=${AUDIO_STEP}:p=0,aselect='${audioKeep(snapped)}',asetpts=N/SR/TB${joinFade(snapped) ? `,volume='${joinFade(snapped)}':eval=frame` : ''}[a0]`)
   let v = 'm0'
   if (zooms.length) {
     g.push(`[${v}]zoompan=z='${zoomExpr(zooms)}':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=1:s=${m.w}x${m.h}:fps=${FPS}[mz]`)
@@ -356,11 +367,14 @@ function remakeSize(w, h) {
 // after it, so pauses hide inside them. The sound itself says where it is
 // quiet: silencedetect, with a threshold set from how loud this take is.
 
-/** The quiet level for a take: 14 dB under its average loudness, kept
- *  between -50 and -30 dB so a hiss or a whisper never decides it. */
+/** The quiet level for a take: 18 dB under its average loudness, kept
+ *  between -55 and -30 dB so a hiss or a whisper never decides it. It was 14
+ *  dB, and the soft end of a word ("s", "f", a trailing breath) sat under it
+ *  and was cut as silence (Seb, 2026-11-02: "the ends of words and starts of
+ *  words"). */
 function silenceNoiseDb(meanDb) {
   const m = Number(meanDb)
-  return Number.isFinite(m) ? Math.round(Math.min(-30, Math.max(-50, m - 14))) : -40
+  return Number.isFinite(m) ? Math.round(Math.min(-30, Math.max(-55, m - 18))) : -42
 }
 
 /** silencedetect's lines as [start, end] seconds, in order. A silence still
@@ -399,4 +413,4 @@ function filmedAtFrom(tags) {
   return read(t['com.apple.quicktime.creationdate']) || read(t.creation_time) || null
 }
 
-module.exports = { MAX_PARTS, takeParts, partStarts, partAt, concatList, joinedAudioGraph, joinAsIs, joinedOk, remakeSize, filmedAtFrom, silenceNoiseDb, parseSilences, parseMeanDb, hdrChain, driveAuth, authArgs, FPS, snapSegments, editSeconds, outputWindows, cleanInserts, trackSetpts, insertEnable, zoomExpr, cleanZooms, masterSize, placeAt, buildEditGraph }
+module.exports = { JOIN_FADE, joinFade, MAX_PARTS, takeParts, partStarts, partAt, concatList, joinedAudioGraph, joinAsIs, joinedOk, remakeSize, filmedAtFrom, silenceNoiseDb, parseSilences, parseMeanDb, hdrChain, driveAuth, authArgs, FPS, snapSegments, editSeconds, outputWindows, cleanInserts, trackSetpts, insertEnable, zoomExpr, cleanZooms, masterSize, placeAt, buildEditGraph }

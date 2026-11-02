@@ -98,6 +98,16 @@ check('HDR (HLG or PQ) gets the conversion, a normal take none', !!E.hdrChain('a
   check('every file server.js needs is copied into the image', missing.length === 0 && needed.length > 0, missing)
 }
 
+// ── Slack (Seb, 2026-11-02: "Can we give it a little bit more slack") ───────
+{
+  const snapped = E.snapSegments([[0, 3], [4, 7], [8, 11]])
+  const fade = E.joinFade(snapped)
+  check('each join of the finished video gets a short fade, at its place', fade === `min(1,abs(t-3)/${E.JOIN_FADE})*min(1,abs(t-6)/${E.JOIN_FADE})` && E.JOIN_FADE <= 0.02, fade)
+  check('nothing cut, nothing faded', E.joinFade(E.snapSegments([[0, 5]])) === null)
+  check('the edit graph fades the sound at the joins', /volume='min\(1,abs\(t-3\)/.test(E.buildEditGraph({ segments: [[0, 3], [4, 7]], srcW: 1280, srcH: 720, hasAudio: true, formats: ['wide'] }).graph))
+  check('silence is 18 dB under the take’s average voice, so a soft word ending is not taken for it', E.silenceNoiseDb(-20) === -38 && E.silenceNoiseDb(-10) === -30 && E.silenceNoiseDb(-45) === -55 && E.silenceNoiseDb(undefined) === -42)
+}
+
 // ── A real edit, where ffmpeg is installed ───────────────────────────────────
 let ffmpeg = true
 try { execFileSync('ffmpeg', ['-version'], { stdio: 'ignore' }) } catch { ffmpeg = false }
@@ -166,6 +176,17 @@ if (ffmpeg) {
       check(`${f}: a picture shows at its moment, in its corner`, during[1] > 200 && during[0] < 60, during)
       check(`${f}: and not before it`, before[1] < 60, before)
     }
+    // Each join fades for a moment, so a cut never clicks (Seb, 2026-11-02:
+    // "so it doesn't seem so abrupt"): the sound dips at 3 s, where the first
+    // cut is, and nowhere else.
+    const level = (at) => {
+      const raw = execFileSync('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-i', out.wide, '-ss', String(at - 0.004), '-t', '0.008', '-vn', '-ac', '1', '-ar', '48000', '-f', 's16le', '-'])
+      let sum = 0
+      for (let i = 0; i + 1 < raw.length; i += 2) { const x = raw.readInt16LE(i); sum += x * x }
+      return Math.sqrt(sum / Math.max(1, raw.length / 2))
+    }
+    const steady = level(1.5), atJoin = level(3)
+    check('the sound fades for a moment at each join, and only there', steady > 1000 && atJoin < steady * 0.5, { steady: Math.round(steady), atJoin: Math.round(atJoin) })
     console.log(`   (real edit of a 12 second take into two formats: ${secs.toFixed(1)}s)`)
     // A filming time written by a camera is read back the way /filmed reads it.
     const stamped = path.join(dir, 'stamped.mov')
