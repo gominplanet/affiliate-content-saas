@@ -37,26 +37,55 @@ export const MAX_ATTEMPTS = 3
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type Db = any
 export const editDb = (): Db => createAdminClient()
-/** Where a take is: uploaded to MVP (deleted when done), or in the
+/** One file of a take: uploaded to MVP (deleted when done), or in the
  *  creator's Google Drive (never copied, never deleted by MVP). */
-export type Src =
+export type TakeFile =
   | { kind: 'upload'; url: string; path: string; name?: string; bytes?: number }
   | { kind: 'drive'; fileId: string; name?: string; bytes?: number }
+/** Where a take is: one file, or several joined into one video in this order
+ *  (`more` after the first; Seb, 2026-11-02: "these files are for video #1").
+ *  The video server joins them (ingest-service join-takes). */
+export type Src = TakeFile & { more?: TakeFile[] }
+/** The most files one take is joined from (ingest-service MAX_PARTS). */
+export const MAX_TAKE_FILES = 6
+
+/** Every file of a take, in order. Pure. */
+export const takeFiles = (s: Src | null | undefined): TakeFile[] => (s ? [s, ...(Array.isArray(s.more) ? s.more : [])] : [])
 
 /** Any take uploaded to MVP: only those are ever deleted. Pure. */
-export const hasUpload = (row: { review_src: Src; broll_src: Src | null }) => [row.review_src, row.broll_src].some((s) => s?.kind === 'upload')
+export const hasUpload = (row: { review_src: Src; broll_src: Src | null }) => [...takeFiles(row.review_src), ...takeFiles(row.broll_src)].some((s) => s?.kind === 'upload')
+
+/** What the video server reads a take from: its one address, or the
+ *  addresses of the files it joins (`parts`; an older server refuses those
+ *  rather than reading only the first). */
+type Readable = { url: string; auth?: string } | { parts: { url: string; auth?: string }[] }
+const joined = (r: Readable): r is { parts: { url: string; auth?: string }[] } => 'parts' in r
 
 /** Where the video server reads each take from, with a fresh Drive token
  *  when one is from Drive; or why it cannot. */
-async function takes(db: Db, row: Pick<EditRow, 'user_id' | 'review_src' | 'broll_src'>): Promise<{ ok: true; review: { url: string; auth?: string }; broll: { url: string; auth?: string } | null } | { ok: false; error: string }> {
+async function takes(db: Db, row: Pick<EditRow, 'user_id' | 'review_src' | 'broll_src'>): Promise<{ ok: true; review: Readable; broll: Readable | null } | { ok: false; error: string }> {
   let auth: string | undefined
-  if ([row.review_src, row.broll_src].some((s) => s?.kind === 'drive')) {
+  if ([...takeFiles(row.review_src), ...takeFiles(row.broll_src)].some((s) => s?.kind === 'drive')) {
     const t = await driveAccessToken(db, row.user_id)
     if (!t.ok) return { ok: false, error: t.error }
     auth = `Bearer ${t.token}`
   }
-  const one = (s: Src) => (s.kind === 'drive' ? { url: driveMediaUrl(s.fileId), auth } : { url: s.url })
-  return { ok: true, review: one(row.review_src), broll: row.broll_src ? one(row.broll_src) : null }
+  const one = (s: TakeFile) => (s.kind === 'drive' ? { url: driveMediaUrl(s.fileId), auth } : { url: s.url })
+  const read = (s: Src): Readable => {
+    const all = takeFiles(s).map(one)
+    return all.length === 1 ? all[0] : { parts: all }
+  }
+  return { ok: true, review: read(row.review_src), broll: row.broll_src ? read(row.broll_src) : null }
+}
+
+/** Two files of one video filmed one upright and one sideways cannot be one
+ *  video: the names of the first pair that differ, or null. Pure. */
+export function mixedShapes(files: { name?: string }[], parts: { width: number; height: number }[]): string | null {
+  const up = (p: { width: number; height: number }) => p.height > p.width
+  const k = parts.findIndex((p) => up(p) !== up(parts[0]))
+  if (k < 1) return null
+  const name = (i: number) => files[i]?.name || `file ${i + 1}`
+  return `${name(0)} was filmed ${up(parts[0]) ? 'upright' : 'sideways'} and ${name(k)} ${up(parts[k]) ? 'upright' : 'sideways'}, so they cannot be one video. Add them as separate videos.`
 }
 export interface EditRow {
   id: string; user_id: string; name: string | null; status: string; note: string | null
@@ -117,8 +146,19 @@ export async function readTakes(db: Db, row: EditRow): Promise<void> {
     const src = await takes(db, row)
     if (!src.ok) return await fail(src.error)
     const who = { userId: row.user_id, tier: await tierOf(db, row.user_id) }
-    const probe = await videoServer<{ duration: number; width: number; height: number; hasAudio: boolean }>('/probe', { ...src.review, frames: 0 }, 90_000)
-    if (!probe.ok) return await fail(probe.status === 404 ? 'MVP’s video server is being updated. Press Try again in half an hour.' : `MVP could not open your review take: ${probe.error}.`)
+    const many = joined(src.review)
+    const probe = await videoServer<{ duration: number; width: number; height: number; hasAudio: boolean; parts?: { duration: number; width: number; height: number; hasAudio: boolean }[] }>('/probe', { ...src.review, frames: 0 }, 90_000)
+    // A server from before takes could be joined refuses the files, or reads one.
+    const updating = 'MVP’s video server is being updated. Press Try again in half an hour.'
+    if (!probe.ok) return await fail(probe.status === 404 || (many && probe.status === 400) ? updating : `MVP could not open your review take: ${probe.error}.`)
+    if (many && !Array.isArray(probe.data.parts)) return await fail(updating)
+    const files = takeFiles(row.review_src)
+    if (many && probe.data.parts) {
+      const mixed = mixedShapes(files, probe.data.parts)
+      if (mixed) return await fail(mixed)
+      const quiet = probe.data.parts.findIndex((p) => !p.hasAudio)
+      if (quiet >= 0) return await fail(`${files[quiet]?.name || `File ${quiet + 1}`} has no sound, so MVP cannot hear what to cut. Take it out of this video, or film it again.`)
+    }
     if (!probe.data.hasAudio) return await fail('Your take has no sound, so MVP cannot hear what to cut.')
     // Filmed the way its kind is made: a review sideways, an ad upright.
     const kindNow = cleanSettings(row.settings).kind
@@ -128,7 +168,7 @@ export async function readTakes(db: Db, row: EditRow): Promise<void> {
     // The sound alone, small, for the transcript; deleted straight after.
     // The sound, and where it is quiet (the dead air, lib/review-edit PACE).
     const audio = await videoServer<{ url: string; silences?: [number, number][] }>('/stream-audio', { ...src.review, userId: row.user_id, silences: true }, 295_000)
-    if (!audio.ok) return await fail(`MVP could not take the sound from your review take: ${audio.error}.`)
+    if (!audio.ok) return await fail(many && audio.status === 400 ? updating : `MVP could not take the sound from your review take: ${audio.error}.`)
     const cues = await transcribeToCues(audio.data.url)
     const audioPath = ownPath(audio.data.url, row.user_id)
     if (audioPath) await db.storage.from(EDIT_BUCKET).remove([audioPath])
@@ -139,8 +179,9 @@ export async function readTakes(db: Db, row: EditRow): Promise<void> {
     let brollInfo: { duration: number } | undefined
     if (src.broll) {
       await set(db, row.id, { note: 'Looking through your B-roll' })
-      const bp = await videoServer<{ duration: number; frames: { at: number; jpg: string }[] }>('/probe', { ...src.broll, frames: 36, width: 320 }, 240_000)
-      if (bp.ok) {
+      const bp = await videoServer<{ duration: number; frames: { at: number; jpg: string }[]; parts?: unknown[] }>('/probe', { ...src.broll, frames: 36, width: 320 }, 240_000)
+      // Several B-roll files are only used when the server read them all.
+      if (bp.ok && (!joined(src.broll) || Array.isArray(bp.data.parts))) {
         brollInfo = { duration: bp.data.duration }
         shots = await readShots(bp.data.frames, bp.data.duration, who)
       }
@@ -153,7 +194,8 @@ export async function readTakes(db: Db, row: EditRow): Promise<void> {
     if (check && !check.fits) plan.placements = plan.placements.map((p) => ({ ...p, off: true }))
     const settings = cleanSettings(row.settings)
     if (!settings.title.text && plan.title) settings.title.text = plan.title
-    const brollNote = (row.broll_src && !brollInfo ? ' MVP could not open your B-roll take, so this one has none.' : '')
+    const brollNote = (files.length > 1 ? ` ${files.length} files joined into one video.` : '')
+      + (row.broll_src && !brollInfo ? ' MVP could not open your B-roll take, so this one has none.' : '')
       + (check && !check.fits ? ' The B-roll looks like a different product, so it was left out: see below.' : '') + sideNote
     await set(db, row.id, {
       status: 'ready_to_make', attempts: 0,
@@ -237,9 +279,11 @@ export async function startMaking(db: Db, row: EditRow): Promise<void> {
     pictures: spec.pictures,
   }
   await set(db, row.id, { info: { ...info, placed } })
+  const broll = spec.inserts.length ? src.broll : null
   const sent = await videoServer<{ accepted?: boolean }>('/render-edit', {
-    mainUrl: src.review.url, mainAuth: src.review.auth,
-    brollUrl: spec.inserts.length ? src.broll?.url : undefined, brollAuth: spec.inserts.length ? src.broll?.auth : undefined,
+    // One file each, or the files the video server joins first.
+    ...(joined(src.review) ? { mainParts: src.review.parts } : { mainUrl: src.review.url, mainAuth: src.review.auth }),
+    ...(broll ? (joined(broll) ? { brollParts: broll.parts } : { brollUrl: broll.url, brollAuth: broll.auth }) : {}),
     userId: row.user_id, job, callbackUrl: `${appUrl()}/api/review-edit/callback`,
     segments: spec.segments, inserts: spec.inserts, zooms: spec.zooms, color: settings.color,
     formats: settings.formats, cropX: settings.cropX, words: spec.words,
@@ -287,7 +331,7 @@ export async function finishMaking(db: Db, id: string, userId: string, body: Rec
 export async function deleteRaw(db: Db, row: Pick<EditRow, 'id' | 'user_id' | 'review_src' | 'broll_src' | 'raw_deleted_at'>): Promise<void> {
   if (row.raw_deleted_at) return
   // Only takes uploaded to MVP: a Drive file is the creator's, never touched.
-  const paths = [row.review_src, row.broll_src].map((s) => (s?.kind === 'upload' ? ownPath(s.url, row.user_id) : null)).filter((p): p is string => !!p)
+  const paths = [...takeFiles(row.review_src), ...takeFiles(row.broll_src)].map((s) => (s?.kind === 'upload' ? ownPath(s.url, row.user_id) : null)).filter((p): p is string => !!p)
   if (paths.length) await db.storage.from(EDIT_BUCKET).remove(paths)
   await set(db, row.id, { raw_deleted_at: now() })
 }

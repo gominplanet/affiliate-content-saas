@@ -5,7 +5,7 @@
 // and B-roll (blue) are really edited, and the result is read back: its
 // length, both formats, sound on both, and the B-roll showing exactly where
 // it was placed and nowhere else.
-const { execFileSync } = require('child_process')
+const { execFileSync, spawnSync } = require('child_process')
 const fs = require('fs')
 const os = require('os')
 const path = require('path')
@@ -181,9 +181,105 @@ if (ffmpeg) {
   console.log('   (ffmpeg not installed here: the real edit is skipped)')
 }
 
-if (fails.length) {
-  console.error(`\n❌ edit-filters: ${fails.length} failure(s)\n`)
-  for (const f of fails) console.error(`   • ${f}`)
-  process.exit(1)
+// ── Several files, one video (join-takes; Seb, 2026-11-02: "these files are
+// for video #1") ───────────────────────────────────────────────────────────
+{
+  const tok = 'Bearer ya29.' + 'a'.repeat(40)
+  const drive = 'https://www.googleapis.com/drive/v3/files/abc?alt=media'
+  const one = E.takeParts(undefined, 'https://x.supabase.co/a.mp4', null)
+  check('one file is a take of one part', one && one.length === 1 && one[0].url === 'https://x.supabase.co/a.mp4' && one[0].auth === null)
+  const two = E.takeParts([{ url: drive, auth: tok }, { url: 'https://x.supabase.co/b.mp4', auth: tok }])
+  check('several files keep their order, and a token only goes with a Drive file', two && two.length === 2 && two[0].auth === tok && two[1].auth === null)
+  check('too many files, none, or one that is not https is refused, never made from fewer', E.takeParts(Array.from({ length: E.MAX_PARTS + 1 }, () => ({ url: drive }))) === null && E.takeParts([], '', null) === null && E.takeParts([{ url: drive }, { url: 'http://x/a.mp4' }]) === null)
+  check('each file starts where the one before ends', JSON.stringify(E.partStarts([2, 3, 1.5])) === JSON.stringify([0, 2, 5]))
+  check('a moment of the joined take is found in its file', JSON.stringify(E.partAt([2, 3], 2.5)) === JSON.stringify({ i: 1, at: 0.5 }) && JSON.stringify(E.partAt([2, 3], 1)) === JSON.stringify({ i: 0, at: 1 }) && E.partAt([2, 3], 9).i === 1)
+  check('the join list gives each file its length, and a quote in a name cannot break it', E.concatList(['/t/a.mov', "/t/it's.mov"], [2, 3.25]) === "file '/t/a.mov'\nduration 2.000\nfile '/t/it'\\''s.mov'\nduration 3.250\n")
+  const g = E.joinedAudioGraph([2, 3])
+  check('the joined sound pads or trims each file to its length, then plays them in order', /\[0:a:0\][^;]*apad,atrim=end=2\.000\[a0\]/.test(g) && /\[1:a:0\][^;]*atrim=end=3\.000\[a1\]/.test(g) && /\[a0\]\[a1\]concat=n=2:v=0:a=1\[a\]$/.test(g), g)
+  check('files filmed the same way are joined as they are; any difference means made again', E.joinAsIs([{ sig: 'x' }, { sig: 'x' }]) && !E.joinAsIs([{ sig: 'x' }, { sig: 'y' }]) && !E.joinAsIs([{ sig: 'x' }]) && !E.joinAsIs([{ sig: '' }, { sig: '' }]))
+  check('files made again keep the first one’s shape, no bigger than the edit uses', JSON.stringify(E.remakeSize(3840, 2160)) === JSON.stringify({ w: 2560, h: 1440 }) && JSON.stringify(E.remakeSize(2160, 3840)) === JSON.stringify({ w: 1080, h: 1920 }) && JSON.stringify(E.remakeSize(640, 360)) === JSON.stringify({ w: 640, h: 360 }))
+  check('a joined file is right only when it plays like the first and is as long as all', E.joinedOk({ w: 360, h: 640, hasAudio: true, duration: 5.02 }, { w: 360, h: 640, hasAudio: true }, 5) && !E.joinedOk({ w: 640, h: 360, hasAudio: true, duration: 5 }, { w: 360, h: 640, hasAudio: true }, 5) && !E.joinedOk({ w: 360, h: 640, hasAudio: true, duration: 2 }, { w: 360, h: 640, hasAudio: true }, 5))
 }
-console.log('✅ edit-filters: cuts, B-roll, zooms, colour, logo, pictures and both formats in one pass, the B-roll and pictures exactly where they were placed')
+
+/** Two files really joined: as they are when filmed the same way (an
+ *  upright phone take stays upright), made again when not, and the sound
+ *  joined on the same timeline, so the second file's words start where its
+ *  picture does even when the first file's sound is shorter than its picture. */
+async function joinTest() {
+  const { joinFiles, ffprobeInfo } = require('./join-takes')
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'join-test-'))
+  const run = (args) => execFileSync('ffmpeg', ['-hide_banner', '-loglevel', 'error', ...args], { stdio: ['ignore', 'ignore', 'pipe'] })
+  const rgbAt = (f, at) => {
+    const raw = execFileSync('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-ss', String(at), '-i', f, '-frames:v', '1', '-vf', 'scale=8:8', '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-'])
+    const c = [0, 0, 0]
+    for (let i = 0; i < raw.length; i += 3) { c[0] += raw[i]; c[1] += raw[i + 1]; c[2] += raw[i + 2] }
+    return c.map((x) => Math.round(x / (raw.length / 3)))
+  }
+  // Where the quiet at the start ends: where the second file's sound begins.
+  const soundStarts = (f) => {
+    const r = spawnSync('ffmpeg', ['-hide_banner', '-nostats', '-i', f, '-af', 'silencedetect=noise=-40dB:d=0.3', '-f', 'null', '-'], { encoding: 'utf8' })
+    const m = /silence_end:\s*([\d.]+)/.exec(String(r.stderr || ''))
+    return m ? Number(m[1]) : null
+  }
+  try {
+    const take = (file, color, size, secs, sound) => run(['-f', 'lavfi', '-i', `color=c=${color}:s=${size}:r=30:d=${secs}`, '-f', 'lavfi', '-i', sound,
+      '-c:v', 'libx264', '-preset', 'ultrafast', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-ar', '48000', '-ac', '1', '-y', file])
+    // The first file: 2 seconds of picture, 1.6 of quiet sound. The second: 3 seconds with a tone.
+    take(path.join(dir, 'a.mp4'), 'red', '640x360', 2, 'anullsrc=r=48000:cl=mono:d=1.6')
+    take(path.join(dir, 'b.mp4'), 'blue', '640x360', 3, 'sine=f=440:r=48000:d=3')
+    take(path.join(dir, 'c.mp4'), 'green', '1280x720', 2, 'sine=f=660:r=48000:d=2')
+    // Filmed upright on a phone: the picture is stored sideways and turned.
+    run(['-display_rotation', '90', '-i', path.join(dir, 'a.mp4'), '-c', 'copy', '-y', path.join(dir, 'a.mov')])
+    run(['-display_rotation', '90', '-i', path.join(dir, 'b.mp4'), '-c', 'copy', '-y', path.join(dir, 'b.mov')])
+    const lengths = [(await ffprobeInfo(path.join(dir, 'a.mov'))).duration, (await ffprobeInfo(path.join(dir, 'b.mov'))).duration]
+
+    // The sound, as /stream-audio joins it.
+    const wavs = ['a.mov', 'b.mov'].map((f, i) => { const w = path.join(dir, `s${i}.wav`); run(['-i', path.join(dir, f), '-vn', '-map', '0:a:0', '-ac', '1', '-ar', '16000', '-c:a', 'pcm_s16le', '-y', w]); return w })
+    const heard = path.join(dir, 'heard.m4a')
+    run([...wavs.flatMap((w) => ['-i', w]), '-filter_complex', E.joinedAudioGraph(lengths), '-map', '[a]', '-ac', '1', '-ar', '16000', '-c:a', 'aac', '-b:a', '32k', '-y', heard])
+    const heardInfo = await ffprobeInfo(heard)
+    check('the joined sound is as long as both files', Math.abs(heardInfo.duration - 5) < 0.1, heardInfo.duration)
+    const s1 = soundStarts(heard)
+    check('the second file’s sound starts at 2 seconds, where its picture does, though the first file’s sound stops at 1.6', s1 != null && Math.abs(s1 - 2) < 0.08, s1)
+
+    // Filmed the same way: joined as they are, still upright.
+    const same = await joinFiles({ files: [path.join(dir, 'a.mov'), path.join(dir, 'b.mov')], dir, name: 'same' })
+    const si = await ffprobeInfo(same.file)
+    check('two files filmed the same way are joined as they are', same.remade === false, same)
+    check('an upright phone take stays upright when joined', si.w === 360 && si.h === 640, si)
+    check('the joined video is as long as both', Math.abs(si.duration - 5) < 0.1, si.duration)
+    const red = rgbAt(same.file, 1), blue = rgbAt(same.file, 3)
+    check('the first file plays first and the second after it', red[0] > 180 && red[2] < 80 && blue[2] > 180 && blue[0] < 80, { red, blue })
+    const s2 = soundStarts(same.file)
+    check('in the joined video the second file’s sound starts at 2 seconds too, so the cuts land on the words', s2 != null && Math.abs(s2 - 2) < 0.08, s2)
+    check('the files are deleted once joined', !fs.existsSync(path.join(dir, 'a.mov')) && !fs.existsSync(path.join(dir, 'b.mov')))
+
+    // Filmed differently (another size): the second is made again to match.
+    const mixed = await joinFiles({ files: [path.join(dir, 'a.mp4'), path.join(dir, 'c.mp4')], dir, name: 'mixed' })
+    const mi = await ffprobeInfo(mixed.file)
+    check('files filmed differently are made again before they are joined', mixed.remade === true)
+    check('they come out at the first file’s shape and as long as both', mi.w === 640 && mi.h === 360 && Math.abs(mi.duration - 4) < 0.15, mi)
+    const green = rgbAt(mixed.file, 3)
+    check('the second file is there after the first', green[1] > 100 && green[0] < 60 && green[2] < 60, green)
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+}
+
+// Every file server.js needs is in the video server's image.
+{
+  const server = fs.readFileSync(path.join(__dirname, 'server.js'), 'utf8')
+  const docker = fs.readFileSync(path.join(__dirname, 'Dockerfile'), 'utf8')
+  const local = [...server.matchAll(/require\('\.\/([\w-]+)'\)/g)].map((m) => `${m[1]}.js`)
+  const copied = (/^COPY server\.js (.+) \.\/$/m.exec(docker) || [])[1] || ''
+  check('every file server.js needs is copied into the video server', local.length >= 3 && local.every((f) => copied.split(/\s+/).includes(f)), { local, copied })
+}
+
+;(ffmpeg ? joinTest() : Promise.resolve()).catch((e) => { fails.push(`the real join failed: ${String(e.stderr || e.message).slice(0, 600)}`) }).then(() => {
+  if (fails.length) {
+    console.error(`\n❌ edit-filters: ${fails.length} failure(s)\n`)
+    for (const f of fails) console.error(`   • ${f}`)
+    process.exit(1)
+  }
+  console.log('✅ edit-filters: cuts, B-roll, zooms, colour, logo, pictures and both formats in one pass, the B-roll and pictures exactly where they were placed; several files joined into one take on the timeline its sound was read on')
+})

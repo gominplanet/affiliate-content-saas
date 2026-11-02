@@ -60,7 +60,7 @@ check('a make the server lost is sent again within minutes', /LOST_CHECK_MS = 4 
 check('each busy card says how long its step has run and what is normal', /This step started \$\{mins\}/.test(U) && /Making takes 2 to 10 minutes/.test(U))
 check('a step stuck for 20 minutes can be started again by the creator', /STUCK_AFTER_MS = 20 \* 60_000/.test(R) && /Start it again/.test(U))
 
-check('an HDR take and its B-roll are converted, and a server that cannot convert still makes the video', /color_transfer/.test(S) && /transfer: hdrFallback \? '' : info\.transfer/.test(S) && /hdrChain\(bi && bi\.transfer\)/.test(S) && /hdr: built\.hdr \? 'converted'/.test(S))
+check('an HDR take and its B-roll are converted, and a server that cannot convert still makes the video', /color_transfer/.test(readFileSync('ingest-service/join-takes.js', 'utf8')) && /require\('\.\/join-takes'\)/.test(S) && /transfer: hdrFallback \? '' : info\.transfer/.test(S) && /hdrChain\(bi && bi\.transfer\)/.test(S) && /hdr: built\.hdr \? 'converted'/.test(S))
 
 check('the card says what the video server is doing with it, how far, and what is ahead of it', /report\('make', p\)/.test(S) && /report\('download', p\)/.test(S) && /ahead: order\.slice\(0, i\)\.length/.test(S) && /waiting behind \$\{n\} other/.test(U) && /making the video\$\{pct\}/.test(U))
 check('a video the server does not have is said, not shown as being made', /The video server does not have this one right now/.test(U))

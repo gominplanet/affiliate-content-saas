@@ -53,6 +53,8 @@ interface EditView {
   onServer: { stage: string; pct: number | null; since: string; ahead: number; others: number } | { missing: true } | null
   /** Takes uploaded to MVP that are still kept; a Drive take is never kept by MVP. */
   rawInMvp: boolean; fromDrive: boolean
+  /** The files each take is joined from, in order (one each, usually). */
+  files?: { talk: string[]; broll: string[] }
   settings: EditSettings
   review: { duration: number; width: number; height: number } | null
   outputs: Partial<Record<Format, { url: string; seconds: number }>> | null
@@ -710,6 +712,7 @@ export default function ReviewEditor() {
               {takeBox('review', 'Your talking take', kind === 'trybe' ? '(filmed upright)' : '(filmed sideways)')}
               {takeBox('broll', 'Your B-roll take', '(optional)')}
             </div>
+            <p className="text-[12px] -mt-1" style={soft}>Your talking take is in two or more files? Use <button type="button" onClick={() => setTab('drive')} className="underline font-semibold" style={{ color: PURPLE }}>A batch from Google Drive</button>: you say which video each file is for, and MVP joins them.</p>
             <label className="text-[13px] font-semibold">The product <span className="font-normal" style={soft}>(optional: {kind === 'trybe' ? 'the brand and product' : 'its name or Amazon link'})</span>
               <input value={product} onChange={(e) => setProduct(e.target.value)} placeholder="Bassdash UPF 50 hoodie" className={`mt-1 max-w-md font-normal ${inputCls}`} style={inputStyle} />
             </label>
@@ -827,6 +830,14 @@ function EditCard({ e, reload, uploadLogo, withLogo, logoBusy, lib }: {
         {/* No other buttons yet: Remove sits up here, and not at all while it is being made. */}
         {!footer && e.status !== 'making' && remove}
       </div>
+      {/* Several files joined into one video: which, in the order they play. */}
+      {e.files && (e.files.talk.length > 1 || e.files.broll.length > 1) && (
+        <p className="text-[12px] mt-1" style={soft}>
+          {e.files.talk.length > 1 ? `Talking: ${e.files.talk.join(' + ')}, joined into one.` : ''}
+          {e.files.talk.length > 1 && e.files.broll.length > 1 ? ' ' : ''}
+          {e.files.broll.length > 1 ? `B-roll: ${e.files.broll.join(' + ')}, joined into one.` : ''}
+        </p>
+      )}
 
       {/* WHERE IT IS, IN ONE LINE (Seb, 2026-10-30: "I don't know if it's stuck
           somewhere"), how long the step has run against what is normal, and

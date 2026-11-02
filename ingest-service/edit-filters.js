@@ -275,6 +275,81 @@ function driveAuth(url, auth) {
 /** ffmpeg and ffprobe read a Drive file with the token as a header. */
 const authArgs = (auth) => (auth ? ['-headers', `Authorization: ${auth}\r\n`] : [])
 
+// ── Several files, one video (Seb, 2026-11-02: "what if i have two files and
+// they should be for the same video", "users should be able to let MVP
+// know.. these files are for video #1"). A take can be one file or several
+// joined in order: the sound is read from all of them as one, and the video
+// is made from them joined, on the same timeline, so a word's time in the
+// transcript is its time in the joined video. ─────────────────────────────
+
+/** The most files one take can be joined from. */
+const MAX_PARTS = 6
+
+/** The files a take is made of, in order: `parts` when given, else the one
+ *  `url`. Each keeps a token only when it is a Drive file (driveAuth). Null
+ *  when there are none, too many, or one is not an https address: a take is
+ *  never quietly made from fewer files than were sent. Pure. */
+function takeParts(parts, url, auth) {
+  const list = Array.isArray(parts) && parts.length ? parts : url ? [{ url, auth }] : []
+  if (!list.length || list.length > MAX_PARTS) return null
+  const out = list.map((p) => {
+    const u = String((p && p.url) || '').trim()
+    return { url: u, auth: driveAuth(u, p && p.auth) }
+  })
+  return out.every((p) => /^https:\/\//i.test(p.url)) ? out : null
+}
+
+/** Where each file starts on the joined timeline. Pure. */
+function partStarts(durations) {
+  const starts = []
+  let at = 0
+  for (const d of durations) { starts.push(r3(at)); at += Math.max(0, Number(d) || 0) }
+  return starts
+}
+
+/** Which file a moment of the joined take is in, and where in that file. Pure. */
+function partAt(durations, t) {
+  const starts = partStarts(durations)
+  let i = 0
+  while (i + 1 < durations.length && t >= starts[i + 1]) i++
+  return { i, at: r3(Math.max(0, Math.min(t - starts[i], (Number(durations[i]) || 0) - 0.05))) }
+}
+
+/** ffmpeg's concat list: each file with its length, so the next one starts
+ *  exactly where it ends (the same lengths the sound was joined with). Pure. */
+function concatList(files, durations) {
+  return files.map((f, i) => `file '${String(f).replace(/'/g, "'\\''")}'\nduration ${(Number(durations[i]) || 0).toFixed(3)}`).join('\n') + '\n'
+}
+
+/** The sound of several files joined into one: each made the same (mono, one
+ *  rate), padded or trimmed to its file's length, then one after another.
+ *  Inputs 0..n-1, out [a]. Pure. */
+function joinedAudioGraph(durations, rate = 16000) {
+  const each = durations.map((d, i) => `[${i}:a:0]aformat=sample_fmts=fltp:sample_rates=${rate}:channel_layouts=mono,asetpts=PTS-STARTPTS,apad,atrim=end=${(Number(d) || 0).toFixed(3)}[a${i}]`)
+  return `${each.join(';')};${durations.map((_, i) => `[a${i}]`).join('')}concat=n=${durations.length}:v=0:a=1[a]`
+}
+
+/** Files filmed the same way (same camera settings, ffprobeInfo sig) can be
+ *  joined as they are, without being made again. Pure. */
+function joinAsIs(infos) {
+  return infos.length > 1 && infos.every((i) => i && i.sig && i.sig === infos[0].sig)
+}
+
+/** A joined file is right when it plays the way the first file does and is
+ *  as long as all of them. Pure. */
+function joinedOk(info, first, total) {
+  return !!info && !!first && info.w === first.w && info.h === first.h && info.hasAudio === first.hasAudio && Math.abs(info.duration - total) <= Math.max(1, total * 0.01)
+}
+
+/** The size files filmed differently are made again at before joining: the
+ *  first one's shape, no bigger than the edit ever uses (masterSize). Pure. */
+function remakeSize(w, h) {
+  if (!(w > 0 && h > 0)) return { w: 1920, h: 1080 }
+  if (w >= h) { const H = Math.min(h, 1440); return { w: even(H * w / h), h: even(H) } }
+  const W = Math.min(w, 1080)
+  return { w: even(W), h: even(W * h / w) }
+}
+
 // ── Dead air (Seb, 2026-10-30: "there's still a lot of dead air instead of
 // cutting straight into the next sentence") ───────────────────────────────
 // Word timings from speech to text stretch a word's end into the silence
@@ -324,4 +399,4 @@ function filmedAtFrom(tags) {
   return read(t['com.apple.quicktime.creationdate']) || read(t.creation_time) || null
 }
 
-module.exports = { filmedAtFrom, silenceNoiseDb, parseSilences, parseMeanDb, hdrChain, driveAuth, authArgs, FPS, snapSegments, editSeconds, outputWindows, cleanInserts, trackSetpts, insertEnable, zoomExpr, cleanZooms, masterSize, placeAt, buildEditGraph }
+module.exports = { MAX_PARTS, takeParts, partStarts, partAt, concatList, joinedAudioGraph, joinAsIs, joinedOk, remakeSize, filmedAtFrom, silenceNoiseDb, parseSilences, parseMeanDb, hdrChain, driveAuth, authArgs, FPS, snapSegments, editSeconds, outputWindows, cleanInserts, trackSetpts, insertEnable, zoomExpr, cleanZooms, masterSize, placeAt, buildEditGraph }

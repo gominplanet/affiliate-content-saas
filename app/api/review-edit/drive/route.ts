@@ -17,7 +17,7 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { canUsePreview } from '@/lib/labs-preview'
 import { driveAccessToken, driveAppId, driveLink, disconnectDrive, saveDriveFolders, driveFile, isDriveId, type DriveFile } from '@/lib/google-drive'
-import { editDb, filmedTimes } from '@/lib/review-edit-server'
+import { editDb, filmedTimes, takeFiles, type Src } from '@/lib/review-edit-server'
 
 export const runtime = 'nodejs'
 export const maxDuration = 180
@@ -75,14 +75,21 @@ export async function POST(request: Request) {
     // Takes already in the review editor, as a talking take or as B-roll.
     const db = editDb()
     const ids2 = files.map((f) => f.id)
-    const [asA, asB] = ids2.length ? await Promise.all([
+    const [asA, asB, joinedA, joinedB] = ids2.length ? await Promise.all([
       db.from('review_edits').select('review_src').eq('user_id', g.userId).in('review_src->>fileId', ids2),
       db.from('review_edits').select('broll_src').eq('user_id', g.userId).in('broll_src->>fileId', ids2),
-    ]) : [{ data: [] }, { data: [] }]
+      // A file joined into a video after its first one (Src.more).
+      db.from('review_edits').select('review_src').eq('user_id', g.userId).not('review_src->more', 'is', null),
+      db.from('review_edits').select('broll_src').eq('user_id', g.userId).not('broll_src->more', 'is', null),
+    ]) : [{ data: [] }, { data: [] }, { data: [] }, { data: [] }]
+    const picked = new Set(ids2)
+    const fileIds = (s: Src | null | undefined) => takeFiles(s).map((f) => (f.kind === 'drive' ? f.fileId : null))
     const used = Array.from(new Set([
-      ...((asA.data ?? []) as { review_src: { fileId?: string } | null }[]).map((r) => r.review_src?.fileId),
-      ...((asB.data ?? []) as { broll_src: { fileId?: string } | null }[]).map((r) => r.broll_src?.fileId),
-    ].filter((x): x is string => !!x)))
+      ...((asA.data ?? []) as { review_src: Src | null }[]).flatMap((r) => fileIds(r.review_src)),
+      ...((asB.data ?? []) as { broll_src: Src | null }[]).flatMap((r) => fileIds(r.broll_src)),
+      ...((joinedA.data ?? []) as { review_src: Src | null }[]).flatMap((r) => fileIds(r.review_src)),
+      ...((joinedB.data ?? []) as { broll_src: Src | null }[]).flatMap((r) => fileIds(r.broll_src)),
+    ].filter((x): x is string => !!x && picked.has(x))))
     // When each was filmed, from the file itself (the video server reads its header).
     const fresh = files.filter((f) => !used.includes(f.id))
     const filmed = await filmedTimes(t.token, fresh.map((f) => f.id))

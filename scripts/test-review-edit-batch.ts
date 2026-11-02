@@ -5,8 +5,15 @@
 // then when it reached Drive); a B-roll is used once; every talking take is
 // listed, with no B-roll when none fits; upright is a TRYBE ad; a name a
 // camera wrote is never taken for a product.
+//
+// ONE VIDEO, SEVERAL FILES (Seb, 2026-11-02: "these files are for video
+// #1"). Pinned: takes filmed back to back are guessed to be one video, and
+// only those; the creator moves any file to any video, a new one, or out;
+// files play in filming order; a join MVP guessed says so and can be undone;
+// every file of a video is sent, in order, and checked by the server.
 import { readFileSync } from 'node:fs'
-import { baseName, filmedKey, kindOf, pairTakes, productFromName, unpaired, type DriveTake } from '../lib/review-edit-batch'
+import { baseName, filmedKey, kindOf, pairTakes, productFromName, unpaired, backToBack, batchVideos, moveFile, moveUp, filmingOrder, unusedBroll, talkSeconds, addBody, JOIN_GAP_SEC, MAX_FILES, type DriveTake } from '../lib/review-edit-batch'
+import { mixedShapes, takeFiles, hasUpload, type Src } from '../lib/review-edit-server'
 
 const fails: string[] = []
 const check = (name: string, ok: boolean | undefined, detail?: unknown) => { if (!ok) fails.push(`${name}${detail !== undefined ? `: ${JSON.stringify(detail)}` : ''}`) }
@@ -55,12 +62,73 @@ const P = readFileSync('components/review-editor/drive-picker.ts', 'utf8')
 check('the creator sets an A-roll and a B-roll folder once, and MVP remembers them', /Choose your A-roll folder/.test(U) && /Choose your B-roll folder/.test(U) && /action: 'folders'/.test(U))
 check('a batch opens the picker in each folder, many files at once', /MULTISELECT_ENABLED/.test(P) && /setParent\(o\.folderId\)/.test(P) && /pickMany\(/.test(U))
 check('the batch is on the page once Drive is connected', /\{drive\?\.connected && <DriveBatch /.test(E))
-check('every video in a batch gets the saved look: a typed title (a disclosure) on all, an empty one written for each', /const look = cleanSettings\(\{ \.\.\.settings, kind: p\.kind \}, settings\)/.test(U) && !/text: ''/.test(U))
-check('a pair that could not be added says why, and stays to try again', /failed\.push\(`\$\{p\.a\.name\}: /.test(U) && /not added: \$\{added\.failed\.join/.test(U))
+check('every video in a batch gets the saved look: a typed title (a disclosure) on all, an empty one written for each', /const look = cleanSettings\(\{ \.\.\.settings, kind: v\.kind \}, settings\)/.test(U) && !/text: ''/.test(U))
+check('a video that could not be added says why, names its files, and stays to try again', /const label = `Video \$\{i \+ 1\} \(\$\{v\.a\.map\(\(f\) => f\.name\)\.join\(' \+ '\)\}\)`/.test(U) && /why: `\$\{label\}: /.test(U) && /not added: \$\{added\.failed\.join/.test(U) && /videos\.filter\(\(v\) => failed\.some\(\(f\) => f\.id === v\.a\[0\]\.id\)\)/.test(U))
 const D = readFileSync('app/api/review-edit/drive/route.ts', 'utf8')
 check('takes already made or in the queue are left out and listed, so selecting a whole folder each time is safe', /in\('review_src->>fileId', ids2\)/.test(D) && /in\('broll_src->>fileId', ids2\)/.test(D) && /filter\(\(f\) => !used\.has\(f\.id\)\)/.test(U) && /Left out, already made or in the queue/.test(U))
 check('when the filming times could not be read, the page says the pairs need checking', /filmedRead: filmed\.read/.test(D) && /MVP could not read when these were filmed/.test(U))
-check('the pairs are shown to check before anything is queued', /Check the pairs/.test(U) && /Add all \$\{pairs\.length\}/.test(U))
+check('the videos are shown to check before anything is queued', /Check your videos/.test(U) && /Add all \$\{videos\.length\}/.test(U))
+
+// ── One video, several files ─────────────────────────────────────────────────
+const at = (iso: string, o: Partial<DriveTake> = {}) => ({ filmedAt: iso, ...o })
+// Seb's two files: IMG_0097 (2:10), then IMG_0098 started 14 seconds after it stopped.
+const s97 = take('97', 'IMG_0097.MOV', at('2026-11-02T15:00:00Z', { seconds: 130 }))
+const s98 = take('98', 'IMG_0098.MOV', at('2026-11-02T15:02:24Z', { seconds: 118 }))
+const later = take('99', 'IMG_0101.MOV', at('2026-11-02T15:20:00Z', { seconds: 90 }))
+const seb = backToBack([s98, s97, later], [])
+check('two talking takes filmed back to back are guessed to be one video, in filming order', seb.length === 2 && seb[0].files.map((f) => f.id).join() === '97,98' && seb[0].apart === 14 && seb[1].files.length === 1, seb.map((c) => [c.files.map((f) => f.id), c.apart]))
+check('a take filmed long after is its own video', seb[1].files[0].id === '99' && seb[1].apart === null)
+const between = backToBack([s97, s98], [take('b', 'IMG_0098b.MOV', at('2026-11-02T15:02:15Z', { seconds: 5 }))])
+check('B-roll filmed between two talking takes means two videos', between.length === 2)
+const gap = take('98', 'IMG_0098.MOV', at(new Date(Date.parse('2026-11-02T15:02:10Z') + (JOIN_GAP_SEC + 5) * 1000).toISOString(), { seconds: 118 }))
+check(`more than ${JOIN_GAP_SEC} seconds between them means two videos`, backToBack([s97, gap], []).length === 2)
+check('an upright take and a sideways one are never guessed to be one video', backToBack([s97, take('98', 'IMG_0098.MOV', at('2026-11-02T15:02:24Z', { width: 1080, height: 1920 }))], []).length === 2)
+check('takes named for two products are never guessed to be one', backToBack([take('h', 'Hoodie.mov', at('2026-11-02T15:00:00Z', { seconds: 60 })), take('w', 'Waders.mov', at('2026-11-02T15:01:05Z', { seconds: 60 }))], []).length === 2)
+check('without a filming time read from the files, nothing is guessed', backToBack([take('1', 'IMG_0097.MOV'), take('2', 'IMG_0098.MOV')], []).length === 2)
+
+const vids = batchVideos([s97, s98, later], [take('br', 'IMG_0100.MOV', at('2026-11-02T15:10:00Z', { seconds: 40 }))])
+check('a joined video gets the B-roll filmed after its last file', vids.length === 2 && vids[0].b[0]?.id === 'br' && vids[0].how === 'filmed' && vids[1].b.length === 0, vids.map((v) => [v.a.map((f) => f.id), v.b.map((f) => f.id)]))
+check('its length is both files together', talkSeconds(vids[0]) === 248 && talkSeconds({ ...vids[0], a: [take('x', 'x', { seconds: null })] }) === null)
+
+// The creator says which video each file is for.
+const two = batchVideos([take('1', 'IMG_0097.MOV'), take('2', 'IMG_0098.MOV'), take('3', 'IMG_0103.MOV')], [take('r1', 'Hoodie broll.mov'), take('r2', 'More broll.mov')])
+const joined = moveFile(two, '2', 0)
+check('a talking file moved to video 1 joins it, and its own video is gone', joined.length === 2 && joined[0].a.map((f) => f.id).join() === '1,2' && joined[1].a[0].id === '3' && joined[0].apart === null)
+const out = moveFile(joined, '2', 'new')
+check('it can go back to a video of its own, straight after the one it left', out.length === 3 && out[1].a[0].id === '2' && out[0].a.map((f) => f.id).join() === '1' && out[2].a[0].id === '3')
+const reorder = moveFile(moveFile(two, '1', 1), '3', 0)
+check('files land in filming order, by name when no filming time is known', reorder.length === 1 && reorder[0].a.map((f) => f.id).join() === '1,2,3', reorder.map((v) => v.a.map((f) => f.id)))
+check('the creator can still play one earlier', moveUp(reorder, '3')[0].a.map((f) => f.id).join() === '1,3,2' && moveUp(reorder, '1')[0].a.map((f) => f.id).join() === '1,2,3')
+check('filming order wins over the name when it is known', filmingOrder([s98, s97]).map((f) => f.id).join() === '97,98' && filmingOrder([take('b', 'IMG_10.MOV'), take('a', 'IMG_9.MOV')]).map((f) => f.id).join() === 'a,b')
+const pool = [take('r1', 'Hoodie broll.mov'), take('r2', 'More broll.mov')]
+const rolls = moveFile(moveFile(two, 'r1', 0, pool), 'r2', 0, pool)
+check('a video can take several B-roll files, picked by the creator', rolls[0].b.map((f) => f.id).sort().join() === 'r1,r2' && rolls[0].how === 'you' && unusedBroll(rolls, pool).length === 0)
+const dropped = moveFile(rolls, 'r1', 'none', pool)
+check('a B-roll file can be left out, and is listed as not used', dropped[0].b.map((f) => f.id).join() === 'r2' && unusedBroll(dropped, pool).map((f) => f.id).join() === 'r1')
+check('a talking file is never left out by a move, and B-roll never becomes a video', moveFile(two, '1', 'none') === two && moveFile(two, 'r1', 'new', pool) === two)
+const emptied = moveFile(rolls, '1', 1)
+check('a video left without a talking file is gone, and its B-roll is not used', emptied.length === 2 && emptied[0].a.map((f) => f.id).join() === '1,2' && unusedBroll(emptied, pool).length === 2, emptied.map((v) => [v.a.map((f) => f.id), v.b.map((f) => f.id)]))
+const full = Array.from({ length: MAX_FILES }, (_, i) => take(`f${i}`, `IMG_${1000 + i}.MOV`))
+const big = moveFile(full.slice(1).reduce((acc, f) => moveFile(acc, f.id, 0), batchVideos([...full, take('extra', 'IMG_2000.MOV')], [])), 'extra', 0)
+check(`a video takes up to ${MAX_FILES} files`, big[0].a.length === MAX_FILES && big.length === 2)
+const body = addBody(moveFile(rolls, '2', 0)[0])
+check('every file of a video is sent, the first then the rest in order', body.review.driveId === '1' && body.review.more?.map((f) => f.driveId).join() === '2' && body.broll?.more?.length === 1 && addBody(out[1]).review.more === undefined && addBody(out[1]).broll === undefined)
+
+// The server's side: every file kept and cleaned up, shapes checked.
+const src: Src = { kind: 'drive', fileId: 'a', name: 'IMG_0097.MOV', more: [{ kind: 'upload', url: 'https://x/u.mp4', path: 'u/u.mp4', name: 'IMG_0098.MOV' }] }
+check('a take lists all its files in order', takeFiles(src).map((f) => f.name).join() === 'IMG_0097.MOV,IMG_0098.MOV' && takeFiles(null).length === 0)
+check('an uploaded file joined after a Drive one is still deleted when done', hasUpload({ review_src: src, broll_src: null }))
+check('one upright file and one sideways cannot be one video, and the message names them', /IMG_0097\.MOV was filmed sideways and IMG_0098\.MOV upright/.test(mixedShapes(takeFiles(src), [{ width: 1920, height: 1080 }, { width: 1080, height: 1920 }]) || '') && mixedShapes(takeFiles(src), [{ width: 1920, height: 1080 }, { width: 3840, height: 2160 }]) === null)
+
+const S = readFileSync('lib/review-edit-server.ts', 'utf8')
+const R = readFileSync('app/api/review-edit/route.ts', 'utf8')
+check('the video server is sent every file, and an older one that cannot join them is waited for, never read from one file', /\.\.\.\(joined\(src\.review\) \? \{ mainParts: src\.review\.parts \}/.test(S) && /brollParts: broll\.parts/.test(S) && /if \(many && !Array\.isArray\(probe\.data\.parts\)\) return await fail\(updating\)/.test(S) && /all\.length === 1 \? all\[0\] : \{ parts: all \}/.test(S))
+check('reading refuses a file with no sound, by name', /has no sound, so MVP cannot hear what to cut\. Take it out of this video/.test(S))
+check('adding checks every file, names the one that fails, and never takes the same file twice', /for \(const r of rest\)/.test(R) && /return \{ error: `\$\{name\}: \$\{f\.error\}` \}/.test(R) && /The same file is in this video twice/.test(R) && /MAX_TAKE_FILES/.test(R))
+check('files joined into a video count as already made in the next batch', /not\('review_src->more', 'is', null\)/.test(D) && /not\('broll_src->more', 'is', null\)/.test(D) && /takeFiles\(s\)/.test(D))
+check('the batch shows each file’s video, says when MVP joined them, and undoes it in filming order', /v\.a\.slice\(1\)\.reverse\(\)\.reduce/.test(U) && /aria-label=\{`Which video \$\{f\.name\} is for`\}/.test(U) && /A new video/.test(U) && /Not used/.test(U) && /MVP put these together: they were filmed/.test(U) && /Keep them apart/.test(U) && /\.\.\.addBody\(v\)/.test(U))
+check('a video mixing upright and sideways files is stopped before it is added', /disabled=\{!!busy \|\| blocked > 0\}/.test(U) && /cannot be one video\. Move one to another video/.test(U))
+check('a finished video names the files it was joined from', /joined into one\./.test(E) && /files: \{ talk: takeFiles\(r\.review_src\)/.test(R))
 
 if (fails.length) { console.error(`\n❌ review-edit-batch: ${fails.length} failure(s)\n`); for (const f of fails) console.error(`   • ${f}`); process.exit(1) }
 console.log('✅ review-edit-batch: A-roll and B-roll paired by name, then filming order, each checked before it is queued')

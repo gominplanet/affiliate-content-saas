@@ -780,6 +780,8 @@ function findSilences(file, duration) {
 //   body: { url, userId }  →  { url, durationSeconds }
 app.post('/stream-audio', async (req, res) => {
   if (SECRET && req.get('x-ingest-secret') !== SECRET) return res.status(401).json({ error: 'unauthorized' })
+  // A review editor take joined from several files: { parts } (edit-filters).
+  if (Array.isArray(req.body?.parts) && req.body.parts.length) return joinedAudio(req, res)
   const url = String(req.body?.url || '').trim()
   const userId = String(req.body?.userId || '').trim()
   if (!/^https:\/\//i.test(url)) return res.status(400).json({ error: 'bad url' })
@@ -811,6 +813,40 @@ app.post('/stream-audio', async (req, res) => {
     cleanupTmp(tmp)
   }
 })
+
+/** The sound of a take joined from several files, as one: each file's sound
+ *  read at the same time (so two long files take as long as one), each made
+ *  exactly its file's length, then one after another (joinedAudioGraph), on
+ *  the timeline /render-edit joins the video on. */
+async function joinedAudio(req, res) {
+  const userId = String(req.body?.userId || '').trim()
+  const parts = takeParts(req.body.parts)
+  if (!parts) return res.status(400).json({ error: 'bad url' })
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'jaud-'))
+  const tmp = path.join(dir, 'joined.m4a')
+  try {
+    for (const p of parts) await assertPublicHttpUrl(p.url)
+    const infos = await Promise.all(parts.map((p) => ffprobeInfo(p.url, p.auth)))
+    const bad = infos.findIndex((x) => !x || !x.duration)
+    if (bad >= 0) throw new Error(`file ${bad + 1} of ${parts.length} could not be read`)
+    const noSound = infos.findIndex((x) => !x.hasAudio)
+    if (noSound >= 0) throw new Error(`file ${noSound + 1} of ${parts.length} has no sound`)
+    const lengths = infos.map((x) => x.duration)
+    const wavs = parts.map((_, i) => path.join(dir, `p${i}.wav`))
+    await Promise.all(parts.map((p, i) => runFfmpeg([...authArgs(p.auth), '-i', p.url, '-vn', '-map', '0:a:0', '-ac', '1', '-ar', '16000', '-c:a', 'pcm_s16le', '-y', wavs[i]], 285_000, `the sound of file ${i + 1}`)))
+    await runFfmpeg([...wavs.flatMap((w) => ['-i', w]), '-filter_complex', joinedAudioGraph(lengths), '-map', '[a]', '-t', String(MAX_SECONDS), '-ac', '1', '-ar', '16000', '-c:a', 'aac', '-b:a', '32k', '-y', tmp], 120_000, 'the joined sound')
+    const durationSeconds = await ffprobeDuration(tmp)
+    const quiet = req.body?.silences === true ? await findSilences(tmp, durationSeconds) : null
+    const key = `${userId || 'ingest'}/live-audio-${Date.now()}.m4a`
+    await uploadToSupabase(key, tmp, 'audio/mp4')
+    return res.json({ url: publicUrl(key), durationSeconds, parts: lengths.length, ...(quiet || {}) })
+  } catch (e) {
+    console.error('[stream-audio] joined failed', e && e.message)
+    return res.status(502).json({ error: String((e && e.message) || e).slice(0, 300) })
+  } finally {
+    try { fs.rmSync(dir, { recursive: true, force: true }) } catch { /* ignore */ }
+  }
+}
 
 // ── Render options: split-screen reframe (#1) ────────────────────────────────
 // The reframe filtergraph lives in render-filters.js so it's unit-tested
@@ -1235,7 +1271,9 @@ app.post('/dub', async (req, res) => {
 // pass (edit-filters.js): wide for Amazon and YouTube, vertical for TRYBE and
 // TikTok, or both from the same decode. The raw takes are only ever in this
 // job's own temp folder, removed when the job ends, whatever happened.
-const { buildEditGraph, cleanInserts, snapSegments, editSeconds, masterSize, driveAuth, authArgs, hdrChain, filmedAtFrom, FPS: EDIT_FPS } = require('./edit-filters')
+const { buildEditGraph, cleanInserts, snapSegments, editSeconds, masterSize, driveAuth, authArgs, hdrChain, filmedAtFrom, takeParts, partAt, joinedAudioGraph, FPS: EDIT_FPS } = require('./edit-filters')
+// Several files of one take joined into one video, and what a video is.
+const { joinFiles, ffprobeInfo } = require('./join-takes')
 // Encoder threads per format. A small box stays at 2; a bigger one goes faster.
 const EDIT_THREADS = String(Math.max(1, Math.min(8, Number(process.env.EDIT_THREADS) || 2)))
 const EDIT_MAX_SOURCE_SEC = 60 * 60
@@ -1266,32 +1304,6 @@ async function downloadLarge(url, dest, timeoutMs = 15 * 60_000, auth = null, on
   const count = new Transform({ transform(chunk, _e, cb) { got += chunk.length; if (onPct && total) onPct(Math.min(99, Math.floor((got / total) * 100))); cb(null, chunk) } })
   await pipeline(Readable.fromWeb(res.body), count, fs.createWriteStream(dest))
   return fs.statSync(dest).size
-}
-
-/** A video's picture size as it plays (a phone's rotation applied), its
- *  length, and whether it has sound. */
-function ffprobeInfo(input, auth = null) {
-  return new Promise((resolve) => {
-    execFile('ffprobe', ['-v', 'error', ...authArgs(auth), '-show_entries', 'stream=codec_type,width,height,color_transfer:stream_tags=rotate:stream_side_data=rotation:format=duration', '-of', 'json', input],
-      { timeout: 60_000, killSignal: 'SIGKILL', maxBuffer: 4 * 1024 * 1024 }, (err, stdout) => {
-        if (err) return resolve(null)
-        try {
-          const j = JSON.parse(String(stdout))
-          const streams = Array.isArray(j.streams) ? j.streams : []
-          const v = streams.find((x) => x.codec_type === 'video') || {}
-          const side = (Array.isArray(v.side_data_list) ? v.side_data_list : []).find((d) => d && d.rotation != null)
-          const rot = Math.abs(Number(side ? side.rotation : (v.tags && v.tags.rotate)) || 0) % 180
-          const w = Number(v.width) || 0, h = Number(v.height) || 0
-          resolve({
-            w: rot === 90 ? h : w, h: rot === 90 ? w : h,
-            duration: Number(j.format && j.format.duration) || 0,
-            hasAudio: streams.some((x) => x.codec_type === 'audio'),
-            // HDR from a phone (edit-filters hdrChain): 'arib-std-b67' or 'smpte2084'.
-            transfer: String(v.color_transfer || ''),
-          })
-        } catch { resolve(null) }
-      })
-  })
 }
 
 /** ffmpeg with how far it has got: out_time against the length expected. */
@@ -1331,31 +1343,42 @@ function runFfmpeg(args, timeoutMs, label) {
 // POST /probe — what a take is: { url, frames?: 0..40, width?: 160..480 }
 //   → { duration, width, height, hasAudio, frames: [{ at, jpg (base64) }] }.
 // The frames come back in the answer, so nothing is stored for them.
+//   Several files joined into one take: { parts: [{ url, auth? }] } instead
+//   of url. The length is all of them; the shape is the first one's; each
+//   file is listed in `parts`, so a mix of upright and sideways is seen.
 app.post('/probe', async (req, res) => {
   if (SECRET && req.get('x-ingest-secret') !== SECRET) return res.status(401).json({ error: 'unauthorized' })
-  const url = String(req.body?.url || '').trim()
   const n = Math.max(0, Math.min(40, Math.floor(Number(req.body?.frames) || 0)))
   const width = Math.max(160, Math.min(480, Math.floor(Number(req.body?.width) || 320)))
-  if (!/^https:\/\//i.test(url)) return res.status(400).json({ error: 'bad url' })
-  const auth = driveAuth(url, req.body?.auth)
+  const parts = takeParts(req.body?.parts, String(req.body?.url || '').trim(), req.body?.auth)
+  if (!parts) return res.status(400).json({ error: 'bad url' })
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'probe-'))
   try {
-    await assertPublicHttpUrl(url)
-    const info = await ffprobeInfo(url, auth)
-    if (!info || !info.w) return res.status(422).json({ error: 'That file could not be read as a video.' })
+    for (const p of parts) await assertPublicHttpUrl(p.url)
+    const infos = await Promise.all(parts.map((p) => ffprobeInfo(p.url, p.auth)))
+    const bad = infos.findIndex((x) => !x || !x.w)
+    if (bad >= 0) return res.status(422).json({ error: parts.length > 1 ? `File ${bad + 1} of ${parts.length} could not be read as a video.` : 'That file could not be read as a video.' })
+    const info = infos[0]
+    const lengths = infos.map((x) => x.duration)
+    const duration = lengths.reduce((a, b) => a + b, 0)
     const frames = []
-    const times = Array.from({ length: n }, (_, i) => Math.round(((i + 0.5) * info.duration / n) * 100) / 100)
+    const times = Array.from({ length: n }, (_, i) => Math.round(((i + 0.5) * duration / n) * 100) / 100)
     for (let i = 0; i < times.length; i += 4) {
       await Promise.all(times.slice(i, i + 4).map(async (at, j) => {
         const out = path.join(dir, `f${i + j}.jpg`)
+        const where = partAt(lengths, at)
+        const p = parts[where.i]
         try {
-          await runFfmpeg(['-ss', String(at), ...authArgs(auth), '-i', url, '-frames:v', '1', '-vf', `scale=${width}:-2`, '-q:v', '5', '-y', out], 60_000, 'frame')
+          await runFfmpeg(['-ss', String(where.at), ...authArgs(p.auth), '-i', p.url, '-frames:v', '1', '-vf', `scale=${width}:-2`, '-q:v', '5', '-y', out], 60_000, 'frame')
           if (fs.existsSync(out)) frames.push({ at, jpg: fs.readFileSync(out).toString('base64') })
         } catch { /* a frame that would not come is left out */ }
       }))
     }
     frames.sort((a, b) => a.at - b.at)
-    return res.json({ duration: Math.round(info.duration * 100) / 100, width: info.w, height: info.h, hasAudio: info.hasAudio, frames })
+    return res.json({
+      duration: Math.round(duration * 100) / 100, width: info.w, height: info.h, hasAudio: infos.every((x) => x.hasAudio), frames,
+      parts: infos.map((x) => ({ duration: Math.round(x.duration * 100) / 100, width: x.w, height: x.h, hasAudio: x.hasAudio })),
+    })
   } catch (e) {
     return res.status(502).json({ error: String((e && e.message) || e).slice(0, 300) })
   } finally {
@@ -1397,25 +1420,44 @@ app.post('/filmed', async (req, res) => {
 })
 
 // POST /render-edit — the edit, in the background (one at a time, with every
-// other render). Body: { mainUrl, brollUrl?, userId, job, callbackUrl,
+// other render). Body: { mainUrl | mainParts: [{ url, auth? }],
+//   brollUrl? | brollParts?, userId, job, callbackUrl,
 //   segments, inserts?, zooms?, color?, formats, cropX?,
 //   logo?: { url, position, widthPct }, title?: { url, position, startSec, endSec, widthPct },
 //   words? (captions on vertical, on the finished timeline) }
 // Posts { job, ok, outputs: { wide?|vertical?: { url, seconds } }, ... } back.
+/** A take downloaded: one file, or several joined into one video in order
+ *  (join-takes joinFiles). */
+async function fetchTake(parts, dir, name, what, onPct) {
+  if (parts.length === 1) {
+    const file = path.join(dir, `${name}.mp4`)
+    await assertPublicHttpUrl(parts[0].url)
+    await downloadLarge(parts[0].url, file, 15 * 60_000, parts[0].auth, onPct)
+    return file
+  }
+  const files = []
+  for (const [i, p] of parts.entries()) {
+    const f = path.join(dir, `${name}-file${i}.mov`)
+    await assertPublicHttpUrl(p.url)
+    await downloadLarge(p.url, f, 15 * 60_000, p.auth, (x) => onPct(Math.floor((i * 100 + x) / parts.length) / 2))
+    files.push(f)
+  }
+  return (await joinFiles({ files, dir, name, what, tone: await canToneMap(), threads: EDIT_THREADS, onPct: (x) => onPct(50 + Math.floor(x / 2)) })).file
+}
+
 async function renderEditJob(body, report = () => {}) {
   const bad = (msg) => Object.assign(new Error(msg), { status: 400 })
-  const mainUrl = String(body.mainUrl || '').trim()
-  const brollUrl = String(body.brollUrl || '').trim()
   const userId = String(body.userId || '').trim() || 'ingest'
-  if (!/^https:\/\//i.test(mainUrl)) throw bad('bad source')
+  // One file each, or several joined in order (mainParts, brollParts).
+  const mainParts = takeParts(body.mainParts, String(body.mainUrl || '').trim(), body.mainAuth)
+  if (!mainParts) throw bad('bad source')
+  const brollParts = takeParts(body.brollParts, String(body.brollUrl || '').trim(), body.brollAuth)
   const formats = (Array.isArray(body.formats) ? body.formats : []).filter((f) => f === 'wide' || f === 'vertical')
   if (!formats.length) throw bad('no format')
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'edit-'))
   try {
-    const main = path.join(dir, 'main.mp4')
-    await assertPublicHttpUrl(mainUrl)
     report('download', 0)
-    await downloadLarge(mainUrl, main, 15 * 60_000, driveAuth(mainUrl, body.mainAuth), (p) => report('download', p))
+    const main = await fetchTake(mainParts, dir, 'main', 'talking take', (p) => report('download', p))
     const info = await ffprobeInfo(main)
     if (!info || !info.w) throw new Error('The review take could not be read as a video.')
     if (info.duration > EDIT_MAX_SOURCE_SEC) throw new Error(`The review take is ${Math.round(info.duration / 60)} minutes; the editor takes up to ${EDIT_MAX_SOURCE_SEC / 60}.`)
@@ -1432,11 +1474,9 @@ async function renderEditJob(body, report = () => {}) {
     // B-roll: each moment cut from the take in turn, then joined into one
     // track in the order it is used, so the one pass reads it straight through.
     let track = null, inserts = [], brollSec = 0
-    if (/^https:\/\//i.test(brollUrl) && Array.isArray(body.inserts) && body.inserts.length) {
-      const broll = path.join(dir, 'broll.mp4')
-      await assertPublicHttpUrl(brollUrl)
+    if (brollParts && Array.isArray(body.inserts) && body.inserts.length) {
       report('broll', 0)
-      await downloadLarge(brollUrl, broll, 15 * 60_000, driveAuth(brollUrl, body.brollAuth), (p) => report('broll', p))
+      const broll = await fetchTake(brollParts, dir, 'broll', 'B-roll', (p) => report('broll', p))
       const bi = await ffprobeInfo(broll)
       brollSec = bi ? bi.duration : 0
       inserts = cleanInserts(body.inserts, seconds, brollSec)

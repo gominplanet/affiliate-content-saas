@@ -18,6 +18,14 @@
 // What the video is for comes from how it was filmed: upright is a TRYBE
 // ad, sideways an Amazon and YouTube review. The creator checks the pairs
 // before anything is queued. Pure, tested in scripts/test-review-edit-batch.
+//
+// ONE VIDEO, SEVERAL FILES (Seb, 2026-11-02: "what if i have two files and
+// they should be for the same video", "users should be able to let MVP
+// know.. these files are for video #1.. and so on"). A video of the batch is
+// one or more talking files, joined in the order they were filmed, and any
+// number of B-roll files. MVP's first guess joins talking takes filmed back
+// to back (batchVideos); the creator then says which video each file is for
+// (moveFile), and the video server joins them (ingest-service join-takes).
 
 import type { VideoKind } from '@/lib/review-edit'
 
@@ -34,7 +42,7 @@ export interface DriveTake {
   filmedAt?: string | null
 }
 
-export interface Pair { a: DriveTake; b: DriveTake | null; how: 'name' | 'filmed' | 'order' | 'none'; kind: VideoKind; product: string }
+export interface Pair { a: DriveTake; b: DriveTake | null; how: 'name' | 'filmed' | 'order' | 'none' | 'you'; kind: VideoKind; product: string }
 
 /** Names a camera or phone gives a file, which say nothing about the product. */
 const CAMERA = /^(img|mvi|mov|vid|dsc|dji|gopr|gh\d|gx\d|pxl|c\d{3,}|clip|video|screen ?recording|untitled)[\s_-]*\d/i
@@ -138,4 +146,133 @@ export function pairTakes(aRoll: DriveTake[], bRoll: DriveTake[]): Pair[] {
 export function unpaired(pairs: Pair[], bRoll: DriveTake[]): DriveTake[] {
   const used = new Set(pairs.map((p) => p.b?.id).filter(Boolean))
   return bRoll.filter((b) => !used.has(b.id))
+}
+
+// ── One video, several files ─────────────────────────────────────────────────
+
+/** One video of a batch: its talking files, joined in this order, and its
+ *  B-roll files. `apart`: when MVP joined talking files because they were
+ *  filmed back to back, the longest gap between them in seconds (said on the
+ *  page, so a join MVP guessed is never mistaken for one the creator made). */
+export interface BatchVideo { a: DriveTake[]; b: DriveTake[]; how: Pair['how']; apart: number | null; kind: VideoKind; product: string }
+
+/** The most files one take is joined from (lib/review-edit-server MAX_TAKE_FILES). */
+export const MAX_FILES = 6
+/** Talking takes are guessed to be one video when the next one was started
+ *  this soon after the last one stopped. */
+export const JOIN_GAP_SEC = 45
+
+/** Talking takes filmed back to back, as one video each (Seb's IMG_0097 and
+ *  IMG_0098). Only on the filming time read from the files (a file number
+ *  says nothing about the gap), and only when the next was started within
+ *  JOIN_GAP_SEC of the last one stopping, filmed the same way up, with no
+ *  B-roll filmed in between and names that do not name two products. Every
+ *  talking take is in the answer once, in the order picked. Pure. */
+export function backToBack(aRoll: DriveTake[], bRoll: DriveTake[]): { files: DriveTake[]; apart: number | null }[] {
+  const filmedAt = (t: DriveTake) => (orderOf(t)?.scale === 'filmed' ? orderOf(t)!.at : null)
+  const timed = aRoll.filter((t) => filmedAt(t) != null).sort((x, y) => filmedAt(x)! - filmedAt(y)!)
+  const bTimes = bRoll.map(filmedAt).filter((x): x is number => x != null)
+  const chainOf = new Map<string, { files: DriveTake[]; apart: number | null }>()
+  let cur: { files: DriveTake[]; apart: number | null } | null = null
+  for (const t of timed) {
+    const prev = cur?.files[cur.files.length - 1]
+    if (cur && prev) {
+      const gap = (filmedAt(t)! - filmedAt(prev)!) / 1000 - (prev.seconds ?? Infinity)
+      const named = baseName(prev.name) && baseName(t.name) && baseName(prev.name) !== baseName(t.name)
+      const brollBetween = bTimes.some((b) => b > filmedAt(prev)! && b < filmedAt(t)!)
+      if (gap >= -10 && gap <= JOIN_GAP_SEC && kindOf(prev) === kindOf(t) && !named && !brollBetween && cur.files.length < MAX_FILES) {
+        cur.files.push(t)
+        cur.apart = Math.max(cur.apart ?? 0, Math.max(0, Math.round(gap)))
+        chainOf.set(t.id, cur)
+        continue
+      }
+    }
+    cur = { files: [t], apart: null }
+    chainOf.set(t.id, cur)
+  }
+  const out: { files: DriveTake[]; apart: number | null }[] = []
+  const seen = new Set<object>()
+  for (const t of aRoll) {
+    const c = chainOf.get(t.id) ?? { files: [t], apart: null }
+    if (seen.has(c)) continue
+    seen.add(c)
+    out.push(c)
+  }
+  return out
+}
+
+/** MVP's first guess at the batch's videos: talking takes filmed back to
+ *  back joined, then each video paired with its B-roll (pairTakes, on its
+ *  first file). Pure. */
+export function batchVideos(aRoll: DriveTake[], bRoll: DriveTake[]): BatchVideo[] {
+  const chains = backToBack(aRoll, bRoll)
+  const pairs = pairTakes(chains.map((c) => c.files[0]), bRoll)
+  return chains.map((c, i) => ({ a: c.files, b: pairs[i].b ? [pairs[i].b!] : [], how: pairs[i].how, apart: c.files.length > 1 ? c.apart : null, kind: pairs[i].kind, product: pairs[i].product }))
+}
+
+/** Files in the order they were filmed when that is known for all of them
+ *  on one measure, else by name (IMG_0097 before IMG_0098). Pure. */
+export function filmingOrder(files: DriveTake[]): DriveTake[] {
+  const o = files.map(orderOf)
+  if (o.every((x) => x && x.scale === o[0]!.scale)) return [...files].sort((x, y) => orderOf(x)!.at - orderOf(y)!.at)
+  return [...files].sort((x, y) => x.name.localeCompare(y.name, undefined, { numeric: true }))
+}
+
+/** A file moved to another video (`to` is its number from 0), to a new
+ *  video of its own just after ('new', talking files), or out of every video ('none',
+ *  B-roll). A talking file stays a talking file and B-roll stays B-roll; a
+ *  video left with no talking file is gone, and its B-roll unused. A video
+ *  takes up to MAX_FILES of each. Files land in filming order. Pure. */
+export function moveFile(videos: BatchVideo[], fileId: string, to: number | 'new' | 'none', pool: DriveTake[] = []): BatchVideo[] {
+  const fromA = videos.find((v) => v.a.some((f) => f.id === fileId))
+  const talk = fromA?.a.find((f) => f.id === fileId) ?? null
+  const roll = talk ? null : videos.flatMap((v) => v.b).find((f) => f.id === fileId) ?? pool.find((f) => f.id === fileId) ?? null
+  const file = talk ?? roll
+  if (!file) return videos
+  const target = typeof to === 'number' ? videos[to] : null
+  if (typeof to === 'number' && !target) return videos
+  if (target && (talk ? target.a : target.b).some((f) => f.id === fileId)) return videos
+  if (target && (talk ? target.a : target.b).length >= MAX_FILES) return videos
+  if (talk && to === 'none') return videos
+  if (roll && to === 'new') return videos
+  // Out of where it was.
+  let next = videos.map((v) => ({ ...v, a: v.a.filter((f) => f.id !== fileId), b: v.b.filter((f) => f.id !== fileId) }))
+  const at = (v: BatchVideo) => next[videos.indexOf(v)]
+  const into = target ? at(target) : null
+  if (talk && into) { into.a = filmingOrder([...into.a, talk]); into.apart = null }
+  if (roll && into) { into.b = filmingOrder([...into.b, roll]); into.how = 'you' }
+  if (talk && fromA && fromA !== target) at(fromA).apart = null
+  // A new video goes straight after the one the file came from.
+  if (talk && to === 'new') next.splice(videos.indexOf(fromA!) + 1, 0, { a: [talk], b: [], how: 'none', apart: null, kind: kindOf(talk), product: productFromName(talk.name) })
+  next = next.filter((v) => v.a.length > 0)
+  next.forEach((v) => { if (!v.b.length) v.how = 'none' })
+  return next
+}
+
+/** A talking file one place earlier in its video. Pure. */
+export function moveUp(videos: BatchVideo[], fileId: string): BatchVideo[] {
+  return videos.map((v) => {
+    const i = v.a.findIndex((f) => f.id === fileId)
+    if (i < 1) return v
+    const a = [...v.a];
+    [a[i - 1], a[i]] = [a[i], a[i - 1]]
+    return { ...v, a }
+  })
+}
+
+/** B-roll files in no video. Pure. */
+export function unusedBroll(videos: BatchVideo[], bRoll: DriveTake[]): DriveTake[] {
+  const used = new Set(videos.flatMap((v) => v.b.map((f) => f.id)))
+  return bRoll.filter((b) => !used.has(b.id))
+}
+
+/** How long a video's talking files are together, when every length is known. Pure. */
+export function talkSeconds(v: BatchVideo): number | null {
+  return v.a.every((f) => typeof f.seconds === 'number') ? v.a.reduce((n, f) => n + (f.seconds as number), 0) : null
+}
+
+/** What the add action is sent for one video: its first file, then `more`. Pure. */
+export function addBody(v: BatchVideo): { review: { driveId: string; name: string; more?: { driveId: string; name: string }[] }; broll?: { driveId: string; name: string; more?: { driveId: string; name: string }[] } } {
+  const take = (files: DriveTake[]) => ({ driveId: files[0].id, name: files[0].name, ...(files.length > 1 ? { more: files.slice(1).map((f) => ({ driveId: f.id, name: f.name })) } : {}) })
+  return { review: take(v.a), ...(v.b.length ? { broll: take(v.b) } : {}) }
 }

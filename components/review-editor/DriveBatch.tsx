@@ -9,18 +9,27 @@
 // pairs to check and change before any of them is queued. Every pair that
 // could not be added says why. Takes already made are left out and listed,
 // so picking everything in the folders each time is safe.
+//
+// Each file says which video it is for (Seb, 2026-11-02: "users should be
+// able to let MVP know.. these files are for video #1"): two talking files
+// for one video are joined into one, in order, and a video can have several
+// B-roll files. MVP's first guess joins takes filmed back to back, and says
+// so on the video, with a way to keep them apart.
 
 import { useState } from 'react'
 import { toast } from 'sonner'
-import { Loader2, FolderOpen, Layers, Check, AlertTriangle } from 'lucide-react'
+import { Loader2, FolderOpen, Layers, Check, AlertTriangle, ArrowUp } from 'lucide-react'
 import { pickFolder, pickMany, type DriveState, type DriveFolderRef } from '@/components/review-editor/drive-picker'
-import { pairTakes, unpaired, type DriveTake, type Pair } from '@/lib/review-edit-batch'
+import { batchVideos, moveFile, moveUp, unusedBroll, talkSeconds, addBody, type BatchVideo, type DriveTake, type Pair } from '@/lib/review-edit-batch'
 import { cleanSettings, clock, KIND_WORDS, type EditSettings, type VideoKind } from '@/lib/review-edit'
 
 const PURPLE = '#7C3AED'
 const BLUE = '#1a73e8'
 const soft = { color: 'var(--text-3)' }
-const HOW: Record<Pair['how'], string> = { name: 'Paired by name', filmed: 'Paired by when they were filmed', order: 'Paired by file order', none: 'No B-roll found for it' }
+const HOW: Record<Pair['how'], string> = { name: 'Paired by name', filmed: 'Paired by when they were filmed', order: 'Paired by file order', you: 'Picked by you', none: 'No B-roll found for it' }
+const shape = (t: DriveTake) => (t.width && t.height ? (t.height > t.width ? 'upright' : 'sideways') : null)
+/** One upright file and one sideways cannot be one video. */
+const mixed = (v: BatchVideo) => new Set(v.a.map(shape).filter(Boolean)).size > 1
 
 export default function DriveBatch({ drive, loadDrive, settings, onAdded }: {
   drive: DriveState
@@ -30,7 +39,7 @@ export default function DriveBatch({ drive, loadDrive, settings, onAdded }: {
   onAdded: () => Promise<void>
 }) {
   const [busy, setBusy] = useState<string | null>(null)
-  const [pairs, setPairs] = useState<Pair[] | null>(null)
+  const [videos, setVideos] = useState<BatchVideo[] | null>(null)
   const [pool, setPool] = useState<DriveTake[]>([])
   const [problems, setProblems] = useState<string[]>([])
   /** Takes left out because they are already made or in the queue. */
@@ -83,38 +92,61 @@ export default function DriveBatch({ drive, loadDrive, settings, onAdded }: {
       const named = new Map([...a, ...b].map((f) => [f.id, f.name]))
       setProblems((d.problems ?? []).map((p) => `${named.get(p.id) || 'A file'}: ${p.error}`))
       setPool(bT)
-      setPairs(pairTakes(aT, bT))
+      setVideos(batchVideos(aT, bT))
     } catch (e) { toast.error(e instanceof Error ? e.message : 'Google’s picker did not open.') } finally { setBusy(null) }
   }
 
-  const change = (i: number, patch: Partial<Pair>) => setPairs((ps) => ps ? ps.map((p, k) => (k === i ? { ...p, ...patch } : p)) : ps)
-  const usedB = new Set((pairs ?? []).map((p) => p.b?.id).filter(Boolean))
+  const change = (i: number, patch: Partial<BatchVideo>) => setVideos((vs) => vs ? vs.map((v, k) => (k === i ? { ...v, ...patch } : v)) : vs)
+  const move = (id: string, to: number | 'new' | 'none') => setVideos((vs) => (vs ? moveFile(vs, id, to, pool) : vs))
+  /** Each file after the first in its own video again, right after it, in order
+   *  (the last first, as each new video goes straight after this one). */
+  const apart = (v: BatchVideo) => setVideos((vs) => (vs ? v.a.slice(1).reverse().reduce((acc, f) => moveFile(acc, f.id, 'new', pool), vs) : vs))
+  const unused = videos ? unusedBroll(videos, pool) : []
+  const blocked = (videos ?? []).filter(mixed).length
 
   const addAll = async () => {
-    if (!pairs?.length) return
+    if (!videos?.length || blocked) return
     setBusy('add')
     let ok = 0
-    const failed: string[] = []
-    for (let i = 0; i < pairs.length; i++) {
-      const p = pairs[i]
+    const failed: { id: string; why: string }[] = []
+    for (let i = 0; i < videos.length; i++) {
+      const v = videos[i]
+      const label = `Video ${i + 1} (${v.a.map((f) => f.name).join(' + ')})`
       setBusy(`add:${i + 1}`)
       try {
         // The look on every video. A title left empty is written by MVP for
         // each video; one typed (a disclosure) is the same on all of them.
-        const look = cleanSettings({ ...settings, kind: p.kind }, settings)
+        const look = cleanSettings({ ...settings, kind: v.kind }, settings)
         const r = await fetch('/api/review-edit', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'add', name: p.product || p.a.name.replace(/\.[^.]+$/, ''), review: { driveId: p.a.id, name: p.a.name }, broll: p.b ? { driveId: p.b.id, name: p.b.name } : undefined, product: p.product, settings: look }),
+          body: JSON.stringify({ action: 'add', name: v.product || v.a[0].name.replace(/\.[^.]+$/, ''), ...addBody(v), product: v.product, settings: look }),
         })
         const d = await r.json().catch(() => ({}))
         if (r.ok) ok++
-        else failed.push(`${p.a.name}: ${d.error || 'not added'}`)
-      } catch { failed.push(`${p.a.name}: not added (no answer)`) }
+        else failed.push({ id: v.a[0].id, why: `${label}: ${d.error || 'not added'}` })
+      } catch { failed.push({ id: v.a[0].id, why: `${label}: not added (no answer)` }) }
     }
-    setAdded({ ok, failed })
-    if (ok) { setPairs(failed.length ? pairs.filter((p) => failed.some((f) => f.startsWith(`${p.a.name}:`))) : null); await onAdded() }
+    setAdded({ ok, failed: failed.map((f) => f.why) })
+    if (ok) { setVideos(failed.length ? videos.filter((v) => failed.some((f) => f.id === v.a[0].id)) : null); await onAdded() }
     setBusy(null)
   }
+
+  /** Which video a file is for: any video, or a new one (talking), or none (B-roll). */
+  const whichVideo = (f: DriveTake, now: number | null, talk: boolean) => (
+    <select value={now == null ? 'none' : String(now)} aria-label={`Which video ${f.name} is for`}
+      onChange={(e) => move(f.id, e.target.value === 'new' ? 'new' : e.target.value === 'none' ? 'none' : Number(e.target.value))}
+      className="rounded-lg border px-1.5 py-0.5 text-[12px] bg-transparent shrink-0" style={{ borderColor: 'var(--border-2)', color: 'var(--text)' }}>
+      {(videos ?? []).map((_, j) => <option key={j} value={j}>Video {j + 1}</option>)}
+      {talk ? <option value="new">A new video</option> : <option value="none">Not used</option>}
+    </select>
+  )
+  const fileLine = (f: DriveTake, now: number | null, talk: boolean, up?: () => void) => (
+    <li key={f.id} className="flex items-center gap-2 text-[12.5px]">
+      <span className="min-w-0 flex-1 truncate"><b className="font-semibold">{f.name}</b> <span style={soft}>{[f.seconds ? clock(f.seconds) : null, shape(f)].filter(Boolean).join(', ')}</span></span>
+      {up && <button type="button" onClick={up} title="Play this one earlier" aria-label={`Play ${f.name} earlier`} className="rounded p-0.5" style={{ color: 'var(--text-3)' }}><ArrowUp size={13} /></button>}
+      {whichVideo(f, now, talk)}
+    </li>
+  )
 
   const folderTile = (which: 'aRoll' | 'bRoll', label: string, hint: string) => {
     const f = which === 'aRoll' ? drive.aRoll : drive.bRoll
@@ -138,6 +170,7 @@ export default function DriveBatch({ drive, loadDrive, settings, onAdded }: {
         <li>Film one product at a time: its talking take, then its B-roll (or the B-roll first, as long as you always do it the same way).</li>
         <li>Put the talking takes in your A-roll folder and the B-roll in your B-roll folder. Any names: MVP reads when each was filmed from the file itself.</li>
         <li>Press <b>Pick this batch</b> and select everything in each folder. MVP pairs them and leaves out anything already made.</li>
+        <li>Check which video each file is for. Two talking files for one video are joined into one.</li>
       </ol>
       <div className="grid sm:grid-cols-2 gap-2 mt-3">
         {folderTile('aRoll', 'A-roll folder', 'Your talking takes')}
@@ -152,50 +185,63 @@ export default function DriveBatch({ drive, loadDrive, settings, onAdded }: {
       </div>
 
       {skipped.length > 0 && <p className="mt-2 text-[12.5px]" style={soft}>Left out, already made or in the queue ({skipped.length}): {skipped.join(', ')}.</p>}
-      {pairs && !filmedRead && <p className="mt-2 text-[12.5px] inline-flex items-start gap-1.5" style={{ color: '#B45309' }}><AlertTriangle size={13} className="mt-0.5 shrink-0" /> MVP could not read when these were filmed, so they are paired by name and file order. Check each pair.</p>}
+      {videos && !filmedRead && <p className="mt-2 text-[12.5px] inline-flex items-start gap-1.5" style={{ color: '#B45309' }}><AlertTriangle size={13} className="mt-0.5 shrink-0" /> MVP could not read when these were filmed, so they are paired by name and file order, and none are joined. Check each video.</p>}
       {problems.length > 0 && (
         <ul className="mt-2 text-[12.5px] flex flex-col gap-0.5" style={{ color: '#B45309' }}>
           {problems.map((p) => <li key={p} className="inline-flex items-start gap-1.5"><AlertTriangle size={13} className="mt-0.5 shrink-0" /> {p}</li>)}
         </ul>
       )}
 
-      {pairs && pairs.length > 0 && (
+      {videos && videos.length > 0 && (
         <div className="mt-3">
-          <p className="text-[13.5px] font-bold">Check the pairs ({pairs.length} {pairs.length === 1 ? 'video' : 'videos'})</p>
-          <p className="text-[12px]" style={soft}>Change a B-roll or what a video is for here, then add them all.</p>
+          <p className="text-[13.5px] font-bold">Check your videos ({videos.length})</p>
+          <p className="text-[12px]" style={soft}>Each file says which video it is for. Change it to put two files in one video or to take them apart, then add them all.</p>
           <ul className="mt-1.5 flex flex-col gap-2">
-            {pairs.map((p, i) => (
-              <li key={p.a.id} className="rounded-xl border p-3" style={{ borderColor: 'var(--border-2)', background: 'var(--surface)' }}>
-                <p className="text-[13px] font-semibold">{i + 1}. {p.a.name} <span className="font-normal" style={soft}>{p.a.seconds ? `${clock(p.a.seconds)}, ` : ''}{p.a.width && p.a.height ? (p.a.height > p.a.width ? 'filmed upright' : 'filmed sideways') : 'shape unknown'}</span></p>
-                <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
-                  {(['review', 'trybe'] as VideoKind[]).map((k) => (
-                    <button key={k} type="button" onClick={() => change(i, { kind: k })} aria-pressed={p.kind === k} className="rounded-full border px-2.5 py-0.5 text-[12px] font-semibold"
-                      style={p.kind === k ? { background: PURPLE, borderColor: PURPLE, color: '#fff' } : { borderColor: 'var(--border-2)', color: 'var(--text-2)' }}>{KIND_WORDS[k].name}</button>
-                  ))}
-                </div>
-                <div className="grid sm:grid-cols-2 gap-2 mt-1.5">
-                  <label className="text-[12px]" style={soft}>B-roll
-                    <select value={p.b?.id ?? ''} onChange={(e) => change(i, { b: pool.find((x) => x.id === e.target.value) ?? null, how: e.target.value ? p.how === 'none' ? 'order' : p.how : 'none' })}
-                      className="mt-0.5 w-full rounded-lg border px-2 py-1 text-[12.5px] bg-transparent" style={{ borderColor: 'var(--border-2)', color: 'var(--text)' }}>
-                      <option value="">No B-roll</option>
-                      {pool.map((b) => <option key={b.id} value={b.id}>{b.name}{usedB.has(b.id) && b.id !== p.b?.id ? ' (used by another)' : ''}</option>)}
-                    </select>
-                  </label>
-                  <label className="text-[12px]" style={soft}>The product (optional)
-                    <input value={p.product} onChange={(e) => change(i, { product: e.target.value.slice(0, 120) })} placeholder="MVP hears it in your take if empty"
+            {videos.map((v, i) => {
+              const secs = talkSeconds(v)
+              return (
+                <li key={v.a[0].id} className="rounded-xl border p-3" style={{ borderColor: mixed(v) ? '#B4530988' : 'var(--border-2)', background: 'var(--surface)' }}>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="text-[13.5px] font-bold">Video {i + 1} <span className="font-normal text-[12.5px]" style={soft}>{[secs ? clock(secs) : null, v.a.length > 1 ? `${v.a.length} files joined` : null].filter(Boolean).join(', ')}</span></p>
+                    <div className="flex items-center gap-1.5">
+                      {(['review', 'trybe'] as VideoKind[]).map((k) => (
+                        <button key={k} type="button" onClick={() => change(i, { kind: k })} aria-pressed={v.kind === k} className="rounded-full border px-2.5 py-0.5 text-[12px] font-semibold"
+                          style={v.kind === k ? { background: PURPLE, borderColor: PURPLE, color: '#fff' } : { borderColor: 'var(--border-2)', color: 'var(--text-2)' }}>{KIND_WORDS[k].name}</button>
+                      ))}
+                    </div>
+                  </div>
+                  <p className="text-[11.5px] font-semibold uppercase tracking-wider mt-2" style={soft}>Talking</p>
+                  <ul className="mt-0.5 flex flex-col gap-1">{v.a.map((f, k) => fileLine(f, i, true, k > 0 ? () => setVideos((vs) => (vs ? moveUp(vs, f.id) : vs)) : undefined))}</ul>
+                  {v.apart != null && (
+                    <p className="text-[12px] mt-1" style={{ color: 'var(--text-2)' }}>MVP put these together: they were filmed {v.apart <= 1 ? 'one straight after the other' : `${v.apart} seconds apart`}.{' '}
+                      <button type="button" onClick={() => apart(v)} className="font-semibold underline" style={{ color: BLUE }}>Keep them apart</button></p>
+                  )}
+                  {v.a.length > 1 && v.apart == null && <p className="text-[12px] mt-1" style={soft}>Joined into one video in this order.</p>}
+                  {mixed(v) && <p className="text-[12px] mt-1 inline-flex items-start gap-1.5" style={{ color: '#B45309' }}><AlertTriangle size={13} className="mt-0.5 shrink-0" /> One of these was filmed upright and one sideways, so they cannot be one video. Move one to another video.</p>}
+                  <p className="text-[11.5px] font-semibold uppercase tracking-wider mt-2" style={soft}>B-roll</p>
+                  {v.b.length
+                    ? <ul className="mt-0.5 flex flex-col gap-1">{v.b.map((f) => fileLine(f, i, false))}</ul>
+                    : <p className="text-[12px]" style={{ color: '#B45309' }}>None. Choose one from the B-roll not used below, or it is made without.</p>}
+                  {v.b.length > 0 && <p className="text-[11.5px] mt-0.5" style={soft}>{HOW[v.how]}{v.b.length > 1 ? '. The B-roll files are joined into one.' : ''}</p>}
+                  <label className="block text-[12px] mt-2" style={soft}>The product (optional)
+                    <input value={v.product} onChange={(e) => change(i, { product: e.target.value.slice(0, 120) })} placeholder="MVP hears it in your take if empty"
                       className="mt-0.5 w-full rounded-lg border px-2 py-1 text-[12.5px] bg-transparent" style={{ borderColor: 'var(--border-2)', color: 'var(--text)' }} />
                   </label>
-                </div>
-                <p className="text-[11.5px] mt-1" style={{ color: p.b ? 'var(--text-3)' : '#B45309' }}>{p.b ? `${HOW[p.how]}: ${p.b.name}` : HOW.none}</p>
-              </li>
-            ))}
+                </li>
+              )
+            })}
           </ul>
-          {unpaired(pairs, pool).length > 0 && <p className="text-[12px] mt-2" style={soft}>B-roll not used: {unpaired(pairs, pool).map((b) => b.name).join(', ')}.</p>}
-          <button type="button" onClick={() => void addAll()} disabled={!!busy}
+          {unused.length > 0 && (
+            <div className="mt-2 rounded-xl border p-3" style={{ borderColor: 'var(--border-2)' }}>
+              <p className="text-[12.5px] font-semibold">B-roll not used ({unused.length})</p>
+              <ul className="mt-1 flex flex-col gap-1">{unused.map((f) => fileLine(f, null, false))}</ul>
+            </div>
+          )}
+          <button type="button" onClick={() => void addAll()} disabled={!!busy || blocked > 0}
             className="mt-3 inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-[13.5px] font-semibold text-white disabled:opacity-50" style={{ background: PURPLE }}>
-            {busy?.startsWith('add') ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />} {busy?.startsWith('add:') ? `Adding ${busy.slice(4)} of ${pairs.length}` : `Add all ${pairs.length} to the queue`}
+            {busy?.startsWith('add') ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />} {busy?.startsWith('add:') ? `Adding ${busy.slice(4)} of ${videos.length}` : `Add all ${videos.length} to the queue`}
           </button>
-          <p className="text-[12px] mt-1" style={soft}>They use your look above.</p>
+          <p className="text-[12px] mt-1" style={blocked ? { color: '#B45309' } : soft}>{blocked ? `${blocked === 1 ? 'One video mixes' : `${blocked} videos mix`} upright and sideways files: fix that first.` : 'They use your look above.'}</p>
         </div>
       )}
       {added && (

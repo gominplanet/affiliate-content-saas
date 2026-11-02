@@ -4,9 +4,11 @@
  * GET   the creator's videos, newest first, each with where it is, what MVP
  *       cut and why, where the B-roll went, and the finished files.
  * POST  { action }:
- *   add      { name, review: { url, name, bytes }, broll?, product?, settings? }
+ *   add      { name, review: { url, name, bytes } | { driveId, name, more?: [{ driveId, name }] },
+ *            broll?, product?, settings? }
  *            queue a video; it starts reading at once and carries on in the
- *            background (lib/review-edit-server).
+ *            background (lib/review-edit-server). `more`: the files after the
+ *            first, joined into one video in that order.
  *   change   { id, settings?, restore?: number[], cut?: number[], placementOff?: number[], prompt? }
  *            the creator's changes, saved; prompt is a typed change.
  *   make     { id }  make it again with the changes.
@@ -21,7 +23,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { canUsePreview } from '@/lib/labs-preview'
 import { cleanSettings, clock, linesOf, DEFAULT_SETTINGS, type Plan, type Word } from '@/lib/review-edit'
 import { promptChange } from '@/lib/review-edit-plan'
-import { moveQueue, deleteRaw, ownPath, hasUpload, serverJobs, finishMaking, EDIT_BUCKET, type EditRow, type Src, type ServerView, editDb } from '@/lib/review-edit-server'
+import { moveQueue, deleteRaw, ownPath, hasUpload, serverJobs, finishMaking, takeFiles, MAX_TAKE_FILES, EDIT_BUCKET, type EditRow, type Src, type TakeFile, type ServerView, editDb } from '@/lib/review-edit-server'
 import { driveAccessToken, driveFile, isDriveId } from '@/lib/google-drive'
 
 export const runtime = 'nodejs'
@@ -61,6 +63,8 @@ function view(r: EditRow, server?: ServerView | null) {
     // Uploads are deleted when done; a Drive take is the creator's and stays.
     rawDeleted: !!r.raw_deleted_at && hasUpload(r), rawInMvp: hasUpload(r) && !r.raw_deleted_at,
     fromDrive: r.review_src?.kind === 'drive',
+    /** The files each take is joined from, in order, when more than one. */
+    files: { talk: takeFiles(r.review_src).map((f) => f.name || 'A file'), broll: takeFiles(r.broll_src).map((f) => f.name || 'A file') },
     settings: cleanSettings(r.settings),
     review: r.info?.review ?? null,
     outputs: r.outputs ?? null,
@@ -158,7 +162,7 @@ export async function POST(request: Request) {
     // A take picked in Google Drive is checked with Google first: MVP can
     // open it, and it is a video. An upload must be in this creator's folder.
     let token: string | null = null
-    const src = async (v: unknown): Promise<Src | { error: string } | null> => {
+    const file = async (v: unknown): Promise<TakeFile | { error: string } | null> => {
       const o = (v && typeof v === 'object' ? v : null) as Record<string, unknown> | null
       if (!o) return null
       if (isDriveId(o.driveId)) {
@@ -173,6 +177,26 @@ export async function POST(request: Request) {
       }
       if (!own(o.url)) return null
       return { kind: 'upload', url: String(o.url), path: ownPath(String(o.url), g.userId)!, name: String(o.name || '').slice(0, 200), bytes: Number(o.bytes) || undefined }
+    }
+    // A take of several files (Seb, 2026-11-02: "these files are for video
+    // #1"): each checked the same way, joined in the order given, never the
+    // same file twice. A file that fails is named.
+    const src = async (v: unknown): Promise<Src | { error: string } | null> => {
+      const first = await file(v)
+      if (!first || 'error' in first) return first
+      const rest = Array.isArray((v as { more?: unknown }).more) ? (v as { more: unknown[] }).more : []
+      if (1 + rest.length > MAX_TAKE_FILES) return { error: `One video can be joined from up to ${MAX_TAKE_FILES} files.` }
+      const more: TakeFile[] = []
+      for (const r of rest) {
+        const f = await file(r)
+        const name = String((r as { name?: unknown })?.name || 'A file').slice(0, 120)
+        if (!f) return { error: `${name} is not one of your uploads in MVP. Add it again.` }
+        if ('error' in f) return { error: `${name}: ${f.error}` }
+        more.push(f)
+      }
+      const key = (f: TakeFile) => (f.kind === 'drive' ? `d:${f.fileId}` : `u:${f.path}`)
+      if (new Set([first, ...more].map(key)).size !== 1 + more.length) return { error: 'The same file is in this video twice.' }
+      return more.length ? { ...first, more } : first
     }
     const review = await src(body.review)
     if (!review) return NextResponse.json({ error: 'Add your talking take first.' }, { status: 400 })
