@@ -73,6 +73,8 @@ async function main() {
   check('a pin or blog hero still takes the look\u2019s typography, as every other look', presetToPrompt(look, { surface: 'pin' }).includes(look.typography) && presetToPrompt(look, { surface: 'hero' }).includes(look.typography))
   const other = buildGraphicThumbnailPrompt({ presetId: 'bold', line1: '', line2: 'surprisingly good', concept: 'x' } as never)
   check('every other look still has its headline drawn by the model', /MAIN HEADLINE/.test(other) && !/LEAVE ROOM FOR THE WORDS/.test(other))
+  check('and says it again as the last thing the AI reads, the headroom the head needs', /FINAL CHECK — HEADROOM/.test(prompt.slice(-600)) && !/FINAL CHECK — HEADROOM/.test(other))
+  check('a scene the creator typed gets the same last word', /\.\.\.\(mvpWords \? \['', MVP_WORDS_FINAL_CHECK\] : \[\]\)/.test(read('app/api/youtube/generate-thumbnail/route.ts')))
 
   // ── Wiring ─────────────────────────────────────────────────────────────────
   const G = read('app/api/youtube/generate-thumbnail/route.ts'), W = read('lib/review-edit-server.ts'), S = read('ingest-service/server.js')

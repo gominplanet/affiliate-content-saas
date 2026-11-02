@@ -29,7 +29,7 @@ import { detectWearable, wearDirective } from '@/lib/wear-product'
 import { normalizeExpression, expressionDirective, expressionDescription, EXPRESSION_LABEL, politeSmileIsWrong } from '@/lib/face-expression'
 import { parseGarmentVerdict, parseVerdict, GARMENT_CHECK_PROMPT, expressionCheckPrompt, type GarmentVerdict } from '@/lib/garment-match'
 import { resolvePreset, presetToBriefRules, parsePresetIds, pickPresetId } from '@/lib/visual-presets'
-import { buildGraphicThumbnailPrompt, multiProductLine, comparisonLayout, oneChip, TEXT_BUDGET, MVP_WORDS_LAYOUT, MVP_WORDS_TEXT } from '@/lib/thumbnail-prompt'
+import { buildGraphicThumbnailPrompt, multiProductLine, comparisonLayout, oneChip, TEXT_BUDGET, MVP_WORDS_LAYOUT, MVP_WORDS_TEXT, MVP_WORDS_FINAL_CHECK } from '@/lib/thumbnail-prompt'
 import { buildExpressionPortraitPrompt } from '@/lib/expression-portrait'
 import { rememberDesign, isDesignFormat, recallDesigns } from '@/lib/design-memory'
 import { portraitCachePath, readCachedPortrait, writeCachedPortrait } from '@/lib/expression-portrait-cache'
@@ -2849,6 +2849,7 @@ async function generateThumbnail(request: Request, memo: ImageMemo) {
                 // look, and an earlier instruction loses to it.
                 ...(wearLine ? ['', 'FINAL CHECK — THE GARMENT: the item on them is the one in the product reference photo. Same colour, same pattern and texture, same collar and trim, same sleeve length. The scene direction never changes what the product looks like.'] : []),
                 ...(expressionLine ? ['', `FINAL CHECK — THE FACE: ${expressionLine}`] : []),
+                ...(mvpWords ? ['', MVP_WORDS_FINAL_CHECK] : []),
               ].join('\n')
             } else {
               // The default graphic design. Assembled in lib/thumbnail-prompt so

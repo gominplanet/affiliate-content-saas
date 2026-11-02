@@ -296,6 +296,12 @@ export const TEXT_BUDGET =
 export const MVP_WORDS_LAYOUT =
   'LEAVE ROOM FOR THE WORDS: a short line of words is added across the top of this picture afterwards. Keep the top third behind the creator plain background (wall, window or soft out-of-focus room) with nothing important in it, and frame the creator so the top of their head sits about a third of the way down from the top edge, centred or a little to one side, head and shoulders large. Render no text at all.'
 
+/** The last word on such a look: the headroom the words need. In both of
+ *  Seb's first tests (2026-11-02) the head sat in the top tenth of the frame,
+ *  so the words could only go beside it, never behind it as in the look. */
+export const MVP_WORDS_FINAL_CHECK =
+  'FINAL CHECK — HEADROOM: the top third of the picture is empty background above the creator\u2019s head, with nothing written in it. The top of their head is about one third of the way down the picture, never in the top fifth. Medium shot: head, shoulders and the product, with that headroom above.'
+
 /** The text rule for such a look: none. */
 export const MVP_WORDS_TEXT =
   "TEXT (hard rule): no words, letters, numbers, captions, labels, badges or logos anywhere on the picture. The product's own printing stays exactly as it is on the product."
@@ -354,6 +360,9 @@ export function buildGraphicThumbnailPrompt(input: ThumbnailPromptInput): string
     // last word as well as an early one.
     '',
     LOGO_FINAL_CHECK,
+    // Last, because the first two tests came back with the head in the top
+    // tenth of the frame: an instruction placed only up front lost.
+    ...(mvpWords ? ['', MVP_WORDS_FINAL_CHECK] : []),
     ...(input.wearLine ? ['', garmentFinalCheck(input.refsAreHeadOnly)] : []),
     ...(input.expressionLine ? ['', expressionFinalCheck(input.expressionLine, input.expressionInReference === true)] : []),
   ].filter(Boolean).join('\n')
