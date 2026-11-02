@@ -53,7 +53,11 @@ async function main() {
   check('the red bar is drawn, near the top, under the words', (await redShare(r1.jpg, 0, Math.round(THUMB_H * 0.35))) > 0.004 && (await redShare(r1.jpg, Math.round(THUMB_H * 0.5), THUMB_H)) < 0.001)
   const f2 = await frame(960, 60, 1.6)
   const r2 = await composeThumb({ still: f2.still, cutout: f2.cut, words: 'worth every penny', accent: 'penny' })
-  check('a head high in the frame never hides a word: beside it, or the words in front, and said', (r2.depth && r2.hidden <= 0.07) || (!r2.depth && r2.layout === 'front'), r2)
+  check('a head high in the frame never hides a word: beside it, or the words in front, and said', (r2.layout === 'top' && r2.depth && r2.hidden <= 0.07) || (!r2.depth && (r2.layout === 'side' || r2.layout === 'front')), r2)
+  const f5 = await frame(1300, 40, 1.4)
+  const r5 = await composeThumb({ still: f5.still, cutout: f5.cut, words: 'worth every penny', accent: 'penny', crop: false })
+  check('the head goes in front of the words only when they are centred across the top; beside it they stay clear', r5.layout === 'side' ? r5.depth === false && r5.hidden === 0 : true, r5)
+  check('and the head is in front only on the top layout', !r1.depth || r1.layout === 'top')
   const r3 = await composeThumb({ still: f1.still, cutout: null, words: 'no cut out', accent: 'out' })
   check('no cut-out: the words in front, and said', r3.depth === false && r3.layout === 'front')
   let refused = ''
@@ -82,10 +86,10 @@ async function main() {
   check('the generator draws the words on the Creator look, YouTube size only', /const mvpWords = resolvePreset\(visualPreset\)\.wordsByMvp === true && Math\.abs\(outW \/ outH - 16 \/ 9\) < 0\.02/.test(G) && (G.match(/finishWithMvpWords\(/g) ?? []).length >= 3)
   check('nothing to spell check when MVP draws the words', /if \(b64 && !mvpWords\) \{/.test(G) && /if \(b64 && !mvpWords\) \{\s*\n\s*const wantP/.test(G))
   check('the creator is cut out to sit in front of the words, the cost counted, a failed cut-out leaves the words in front', /removeBackground\(hosted\)/.test(G) && /feature: 'thumb_creator_cutout', model: 'fal-rembg'/.test(G) && /crop: false/.test(G))
-  check('the result says, for each variant, whether the head is in front', /creatorDepth: gfxRawUrls\.flatMap/.test(G))
+  check('the result says, for each variant, whether the words had to go over the creator', /creatorOverHead: gfxRawUrls\.flatMap/.test(G) && /overHead: withPerson && made\.layout === 'front'/.test(G))
   check('a scene the creator typed gets no words drawn by the model on this look either', /\.\.\.\(mvpWords \? \[MVP_WORDS_LAYOUT, MVP_WORDS_TEXT\] : \[/.test(G))
   check('the look is offered in the picker only to Labs while it is tested; an account that has it keeps it', look.labs === 'creator_look' && /creator_look: 'admin'/.test(read('lib/labs-preview.ts')) && /!p\.labs \|\| current\.includes\(p\.id\) \|\| \(tier !== null && canUsePreview\(p\.labs, tier\)\)/.test(read('components/brand/VisualPresetPicker.tsx')) && /p\.family === family && offered\(p\)/.test(read('components/brand/VisualPresetPicker.tsx')))
-  check('Co-Pilot says when the head could not go in front', /your head could not go in front of the words, so the words are in front/.test(read('app/(dashboard)/co-pilot/page.tsx')))
+  check('Co-Pilot says when the words had to go over the creator', /there was no room for the words behind your head or beside it, so they sit over you/.test(read('app/(dashboard)/co-pilot/page.tsx')))
   check('no thumbnails from video frames any more', !/makeCreatorThumb|pickThumbFrames|edit-thumbsrc/.test(W) && !/app\.post\('\/still'/.test(S))
 
   if (fails.length) { console.error(`\n❌ creator-thumb: ${fails.length} failure(s)\n`); for (const f of fails) console.error(`   • ${f}`); process.exit(1) }

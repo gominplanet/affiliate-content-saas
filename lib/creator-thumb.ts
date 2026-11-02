@@ -181,8 +181,9 @@ async function fitWords(words: string, accent: number, area: { w: number; h: num
 
 export interface ComposedThumb {
   jpg: Buffer
-  /** The head is in front of the words. False when there was no cut-out or
-   *  it would have hidden too much: the words are then in front. */
+  /** The head is in front of the words. Only ever with the words centred
+   *  across the top (Seb, 2026-11-02): beside the head they stay clear of it,
+   *  and with no cut-out, or a head that would hide a word, they go in front. */
   depth: boolean
   /** Where the words went. */
   layout: 'top' | 'side' | 'front'
@@ -253,7 +254,9 @@ export async function composeThumb(o: { still: Buffer; cutout: Buffer | null; wo
       const room = Math.round(Math.max(leftRoom, rightRoom))
       if (room >= THUMB_W * 0.3) {
         const side = await place({ x: onLeft ? mx : THUMB_W - mx - room, y: my, w: room, h: bandH }, onLeft ? 'left' : 'right')
-        if (side.hidden <= 0.04) pick = { ...side, layout: 'side', depth: true }
+        // Clear of the head, and nothing laid over them: the head goes in
+        // front of the words only when they are centred across the top.
+        if (side.hidden <= 0.04) pick = { ...side, hidden: 0, layout: 'side', depth: false }
       }
     }
   }

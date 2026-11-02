@@ -72,11 +72,13 @@ async function fitFinalGraphic(b64: string, outW: number, outH: number, isStory:
  * picture came back without words, and MVP draws them: two to four words in
  * the serif, the red bar under one, and the creator cut out and laid over
  * them so their head sits in front. No person (a product-only design), or a
- * cut-out that failed: the words go in front. Returns the 1280x720 JPEG and
- * whether the head is in front, so the result is never called the look when
- * it is not.
+ * cut-out that failed: the words go in front. The head goes in front of the
+ * words only when they are centred across the top; beside the head they stay
+ * clear of it. Returns the 1280x720 JPEG and whether the words had to go over
+ * the picture in front of the creator (overHead), so the result is never
+ * called the look when it is not.
  */
-async function finishWithMvpWords(img: Buffer, headline: string, accent: string, withPerson: boolean): Promise<{ jpg: Buffer; depth: boolean }> {
+async function finishWithMvpWords(img: Buffer, headline: string, accent: string, withPerson: boolean): Promise<{ jpg: Buffer; overHead: boolean }> {
   const words = creatorWords(headline, accent) ?? { words: 'worth a look', accent: 'worth' }
   let cut: Buffer | null = null
   if (withPerson) {
@@ -88,7 +90,7 @@ async function finishWithMvpWords(img: Buffer, headline: string, accent: string,
     }
   }
   const made = await composeThumb({ still: img, cutout: cut, words: words.words, accent: words.accent, crop: false })
-  return { jpg: made.jpg, depth: made.depth }
+  return { jpg: made.jpg, overHead: withPerson && made.layout === 'front' }
 }
 
 // 300s (Vercel Pro max). A face thumbnail runs the gpt-image cut-out and the
@@ -2670,8 +2672,9 @@ async function generateThumbnail(request: Request, memo: ImageMemo) {
         // What the read back said about each variant, kept so a render still
         // wrong after its one retry is said on screen rather than shipped quietly.
         const textChecks: ReadBack[] = []
-        // The Creator look: whether each variant has the head in front of the words.
-        const creatorDepth: boolean[] = []
+        // The Creator look: whether each variant's words had to go over the
+        // creator, neither behind the head nor beside it.
+        const creatorOverHead: boolean[] = []
         // One gpt-image-1 call per variant, all in parallel.
         const gfxRawUrls = await Promise.all(
           gfxCopies.slice(0, variantCount).map(async (copy, idx) => {
@@ -3005,7 +3008,7 @@ async function generateThumbnail(request: Request, memo: ImageMemo) {
               if (mvpWords) {
                 const done = await finishWithMvpWords(resized, [line1, line2].filter(Boolean).join(' '), gfxAccent, true)
                 resized = done.jpg
-                creatorDepth[idx] = done.depth
+                creatorOverHead[idx] = done.overHead
               } else if (gfxDec !== 'none') resized = await compositeBadgeOnly(resized, gfxDec)
               return await rehostToFal(`data:image/jpeg;base64,${resized.toString('base64')}`)
             } catch {
@@ -3122,9 +3125,9 @@ async function generateThumbnail(request: Request, memo: ImageMemo) {
           textNotes: textNotesOf(gfxCopies.slice(0, gfxUrls.length)),
           textStillWrong: stillWrong(textChecks),
           // THE CREATOR LOOK, AS MADE: words MVP drew, and for each variant
-          // whether the head went in front of them (false: the words are in
-          // front, because the cut-out failed or would have hidden a word).
-          ...(mvpWords ? { wordsByMvp: true, creatorDepth: gfxRawUrls.flatMap((u, i) => (u ? [creatorDepth[i] ?? false] : [])) } : {}),
+          // whether they had to go over the creator (the cut-out failed, or
+          // there was room neither behind the head nor beside it).
+          ...(mvpWords ? { wordsByMvp: true, creatorOverHead: gfxRawUrls.flatMap((u, i) => (u ? [creatorOverHead[i] ?? false] : [])) } : {}),
           headlineLocked: !!lockedHeadline,
           // What went on the image when it was the creator's own words.
           ownText: lockedHeadline || null,
