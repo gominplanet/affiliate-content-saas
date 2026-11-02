@@ -46,9 +46,11 @@ import type { NextConfig } from 'next'
 // cache: that one lives on the machine, is never uploaded, and is the one place
 // the speed is actually felt.
 
-/** The review editor's title fonts (lib/title-looks TITLE_FONTS; Arimo ships with every API route). */
+/** The review editor's title fonts (lib/title-looks TITLE_FONTS; Arimo ships with every API route),
+ *  and the creator thumbnail's serif (lib/creator-thumb). */
 const TITLE_FONTS = ['anton', 'bebas-neue', 'permanent-marker', 'russo-one', 'bangers']
   .map((f) => `./node_modules/@fontsource/${f}/files/${f}-latin-400-normal.woff`)
+  .concat('./node_modules/@fontsource/playfair-display/files/playfair-display-latin-800-normal.woff')
 
 const nextConfig: NextConfig = {
   typescript: {

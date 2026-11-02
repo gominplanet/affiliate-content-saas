@@ -15,13 +15,15 @@
  *   remove   { id }  the video, its takes and its files, gone.
  *   forget_picture { url }  a PNG out of the creator's picture library.
  *   save_look { settings }  the look every new video starts from (migration 462).
+ *   thumb    { id, words?, accent?, next? }  make the creator thumbnail again:
+ *            new words on the same frame, or the next best frame.
  */
 import { NextResponse, after } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { canUsePreview } from '@/lib/labs-preview'
 import { cleanSettings, clock, linesOf, DEFAULT_SETTINGS, type Plan, type Word } from '@/lib/review-edit'
 import { promptChange } from '@/lib/review-edit-plan'
-import { moveQueue, deleteRaw, ownPath, hasUpload, serverJobs, finishMaking, EDIT_BUCKET, type EditRow, type Src, type ServerView, editDb } from '@/lib/review-edit-server'
+import { moveQueue, deleteRaw, ownPath, hasUpload, serverJobs, finishMaking, makeCreatorThumb, EDIT_BUCKET, type EditRow, type Src, type ServerView, editDb } from '@/lib/review-edit-server'
 import { driveAccessToken, driveFile, isDriveId } from '@/lib/google-drive'
 
 export const runtime = 'nodejs'
@@ -80,8 +82,18 @@ function view(r: EditRow, server?: ServerView | null) {
     placed: r.info?.placed ?? null,
     /** The B-roll checked against the talk: a different product is said. */
     brollCheck: r.info?.brollCheck ?? null,
+    /** The creator thumbnail, as it stands. One stuck making for ten minutes
+     *  (a restart) is said to have stopped. Where its frame came from stays here. */
+    thumb: thumbView(r),
     onServer,
   }
+}
+
+function thumbView(r: EditRow) {
+  const t = r.info?.thumb
+  if (!t) return null
+  if (t.state === 'making' && t.at && Date.now() - Date.parse(t.at) > 10 * 60_000) return { state: 'failed' as const, error: 'MVP stopped while making the thumbnail. Press Make the thumbnail again.' }
+  return { state: t.state, error: t.error ?? null, url: t.url ?? null, words: t.words ?? '', accent: t.accent ?? '', depth: t.depth ?? null, layout: t.layout ?? null, frames: t.picks?.length ?? 0, frame: (t.pick ?? 0) + 1 }
 }
 
 /** A picture in the library is a PNG the creator added here, kept in their
@@ -238,10 +250,24 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: true })
   }
 
+  if (action === 'thumb') {
+    if (row.status !== 'done') return NextResponse.json({ error: 'The thumbnail is made once the video is.' }, { status: 409 })
+    if (cleanSettings(row.settings).kind !== 'review') return NextResponse.json({ error: 'A TRYBE ad has no YouTube thumbnail.' }, { status: 400 })
+    if (row.info?.thumb?.state === 'making' && row.info.thumb.at && Date.now() - Date.parse(row.info.thumb.at) < 10 * 60_000) return NextResponse.json({ error: 'MVP is making this thumbnail right now.' }, { status: 409 })
+    const thumb = await makeCreatorThumb(db, row, {
+      words: typeof body.words === 'string' ? body.words : undefined,
+      accent: typeof body.accent === 'string' ? body.accent : undefined,
+      next: body.next === true,
+    })
+    if (thumb.state === 'failed') return NextResponse.json({ error: thumb.error || 'The thumbnail was not made.' }, { status: 500 })
+    return NextResponse.json({ ok: true, thumb })
+  }
+
   if (action === 'remove') {
     if (row.status === 'making') return NextResponse.json({ error: 'It is being made right now. Remove it once it is done.' }, { status: 409 })
     await deleteRaw(db, row)
-    const files = [...Object.values(row.outputs || {}).map((o) => ownPath(o.url, g.userId)), `${g.userId}/edit-title-${row.id}.png`].filter((p): p is string => !!p)
+    const files = [...Object.values(row.outputs || {}).map((o) => ownPath(o.url, g.userId)), `${g.userId}/edit-title-${row.id}.png`,
+      row.info?.thumb?.url ? ownPath(row.info.thumb.url, g.userId) : null, `${g.userId}/edit-thumbsrc-${row.id}.jpg`, `${g.userId}/edit-thumbcut-${row.id}.png`].filter((p): p is string => !!p)
     if (files.length) await db.storage.from(EDIT_BUCKET).remove(files)
     await db.from('review_edits').delete().eq('id', row.id)
     return NextResponse.json({ ok: true })

@@ -98,7 +98,7 @@ check('a card folds its changes away until Edit this video is pressed', /Edit th
 // ── Cost ─────────────────────────────────────────────────────────────────────
 check('the plan on Sonnet 5, the B-roll and typed changes on Haiku', /PLAN_MODEL = 'claude-sonnet-5'/.test(P) && /QUICK_MODEL = 'claude-haiku-4-5-20251001'/.test(P) && /model: QUICK_MODEL[\s\S]{0,40}max_tokens: 900/.test(P))
 check('the B-roll is seen from 36 small frames, sent in the answer, never stored', /frames: 36, width: 320/.test(W) && /jpg: fs\.readFileSync\(out\)\.toString\('base64'\)/.test(S))
-check('every AI call is counted', (P.match(/recordAnthropicUsage\(/g) ?? []).length === (P.match(/messages\.create\(/g) ?? []).length && (P.match(/recordAnthropicUsage\(/g) ?? []).length === 4)
+check('every AI call is counted', (P.match(/recordAnthropicUsage\(/g) ?? []).length === (P.match(/messages\.create\(/g) ?? []).length && (P.match(/recordAnthropicUsage\(/g) ?? []).length === 6)
 
 // ── Every stop says why ──────────────────────────────────────────────────────
 const fails2 = (W.match(/status: 'failed', note: /g) ?? []).length + (W.match(/return await fail\(/g) ?? []).length
