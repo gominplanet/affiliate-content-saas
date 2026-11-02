@@ -20,7 +20,8 @@ import { checkUsageCap, PRIMARY_FEATURE } from '@/lib/usage-cap'
 import { pickBestFrame } from '@/lib/thumbnail-score'
 import { stripDesignBrands } from '@/lib/image-guard'
 import { getOrCreateBriefs } from '@/lib/art-director-cache'
-import { rehostToFal } from '@/lib/thumbnail-generators'
+import { rehostToFal, removeBackground } from '@/lib/thumbnail-generators'
+import { composeThumb, creatorWords } from '@/lib/creator-thumb'
 import { bakeSimpleHeadline, compositeBadgeOnly, type ThumbDecoration } from '@/lib/thumbnail-simple-bake'
 import { scrubBanned, hasHealthClaim } from '@/lib/scrub'
 import { normalizeThumbText, thumbTextProblem, withOwnThumbText } from '@/lib/thumb-text'
@@ -28,7 +29,7 @@ import { detectWearable, wearDirective } from '@/lib/wear-product'
 import { normalizeExpression, expressionDirective, expressionDescription, EXPRESSION_LABEL, politeSmileIsWrong } from '@/lib/face-expression'
 import { parseGarmentVerdict, parseVerdict, GARMENT_CHECK_PROMPT, expressionCheckPrompt, type GarmentVerdict } from '@/lib/garment-match'
 import { resolvePreset, presetToBriefRules, parsePresetIds, pickPresetId } from '@/lib/visual-presets'
-import { buildGraphicThumbnailPrompt, multiProductLine, comparisonLayout, oneChip, TEXT_BUDGET } from '@/lib/thumbnail-prompt'
+import { buildGraphicThumbnailPrompt, multiProductLine, comparisonLayout, oneChip, TEXT_BUDGET, MVP_WORDS_LAYOUT, MVP_WORDS_TEXT } from '@/lib/thumbnail-prompt'
 import { buildExpressionPortraitPrompt } from '@/lib/expression-portrait'
 import { rememberDesign, isDesignFormat, recallDesigns } from '@/lib/design-memory'
 import { portraitCachePath, readCachedPortrait, writeCachedPortrait } from '@/lib/expression-portrait-cache'
@@ -64,6 +65,30 @@ async function fitFinalGraphic(b64: string, outW: number, outH: number, isStory:
     return sharp(bg).composite([{ input: fg, gravity: 'centre' }]).jpeg({ quality: 92 }).toBuffer()
   }
   return sharp(src).resize(outW, outH, { fit: 'cover', position: 'centre' }).jpeg({ quality: 92 }).toBuffer()
+}
+
+/**
+ * THE CREATOR LOOK (lib/visual-presets wordsByMvp, lib/creator-thumb): the
+ * picture came back without words, and MVP draws them: two to four words in
+ * the serif, the red bar under one, and the creator cut out and laid over
+ * them so their head sits in front. No person (a product-only design), or a
+ * cut-out that failed: the words go in front. Returns the 1280x720 JPEG and
+ * whether the head is in front, so the result is never called the look when
+ * it is not.
+ */
+async function finishWithMvpWords(img: Buffer, headline: string, accent: string, withPerson: boolean): Promise<{ jpg: Buffer; depth: boolean }> {
+  const words = creatorWords(headline, accent) ?? { words: 'worth a look', accent: 'worth' }
+  let cut: Buffer | null = null
+  if (withPerson) {
+    const hosted = await rehostToFal(`data:image/jpeg;base64,${img.toString('base64')}`)
+    const cutUrl = hosted ? await removeBackground(hosted) : null
+    recordUsage({ userId: TELEMETRY.userId, tier: TELEMETRY.tier, feature: 'thumb_creator_cutout', model: 'fal-rembg', images: 1 })
+    if (cutUrl) {
+      try { const r = await fetch(cutUrl, { signal: AbortSignal.timeout(30_000) }); if (r.ok) cut = Buffer.from(await r.arrayBuffer()) } catch { /* the words go in front */ }
+    }
+  }
+  const made = await composeThumb({ still: img, cutout: cut, words: words.words, accent: words.accent, crop: false })
+  return { jpg: made.jpg, depth: made.depth }
 }
 
 // 300s (Vercel Pro max). A face thumbnail runs the gpt-image cut-out and the
@@ -2065,6 +2090,11 @@ async function generateThumbnail(request: Request, memo: ImageMemo) {
     const gfxStoryboardFrame = storyboardCouldBeUsed ? await gfxStoryboardPromise : null
     const hasVideoFrame = !!(capturedFrames?.length) || !!gfxStoryboardFrame
 
+    // THE CREATOR LOOK on a YouTube thumbnail: the picture without words, MVP
+    // draws them after (finishWithMvpWords). Other sizes take the look's
+    // typography as a direction for the model, like every other look.
+    const mvpWords = resolvePreset(visualPreset).wordsByMvp === true && Math.abs(outW / outH - 16 / 9) < 0.02
+
     // ── PATH GFX-PRODUCT: gpt-image product-only (no face) ────────────────────
     // "Product Only" on the gpt-image engine: a clean, gorgeous product-hero
     // thumbnail with the headline baked on, no creator. Uses only the product
@@ -2142,8 +2172,8 @@ async function generateThumbnail(request: Request, memo: ImageMemo) {
                   : `PRODUCT (the hero): recreate the product from Image 1 accurately and prominently, filling a large part of the frame — keep its true shape, colours and its own printed branding. Do NOT invent retail packaging or extra marketing text on it. Light it naturally with a grounded shadow so it belongs in the scene; no glow ring or aura around it.`,
                 'ABSOLUTELY NO PEOPLE — HARD RULE: this is a PRODUCT-ONLY design. There must be ZERO humans anywhere in the image: no person, no face, no head, no hands, no fingers, no arms, no body parts, no silhouettes, and no reflections or shadows of a person, not even small, partial, blurred, or at the edges/background. If Image 1 (the reference) shows a model, hands, or any person holding or using the product, keep ONLY the product itself and OMIT every human element entirely.',
                 '',
-                `MAIN HEADLINE — render this text EXACTLY, spelling perfect: "${[line1, line2].filter(Boolean).join(' ')}". Style it as the concept describes (mixed colour/size/weight) — a designed, layered look, NOT plain white-and-yellow outlined caps. Place it where it does NOT cover the product.`,
-                TEXT_BUDGET,
+                mvpWords ? MVP_WORDS_LAYOUT.replace('frame the creator so the top of their head sits', 'place the product so its top sits') : `MAIN HEADLINE — render this text EXACTLY, spelling perfect: "${[line1, line2].filter(Boolean).join(' ')}". Style it as the concept describes (mixed colour/size/weight) — a designed, layered look, NOT plain white-and-yellow outlined caps. Place it where it does NOT cover the product.`,
+                mvpWords ? MVP_WORDS_TEXT : TEXT_BUDGET,
                 `REAL COPY ONLY — every word on the design must be the headline above or a SPECIFIC, true detail about THIS product (its category, a real feature, a spec, a benefit). Do NOT add generic showcase or photography-direction labels such as "HERO SHOT", "FULL DETAILS", "CLOSE-UP REVEAL", "FEATURED PICK", "SPOTLIGHT", "THE PRODUCT", "PRODUCT REVIEW" — those are placeholder filler and must never appear.`,
                 `FRAMING: the canvas is a full ${isPortrait ? 'tall vertical portrait' : '16:9 landscape (1536×864)'} and the entire canvas is shown — nothing is cropped. Compose within it with a small, even safe margin (about 5%) on all four sides: every word and the whole product must sit fully inside the frame, not touching or running off any edge. Fill the frame nicely — no big empty dead bands — just keep that clean margin all around.`,
               ].filter(Boolean).join('\n')
@@ -2154,7 +2184,8 @@ async function generateThumbnail(request: Request, memo: ImageMemo) {
               // was once a main cause of the 240s client timeout, so it runs
               // only while there is time for one more render; otherwise the
               // problem is reported and the first render kept.
-              if (b64) {
+              // Nothing to read back on the Creator look: MVP draws its words.
+              if (b64 && !mvpWords) {
                 const wantP: ReadBackWant = { headline: [line1, line2].filter(Boolean).join(' '), extra: badgeP || (conceptP ? chipP : ''), cta: hasCta }
                 const spellP = await textSpelledRight({ renderB64: b64, ...wantP })
                 textChecksP[idx] = spellP
@@ -2185,7 +2216,8 @@ async function generateThumbnail(request: Request, memo: ImageMemo) {
                     : (copyDec && copyDec !== 'none' ? copyDec : 'none')
               try {
                 let resized = await fitFinalGraphic(b64, outW, outH, isStory)
-                if (gfxDec !== 'none') resized = await compositeBadgeOnly(resized, gfxDec)
+                if (mvpWords) resized = (await finishWithMvpWords(resized, [line1, line2].filter(Boolean).join(' '), (copy as { emphasisWord?: string }).emphasisWord || accentW || '', false)).jpg
+                else if (gfxDec !== 'none') resized = await compositeBadgeOnly(resized, gfxDec)
                 return await rehostToFal(`data:image/jpeg;base64,${resized.toString('base64')}`)
               } catch {
                 return rehostToFal(`data:image/png;base64,${b64}`)
@@ -2638,6 +2670,8 @@ async function generateThumbnail(request: Request, memo: ImageMemo) {
         // What the read back said about each variant, kept so a render still
         // wrong after its one retry is said on screen rather than shipped quietly.
         const textChecks: ReadBack[] = []
+        // The Creator look: whether each variant has the head in front of the words.
+        const creatorDepth: boolean[] = []
         // One gpt-image-1 call per variant, all in parallel.
         const gfxRawUrls = await Promise.all(
           gfxCopies.slice(0, variantCount).map(async (copy, idx) => {
@@ -2801,11 +2835,13 @@ async function generateThumbnail(request: Request, memo: ImageMemo) {
                   ? `PRODUCT: feature ${productLabel} (from Image ${productRefNum}) clearly and recognisably in the scene exactly as the direction implies (held, beside them, in use…). Keep its true shape, colours and its own printed branding. Do NOT invent retail packaging or marketing text.`
                   : `PRODUCT: feature ${productLabel} clearly and recognisably in the scene as the direction implies.`,
                 '',
-                'TEXT OVERLAY:',
-                line1 ? `  Top line: "${line1}" — white bold capitals, thick black stroke outline only, NO background box.` : '  No top line: the main line below is the only text.',
-                `  Main line: "${line2}" — larger, bright yellow (#FFE034) bold capitals, thick black stroke outline — the dominant text. NO background box.`,
-                ...gfxBoostLinesFor(gfxBadge, gfxAccent),
-                `  Place the two lines where they do NOT cover the creator's face or the product (e.g. across the top or down one side). Outlined text only — no panels or filled boxes — crisp and readable at small sizes. No other text anywhere in the image${gfxBadge ? ' except the starburst badge above' : ''}.`,
+                ...(mvpWords ? [MVP_WORDS_LAYOUT, MVP_WORDS_TEXT] : [
+                  'TEXT OVERLAY:',
+                  line1 ? `  Top line: "${line1}" — white bold capitals, thick black stroke outline only, NO background box.` : '  No top line: the main line below is the only text.',
+                  `  Main line: "${line2}" — larger, bright yellow (#FFE034) bold capitals, thick black stroke outline — the dominant text. NO background box.`,
+                  ...gfxBoostLinesFor(gfxBadge, gfxAccent),
+                  `  Place the two lines where they do NOT cover the creator's face or the product (e.g. across the top or down one side). Outlined text only — no panels or filled boxes — crisp and readable at small sizes. No other text anywhere in the image${gfxBadge ? ' except the starburst badge above' : ''}.`,
+                ]),
                 '',
                 'STYLE: High-production YouTube creator thumbnail. Bold, punchy, cinematic depth of field (softly blurred background) so the creator and product stay sharp. No logos, no watermarks, no brand names rendered in the image itself.',
                 // Last word, for the same reason as the default branch: the
@@ -2884,7 +2920,8 @@ async function generateThumbnail(request: Request, memo: ImageMemo) {
             // one defect every viewer notices and the only one that makes a
             // channel look careless. One retry, same reasoning as below: the
             // second render is a fresh sample, not a smarter attempt.
-            if (b64) {
+            // Nothing to read back on the Creator look: MVP draws its words.
+            if (b64 && !mvpWords) {
               // What is actually on this design besides the headline: the
               // badge, or else the one chip when this look draws chips.
               const chipOn = !sceneDirection && !!briefConcept && resolvePreset(visualPreset).badges
@@ -2964,7 +3001,11 @@ async function generateThumbnail(request: Request, memo: ImageMemo) {
             // downscale to YouTube's 1280×720 — no cropping, nothing clipped.
             try {
               let resized = await fitFinalGraphic(b64, outW, outH, isStory)
-              if (gfxDec !== 'none') resized = await compositeBadgeOnly(resized, gfxDec)
+              if (mvpWords) {
+                const done = await finishWithMvpWords(resized, [line1, line2].filter(Boolean).join(' '), gfxAccent, true)
+                resized = done.jpg
+                creatorDepth[idx] = done.depth
+              } else if (gfxDec !== 'none') resized = await compositeBadgeOnly(resized, gfxDec)
               return await rehostToFal(`data:image/jpeg;base64,${resized.toString('base64')}`)
             } catch {
               return rehostToFal(`data:image/png;base64,${b64}`)
@@ -3079,6 +3120,10 @@ async function generateThumbnail(request: Request, memo: ImageMemo) {
           overlayHooks: gfxCopies.slice(0, gfxUrls.length).map(c => flatCopy(c)),
           textNotes: textNotesOf(gfxCopies.slice(0, gfxUrls.length)),
           textStillWrong: stillWrong(textChecks),
+          // THE CREATOR LOOK, AS MADE: words MVP drew, and for each variant
+          // whether the head went in front of them (false: the words are in
+          // front, because the cut-out failed or would have hidden a word).
+          ...(mvpWords ? { wordsByMvp: true, creatorDepth: gfxRawUrls.flatMap((u, i) => (u ? [creatorDepth[i] ?? false] : [])) } : {}),
           headlineLocked: !!lockedHeadline,
           // What went on the image when it was the creator's own words.
           ownText: lockedHeadline || null,

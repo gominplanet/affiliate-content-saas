@@ -119,54 +119,6 @@ export async function brollFits(o: { words: Word[]; shots: Shot[]; product?: str
   } catch { return { fits: true, talk: '', shows: '' } }
 }
 
-/** The best frames of the creator for a thumbnail, best first, from small
- *  frames of the parts the edit kept (Seb, 2026-11-02: the face from "a
- *  still from my video"). Frame numbers start at 1; an empty answer means
- *  none shows the creator's face. */
-export async function pickThumbFrames(frames: { at: number; jpg: string }[], who: Who): Promise<number[]> {
-  if (!frames.length) return []
-  const content: Array<Record<string, unknown>> = [{ type: 'text', text: `${frames.length} frames from a creator's product review video, numbered.` }]
-  frames.forEach((f, i) => {
-    content.push({ type: 'text', text: `Frame ${i + 1}` })
-    content.push({ type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: f.jpg } })
-  })
-  content.push({ type: 'text', text: 'Pick the frames that would make the best YouTube thumbnail of the creator: face clearly seen and turned to the camera, eyes open, a natural, confident expression (not mid blink, mouth not wide open mid word), sharp, well lit, and if possible the product in their hand or beside them. Leave out frames where the face is not clear. Reply with JSON only: {"best":[3,7,1]} with up to 4 frame numbers, best first.' })
-  const msg = await createAnthropicClient().messages.create({
-    model: QUICK_MODEL, max_tokens: 200,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    messages: [{ role: 'user', content: content as any }],
-  })
-  recordAnthropicUsage(msg, { userId: who.userId, tier: who.tier, feature: 'review_edit_thumb_frame', model: QUICK_MODEL })
-  const raw = jsonIn(textOf(msg as never))
-  const best = (Array.isArray(raw?.best) ? raw!.best : []).map(Number).filter((n: number) => Number.isInteger(n) && n >= 1 && n <= frames.length)
-  return Array.from(new Set(best as number[])).slice(0, 4)
-}
-
-/** The thumbnail's words, cleaned: 2 to 4 words, no dashes, no year, no
- *  hashtag or emoji, the underlined word one of them. Pure. */
-export function cleanThumbWords(words: unknown, accent: unknown): { words: string; accent: string } | null {
-  const w = String(words ?? '').replace(/[\u2013\u2014]/g, ' ').replace(/\s+-\s+/g, ' ').replace(/#\S*/g, '').replace(/\b(19|20)\d{2}\b/g, '')
-    .replace(/[^\p{L}\p{N}'!?,.& ]/gu, '').replace(/\s+/g, ' ').trim().split(' ').filter(Boolean).slice(0, 4)
-  if (!w.length) return null
-  const norm = (x: string) => x.toLowerCase().replace(/[^a-z0-9']/g, '')
-  const a = norm(String(accent ?? ''))
-  const hit = w.find((x) => norm(x) === a)
-  return { words: w.join(' '), accent: hit ?? w[w.length - 1] }
-}
-
-/** The big words for a review's thumbnail: a short hook true to what the
- *  creator says, and the word to underline in red. */
-export async function thumbWords(o: { words: Word[]; product?: string | null; title?: string; who: Who }): Promise<{ words: string; accent: string } | null> {
-  const said = o.words.map((w) => w.text).join(' ').slice(0, 3000)
-  const msg = await createAnthropicClient().messages.create({
-    model: QUICK_MODEL, max_tokens: 150,
-    messages: [{ role: 'user', content: `Write the big words for this product review's YouTube thumbnail.\n${o.product ? `The product: ${o.product}\n` : ''}${o.title ? `Its title on screen: ${o.title}\n` : ''}What the creator says:\n${said}\n\nRules: 2 to 4 words, lowercase (keep a brand or acronym as written), plain and punchy, true to their verdict (never a claim they did not make), not the full product name, no price, no year, no emoji, no hashtag, no dashes. Examples: "surprisingly good", "don't buy this", "worth every penny", "better than the expensive one". Also pick the one word to underline in red: the word that carries the verdict. Reply with JSON only: {"words":"surprisingly good","accent":"good"}` }],
-  })
-  recordAnthropicUsage(msg, { userId: o.who.userId, tier: o.who.tier, feature: 'review_edit_thumb_words', model: QUICK_MODEL })
-  const raw = jsonIn(textOf(msg as never)) || {}
-  return cleanThumbWords(raw.words, raw.accent)
-}
-
 const PLAN_SYSTEM = [
   'You edit a creator\'s product review video. They filmed it in one take, talking to the camera, so it has mistakes, restarts and chatter in it. You see what they said, line by line, with the time of each line.',
   'Mark what to cut:',

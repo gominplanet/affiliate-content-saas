@@ -62,10 +62,7 @@ interface EditView {
   /** What went on the video when it was last sent to be made, and what was left out. */
   placed: { title: { from: number; to: number } | { missed: string } | null; pictures: PictureTime[] } | null
   brollCheck: { fits: boolean; talk: string; shows: string } | null
-  /** The creator thumbnail (a still from the review, words behind the head). */
-  thumb: ThumbView | null
 }
-interface ThumbView { state: 'making' | 'done' | 'failed'; error: string | null; url: string | null; words: string; accent: string; depth: boolean | null; layout: string | null; frames: number; frame: number }
 
 const STATUS: Record<string, { words: string; color: string; busy?: boolean }> = {
   queued: { words: 'In line', color: 'var(--text-3)', busy: true },
@@ -752,66 +749,6 @@ function LookThumb({ s }: { s: EditSettings }) {
   return <FramePreview s={s} titleUrl={titleUrl} vertical={false} />
 }
 
-/** THE CREATOR THUMBNAIL (Seb, 2026-11-02): made by itself once the review
- *  is, from the best still of the creator. The words and the underlined
- *  word can be changed (no AI, instant), or the next best frame used. */
-function ThumbBox({ e, act, work }: { e: EditView; act: (what: string, body: Record<string, unknown>, ok?: string) => Promise<unknown>; work: string | null }) {
-  const t = e.thumb
-  const [words, setWords] = useState(t?.words ?? '')
-  const [accent, setAccent] = useState(t?.accent ?? '')
-  useEffect(() => { setWords(t?.words ?? ''); setAccent(t?.accent ?? '') }, [t?.words, t?.accent])
-  const busy = work === 'thumb' || t?.state === 'making'
-  const list = words.trim().split(/\s+/).filter(Boolean)
-  const changed = !!t && (words.trim() !== t.words || accent !== t.accent)
-  const make = (body: Record<string, unknown>, ok: string) => act('thumb', { action: 'thumb', id: e.id, ...body }, ok)
-  return (
-    <div className="flex flex-col gap-2">
-      <p className="text-[12px] font-bold uppercase tracking-wider" style={soft}>Thumbnail</p>
-      {t?.state === 'done' && t.url ? (
-        <>
-          <img src={t.url} alt={`Thumbnail: ${t.words}`} className="w-full rounded-lg" style={{ aspectRatio: '16 / 9', opacity: busy ? 0.5 : 1 }} />
-          {t.depth === false && <p className="text-[11.5px]" style={{ color: AMBER }}>On this frame your head could not go in front of the words without hiding one, so the words are in front. Another frame may do it.</p>}
-          <input value={words} onChange={(ev) => { setWords(ev.target.value.slice(0, 40)); if (!ev.target.value.toLowerCase().split(/\s+/).includes(accent.toLowerCase())) setAccent('') }} aria-label="The thumbnail's words"
-            className={inputCls} style={inputStyle} placeholder="2 to 4 words" />
-          {list.length > 1 && (
-            <div className="flex flex-wrap items-center gap-1.5">
-              <span className="text-[12px]" style={soft}>Red line under:</span>
-              {list.map((w, i) => <Chip key={`${w}-${i}`} on={accent.toLowerCase() === w.toLowerCase()} onClick={() => setAccent(w)}>{w}</Chip>)}
-            </div>
-          )}
-          <div className="flex flex-wrap items-center gap-2">
-            {changed && list.length > 0 && (
-              <button type="button" disabled={busy} onClick={() => void make({ words: words.trim(), accent: accent || list[list.length - 1] }, 'Thumbnail made with your words.')}
-                className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12.5px] font-semibold text-white disabled:opacity-50" style={{ background: PURPLE }}>
-                {busy ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />} Use these words
-              </button>
-            )}
-            {t.frames > 1 && (
-              <button type="button" disabled={busy} onClick={() => void make({ next: true }, 'Made from another frame.')} className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[12.5px] font-semibold disabled:opacity-50" style={{ borderColor: 'var(--border-2)' }}>
-                {busy && !changed ? <Loader2 size={13} className="animate-spin" /> : <RotateCcw size={13} />} Another frame ({t.frame} of {t.frames})
-              </button>
-            )}
-            <a href={t.url} download className="inline-flex items-center gap-1 text-[12.5px] font-semibold underline" style={{ color: PURPLE }}><Download size={12} /> Download the thumbnail</a>
-          </div>
-          <p className="text-[11.5px]" style={soft}>Send to Drop takes it along: Liftoff uses it on YouTube and Amazon.</p>
-        </>
-      ) : busy ? (
-        <div className="w-full rounded-lg flex items-center justify-center gap-2 text-[12.5px]" style={{ aspectRatio: '16 / 9', background: 'var(--surface-2)', color: 'var(--text-2)' }}>
-          <Loader2 size={14} className="animate-spin" /> Making the thumbnail from your best frame
-        </div>
-      ) : (
-        <div className="flex flex-col gap-2">
-          {t?.state === 'failed' && <p className="text-[12px]" style={{ color: AMBER }}>{t.error || 'The thumbnail was not made.'}</p>}
-          {!t && <p className="text-[12px]" style={soft}>MVP makes it from your best frame a minute or two after the video is made.</p>}
-          <button type="button" disabled={busy} onClick={() => void make({}, 'Thumbnail made.')} className="self-start inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[12.5px] font-semibold" style={{ borderColor: 'var(--border-2)' }}>
-            <ImagePlus size={13} /> {t?.state === 'failed' ? 'Make the thumbnail again' : 'Make the thumbnail now'}
-          </button>
-        </div>
-      )}
-    </div>
-  )
-}
-
 function EditCard({ e, reload, uploadLogo, withLogo, logoBusy, lib }: {
   e: EditView; reload: () => Promise<void>; uploadLogo: (f: File, then: (url: string) => void) => Promise<void>
   withLogo: (x: EditSettings, url: string) => EditSettings; logoBusy: boolean; lib: Library
@@ -852,10 +789,6 @@ function EditCard({ e, reload, uploadLogo, withLogo, logoBusy, lib }: {
         })
         const ad = await ar.json().catch(() => ({}))
         if (!ar.ok) throw new Error(ad.error || 'Drop did not take it.')
-        // The thumbnail goes along, for Liftoff to use as this video's own.
-        if (f === 'wide' && ad.id && e.thumb?.state === 'done' && e.thumb.url) {
-          await fetch('/api/drop', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'draft_item', itemId: ad.id, wish: { thumbnailUrl: e.thumb.url } }) })
-        }
       }
       toast.success(e.settings.kind === 'trybe'
         ? <span>In your Drop. <a href="/drop" className="underline font-semibold">Open Drop</a> and pick the TRYBE brand it is for.</span>
@@ -925,7 +858,6 @@ function EditCard({ e, reload, uploadLogo, withLogo, logoBusy, lib }: {
         <div className="mt-3 grid md:grid-cols-[minmax(0,440px)_minmax(0,1fr)] gap-4 items-start">
           <div className="flex flex-col gap-2">
             {outs.map(([f, o]) => <video key={f} src={o.url} controls preload="metadata" className="w-full rounded-lg bg-black" style={{ maxHeight: 380 }} aria-label={FORMAT_WORDS[f]} />)}
-            {e.settings.kind === 'review' && <div className="mt-2"><ThumbBox e={e} act={act} work={work} /></div>}
           </div>
           <div className="flex flex-col gap-2.5">
             <button type="button" onClick={() => void sendToDrop()} disabled={!!work} className="self-start inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-[13.5px] font-semibold text-white disabled:opacity-50" style={{ background: PURPLE }}>

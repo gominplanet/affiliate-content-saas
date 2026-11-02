@@ -20,11 +20,8 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { transcribeToCues, transcriptionConfigured } from '@/lib/shorts-transcribe'
 import { makeRenderJob } from '@/lib/render-job'
 import { drawTitle } from '@/lib/title-looks'
-import { cleanSettings, cleanWords, clock, linesOf, renderSpec, thumbTimes, LOGO_WIDTH, PICTURE_WIDTH, type EditSettings, type PictureTime, type Plan, type Shot, type Word } from '@/lib/review-edit'
-import { brollFits, cleanThumbWords, pickThumbFrames, planEdit, readShots, thumbWords } from '@/lib/review-edit-plan'
-import { composeThumb } from '@/lib/creator-thumb'
-import { removeBackground } from '@/lib/thumbnail-generators'
-import { recordUsage } from '@/lib/ai-usage'
+import { cleanSettings, cleanWords, clock, linesOf, renderSpec, LOGO_WIDTH, PICTURE_WIDTH, type EditSettings, type PictureTime, type Plan, type Shot, type Word } from '@/lib/review-edit'
+import { brollFits, planEdit, readShots } from '@/lib/review-edit-plan'
 import { driveAccessToken, driveMediaUrl } from '@/lib/google-drive'
 
 export const EDIT_BUCKET = 'instagram-videos'
@@ -64,7 +61,7 @@ async function takes(db: Db, row: Pick<EditRow, 'user_id' | 'review_src' | 'brol
 export interface EditRow {
   id: string; user_id: string; name: string | null; status: string; note: string | null
   review_src: Src; broll_src: Src | null; product: string | null
-  settings: unknown; info: { review?: { duration: number; width: number; height: number; hasAudio: boolean; silences?: [number, number][] }; broll?: { duration: number }; placed?: Placed; brollCheck?: { fits: boolean; talk: string; shows: string }; thumb?: Thumb } | null
+  settings: unknown; info: { review?: { duration: number; width: number; height: number; hasAudio: boolean; silences?: [number, number][] }; broll?: { duration: number }; placed?: Placed; brollCheck?: { fits: boolean; talk: string; shows: string } } | null
   words: Word[] | null; shots: Shot[] | null; plan: Plan | null; outputs: Record<string, { url: string; seconds: number }> | null
   attempts: number; made_at: string | null; raw_deleted_at: string | null; created_at: string; updated_at: string
 }
@@ -176,112 +173,6 @@ export async function filmedTimes(token: string, fileIds: string[]): Promise<{ r
   const r = await videoServer<{ times?: unknown[] }>('/filmed', { items: fileIds.map((id) => ({ url: driveMediaUrl(id), auth: `Bearer ${token}` })) }, 110_000)
   if (!r.ok || !Array.isArray(r.data.times)) return { read: false, times: fileIds.map(() => null) }
   return { read: true, times: fileIds.map((_, i) => (typeof r.data.times![i] === 'string' && !Number.isNaN(Date.parse(r.data.times![i] as string)) ? r.data.times![i] as string : null)) }
-}
-
-/** THE CREATOR THUMBNAIL (Seb, 2026-11-02, lib/creator-thumb): a still of
- *  the creator from the parts the edit kept, the words, and the result.
- *  state says what happened: making, done, or failed with why. depth false
- *  means the words went in front of the head (no cut-out, or it hid too much). */
-export interface Thumb {
-  state: 'making' | 'done' | 'failed'
-  error?: string
-  url?: string
-  words?: string
-  accent?: string
-  /** The candidate moments, best first, and which one is used. */
-  picks?: number[]
-  pick?: number
-  depth?: boolean
-  layout?: 'top' | 'side' | 'front'
-  stillUrl?: string
-  cutUrl?: string | null
-  at?: string
-}
-
-/**
- * Make (or make again) a review's creator thumbnail. o.words alone redraws
- * with new words on the same frame and cut-out (no AI, nothing new to pay
- * for); o.next moves to the next best frame. Saves info.thumb either way,
- * failure included, so the card shows what happened.
- */
-export async function makeCreatorThumb(db: Db, row: EditRow, o: { words?: string; accent?: string; next?: boolean } = {}): Promise<Thumb> {
-  const prev = row.info?.thumb
-  const save = async (thumb: Thumb) => {
-    // The latest info, so nothing written since (a finished make) is lost.
-    const { data } = await db.from('review_edits').select('info').eq('id', row.id).maybeSingle()
-    await db.from('review_edits').update({ info: { ...(data?.info ?? row.info ?? {}), thumb } }).eq('id', row.id)
-    return thumb
-  }
-  const fail = (error: string) => save({ ...(prev ?? {}), state: 'failed', error, at: new Date().toISOString() })
-  try {
-    const settings = cleanSettings(row.settings)
-    if (settings.kind !== 'review') return await fail('A TRYBE ad has no YouTube thumbnail.')
-    if (!row.words?.length || !row.plan || !row.info?.review) return await fail('This video has not been read yet.')
-    const who = { userId: row.user_id, tier: await tierOf(db, row.user_id) }
-    const fetchBuf = async (url: string) => { const r = await fetch(url, { signal: AbortSignal.timeout(60_000) }); if (!r.ok) throw new Error(`could not read ${url.split('/').pop()}`); return Buffer.from(await r.arrayBuffer()) }
-
-    // The words: the ones asked for, the last ones, or written now.
-    const chosen = o.words != null ? cleanThumbWords(o.words, o.accent ?? '') : null
-    if (o.words != null && !chosen) return await fail('Those words cannot go on a thumbnail. Use 2 to 4 plain words.')
-    const sameFrame = !o.next && !!prev?.stillUrl && prev.state === 'done'
-    let words = chosen ?? (sameFrame && prev?.words ? { words: prev.words, accent: prev.accent ?? '' } : null)
-    if (!words) words = await thumbWords({ words: row.words, product: row.product, title: settings.title.text || row.plan.title, who })
-    if (!words) return await fail('MVP could not write the words for this thumbnail. Type your own.')
-
-    let still: Buffer, cut: Buffer | null, picks = prev?.picks ?? [], pick = prev?.pick ?? 0, stillUrl = prev?.stillUrl, cutUrl = prev?.cutUrl ?? null
-    if (sameFrame && stillUrl) {
-      still = await fetchBuf(stillUrl)
-      cut = cutUrl ? await fetchBuf(cutUrl) : null
-    } else {
-      const src = await takes(db, row)
-      if (!src.ok) return await fail(`MVP cannot open your talking take any more (${src.error}), so it cannot take a frame from it.`)
-      if (o.next && picks.length) pick = (pick + 1) % picks.length
-      else {
-        // The candidates: small frames from the parts the edit kept, the AI's
-        // best first. Asked again only when there are none yet.
-        const spec = renderSpec({ words: row.words, lines: linesOf(row.words), plan: row.plan, shots: row.shots || [], duration: row.info.review.duration, settings, hasBroll: false, silences: row.info.review.silences ?? [] })
-        const times = thumbTimes(spec.segments, 16)
-        const pr = await videoServer<{ frames: { at: number; jpg: string }[] }>('/probe', { ...src.review, frames: 0, width: 360, at: times }, 180_000)
-        if (!pr.ok || !pr.data.frames?.length) return await fail(`MVP could not take frames from your talking take: ${pr.ok ? 'none came' : pr.error}.`)
-        const best = await pickThumbFrames(pr.data.frames, who)
-        picks = (best.length ? best : [1]).map((n) => pr.data.frames[n - 1].at)
-        pick = 0
-      }
-      const at = picks[pick] ?? picks[0]
-      const sp = await videoServer<{ jpg: string }>('/still', { ...src.review, at, width: 1920 }, 120_000)
-      if (!sp.ok || !sp.data.jpg) return await fail(`MVP could not take the frame from your talking take: ${sp.ok ? 'none came' : sp.error}.`)
-      still = Buffer.from(sp.data.jpg, 'base64')
-      const stillPath = `${row.user_id}/edit-thumbsrc-${row.id}.jpg`
-      await db.storage.from(EDIT_BUCKET).upload(stillPath, still, { contentType: 'image/jpeg', upsert: true })
-      stillUrl = `${db.storage.from(EDIT_BUCKET).getPublicUrl(stillPath).data.publicUrl}?v=${Date.now()}`
-      // The creator cut out of the frame, to put their head in front of the words.
-      cut = null; cutUrl = null
-      const cutOut = await removeBackground(stillUrl)
-      recordUsage({ userId: row.user_id, tier: who.tier, feature: 'review_edit_thumb_cutout', model: 'fal-rembg', images: 1 })
-      if (cutOut) {
-        try {
-          cut = await fetchBuf(cutOut)
-          const cutPath = `${row.user_id}/edit-thumbcut-${row.id}.png`
-          await db.storage.from(EDIT_BUCKET).upload(cutPath, cut, { contentType: 'image/png', upsert: true })
-          cutUrl = `${db.storage.from(EDIT_BUCKET).getPublicUrl(cutPath).data.publicUrl}?v=${Date.now()}`
-        } catch { cut = null }
-      }
-    }
-
-    const made = await composeThumb({ still, cutout: cut, words: words.words, accent: words.accent })
-    const path = `${row.user_id}/edit-thumb-${row.id}-${Date.now()}.jpg`
-    const { error } = await db.storage.from(EDIT_BUCKET).upload(path, made.jpg, { contentType: 'image/jpeg', upsert: false })
-    if (error) return await fail(`The thumbnail could not be saved: ${error.message}`)
-    // The last one goes, so remakes do not pile up.
-    const old = prev?.url ? ownPath(prev.url, row.user_id) : null
-    if (old && old !== path) await db.storage.from(EDIT_BUCKET).remove([old])
-    return await save({
-      state: 'done', url: db.storage.from(EDIT_BUCKET).getPublicUrl(path).data.publicUrl, words: words.words, accent: words.accent,
-      picks, pick, depth: made.depth, layout: made.layout, stillUrl, cutUrl, at: new Date().toISOString(),
-    })
-  } catch (e) {
-    return await fail(`MVP stopped while making the thumbnail: ${e instanceof Error ? e.message.slice(0, 200) : 'unknown'}.`)
-  }
 }
 
 /** What was put on the video when it was last sent to be made, in finished
@@ -489,21 +380,6 @@ export async function moveQueue(db: Db, o: { userId?: string; readBudget?: numbe
       if (again) { await startMaking(db, again as EditRow); started++ }
     }
     if (Date.now() - t > 150_000) break
-  }
-
-  // Thumbnails: a review just made gets its creator thumbnail, one a tick,
-  // claimed first (info.thumb set) so two ticks never make the same one.
-  if (Date.now() - t < 200_000) {
-    let q = db.from('review_edits').select('*').eq('status', 'done').eq('settings->>kind', 'review').is('info->thumb', null)
-      .gt('made_at', new Date(t - 3 * 86400_000).toISOString()).order('made_at', { ascending: true }).limit(1)
-    if (o.userId) q = q.eq('user_id', o.userId)
-    const { data: due } = await q
-    const row = due?.[0] as EditRow | undefined
-    if (row) {
-      const { data: claimed } = await db.from('review_edits').update({ info: { ...(row.info ?? {}), thumb: { state: 'making', at: new Date().toISOString() } } })
-        .eq('id', row.id).is('info->thumb', null).select('id')
-      if (claimed?.length) await makeCreatorThumb(db, { ...row, info: { ...(row.info ?? {}), thumb: undefined } })
-    }
   }
 
   // Raw uploads: two days after the video was made, or three after it was

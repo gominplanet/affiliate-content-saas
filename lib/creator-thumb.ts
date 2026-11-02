@@ -84,6 +84,25 @@ export function splitLines(words: string, twoLines: boolean): string[][] {
   return [w.slice(0, best), w.slice(best)]
 }
 
+/** Acronyms that stay in capitals when a headline written in capitals is
+ *  set lowercase; a word with a number in it (X100, 4K) stays too. */
+const ACRONYMS = new Set(['USB', 'LED', 'UV', 'TV', 'PC', 'HD', 'UHD', 'USA', 'UK', 'GPS', 'AI', 'UPF', 'SPF', 'LCD', 'OLED', 'RGB', 'DIY', 'XL', 'XXL', 'XS', 'BBQ', 'EV', 'AC', 'DC', 'HDMI', 'SSD', 'RAM', 'CPU', 'GPU', 'VR', 'AR', 'NFC', 'ANC', 'MPH', 'PSI', 'OZ', 'MM', 'CM', 'LB', 'LBS', 'KG'])
+
+/** The words for the Creator look, from any headline: four at most, no
+ *  dashes, year, hashtag or emoji, and lowercase when written in capitals
+ *  (an acronym or a model number stays as it is); the red bar on the word
+ *  asked for, else the last. Null when nothing is left. Pure. */
+export function creatorWords(text: unknown, accent: unknown = ''): { words: string; accent: string } | null {
+  const w = String(text ?? '').replace(/[\u2013\u2014]/g, ' ').replace(/\s+-\s+/g, ' ').replace(/#\S*/g, '').replace(/\b(19|20)\d{2}\b/g, '')
+    .replace(/[^\p{L}\p{N}'\u2019!?,.& ]/gu, '').replace(/\s+/g, ' ').trim().split(' ').filter(Boolean).slice(0, 4)
+  if (!w.length) return null
+  const shouting = w.every((x) => x === x.toUpperCase())
+  const out = shouting ? w.map((x) => (/\d/.test(x) || ACRONYMS.has(x.replace(/[^A-Z]/g, '')) ? x : x.toLowerCase())) : w
+  const norm = (x: string) => x.toLowerCase().replace(/[^a-z0-9']/g, '')
+  const a = norm(String(accent ?? ''))
+  return { words: out.join(' '), accent: out.find((x) => norm(x) === a) ?? out[out.length - 1] }
+}
+
 /** Which word gets the red bar: the one asked for, else the last. Pure. */
 export function accentIndex(words: string, accent: string): number {
   const w = words.trim().split(/\s+/).filter(Boolean)
@@ -175,7 +194,7 @@ export interface ComposedThumb {
  * (same size, transparent around them) or null, and the words with the one to
  * underline. 1280 x 720 JPEG under YouTube's 2MB.
  */
-export async function composeThumb(o: { still: Buffer; cutout: Buffer | null; words: string; accent: string }): Promise<ComposedThumb> {
+export async function composeThumb(o: { still: Buffer; cutout: Buffer | null; words: string; accent: string; crop?: boolean }): Promise<ComposedThumb> {
   const { default: sharp } = await import('sharp')
   const words = o.words.replace(/\s+/g, ' ').trim()
   if (!words) throw new Error('no words for the thumbnail')
@@ -191,7 +210,8 @@ export async function composeThumb(o: { still: Buffer; cutout: Buffer | null; wo
     cutAlpha = cut.data
     personFull = alphaBox(cut.data, cut.info.width, cut.info.height)
   }
-  const crop = cropFor(personFull, W, H)
+  // A picture composed for the words already (the generator's) is used whole.
+  const crop = o.crop === false ? cropFor(null, W, H) : cropFor(personFull, W, H)
 
   // The frame, brighter and a little richer, as a thumbnail is.
   const base = await sharp(o.still).extract(crop).resize(THUMB_W, THUMB_H, { fit: 'fill' })

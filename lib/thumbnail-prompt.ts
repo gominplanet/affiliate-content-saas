@@ -27,7 +27,7 @@
 // randomness, no reading of anything it was not handed, so the same inputs
 // always produce the same prompt and a test can hold it to that.
 
-import { resolvePreset, presetToPrompt } from '@/lib/visual-presets'
+import { resolvePreset, presetToPrompt, MVP_WORDS_TYPOGRAPHY } from '@/lib/visual-presets'
 import { framingLine, type EffectiveFraming, type BuildKey, type HeightKey } from '@/lib/body-framing'
 import { NO_BRAND_IMAGE_CLAUSE } from '@/lib/image-guard'
 
@@ -234,7 +234,7 @@ export function creativeHead(input: ThumbnailPromptInput): string[] {
     return [
       `Design a ${p.name.toLowerCase()} product-review thumbnail, 16:9 landscape (1536x864). ${p.direction}`,
       '',
-      `TYPOGRAPHY: ${p.typography}`,
+      p.wordsByMvp ? MVP_WORDS_TYPOGRAPHY : `TYPOGRAPHY: ${p.typography}`,
       `BACKGROUND: ${p.background}`,
       '',
       'Bring THIS art-director brief (written specifically for this product) to life inside that look:',
@@ -291,6 +291,15 @@ export function oneChip(input: Pick<ThumbnailPromptInput, 'callouts' | 'badge'>)
 export const TEXT_BUDGET =
   "TEXT (hard rule): the only words on the design are the MAIN HEADLINE and, at most, ONE small badge or chip, plus a call-to-action only where the FORMAT line asks for one. No sublines, banners, ribbons, checklists, captions, labels, stickers or extra chips with words on them. The product's own printing stays exactly as it is on the product."
 
+/** Where the words will go on a look whose words MVP draws, and what the
+ *  picture must leave for them. */
+export const MVP_WORDS_LAYOUT =
+  'LEAVE ROOM FOR THE WORDS: a short line of words is added across the top of this picture afterwards. Keep the top third behind the creator plain background (wall, window or soft out-of-focus room) with nothing important in it, and frame the creator so the top of their head sits about a third of the way down from the top edge, centred or a little to one side, head and shoulders large. Render no text at all.'
+
+/** The text rule for such a look: none. */
+export const MVP_WORDS_TEXT =
+  "TEXT (hard rule): no words, letters, numbers, captions, labels, badges or logos anywhere on the picture. The product's own printing stays exactly as it is on the product."
+
 /** The last word on logos. Short on purpose: a final check that runs long is
  *  read as more design direction. */
 const LOGO_FINAL_CHECK =
@@ -305,6 +314,10 @@ const LOGO_FINAL_CHECK =
  * thing it read. Every instruction placed only at the top lost today.
  */
 export function buildGraphicThumbnailPrompt(input: ThumbnailPromptInput): string {
+  // A LOOK WHOSE WORDS MVP DRAWS (the Creator look, lib/creator-thumb): the
+  // picture carries none, and leaves the top of the frame for them, with the
+  // head about a third of the way down so it can sit in front of the words.
+  const mvpWords = resolvePreset(input.presetId).wordsByMvp === true
   return [
     input.formatDirective || '',
     ...(input.wearLine ? [input.wearLine] : []),
@@ -327,11 +340,13 @@ export function buildGraphicThumbnailPrompt(input: ThumbnailPromptInput): string
     '',
     productLine(input),
     '',
-    `MAIN HEADLINE — the wording must read EXACTLY, spelling perfect: "${[input.line1, input.line2].filter(Boolean).join(' ')}". Style it as the concept describes: split it across lines, give words their own colour/size/weight — a designed, layered look, NOT plain white-and-yellow outlined caps. Keep the exact words and spelling. Big and instantly readable.`,
+    mvpWords ? MVP_WORDS_LAYOUT : `MAIN HEADLINE — the wording must read EXACTLY, spelling perfect: "${[input.line1, input.line2].filter(Boolean).join(' ')}". Style it as the concept describes: split it across lines, give words their own colour/size/weight — a designed, layered look, NOT plain white-and-yellow outlined caps. Keep the exact words and spelling. Big and instantly readable.`,
     '',
     'FRAMING: the canvas is a full 16:9 landscape (1536×864) and the entire canvas is shown — nothing is cropped. Compose within it with a small, even safe margin (about 5%) on all four sides: every word, the person\'s full head and the whole product must sit fully inside the frame, not touching or running off any edge. Fill the frame nicely — no big empty dead bands — just keep that clean margin all around.',
-    'HARD RULES (only these): keep the person instantly recognisable, keep the product accurate to the reference, and make every piece of text correctly spelled and legible. Everything else — make it POP.',
-    TEXT_BUDGET,
+    mvpWords
+      ? 'HARD RULES (only these): keep the person instantly recognisable, keep the product accurate to the reference, and put no words, letters or numbers anywhere on the picture.'
+      : 'HARD RULES (only these): keep the person instantly recognisable, keep the product accurate to the reference, and make every piece of text correctly spelled and legible. Everything else — make it POP.',
+    mvpWords ? MVP_WORDS_TEXT : TEXT_BUDGET,
     // Twice, on purpose, exactly as the doc comment above this function says:
     // an image model weights the last thing it read, and an instruction placed
     // only at the top loses to a paragraph of design direction. This is the one

@@ -1,17 +1,17 @@
 // © 2026 Gominplanet / MVP Affiliate — proprietary & confidential.
 //
-// THE CREATOR THUMBNAIL LOOK (Seb, 2026-11-02). Pinned: a still of the
-// creator from the parts the edit kept, made bigger with the head under the
-// words; two to four words in the serif, the red bar under one; the head in
-// front of the words only when it hides a sliver, else the words go beside
-// it or in front, and the result says which; 1280 x 720 under YouTube's 2MB;
-// made by itself once a review is made; carried through Drop to Liftoff as
-// the video's own thumbnail; every failure said on the card.
+// THE CREATOR THUMBNAIL LOOK (Seb, 2026-11-02). Pinned: a look in the
+// thumbnail generator (Liftoff uses the same route): the AI draws the
+// creator from their headshots with the product and no words, leaving the
+// top for them; MVP draws two to four words in the serif with the red bar
+// under one, and lays the creator's head in front only when it hides a
+// sliver, else the words go beside it or in front, and the result says which.
+// 1280 x 720 under YouTube's 2MB. Not from video frames (Seb: "too unstable").
 import { readFileSync, existsSync } from 'node:fs'
 import sharp from 'sharp'
-import { alphaBox, cropFor, splitLines, accentIndex, hiddenShare, composeThumb, THUMB_W, THUMB_H } from '../lib/creator-thumb'
-import { fromOutput, thumbTimes, toOutput } from '../lib/review-edit'
-import { cleanThumbWords } from '../lib/review-edit-plan'
+import { alphaBox, cropFor, splitLines, accentIndex, hiddenShare, composeThumb, creatorWords, THUMB_W, THUMB_H } from '../lib/creator-thumb'
+import { resolvePreset, presetToBriefRules, presetToPrompt } from '../lib/visual-presets'
+import { buildGraphicThumbnailPrompt } from '../lib/thumbnail-prompt'
 
 const fails: string[] = []
 const check = (name: string, ok: boolean | undefined, detail?: unknown) => { if (!ok) fails.push(`${name}${detail !== undefined ? `: ${JSON.stringify(detail)}` : ''}`) }
@@ -41,13 +41,8 @@ async function main() {
   check('two lines of about even length when one does not fit', JSON.stringify(splitLines('better than the expensive one', true)) === JSON.stringify([['better', 'than', 'the'], ['expensive', 'one']]) && splitLines('so good', false).length === 1)
   check('the red bar goes under the word asked for, else the last', accentIndex("don't buy this", "DON'T") === 0 && accentIndex('worth every penny', 'nope') === 2)
   check('how much of the words the head covers', hiddenShare(new Uint8Array([255, 255, 0, 255]), new Uint8Array([255, 0, 255, 0])) === 1 / 3)
-  check('the words are cleaned: four at most, no dashes, year, hashtag or emoji', JSON.stringify(cleanThumbWords('the best — hoodie of 2026 #ad \u{1F525} ever', 'best')) === JSON.stringify({ words: 'the best hoodie of', accent: 'best' }) && cleanThumbWords('', '') === null && cleanThumbWords('so good', 'great')!.accent === 'good')
-
-  // ── Frames only from what the edit kept ────────────────────────────────────
-  const segs: [number, number][] = [[2, 10], [15, 30], [40, 52]]
-  const times = thumbTimes(segs, 16)
-  check('candidate frames come only from the parts the edit kept', times.length === 16 && times.every((t) => toOutput(segs, t) !== null), times)
-  check('an output second maps back into the take', fromOutput(segs, 0) === 2 && fromOutput(segs, 8) === 15 && fromOutput(segs, 23.5) === 40.5 && fromOutput(segs, 999) === null)
+  check('the words are cleaned: four at most, no dashes, year, hashtag or emoji', JSON.stringify(creatorWords('the best \u2014 hoodie of 2026 #ad \u{1F525} ever', 'best')) === JSON.stringify({ words: 'the best hoodie of', accent: 'best' }) && creatorWords('', '') === null && creatorWords('so good', 'great')!.accent === 'good')
+  check('a headline in capitals comes out lowercase, an acronym or model number kept', creatorWords('THIS USB HUB ROCKS', 'rocks')!.words === 'this USB hub rocks' && creatorWords('BEST X100 YET')!.words === 'best X100 yet' && creatorWords('SO GOOD')!.words === 'so good' && creatorWords("Don't buy this")!.words === "Don't buy this")
 
   // ── The drawing ────────────────────────────────────────────────────────────
   const f1 = await frame(960, 220, 1.2)
@@ -65,22 +60,33 @@ async function main() {
   try { await composeThumb({ still: f1.still, cutout: null, words: '  ', accent: '' }) } catch (e) { refused = String(e) }
   check('no words is refused, never an empty thumbnail', /no words/.test(refused))
 
+  const r4 = await composeThumb({ still: f1.still, cutout: f1.cut, words: 'surprisingly good', accent: 'good', crop: false })
+  check('a picture made for the words is used whole, not cropped', JSON.stringify(r4.crop) === JSON.stringify({ left: 0, top: 0, width: 1920, height: 1080 }))
+
+  // ── The look in the generator ──────────────────────────────────────────────
+  const look = resolvePreset('creator')
+  check('the Creator look is one of the looks, quiet, a photograph, and its words drawn by MVP', look.id === 'creator' && look.wordsByMvp === true && look.badges === false && look.family === 'Photographic')
+  check('its brief writes two to four lowercase words, all in one line', /two to four words in total, lowercase/.test(presetToBriefRules(look)) && /leave line1 empty/.test(presetToBriefRules(look)))
+  const prompt = buildGraphicThumbnailPrompt({ presetId: 'creator', line1: '', line2: 'surprisingly good', concept: 'creator at a desk holding the hoodie' } as never)
+  check('the picture is asked for with no words, and room at the top with the head a third down', /LEAVE ROOM FOR THE WORDS/.test(prompt) && /no words, letters, numbers/.test(prompt) && /TYPOGRAPHY: none on the picture/.test(prompt) && !/MAIN HEADLINE/.test(prompt) && !/surprisingly good/.test(prompt))
+  check('the fallback path asks the same', /TYPOGRAPHY: none on the picture/.test(presetToPrompt(look, { surface: 'thumbnail' })))
+  check('a pin or blog hero still takes the look\u2019s typography, as every other look', presetToPrompt(look, { surface: 'pin' }).includes(look.typography) && presetToPrompt(look, { surface: 'hero' }).includes(look.typography))
+  const other = buildGraphicThumbnailPrompt({ presetId: 'bold', line1: '', line2: 'surprisingly good', concept: 'x' } as never)
+  check('every other look still has its headline drawn by the model', /MAIN HEADLINE/.test(other) && !/LEAVE ROOM FOR THE WORDS/.test(other))
+
   // ── Wiring ─────────────────────────────────────────────────────────────────
-  const W = read('lib/review-edit-server.ts'), R = read('app/api/review-edit/route.ts'), U = read('components/review-editor/ReviewEditor.tsx')
-  const S = read('ingest-service/server.js'), D = read('components/labs/DropBoard.tsx'), P = read('lib/review-edit-plan.ts')
+  const G = read('app/api/youtube/generate-thumbnail/route.ts'), W = read('lib/review-edit-server.ts'), S = read('ingest-service/server.js')
   check('the serif ships with the routes that draw thumbnails', existsSync('node_modules/@fontsource/playfair-display/files/playfair-display-latin-800-normal.woff') && /playfair-display-latin-800-normal\.woff/.test(read('next.config.ts')))
-  check('the video server takes frames at the times asked and one still at full size, sent in the answer only', /req\.body\?\.at/.test(S) && /app\.post\('\/still'/.test(S) && /jpg: fs\.readFileSync\(out\)\.toString\('base64'\)/.test(S))
-  check('frames are picked by a cheap model and the words written by one, both counted', /feature: 'review_edit_thumb_frame', model: QUICK_MODEL/.test(P) && /feature: 'review_edit_thumb_words', model: QUICK_MODEL/.test(P) && /feature: 'review_edit_thumb_cutout'/.test(W))
-  check('new words redraw on the same frame and cut-out, with no AI', /const sameFrame = !o\.next && !!prev\?\.stillUrl/.test(W) && /if \(sameFrame && stillUrl\) \{\s*\n\s*still = await fetchBuf\(stillUrl\)/.test(W))
-  check('a review just made gets one by itself, claimed first so two ticks never make the same', /\.eq\('settings->>kind', 'review'\)\.is\('info->thumb', null\)/.test(W) && /\.eq\('id', row\.id\)\.is\('info->thumb', null\)\.select\('id'\)/.test(W))
-  check('every failure is saved and said on the card; one stuck making is said to have stopped', /state: 'failed', error/.test(W) && /MVP stopped while making the thumbnail/.test(R) && /t\?\.state === 'failed' && <p/.test(U))
-  check('words in front of the head are said, not passed off as the look', /your head could not go in front of the words/.test(U))
-  check('removing a video removes its thumbnail files', /edit-thumbsrc-\$\{row\.id\}\.jpg/.test(R) && /edit-thumbcut-\$\{row\.id\}\.png/.test(R))
-  check('Send to Drop takes the thumbnail along, and Drop gives it to Liftoff as the video’s own', /wish: \{ thumbnailUrl: e\.thumb\.url \}/.test(U) && /\/api\/launch\/items\/\$\{res\.launchItemId\}\/thumbnail/.test(D) && /did not reach Liftoff/.test(D) && /thumbnailUrl: v\.thumbnailUrl/.test(D))
-  check('Drop says whether Liftoff has it yet', /thumbnail_source === 'creator'/.test(D) && /It is given to Liftoff when the video goes in/.test(D))
-  check('a TRYBE ad gets none', /A TRYBE ad has no YouTube thumbnail/.test(W) && /e\.settings\.kind === 'review' && <div className="mt-2"><ThumbBox/.test(U))
+  check('the generator draws the words on the Creator look, YouTube size only', /const mvpWords = resolvePreset\(visualPreset\)\.wordsByMvp === true && Math\.abs\(outW \/ outH - 16 \/ 9\) < 0\.02/.test(G) && (G.match(/finishWithMvpWords\(/g) ?? []).length >= 3)
+  check('nothing to spell check when MVP draws the words', /if \(b64 && !mvpWords\) \{/.test(G) && /if \(b64 && !mvpWords\) \{\s*\n\s*const wantP/.test(G))
+  check('the creator is cut out to sit in front of the words, the cost counted, a failed cut-out leaves the words in front', /removeBackground\(hosted\)/.test(G) && /feature: 'thumb_creator_cutout', model: 'fal-rembg'/.test(G) && /crop: false/.test(G))
+  check('the result says, for each variant, whether the head is in front', /creatorDepth: gfxRawUrls\.flatMap/.test(G))
+  check('a scene the creator typed gets no words drawn by the model on this look either', /\.\.\.\(mvpWords \? \[MVP_WORDS_LAYOUT, MVP_WORDS_TEXT\] : \[/.test(G))
+  check('the look is offered in the picker only to Labs while it is tested; an account that has it keeps it', look.labs === 'creator_look' && /creator_look: 'admin'/.test(read('lib/labs-preview.ts')) && /!p\.labs \|\| current\.includes\(p\.id\) \|\| \(tier !== null && canUsePreview\(p\.labs, tier\)\)/.test(read('components/brand/VisualPresetPicker.tsx')) && /p\.family === family && offered\(p\)/.test(read('components/brand/VisualPresetPicker.tsx')))
+  check('Co-Pilot says when the head could not go in front', /your head could not go in front of the words, so the words are in front/.test(read('app/(dashboard)/co-pilot/page.tsx')))
+  check('no thumbnails from video frames any more', !/makeCreatorThumb|pickThumbFrames|edit-thumbsrc/.test(W) && !/app\.post\('\/still'/.test(S))
 
   if (fails.length) { console.error(`\n❌ creator-thumb: ${fails.length} failure(s)\n`); for (const f of fails) console.error(`   • ${f}`); process.exit(1) }
-  console.log('✅ creator-thumb: a still from the kept parts, words in the serif with the red bar, the head in front only when it hides a sliver, made by itself and carried to Liftoff')
+  console.log('✅ creator-thumb: the Creator look in the generator, the picture without words, MVP draws them in the serif with the red bar, the head in front only when it hides a sliver')
 }
 main().catch((e) => { console.error(e); process.exit(1) })

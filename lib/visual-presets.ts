@@ -67,6 +67,16 @@ export interface VisualPreset {
   /** Roughly how the preview tile sets its type. */
   previewWeight: number
   previewSerif: boolean
+  /**
+   * On a YouTube thumbnail the picture carries no words: MVP draws them after
+   * (lib/creator-thumb), so the font, the spelling and the red bar are exact
+   * and the creator's head can sit in front of them. Pins and blog heroes
+   * still take the typography as a direction for the model.
+   */
+  wordsByMvp?: boolean
+  /** Offered in the picker only to whoever may use this Labs feature while it
+   *  is tested (lib/labs-preview). An account that already has it keeps it. */
+  labs?: 'creator_look'
 }
 
 export const VISUAL_PRESETS: VisualPreset[] = [
@@ -362,6 +372,26 @@ export const VISUAL_PRESETS: VisualPreset[] = [
     previewSerif: true,
   },
   {
+    // THE CREATOR LOOK (Seb, 2026-11-02, from a creator channel's thumbnails
+    // he showed): the creator big in a bright real room with the product, a
+    // few words in a heavy serif, one underlined in red, the head in front.
+    id: 'creator',
+    name: 'Creator',
+    family: 'Photographic',
+    previewShape: 'photo',
+    blurb: 'You, big, in a bright real room with the product. A few words in a bold serif, one underlined in red.',
+    direction: 'A candid photograph of the creator in a bright, lived-in room: a desk, shelves or a window behind them. Head and shoulders large in the frame, turned to the camera, with a calm, sure, believable expression, and the product in their hand or on the desk in front of them. Natural warm daylight, shallow depth of field, the room softly out of focus. It reads as a friend\u2019s honest recommendation, not an advert.',
+    typography: 'Two to four lowercase words in a heavy white serif across the top, with a soft shadow, one word underlined by a thick red bar. Nothing else written anywhere.',
+    background: 'The real room behind the creator, bright and softly blurred. The top third behind their head is plain wall, window or out-of-focus shelves, with nothing important in it.',
+    badges: false,
+    fallbackPalette: 'natural daylight colours and warm skin tones, with one red accent',
+    swatch: ['#CDB8A0', '#FFFFFF', '#E0251B'],
+    previewWeight: 800,
+    previewSerif: true,
+    wordsByMvp: true,
+    labs: 'creator_look',
+  },
+  {
     id: 'scandi',
     name: 'Scandinavian',
     family: 'Quiet',
@@ -458,6 +488,9 @@ export function presetToBriefRules(preset: VisualPreset): string {
     `BACKGROUND: ${preset.background}`,
     `Default colour direction when the product suggests nothing better: ${preset.fallbackPalette}.`,
   ]
+  if (preset.wordsByMvp) {
+    lines.push('HEADLINE FOR THIS LOOK: two to four words in total, lowercase (a brand name or an acronym stays as written), a plain verdict or tease such as "surprisingly good", "don\u2019t buy this" or "worth every penny". Put all of it in line2 and leave line1 empty. The emphasis word is the one that carries the verdict.')
+  }
   if (!preset.badges) {
     lines.push(
       'THIS LOOK CARRIES NO BADGES. Return "" for banner and "" for badge, and return an empty array for callouts. Do not describe checkmark chips, spec pills, starbursts or stickers in the concept. One of them turns this look back into a generic advert, which is the thing the creator chose this look to avoid.',
@@ -479,6 +512,9 @@ export function presetToBriefRules(preset: VisualPreset): string {
  * 16:9 thumbnail, a 2:3 Pinterest pin and a blog hero, or a creator ends up with
  * three different brands across three places they publish.
  */
+/** A thumbnail in a look whose words MVP draws: none on the picture. */
+export const MVP_WORDS_TYPOGRAPHY = 'TYPOGRAPHY: none on the picture. The words are added afterwards, so render no text, letters or numbers anywhere, apart from what is printed on the product itself.'
+
 export function presetToPrompt(
   preset: VisualPreset,
   opts: { surface: 'thumbnail' | 'pin' | 'hero'; palette?: string | null; productFacts?: string | null },
@@ -494,7 +530,7 @@ export function presetToPrompt(
   const lines = [
     `${frame} ${preset.direction}`,
     '',
-    `TYPOGRAPHY: ${preset.typography}`,
+    preset.wordsByMvp && opts.surface === 'thumbnail' ? MVP_WORDS_TYPOGRAPHY : `TYPOGRAPHY: ${preset.typography}`,
     `BACKGROUND: ${preset.background}`,
     `COLOUR: ${palette}.`,
     preset.badges

@@ -1960,6 +1960,11 @@ function VideoStudioCardImpl({ video, userTier, playlists, playlistsNote = null,
     // thumbnail looks finished and nothing else on screen would tell.
     const stillWrong = Array.isArray(data.textStillWrong) ? (data.textStillWrong as unknown[]).filter((n): n is string => typeof n === 'string') : []
     if (stillWrong.length) toast.warning(`Check the text before you use ${stillWrong.length === 1 ? 'this thumbnail' : 'these thumbnails'}: ${stillWrong[0]}.`, { duration: 12000 })
+    // THE CREATOR LOOK, AS MADE: a variant whose head could not go in front of
+    // the words (the cut-out failed, or it would have hidden a word) is said.
+    const depth = Array.isArray(data.creatorDepth) ? (data.creatorDepth as unknown[]) : []
+    const flat = depth.filter((d) => d === false).length
+    if (data.wordsByMvp === true && flat > 0) toast(`On ${flat === depth.length ? (flat === 1 ? 'this thumbnail' : 'these thumbnails') : `${flat} of these thumbnails`}, your head could not go in front of the words, so the words are in front. Make another for the full look.`, { duration: 10000 })
     setThumbnailFaceUsed((data.faceUsed as string | null) ?? null)
     setThumbnailDebug((data.faceDebug as string | null) ?? null)
     // Server may return one or many. Backwards-compat: single thumbnailUrl

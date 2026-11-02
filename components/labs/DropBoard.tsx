@@ -87,13 +87,10 @@ interface Vid {
   adding: boolean
   /** Why it is not in Liftoff, when putting it there failed. */
   liftoffError: string | null
-  /** A thumbnail made for it in the review editor (the creator look),
-   *  given to Liftoff as the video's own once it is in. */
-  thumbnailUrl?: string | null
 }
 
 /** What a video's card keeps between reloads (drop_items.wish). */
-interface Wish { places?: unknown; caption?: unknown; trybe?: unknown; tiktok?: unknown; thumbnailUrl?: unknown }
+interface Wish { places?: unknown; caption?: unknown; trybe?: unknown; tiktok?: unknown }
 
 interface DraftItemRow {
   id: string; file_name: string | null; source_url: string | null; mime_type: string | null; size_bytes: number | null
@@ -286,7 +283,6 @@ export default function DropBoard() {
           trybe: w.trybe && typeof w.trybe === 'object' ? { ...emptyChoice(), ...(w.trybe as Partial<TrybeChoice>) } : emptyChoice(),
           tiktok: w.tiktok && typeof w.tiktok === 'object' ? { ...emptyTikTok(), ...(w.tiktok as Partial<TikTokChoice>) } : emptyTikTok(),
           launchItemId: i.launch_item_id || null, adding: false, liftoffError: null,
-          thumbnailUrl: typeof w.thumbnailUrl === 'string' && /^https:\/\//.test(w.thumbnailUrl) ? w.thumbnailUrl : null,
         }
       }))
     }
@@ -422,7 +418,7 @@ export default function DropBoard() {
       if (!v?.itemId) return
       void browserHttp('/api/drop', { method: 'POST', body: {
         action: 'draft_item', itemId: v.itemId, asin: v.asin.trim(), title: v.title.trim(),
-        wish: { places: v.places, caption: v.caption, trybe: v.trybe, tiktok: v.tiktok, ...(v.thumbnailUrl ? { thumbnailUrl: v.thumbnailUrl } : {}) },
+        wish: { places: v.places, caption: v.caption, trybe: v.trybe, tiktok: v.tiktok },
       } }).then((r) => {
         if (!r.ok) setWishNote(String(r.json.error || 'Your choices for a video were not kept. They still apply until you reload.'))
         else if (r.json.wishSaved === false) setWishNote(String(r.json.wishError || 'Your choices are not kept over a reload yet.'))
@@ -458,21 +454,6 @@ export default function DropBoard() {
       if (!res.launchItemId) { mark(key, { liftoffError: res.problem || 'Liftoff did not take it.' }); return }
       mark(key, { launchItemId: res.launchItemId })
       if (res.problem) toast.error(res.problem, { duration: 10000 })
-      // THE REVIEW EDITOR'S THUMBNAIL (the creator look) becomes this
-      // video's own in Liftoff, kept over anything Liftoff would build.
-      if (cur.thumbnailUrl) {
-        try {
-          const img = await fetch(cur.thumbnailUrl, { signal: AbortSignal.timeout(30_000) })
-          if (!img.ok) throw new Error(`the image could not be read (${img.status})`)
-          const fd = new FormData()
-          fd.append('file', await img.blob(), 'thumbnail.jpg')
-          const t = await fetch(`/api/launch/items/${res.launchItemId}/thumbnail`, { method: 'POST', body: fd, signal: AbortSignal.timeout(90_000) })
-          const tj = await t.json().catch(() => ({}))
-          if (!t.ok) throw new Error(tj.error || 'Liftoff did not take it')
-        } catch (e) {
-          toast.error(`Your thumbnail from the review editor did not reach Liftoff: ${e instanceof Error ? e.message : 'unknown'}. Liftoff builds one instead; add yours on its card.`, { duration: 12000 })
-        }
-      }
       // ITS OWN TIME: the next one on your pattern nobody has yet. Handed out
       // before the call, so two videos added together never share one.
       if (settingsRef.current.sendToYouTube) {
@@ -970,14 +951,6 @@ export default function DropBoard() {
                   })}
                 </div>
 
-                {v.thumbnailUrl && (
-                  <p className="flex items-center gap-2 text-[12px]" style={{ color: 'var(--text-2)' }}>
-                    <img src={v.thumbnailUrl} alt="" className="h-9 w-auto rounded" />
-                    {(li as { thumbnail_source?: string | null } | null)?.thumbnail_source === 'creator'
-                      ? 'Thumbnail: yours from the review editor. Liftoff uses it on YouTube and Amazon.'
-                      : 'Thumbnail: yours from the review editor. It is given to Liftoff when the video goes in.'}
-                  </p>
-                )}
                 {/* LONG: Liftoff's own editor for this video, as soon as it is in. */}
                 {inLiftoff && !li && (
                   <div className="flex flex-col gap-2">

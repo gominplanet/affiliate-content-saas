@@ -91,9 +91,9 @@ const head = (presetId: string | null, extra: Record<string, unknown> = {}) =>
     worst.overlap < 0.3,
     `${worst.a} and ${worst.b} overlap ${Math.round(worst.overlap * 100)}%`)
 
-  check('twenty presets, all with distinct ids',
+  check('twenty one presets, all with distinct ids',
     new Set(VISUAL_PRESETS.map(p => p.id)).size === VISUAL_PRESETS.length
-    && VISUAL_PRESETS.length === 20,
+    && VISUAL_PRESETS.length === 21,
     `${VISUAL_PRESETS.length} presets`)
   check('and distinct names, since that is what a creator picks by',
     new Set(VISUAL_PRESETS.map(p => p.name)).size === VISUAL_PRESETS.length)
@@ -533,4 +533,4 @@ if (failures.length) {
   for (const f of failures) console.error(`  • ${f}`)
   process.exit(1)
 }
-console.log('✅ visual-presets: twenty looks, none a duplicate of another, and a quiet one stays quiet')
+console.log('✅ visual-presets: twenty one looks, none a duplicate of another, and a quiet one stays quiet')

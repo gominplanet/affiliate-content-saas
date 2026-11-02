@@ -121,7 +121,7 @@ check('so is the quick headline', /quick hook[\s\S]{0,40}\$\{why\[0\]\}/.test(R)
 check('clampBrief keeps one callout and no banner', /\.slice\(0, 1\)\s*\n\s*: \[\]/.test(R) && /banner: '',/.test(R))
 check('the face path tells the prompt which badge is on', /callouts: briefCallouts,\s*\n\s*badge: gfxBadge,/.test(R))
 check('the product-only path draws one chip and states the budget',
-  /const chipP = oneChip\(/.test(R) && !/BANNER PHRASE/.test(R) && /\n\s*TEXT_BUDGET,\n\s*`REAL COPY ONLY/.test(R))
+  /const chipP = oneChip\(/.test(R) && !/BANNER PHRASE/.test(R) && /\n\s*(?:mvpWords \? MVP_WORDS_TEXT : )?TEXT_BUDGET,\n\s*`REAL COPY ONLY/.test(R))
 check('pins, Instagram and stories ask for one chip, not a stacked list',
   !/STACKED/.test(R) && !/1–3 short punchy callouts/.test(R) && (R.match(/at most ONE small chip/g) || []).length >= 3)
 check('briefs cached before these rules are not handed back', /:t2\$\{wantQuestion/.test(R))

@@ -229,32 +229,6 @@ export function toOutput(segs: Segment[], s: number): number | null {
   return null
 }
 
-/** Where a second of the finished video comes from in the take, or null
- *  past its end. Pure. */
-export function fromOutput(segs: Segment[], t: number): number | null {
-  let acc = 0
-  for (const [a, b] of segs) {
-    if (t < acc + (b - a)) return r3(a + Math.max(0, t - acc))
-    acc += b - a
-  }
-  return null
-}
-
-/** Moments of the take to choose a thumbnail frame from: n of them, spread
- *  over the parts the edit kept (never a mistake that was cut), clear of the
- *  first and last second. Pure. */
-export function thumbTimes(segs: Segment[], n = 16): number[] {
-  const len = segs.reduce((x, [a, b]) => x + (b - a), 0)
-  if (len <= 0) return []
-  const from = Math.min(1, len * 0.05), to = Math.max(from, len - Math.min(1, len * 0.05))
-  const out: number[] = []
-  for (let i = 0; i < n; i++) {
-    const t = fromOutput(segs, from + ((i + 0.5) / n) * (to - from))
-    if (t != null && !out.includes(t)) out.push(t)
-  }
-  return out
-}
-
 /** The end of the kept part a second of the take is in, in finished-video
  *  seconds: the next cut. Pure. */
 function partEnd(segs: Segment[], s: number): number | null {

@@ -28,6 +28,8 @@
 
 import { VISUAL_PRESETS, DEFAULT_PRESET_ID, parsePresetIds, serialisePresetIds, type VisualPreset } from '@/lib/visual-presets'
 import { Check } from 'lucide-react'
+import { useEffectiveTier } from '@/lib/useEffectiveTier'
+import { canUsePreview } from '@/lib/labs-preview'
 
 /** Display order. Loud first because it holds the default every account is
  *  already on, so the current selection is visible without scrolling. */
@@ -113,6 +115,9 @@ export default function VisualPresetPicker({ value, onChange, disabled }: {
   // what every account had before any of this existed.
   const chosen = parsePresetIds(value)
   const current = chosen.length ? chosen : [DEFAULT_PRESET_ID]
+  // A look still in Labs shows only to who may test it, or to an account that has it.
+  const tier = useEffectiveTier()
+  const offered = (p: VisualPreset) => !p.labs || current.includes(p.id) || (tier !== null && canUsePreview(p.labs, tier))
   const many = current.length > 1
 
   // Ticking the last remaining look off would leave nothing, and "no look" is
@@ -157,7 +162,7 @@ export default function VisualPresetPicker({ value, onChange, disabled }: {
       {/* Grouped, because twenty tiles in one wall is a shop rather than a
           choice. The families are how somebody narrows down before they look. */}
       {FAMILIES.map(family => {
-        const inFamily = VISUAL_PRESETS.filter(p => p.family === family)
+        const inFamily = VISUAL_PRESETS.filter(p => p.family === family && offered(p))
         if (!inFamily.length) return null
         return (
           <div key={family} className="mb-3">

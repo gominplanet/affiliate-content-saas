@@ -1344,10 +1344,7 @@ app.post('/probe', async (req, res) => {
     const info = await ffprobeInfo(url, auth)
     if (!info || !info.w) return res.status(422).json({ error: 'That file could not be read as a video.' })
     const frames = []
-    // Frames at the times asked for (the thumbnail picks from the parts the
-    // edit kept), else spread evenly over the take.
-    const asked = (Array.isArray(req.body?.at) ? req.body.at : []).map(Number).filter((t) => Number.isFinite(t) && t >= 0 && t < info.duration).slice(0, 40)
-    const times = asked.length ? asked.map((t) => Math.round(t * 100) / 100) : Array.from({ length: n }, (_, i) => Math.round(((i + 0.5) * info.duration / n) * 100) / 100)
+    const times = Array.from({ length: n }, (_, i) => Math.round(((i + 0.5) * info.duration / n) * 100) / 100)
     for (let i = 0; i < times.length; i += 4) {
       await Promise.all(times.slice(i, i + 4).map(async (at, j) => {
         const out = path.join(dir, `f${i + j}.jpg`)
@@ -1359,33 +1356,6 @@ app.post('/probe', async (req, res) => {
     }
     frames.sort((a, b) => a.at - b.at)
     return res.json({ duration: Math.round(info.duration * 100) / 100, width: info.w, height: info.h, hasAudio: info.hasAudio, frames })
-  } catch (e) {
-    return res.status(502).json({ error: String((e && e.message) || e).slice(0, 300) })
-  } finally {
-    try { fs.rmSync(dir, { recursive: true, force: true }) } catch { /* ignore */ }
-  }
-})
-
-// POST /still — one frame of a take at full size, for a thumbnail. Body:
-// { url, auth?, at, width? (up to 1920) }. Answers { width, height, jpg } with
-// the JPEG as base64, sent in the answer and never stored.
-app.post('/still', async (req, res) => {
-  if (SECRET && req.get('x-ingest-secret') !== SECRET) return res.status(401).json({ error: 'unauthorized' })
-  const url = String(req.body?.url || '').trim()
-  const at = Math.max(0, Number(req.body?.at) || 0)
-  const width = Math.max(640, Math.min(1920, Math.floor(Number(req.body?.width) || 1920)))
-  if (!/^https:\/\//i.test(url)) return res.status(400).json({ error: 'bad url' })
-  const auth = driveAuth(url, req.body?.auth)
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'still-'))
-  try {
-    await assertPublicHttpUrl(url)
-    const out = path.join(dir, 'still.jpg')
-    // Accurate seek (after -i would be slow on a long take; before -i with
-    // -accurate_seek is the default and lands on the exact frame).
-    await runFfmpeg(['-ss', String(at), ...authArgs(auth), '-i', url, '-frames:v', '1', '-vf', `scale='min(${width},iw)':-2`, '-q:v', '2', '-y', out], 90_000, 'still')
-    if (!fs.existsSync(out)) return res.status(422).json({ error: 'No frame came at that time.' })
-    const wh = await ffprobeWH(out)
-    return res.json({ width: wh ? wh.w : null, height: wh ? wh.h : null, jpg: fs.readFileSync(out).toString('base64') })
   } catch (e) {
     return res.status(502).json({ error: String((e && e.message) || e).slice(0, 300) })
   } finally {

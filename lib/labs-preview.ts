@@ -9,7 +9,7 @@
 import { normalizeTier } from '@/lib/tier'
 import { canSeeNav } from '@/lib/feature-access'
 
-export type PreviewFeature = 'on_sale' | 'amazon_live' | 'comparison' | 'shorts_mode' | 'first_comment' | 'brand_recap' | 'deal_aftercare' | 'post_refresh' | 'facebook_reels' | 'whole_video' | 'sold_campaigns' | 'liftoff_split' | 'earnings' | 'live_followup' | 'video_plan' | 'studio_upload' | 'facebook_setup' | 'group_queue' | 'trybe_outreach' | 'hashtag_trends' | 'drop' | 'video_qr' | 'deals_import' | 'review_edit'
+export type PreviewFeature = 'on_sale' | 'amazon_live' | 'comparison' | 'shorts_mode' | 'first_comment' | 'brand_recap' | 'deal_aftercare' | 'post_refresh' | 'facebook_reels' | 'whole_video' | 'sold_campaigns' | 'liftoff_split' | 'earnings' | 'live_followup' | 'video_plan' | 'studio_upload' | 'facebook_setup' | 'group_queue' | 'trybe_outreach' | 'hashtag_trends' | 'drop' | 'video_qr' | 'deals_import' | 'review_edit' | 'creator_look'
 
 /** Who may use each preview feature: 'admin' while testing, 'labs' once open to Pro. */
 const OPEN_TO: Record<PreviewFeature, 'admin' | 'labs'> = {
@@ -57,6 +57,9 @@ const OPEN_TO: Record<PreviewFeature, 'admin' | 'labs'> = {
   // worked through in the background. Admin only while it is tested (Seb,
   // 2026-10-30).
   review_edit: 'admin',
+  // The Creator thumbnail look (lib/visual-presets 'creator'): in the look
+  // picker for admin only while it is tested (Seb, 2026-11-02).
+  creator_look: 'admin',
   // Liftoff uploads through SCOUT in YouTube Studio instead of YouTube's API,
   // so an upload costs nothing from the shared daily quota. Admin only while
   // it is tested (Seb, 2026-10-02: "we need to rely on scout"). Opened to Pro
