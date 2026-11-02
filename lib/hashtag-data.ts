@@ -18,7 +18,7 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 import { personalTagStats, pooledTagStats } from '@/lib/pulse-rank'
 import { detectNiche } from '@/lib/hashtag-map'
-import { pickHashtags, withTags, withoutTags, writerTags, type TagInput, type TagPick, type TagPlatform, type TrendTag } from '@/lib/hashtag-engine'
+import { pickHashtags, postCategories, withTags, withoutTags, writerTags, type TagInput, type TagPick, type TagPlatform, type TrendTag } from '@/lib/hashtag-engine'
 import { researchTags, splitCounts, RESEARCH_BUDGET_MS, type Research } from '@/lib/hashtag-research'
 
 /** The platform Pulse and the trends are kept under. */
@@ -62,7 +62,10 @@ export async function liveResearch(input: Pick<TagInput, 'text' | 'brand' | 'nic
  *  this post unless `live` is false. Never throws. */
 export async function hashtagsFor(input: TagInput & { userId?: string | null; live?: boolean }): Promise<TagPick> {
   const platform = pulsePlatform(input.platform)
-  const niche = detectNiche(`${input.text || ''} ${(input.niches || []).join(' ')}`)
+  // The members' pooled results for what THIS post is about; the creator's
+  // niches only when the post says nothing (every pooled tag must still be
+  // about the post to be used).
+  const niche = postCategories({ text: input.text, about: input.about }, 1)[0]?.key ?? detectNiche((input.niches || []).join(' '))
   const [yours, members, trends, research] = await Promise.all([
     input.yours ?? (input.userId ? within(personalTagStats(input.userId, 2, platform), 2500, []) : Promise.resolve([])),
     input.members ?? within(pooledTagStats(niche, 5, platform), 2500, []),
@@ -90,7 +93,7 @@ export async function hashtagLine(input: TagInput & { userId?: string | null }):
  *  niche's pooled results across all platforms, and the trends of every
  *  platform named, together. Never throws; a slow source is empty. */
 export async function tagData(opts: { platforms: TagPlatform[]; userId?: string | null; text: string; niches?: string[] }): Promise<Pick<TagInput, 'yours' | 'members' | 'trends' | 'found' | 'elsewhere'>> {
-  const niche = detectNiche(`${opts.text || ''} ${(opts.niches || []).join(' ')}`)
+  const niche = postCategories({ text: opts.text }, 1)[0]?.key ?? detectNiche((opts.niches || []).join(' '))
   const [yours, members, research, ...trendLists] = await Promise.all([
     opts.userId ? within(personalTagStats(opts.userId, 2, null), 2500, []) : Promise.resolve([]),
     within(pooledTagStats(niche, 5, null), 2500, []),
@@ -113,7 +116,7 @@ export async function tagData(opts: { platforms: TagPlatform[]; userId?: string 
  *  (fitHashtags) still runs when it is sent. */
 export async function researchedTags(text: string, input: { platform: TagPlatform; about: string; brand?: string | null; userId?: string | null; maxChars?: number | null; niches?: string[] }): Promise<{ text: string; pick: TagPick | null }> {
   try {
-    const pick = await hashtagsFor({ platform: input.platform, text: `${input.about || ''}\n${withoutTags(text)}`, brand: input.brand ?? null, writer: writerTags(text), niches: input.niches, userId: input.userId })
+    const pick = await hashtagsFor({ platform: input.platform, text: `${input.about || ''}\n${withoutTags(text)}`, about: input.about || null, brand: input.brand ?? null, writer: writerTags(text), niches: input.niches, userId: input.userId })
     if (!pick.tags.length) return { text, pick }
     return { text: withTags(text, pick.tags.map((t) => t.tag), { maxChars: input.maxChars ?? null }), pick }
   } catch {
@@ -131,7 +134,7 @@ export async function pickForPlatforms(input: { text: string; about?: string | n
   const text = `${input.about || ''}\n${withoutTags(input.text)}`
   const writer = writerTags(input.text)
   const research = await liveResearch({ text, brand: input.brand ?? null, niches: input.niches, writer })
-  const niche = detectNiche(`${text} ${(input.niches || []).join(' ')}`)
+  const niche = postCategories({ text, about: input.about }, 1)[0]?.key ?? detectNiche((input.niches || []).join(' '))
   await Promise.all(Array.from(new Set(platforms)).map(async (p) => {
     try {
       const pp = pulsePlatform(p)
@@ -141,7 +144,7 @@ export async function pickForPlatforms(input: { text: string; about?: string | n
         within(trendsFor(p), 2500, [] as TrendTag[]),
       ])
       const { own, elsewhere } = splitCounts(research?.counts || [], pp)
-      out[p] = pickHashtags({ platform: p, text, brand: input.brand ?? null, niches: input.niches, writer, yours, members, trends: mergeTrends(trends, own), found: research?.candidates || [], elsewhere })
+      out[p] = pickHashtags({ platform: p, text, about: input.about || null, brand: input.brand ?? null, niches: input.niches, writer, yours, members, trends: mergeTrends(trends, own), found: research?.candidates || [], elsewhere })
     } catch { /* this platform's post goes as written, through the safety net */ }
   }))
   return out

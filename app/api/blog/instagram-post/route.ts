@@ -268,7 +268,7 @@ Return ONLY the caption text + hashtags.`,
         if (feedCaption.length > 2200) feedCaption = feedCaption.slice(0, 2199) + '…'
         // THE HASHTAG ENGINE picks the tags (lib/hashtag-engine): the writer's
         // are suggestions; your results, trends, the brand and category decide.
-        const pick = await hashtagsFor({ platform: 'instagram', text: `${post.title || ''}\n${post.excerpt || ''}\n${plainContent.slice(0, 800)}`, brand: post.title || null, writer: writerTags(feedCaption), userId: user.id })
+        const pick = await hashtagsFor({ platform: 'instagram', text: `${post.title || ''}\n${post.excerpt || ''}\n${plainContent.slice(0, 800)}`, about: post.title || null, brand: post.title || null, writer: writerTags(feedCaption), userId: user.id })
         feedCaption = withTags(feedCaption, pick.tags.map(t => t.tag))
       }
       // Reel/feed captions can't carry a clickable URL, so direct people to the

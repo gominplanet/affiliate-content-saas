@@ -73,7 +73,7 @@ export function tagsFromSearches(phrases: string[]): string[] {
  *  what the product is in the forms people tag it with, what people search
  *  for after its name, the writer's suggestions, then MVP's category tags. Pure. */
 export function tagCandidates(input: { text: string; brand?: string | null; niches?: string[]; writer?: string[]; searches?: string[] }): string[] {
-  const { cats, kinds } = productKinds(input.text, input.niches)
+  const { cats, kinds } = productKinds(input.text)
   const words = contentWords(input.text)
   const list: string[] = []
   const add = (t: string | null | undefined) => { const tag = t ? usable(t) : null; if (tag && !list.includes(tag)) list.push(tag) }

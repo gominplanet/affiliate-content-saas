@@ -91,7 +91,7 @@ export async function writeSocialCaption(opts: {
   if (!body) body = productTitle || 'A great find'
   // THE HASHTAG ENGINE picks the tags; they go in before the disclosure,
   // with room kept so the 500-character cut never takes them.
-  const pick = await hashtagsFor({ platform: opts.platform || 'instagram', text: [productTitle, ...facts].filter(Boolean).join('\n'), brand: productTitle || null, writer: writerTags(body), userId: opts.userId })
+  const pick = await hashtagsFor({ platform: opts.platform || 'instagram', text: [productTitle, ...facts].filter(Boolean).join('\n'), about: productTitle || null, brand: productTitle || null, writer: writerTags(body), userId: opts.userId })
   return finalizeSocialCaption(withTags(body, pick.tags.map(t => t.tag), { maxChars: 420 }))
 }
 

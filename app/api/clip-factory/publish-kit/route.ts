@@ -129,6 +129,7 @@ Reply with strict JSON only: {"title": "...", "tags": ["...", "..."]}`,
   const hashtags = await hashtagsFor({
     platform: tagPlatform,
     text: [String(body.productName || ''), String(body.title || ''), String(body.writeUp || '').slice(0, 1500), links.videoTitle || ''].filter(Boolean).join('\n'),
+    about: [String(body.productName || ''), String(body.title || '')].filter(Boolean).join('\n'),
     brand: String(body.productName || '') || null,
     writer: clipTags,
     userId: user.id,

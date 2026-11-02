@@ -148,6 +148,7 @@ Return ONLY valid JSON with these exact keys:
   const pick = await hashtagsFor({
     platform: 'pinterest',
     text: [p.title, fields.product_name, fields.product_category, fields.main_benefit, fields.problem].filter(Boolean).join('\n'),
+    about: [p.title, fields.product_name].filter(Boolean).join('\n'),
     brand: fields.product_name || p.title,
     writer: rawTags.map(t => `#${scrubBanned(String(t)).replace(/[^a-z0-9]/gi, '').toLowerCase()}`),
     userId: ctx.userId,

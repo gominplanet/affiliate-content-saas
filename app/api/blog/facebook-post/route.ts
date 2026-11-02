@@ -271,6 +271,7 @@ Topic: ${(post.content as string).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').
         const pick = await hashtagsFor({
           platform: 'facebook_group',
           text: `${post.title}\n${(post.content as string).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').slice(0, 800)}`,
+          about: post.title,
           brand: post.title,
           writer: writerTags(hashtags),
           userId: user.id,

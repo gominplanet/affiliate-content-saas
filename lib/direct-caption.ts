@@ -241,6 +241,7 @@ Return ONLY a single JSON object with NO prose around it, shaped EXACTLY:
   const pick = await hashtagsFor({
     platform: input.platform,
     text: [input.product?.title, input.videoTitle, ...(input.product?.bullets || []).slice(0, 3), input.videoDescription.slice(0, 600)].filter(Boolean).join('\n'),
+    about: [input.product?.title, input.videoTitle].filter(Boolean).join('\n'),
     // The product names its maker; a video title ("Don't buy this...") never does.
     brand: input.product?.title || null,
     niches: input.niches,
@@ -338,6 +339,7 @@ Return ONLY a JSON object shaped EXACTLY:
   const pick = await hashtagsFor({
     platform: 'instagram',
     text: `${input.productName}\n${input.description || ''}`,
+    about: input.productName,
     brand: input.productName,
     niches: input.niches,
     writer: Array.isArray(parsed.hashtags) ? parsed.hashtags.map(t => String(t)) : [],

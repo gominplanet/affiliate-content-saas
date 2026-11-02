@@ -123,6 +123,10 @@ export interface TagInput {
   /** Everything about the content: product title, description, script, niche words. */
   text: string
   brand?: string | null
+  /** What the post is about: its title and the product's name. Its
+   *  categories come from here (postCategories). */
+  about?: string | null
+  /** The creator's niches: never a reason for a tag on their own. */
   niches?: string[]
   /** The writer's own suggestions for this post. */
   writer?: string[]
@@ -265,10 +269,27 @@ export function aboutContent(tag: string, words: Set<string>): boolean {
  *  first: one "gadget" in an air fryer's text is not a reason for tech tags)
  *  and WHAT IT IS: the category's own terms the content names, longest first
  *  ("air fryer" -> #airfryer), the tag people search for the product. Pure. */
-export function productKinds(text: string, niches?: string[]): { cats: ReturnType<typeof categoriesFor>; kinds: string[] } {
-  const allCats = categoriesFor(`${text || ''} ${(niches || []).join(' ')}`, 2)
+/**
+ * The categories a post belongs to, from WHAT IT IS ABOUT (Seb, 2026-11-02:
+ * a member's flashlight review was tagged #cameragear #cookingtools
+ * #phototips #mirrorless). Read from `about` (the title and the product)
+ * when given, else from the start of the text, where the title and product
+ * name sit. The rest of the text counts only when it names a category more
+ * than once: one "flash mode" in a flashlight's description is not a camera.
+ * The creator's niches never make a category: a channel about cameras and
+ * cooking can review a flashlight. Pure.
+ */
+export function postCategories(input: { text?: string | null; about?: string | null }, limit = 2): ReturnType<typeof categoriesFor> {
+  const head = String(input.about || '').trim() || String(input.text || '').slice(0, 220)
+  const fromHead = categoriesFor(head, limit)
+  if (fromHead.length) return fromHead
+  return categoriesFor(String(input.text || ''), limit).filter((c) => c.score >= 2)
+}
+
+export function productKinds(text: string, opts: { about?: string | null } = {}): { cats: ReturnType<typeof categoriesFor>; kinds: string[] } {
+  const allCats = postCategories({ text, about: opts.about }, 2)
   const cats = allCats.filter((c, i) => i === 0 || c.score >= allCats[0].score)
-  const hay = ` ${String(text || '').toLowerCase()} `
+  const hay = ` ${`${opts.about || ''} ${text || ''}`.toLowerCase()} `
   const kinds = cats.flatMap((c) => c.match.filter((m) => m.length >= 4 && new RegExp(`\\b${m.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`).test(hay))).sort((a, b) => b.length - a.length)
   return { cats, kinds }
 }
@@ -280,8 +301,11 @@ export function pickHashtags(input: TagInput): TagPick {
   const dropped: TagPick['dropped'] = []
   if (want === 0) return { tags: [], dropped, rule }
 
-  const words = contentWords(`${input.text || ''} ${(input.niches || []).join(' ')} ${input.brand || ''}`)
-  const { cats, kinds } = productKinds(input.text, input.niches)
+  // What the post is about, from its own words. The creator's niches are not
+  // about this post, so they never make a tag relevant (a camera channel's
+  // flashlight review is not about cameras).
+  const words = contentWords(`${input.about || ''} ${input.text || ''} ${input.brand || ''}`)
+  const { cats, kinds } = productKinds(input.text, { about: input.about })
   const catTags = new Set(cats.flatMap((c) => [...c.niche, ...c.mid, ...c.broad]).map((t) => hashify(t)))
   for (const k of kinds) catTags.add(hashify(k))
   const relevant = (tag: string) => aboutContent(tag, words) || catTags.has(tag)
@@ -289,7 +313,7 @@ export function pickHashtags(input: TagInput): TagPick {
   const out: PickedTag[] = []
   const seen = new Set<string>()
   let broadUsed = 0
-  const pairs = wordPairs(`${input.text || ''} ${(input.niches || []).join(' ')}`)
+  const pairs = wordPairs(`${input.about || ''} ${input.text || ''}`)
   const trendBy = new Map((input.trends || []).map((t) => [hashify(t.tag), t] as const))
   // A tag the platform itself shows as a dead end is never used (the brand's
   // own tag excepted: brand tags are small and still the brand's).
@@ -313,7 +337,7 @@ export function pickHashtags(input: TagInput): TagPick {
   // The pieces a tag may be read in: the content's single words (not the
   // pairs contentWords runs together, which would hide a phrase) and the
   // category's own tags and terms.
-  const vocab = new Set<string>(Array.from(contentWords(`${input.text || ''} ${(input.niches || []).join(' ')}`)).filter((w) => !hasPair(w)))
+  const vocab = new Set<string>(Array.from(contentWords(`${input.about || ''} ${input.text || ''}`)).filter((w) => !hasPair(w)))
   for (const t of catTags) vocab.add(t.slice(1))
   for (const c of cats) for (const m of c.match) for (const w of m.toLowerCase().split(/[^a-z0-9]+/)) if (w.length >= 2) vocab.add(w)
   function hasPair(w: string) { return pairs.has(w) }

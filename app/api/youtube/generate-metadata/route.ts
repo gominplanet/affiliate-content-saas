@@ -408,13 +408,13 @@ async function seoResearcherAgent(
 
 ${isProduct ? 'PRODUCT' : 'VIDEO CONTEXT'}: ${productContext}
 VIDEO TITLE: "${videoTitle}"
-NICHE: ${niches}
+CHANNEL'S USUAL TOPICS (for tone only, not for hashtags): ${niches}
 KNOWN KEYWORDS: ${productKeywords.join(', ')}
 
 RULES:
 - Tags: plain text only, NO special characters (#"[]{}()), NO emojis, each tag under 30 words
 ${isProduct
-  ? '- Hashtags: up to 8 SUGGESTED niche-specific ones, space-separated (MVP keeps the best 3 to 5; YouTube ignores every hashtag past 15). No #ad, MVP adds it.\n- Mix: brand name, product type, use case, problem-solution terms'
+  ? '- Hashtags: up to 8 SUGGESTED ones about THIS product only, space-separated (MVP keeps the best 3 to 5; YouTube ignores every hashtag past 15). No #ad, MVP adds it. Never a hashtag about the channel\'s other topics or a different kind of product: a flashlight review gets flashlight tags, never camera or kitchen ones. No model numbers as hashtags.\n- Mix: brand name, product type, use case, problem-solution terms'
   : '- Hashtags: up to 8 SUGGESTED niche-specific ones, space-separated (MVP keeps the best 3 to 5). Do NOT include #ad / #affiliate / #productreview: this is not a sponsored / product video.\n- Mix: topic, audience, use case, niche category'}
 
 Return JSON:
@@ -1324,6 +1324,9 @@ export async function POST(request: Request) {
       const pick = await hashtagsFor({
         platform: shortMode ? 'youtube_short' : 'youtube',
         text: [videoTitle, seoProductName, product.title, agentContext.slice(0, 1500)].filter(Boolean).join('\n'),
+        // What the video is about: its title and the product, where its
+        // category is read from (never the channel's niche).
+        about: [videoTitle, seoProductName, product.title].filter(Boolean).join('\n'),
         brand: isProduct ? (product.title || seoProductName) : null,
         niches: niches.split(',').map((n) => n.trim()).filter(Boolean),
         writer: writerTags(String(seoData.hashtags || '')),

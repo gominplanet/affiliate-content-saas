@@ -93,7 +93,7 @@ Return ONLY the caption text + the 2-3 specific hashtags.`,
     // suggestions; your results, trends, the brand and the category decide.
     // Instagram takes 5 in all, so 4 plus the #ad the disclosure leads with.
     const title = productContext.split('\n')[0] || productContext
-    const pick = await hashtagsFor({ platform: 'instagram', text: productContext, brand: title, writer: writerTags(text), userId: ctx.userId })
+    const pick = await hashtagsFor({ platform: 'instagram', text: productContext, about: title, brand: title, writer: writerTags(text), userId: ctx.userId })
     const finalCaption = `${withTags(text, pick.tags.map(t => t.tag))}\n\n#ad`
     return finalCaption.trim() || null
   } catch {

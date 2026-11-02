@@ -153,6 +153,11 @@ const TAXONOMY: TagCategory[] = [
   { key: 'fitness',
     match: ['fitness', 'workout', 'gym', 'dumbbell', 'kettlebell', 'yoga mat', 'resistance band', 'treadmill', 'exercise', 'weight bench', 'jump rope'],
     broad: ['fitness', 'health'], mid: ['workout', 'fitnessmotivation'], niche: ['homegym', 'fitnessgear', 'gymtok'] },
+  // Flashlights (Seb, 2026-11-02: a member's flashlight review got camera and
+  // cooking tags, as nothing here knew what a flashlight was).
+  { key: 'flashlight-edc',
+    match: ['flashlight', 'flashlights', 'torch light', 'tactical light', 'lumens', 'edc', 'lantern', 'work light', 'spotlight'],
+    broad: ['flashlight', 'edc'], mid: ['flashlights', 'edcgear'], niche: ['everydaycarry', 'tacticalflashlight', 'flashlightcollector'] },
   { key: 'camping-outdoors',
     match: ['camping', 'hiking', 'tent', 'sleeping bag', 'backpacking', 'cooler', 'hammock', 'campfire', 'trekking', 'headlamp'],
     broad: ['outdoors', 'camping'], mid: ['campinggear', 'hiking'], niche: ['campvibes', 'outdooradventure', 'backpacking'] },
@@ -335,6 +340,9 @@ export function deriveBrandTag(source?: string | null): string | null {
   const token = first.replace(/[^A-Za-z0-9]/g, '')
   if (token.length < 3 || token.length > 20) return null
   if (!/[A-Za-z]/.test(token)) return null            // pure numbers ("2026", "3")
+  // A model number is not a brand: "W322-1 Brightest Flashlight" was tagged
+  // #w322 (Seb, 2026-11-02). Digits with fewer than four letters is a code.
+  if (/\d/.test(token) && (token.match(/[A-Za-z]/g) || []).length < 4) return null
   if (NOT_BRAND.has(token.toLowerCase()) || TITLE_WORD.has(token.toLowerCase())) return null
   return `#${token.toLowerCase()}`
 }

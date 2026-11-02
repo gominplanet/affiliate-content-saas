@@ -13,7 +13,7 @@
 // through the engine, every post goes through the safety net, every platform
 // is tracked, and SCOUT reads trends without ever posting.
 import { readFileSync, existsSync } from 'node:fs'
-import { pickHashtags, fitHashtags, TAG_RULES, trendStanding, tagProblem, SOURCE_WORDS, madeOfContent, contentWords, sizeScore, wordsInTag, phraseProblem, sizeWords, SWEET_SPOT } from '../lib/hashtag-engine'
+import { pickHashtags, postCategories, fitHashtags, TAG_RULES, trendStanding, tagProblem, SOURCE_WORDS, madeOfContent, contentWords, sizeScore, wordsInTag, phraseProblem, sizeWords, SWEET_SPOT } from '../lib/hashtag-engine'
 import { categoriesFor, deriveBrandTag } from '../lib/hashtag-map'
 import { suggestionSeeds, tagsFromSearches, tagCandidates, researchTags, splitCounts, RESEARCH_MAX_READS } from '../lib/hashtag-research'
 
@@ -235,6 +235,42 @@ const asked: string[] = []
   check('there is always something to count on Instagram, before any caption asks', /for \(const t of allCategoryTags\(\)\)/.test(read('app/api/hashtags/trends/route.ts')) && /return n\.error \|\| !n\.counted \? NO_TAB_MS : EVERY_MS/.test(READER))
   check('the card\'s own Instagram button reads quietly too, and says when SCOUT is too old for it', /requestInstagramTagCounts\(tags\.map\(\(t\) => t\.replace\(\/\^#\/, ''\)\), \{ quiet \}\)/.test(read('components/pulse/HashtagTrends.tsx')) && /needs SCOUT \{SCOUT_IG_QUIET_MIN_VERSION\}/.test(read('components/pulse/HashtagTrends.tsx')))
   check('the background read says how it went on the Live hashtag data card', /lastIgRead\(\)/.test(read('components/pulse/HashtagTrends.tsx')) && /'no-tab':/.test(read('components/pulse/HashtagTrends.tsx')))
+
+  // ── A member's flashlight review (Seb, 2026-11-02): #ad #w322 #cameragear
+  // #cookingtools #phototips #mirrorless. The channel's niches made camera and
+  // kitchen tags count as relevant, one "flash" in the description made it a
+  // camera, and a model number became the brand tag. ──────────────────────
+  {
+    const fTitle = 'Is the W322-1 Brightest Flashlight 58000 High Lumens REALLY That Powerful?'
+    const fProduct = 'W322-1 Brightest Flashlight 58000 High Lumens, Rechargeable LED Flashlight with Power Bank, 7 Modes incl. Strobe Flash, Waterproof Tactical Flashlight for Camping Emergency'
+    const fBody = 'In this review I test the W322 flashlight: beam distance, the strobe flash mode, charging my phone from it, and how long the battery lasts. Great for power outages, camping and the car.'
+    const off = /^#(cameragear|cookingtools|phototips|mirrorless|photography|kitchen|homecooking|w322)$/
+    for (const platform of ['youtube', 'instagram', 'tiktok', 'youtube_short', 'pinterest'] as const) {
+      const r = pickHashtags({ platform, text: [fTitle, fProduct, fBody].join('\n'), about: [fTitle, fProduct].join('\n'), brand: fProduct, niches: ['camera gear', 'cooking tools', 'photography'],
+        writer: ['#cameragear', '#cookingtools', '#phototips', '#mirrorless', '#flashlight', '#tacticalflashlight'],
+        yours: [{ tag: '#cameragear', avgLift: 2, samples: 6 }, { tag: '#phototips', avgLift: 1.8, samples: 4 }] as never,
+        members: [{ tag: '#mirrorless', avgLift: 2.2, samples: 9 }] as never })
+      const tags = r.tags.map((t) => t.tag)
+      check(`${platform}: a flashlight review on a camera and cooking channel gets no camera, kitchen or model number tags`, !tags.some((t) => off.test(t)), tags)
+      check(`${platform}: and gets flashlight tags`, tags.some((t) => /flashlight|edc|everydaycarry/.test(t)), tags)
+    }
+    check('a model number is never the brand tag', deriveBrandTag('W322-1 Brightest Flashlight') === null && deriveBrandTag('B0C1234567 something') === null && deriveBrandTag('COSORI Pro LE Air Fryer') === '#cosori' && deriveBrandTag('Anker 737 Power Bank') === '#anker')
+    check('the category comes from the title and product, not one passing word in the body', postCategories({ text: `${fTitle}\n${fBody}`, about: fTitle })[0]?.key === 'flashlight-edc' && !postCategories({ text: 'My new desk setup\nI also used the flash once', about: 'My new desk setup' }).some((c) => c.key === 'camera-photo'))
+    check('the creator\u2019s niches never make a category', !postCategories({ text: 'Rechargeable flashlight review', about: 'Rechargeable flashlight review' }).some((c) => c.key === 'camera-photo' || c.key === 'kitchen'))
+    const ENGINE = read('lib/hashtag-engine.ts'), DATA3 = read('lib/hashtag-data.ts')
+    check('relevance is read from the post\u2019s own words, never the niches', /const words = contentWords\(`\$\{input\.about \|\| ''\} \$\{input\.text \|\| ''\} \$\{input\.brand \|\| ''\}`\)/.test(ENGINE) && !/contentWords\([^)]*input\.niches/.test(ENGINE))
+    check('the pooled niche is the post\u2019s own, the creator\u2019s niches only when the post says nothing', (DATA3.match(/postCategories\(\{ text[^}]*\}, 1\)\[0\]\?\.key \?\? detectNiche\(/g) ?? []).length === 3)
+    check('the writer is told hashtags are about this product, never the channel\u2019s other topics', /never a hashtag about the channel\\'s other topics or a different kind of product/i.test(read('app/api/youtube/generate-metadata/route.ts')) && /CHANNEL'S USUAL TOPICS \(for tone only, not for hashtags\)/.test(read('app/api/youtube/generate-metadata/route.ts')))
+    check('the Shorts planner keeps the channel\u2019s niches out of the video\u2019s text', !/opts\.niches \|\| ''\]\.join/.test(read('lib/shorts-planner.ts')))
+    // Every place that asks for hashtags says what its post is about.
+    const callers = ['lib/direct-caption.ts', 'lib/pin-assets.ts', 'app/api/clip-factory/publish-kit/route.ts', 'app/api/blog/facebook-post/route.ts', 'app/api/blog/instagram-post/route.ts', 'lib/ig-burn.ts', 'lib/amazon-pin-publish.ts', 'lib/amazon-social-publish.ts', 'app/api/youtube/generate-metadata/route.ts', 'lib/shorts-planner.ts']
+    for (const f of callers) {
+      const src = read(f)
+      const calls = src.match(/(hashtagsFor|pickHashtags)\(\{[\s\S]{0,700}?\}\)/g) ?? []
+      check(`${f}: every hashtag request says what the post is about`, calls.length > 0 && calls.every((c) => /\babout:/.test(c)), calls.map((c) => c.slice(0, 80)))
+    }
+    check('researched tags pass what the post is about to the engine', /hashtagsFor\(\{ platform: input\.platform, text: [^\n]*about: input\.about \|\| null/.test(DATA3) && /pickHashtags\(\{ platform: p, text, about: input\.about \|\| null/.test(DATA3))
+  }
 
   if (fails.length) { console.error('hashtag-engine failed:\n - ' + fails.join('\n - ')); process.exit(1) }
   console.log('✅ hashtag-engine: one pick for every platform (Instagram 5 with #ad, Threads 1, YouTube up to 15), every post researched and counted live, 10K to 200K first and no crowds, trends only when about the post, dead tags dropped, every post netted and tracked, SCOUT reads only')

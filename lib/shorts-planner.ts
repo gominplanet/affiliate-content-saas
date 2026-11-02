@@ -324,7 +324,8 @@ export async function planShorts(anthropic: Anthropic, opts: PlanOpts): Promise<
   // its content using the correct hashtag research"). These clips go to
   // TikTok, Reels and Shorts, so the pick reads the creator's results and
   // the trends of all three. It used to pick from the category map alone.
-  const tagInfo = await tagData({ platforms: ['tiktok', 'youtube_short', 'instagram'], userId: opts.telemetry?.userId ?? null, text: [opts.videoTitle, (opts.sourceDescription || '').slice(0, 600), opts.niches || ''].join('\n') })
+  // The video's own words; the channel's niches are not about this video.
+  const tagInfo = await tagData({ platforms: ['tiktok', 'youtube_short', 'instagram'], userId: opts.telemetry?.userId ?? null, text: [opts.videoTitle, (opts.sourceDescription || '').slice(0, 600)].join('\n'), niches: (opts.niches || '').split(',').map((n) => n.trim()).filter(Boolean) })
   const out: ClipSuggestion[] = []
   for (const rc of rawClips) {
     const ws = Number(rc.startSec)
@@ -355,6 +356,7 @@ export async function planShorts(anthropic: Anthropic, opts: PlanOpts): Promise<
       hashtags: pickHashtags({
         platform: 'youtube_short',
         text: [opts.videoTitle, rc.hook, rc.caption, (opts.sourceDescription || '').slice(0, 600)].filter(Boolean).join('\n'),
+        about: opts.videoTitle || null,
         writer: Array.isArray(rc.hashtags) ? rc.hashtags.map(h => String(h).trim()).filter(Boolean) : [],
         ...tagInfo,
       }).tags.map(t => t.tag),

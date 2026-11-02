@@ -264,7 +264,7 @@ export async function writePinCopy(opts: {
   if (store && !base.toLowerCase().includes(store.toLowerCase())) description = `${base.replace(/\s+$/, '')}${base ? ' ' : ''}See it on ${store}.`
   // THE HASHTAG ENGINE picks the tags; then the disclosure + #ad #sponsored,
   // guaranteed no matter what the model returned.
-  const pick = await hashtagsFor({ platform: 'pinterest', text: productTitle || opts.productUrl || '', brand: productTitle || null, writer: writerTags(description), userId: opts.userId })
+  const pick = await hashtagsFor({ platform: 'pinterest', text: productTitle || opts.productUrl || '', about: productTitle || null, brand: productTitle || null, writer: writerTags(description), userId: opts.userId })
   description = finalizeSocialCaption(withTags(description || productTitle || '', pick.tags.map(t => t.tag), { maxChars: 420 }))
   return { title, description }
 }
