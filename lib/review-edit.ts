@@ -343,6 +343,20 @@ export const FORMAT_WORDS: Record<Format, string> = {
   vertical: 'Vertical, for the TRYBE brand',
 }
 
+/** A finished video as a file to keep (Seb, 2026-11-02: "what about a
+ *  download button if users want to keep the video"). The video lives on
+ *  MVP's storage, another address from the page, where a browser ignores a
+ *  link's download attribute and just plays the video; storage's own
+ *  `download` setting makes it save, under the video's name ("Bassdash Sun
+ *  Hoodie.mp4", "… vertical.mp4" when there are two). Any other address is
+ *  left as it is. Pure. */
+export function downloadLink(url: string, name: string | null | undefined, format?: Format, both = false): { href: string; file: string } {
+  const base = String(name || '').replace(/[\\/:*?"<>|\u0000-\u001f]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80) || 'Review'
+  const file = `${base}${both && format ? ` ${format}` : ''}.mp4`
+  if (!/\/storage\/v1\/object\/public\//.test(url)) return { href: url, file }
+  return { href: `${url}${url.includes('?') ? '&' : '?'}download=${encodeURIComponent(file)}`, file }
+}
+
 export type LogoSize = 'small' | 'medium' | 'large'
 export const LOGO_SIZES: LogoSize[] = ['small', 'medium', 'large']
 /** How wide the logo is, as a share of the frame's width. */

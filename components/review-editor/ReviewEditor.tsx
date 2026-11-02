@@ -26,9 +26,10 @@ import { freshAccessToken, saysExpired } from '@/lib/fresh-token'
 import { storageSizeRefusal, BULK_VIDEO_MAX_BYTES } from '@/lib/clip-source-limits'
 import { pickFromDrive, type DriveState } from '@/components/review-editor/drive-picker'
 import DriveBatch from '@/components/review-editor/DriveBatch'
+import { BURN_KEEP_DAYS } from '@/lib/burn-retention'
 import {
   DEFAULT_SETTINGS, FORMAT_WORDS, KIND_WORDS, LOGO_OPACITY, LOGO_SIZES, LOGO_WHEN_WORDS, LOGO_WIDTH, MAX_PICTURES, SHOW_SECONDS, PICTURE_WHEN_WORDS, PICTURE_WIDTH, POSITIONS, POSITION_WORDS, SPOTS,
-  TITLE_COLORS, TITLE_LOOKS, TITLE_LOOK_WORDS, TITLE_SECONDS, clock, cleanSettings,
+  TITLE_COLORS, TITLE_LOOKS, TITLE_LOOK_WORDS, TITLE_SECONDS, clock, cleanSettings, downloadLink,
   type EditSettings, type Format, type LogoSize, type LogoWhen, type Picture, type PictureTime, type PictureWhen, type Position, type Spot, type TitleColor, type VideoKind,
 } from '@/lib/review-edit'
 
@@ -366,6 +367,13 @@ function Choices({ s, set, onLogo, logoBusy, lib, kind }: { s: EditSettings; set
       </div>
     </div>
   )
+}
+
+/** The day MVP's copy of a finished video is deleted: 30 days after it was
+ *  made (lib/burn-retention BURN_KEEP_DAYS), or null when that is not known. */
+function keptUntil(madeAt: string | null): string | null {
+  const t = madeAt ? Date.parse(madeAt) : NaN
+  return Number.isFinite(t) ? new Date(t + BURN_KEEP_DAYS * 86400_000).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : null
 }
 
 export default function ReviewEditor() {
@@ -871,10 +879,23 @@ function EditCard({ e, reload, uploadLogo, withLogo, logoBusy, lib }: {
             {outs.map(([f, o]) => <video key={f} src={o.url} controls preload="metadata" className="w-full rounded-lg bg-black" style={{ maxHeight: 380 }} aria-label={FORMAT_WORDS[f]} />)}
           </div>
           <div className="flex flex-col gap-2.5">
-            <button type="button" onClick={() => void sendToDrop()} disabled={!!work} className="self-start inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-[13.5px] font-semibold text-white disabled:opacity-50" style={{ background: PURPLE }}>
-              {work === 'drop' ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />} Send to Drop
-            </button>
-            {outs.map(([f, o]) => <a key={f} href={o.url} download className="self-start inline-flex items-center gap-1 text-[12.5px] font-semibold underline" style={{ color: PURPLE }}><Download size={12} /> Download the video{outs.length > 1 ? ` (${FORMAT_WORDS[f]})` : ''}</a>)}
+            <div className="flex flex-wrap items-center gap-2">
+              <button type="button" onClick={() => void sendToDrop()} disabled={!!work} className="inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-[13.5px] font-semibold text-white disabled:opacity-50" style={{ background: PURPLE }}>
+                {work === 'drop' ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />} Send to Drop
+              </button>
+              {/* A real download: saved as a file under the video's name, not played in a new tab. */}
+              {outs.map(([f, o]) => {
+                const d = downloadLink(o.url, e.name, f, outs.length > 1)
+                return (
+                  <a key={f} href={d.href} download={d.file} className="inline-flex items-center gap-1.5 rounded-lg border px-4 py-2 text-[13.5px] font-semibold"
+                    style={{ borderColor: PURPLE, color: PURPLE }}><Download size={14} /> Download{outs.length > 1 ? ` ${f === 'wide' ? 'wide' : 'vertical'}` : ''}</a>
+                )
+              })}
+            </div>
+            {/* MVP's copy goes 30 days after it is made (lib/burn-retention), so the date is said. */}
+            <p className="text-[12px] -mt-1" style={soft}>{keptUntil(e.madeAt)
+              ? `MVP keeps its copy until ${keptUntil(e.madeAt)}, 30 days after it was made. Download it to keep it for good.`
+              : 'MVP keeps its copy for 30 days after it was made. Download it to keep it for good.'}</p>
             {facts && <p className="text-[12.5px]" style={{ color: 'var(--text-2)' }}>{facts}</p>}
             {/* WHAT IS ON THE VIDEO, AS MADE: a title that could not be drawn or a
                 picture waiting for words never said shows as missing, not as done. */}

@@ -5,7 +5,8 @@
 // B-roll lands under its line, never in the opening, never overlapping;
 // zooms run from a strong line to the next cut; captions follow the cuts; a
 // planner answer is checked against the take; settings are made safe.
-import { cleanWords, linesOf, keepSegments, snapSegments, editLength, toOutput, outputWords, insertsFor, zoomsFor, cleanSettings, renderSpec, findWords, cutLines, PACE, DEFAULT_SETTINGS, withoutSilences, whenSaid, pictureTimes, MAX_PICTURES, type Word } from '../lib/review-edit'
+import { readFileSync } from 'node:fs'
+import { cleanWords, linesOf, keepSegments, snapSegments, editLength, toOutput, outputWords, insertsFor, zoomsFor, cleanSettings, renderSpec, findWords, cutLines, PACE, DEFAULT_SETTINGS, downloadLink, withoutSilences, whenSaid, pictureTimes, MAX_PICTURES, type Word } from '../lib/review-edit'
 import { cleanPlan, jsonIn } from '../lib/review-edit-plan'
 import { snapSegments as serverSnap, editSeconds as serverSeconds } from '../ingest-service/edit-filters'
 
@@ -157,6 +158,18 @@ check('B-roll switched off, or no B-roll take, sends none', renderSpec({ words, 
   check('a picture switched off is not listed', !times.some((x) => x.k === 5))
   const withPics = renderSpec({ words, lines, plan: plain, shots, duration: 14, settings: cleanSettings({ kind: 'trybe', pictures: [{ url: 'https://x/p.png' }] }), hasBroll: false })
   check('pictures go on a TRYBE ad too: they are the creator\u2019s choice, not their logo', withPics.pictures.length === 1 && 'from' in withPics.pictures[0])
+}
+
+// ── A download that saves (Seb, 2026-11-02: "what about a download button if users want to keep the video") ─
+{
+  const store = 'https://abc.supabase.co/storage/v1/object/public/instagram-videos/u1/edit-1793210034614-wide.mp4'
+  const one = downloadLink(store, 'Bassdash Sun Hoodie', 'wide', false)
+  check('a finished video downloads as a file under its own name, not played in a tab', one.href === `${store}?download=Bassdash%20Sun%20Hoodie.mp4` && one.file === 'Bassdash Sun Hoodie.mp4')
+  check('two versions are told apart, and a name is made safe for a file', downloadLink(`${store}?v=2`, 'A/B: "test"?', 'vertical', true).href.endsWith('?v=2&download=A%20B%20test%20vertical.mp4'))
+  check('no name is still a file, and an address that is not MVP storage is left alone', downloadLink('https://cdn.example.com/a.mp4', null).href === 'https://cdn.example.com/a.mp4' && downloadLink(store, '  ').file === 'Review.mp4')
+  const U = readFileSync('components/review-editor/ReviewEditor.tsx', 'utf8')
+  check('the card has a Download button next to Send to Drop, using the saving link', /const d = downloadLink\(o\.url, e\.name, f, outs\.length > 1\)/.test(U) && /href=\{d\.href\} download=\{d\.file\}/.test(U) && !/href=\{o\.url\} download/.test(U))
+  check('the card says the day MVP deletes its copy, from the same 30 days the clean-up uses', /BURN_KEEP_DAYS \* 86400_000/.test(U) && /MVP keeps its copy until \$\{keptUntil\(e\.madeAt\)\}, 30 days after it was made/.test(U))
 }
 
 if (fails.length) { console.error(`\n❌ review-edit: ${fails.length} failure(s)\n`); for (const f of fails) console.error(`   • ${f}`); process.exit(1) }
