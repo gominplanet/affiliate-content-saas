@@ -489,7 +489,7 @@ export function presetToBriefRules(preset: VisualPreset): string {
     `Default colour direction when the product suggests nothing better: ${preset.fallbackPalette}.`,
   ]
   if (preset.wordsByMvp) {
-    lines.push('HEADLINE FOR THIS LOOK: two to four words in total, lowercase (a brand name or an acronym stays as written), a plain verdict or tease such as "surprisingly good", "don\u2019t buy this" or "worth every penny". Put all of it in line2 and leave line1 empty. The emphasis word is the one that carries the verdict.')
+    lines.push('HEADLINE FOR THIS LOOK: two to four words in total, lowercase (a brand name or an acronym stays as written), a plain verdict or tease such as "surprisingly good", "don\u2019t buy this" or "worth every penny": what the creator thinks of it, never a description of what it is. Put all of it in line2 and leave line1 empty. The emphasis word is the one that carries the verdict.')
   }
   if (!preset.badges) {
     lines.push(

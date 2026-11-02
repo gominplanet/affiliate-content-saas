@@ -140,7 +140,7 @@ async function drawWords(lines: string[][], accent: number, px: number, align: '
             style: { display: 'flex', position: 'relative', lineHeight: 1.06 },
             children: [
               // The red bar sits low behind the word, the letters over it.
-              ...(isAccent ? [{ type: 'div', props: { style: { position: 'absolute', left: -Math.round(px * 0.04), right: -Math.round(px * 0.04), bottom: Math.round(px * 0.15), height: barH, backgroundColor: THUMB_RED, borderRadius: Math.round(barH / 3) } } }] : []),
+              ...(isAccent ? [{ type: 'div', props: { style: { position: 'absolute', left: -Math.round(px * 0.04), right: -Math.round(px * 0.04), bottom: Math.round(px * 0.06), height: barH, backgroundColor: THUMB_RED, borderRadius: Math.round(barH / 3) } } }] : []),
               { type: 'span', props: { style: { color: '#FFFFFF', textShadow: `0px ${Math.round(px * 0.04)}px ${Math.round(px * 0.16)}px rgba(0,0,0,0.5)` }, children: word } },
             ],
           },
@@ -165,16 +165,18 @@ async function drawWords(lines: string[][], accent: number, px: number, align: '
 
 /** The biggest size the words fit an area at, in up to two lines. */
 async function fitWords(words: string, accent: number, area: { w: number; h: number }, align: 'left' | 'center' | 'right', maxPx: number) {
-  for (const two of [false, true]) {
+  // One line, or two when two make the words at least a third bigger (a
+  // narrow space beside the head), as big as the space allows.
+  const size = async (two: boolean) => {
     const lines = splitLines(words, two)
     const probe = await drawWords(lines, accent, 100, align)
-    const px = Math.floor(Math.min(maxPx, 100 * area.w / probe.width, 100 * area.h / probe.height))
-    if (px >= 64 || two || lines[0].length < 2) {
-      const drawn = await drawWords(lines, accent, Math.max(40, px), align)
-      return { ...drawn, lines: lines.length }
-    }
+    return { lines, px: Math.floor(Math.min(maxPx, 100 * area.w / probe.width, 100 * area.h / probe.height)) }
   }
-  throw new Error('unreachable')
+  const one = await size(false)
+  const two = one.lines[0].length >= 2 ? await size(true) : null
+  const pick = two && two.px >= one.px * 1.33 ? two : one
+  const drawn = await drawWords(pick.lines, accent, Math.max(40, pick.px), align)
+  return { ...drawn, lines: pick.lines.length }
 }
 
 export interface ComposedThumb {
