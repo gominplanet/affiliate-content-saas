@@ -129,7 +129,7 @@ export default function DuplicatesPage() {
             ) : (
               <button onClick={() => setConfirmKey('ALL')} disabled={anyMerging}
                 className="inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold border disabled:opacity-60"
-                style={{ color: '#7C3AED', borderColor: '#d6c6fb' }}>
+                style={{ color: 'var(--accent)', borderColor: '#d6c6fb' }}>
                 <GitMerge size={15} /> Merge all {groups.length} groups
               </button>
             )
@@ -175,7 +175,7 @@ export default function DuplicatesPage() {
                       ) : (
                         <button onClick={() => setConfirmKey(g.key)} disabled={anyMerging}
                           className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12px] font-semibold border disabled:opacity-60"
-                          style={{ color: '#7C3AED', borderColor: '#d6c6fb' }}>
+                          style={{ color: 'var(--accent)', borderColor: '#d6c6fb' }}>
                           <GitMerge size={13} /> Merge
                         </button>
                       )}
@@ -290,7 +290,7 @@ function DuplicateCategoriesCard() {
           ) : (
             <button onClick={() => setConfirm(true)} disabled={applying}
               className="inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold border disabled:opacity-60"
-              style={{ color: '#7C3AED', borderColor: '#d6c6fb' }}>
+              style={{ color: 'var(--accent)', borderColor: '#d6c6fb' }}>
               <GitMerge size={15} /> Merge {totalDupes} duplicate{totalDupes === 1 ? '' : 's'}
             </button>
           )

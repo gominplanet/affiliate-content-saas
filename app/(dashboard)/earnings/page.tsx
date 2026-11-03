@@ -617,7 +617,7 @@ function Earnings() {
           </div>
         ) : rows.length === 0 ? (
           <div className="card p-8 text-center">
-            <TrendingUp size={26} style={{ color: '#7C3AED' }} className="mx-auto mb-3" />
+            <TrendingUp size={26} style={{ color: 'var(--accent)' }} className="mx-auto mb-3" />
             <p className="text-[15px] font-semibold mb-1" style={label}>No earnings synced yet</p>
             <p className="text-[13px] max-w-lg mx-auto" style={muted}>
               Hit Sync from Amazon above. SCOUT opens a background tab on your Amazon reporting page and reads each month. Nothing is uploaded to Amazon and nothing is changed there.

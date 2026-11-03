@@ -138,7 +138,7 @@ export default function LevantaSaved({ reloadKey }: { reloadKey: number }) {
                     </a>
                     <button onClick={() => setMsg({ product: it.title || it.asin, brand: it.brand || '', asin: it.asin, commissionPct: it.commission_pct, network: 'Levanta', networkUrl: `https://app.levanta.io/creator/partners?filters=${encodeURIComponent(JSON.stringify({ search: it.brand || '', marketplaces: [], amazonCategoryIds: [] }))}` })}
                       className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold border"
-                      style={{ borderColor: 'rgb(var(--brand-rgb) / 0.4)', color: '#7C3AED' }}>
+                      style={{ borderColor: 'rgb(var(--brand-rgb) / 0.4)', color: 'var(--accent)' }}>
                       <MessageCircle size={11} /> Message brand
                     </button>
                     <button onClick={() => remove(it.id)} disabled={removing.has(it.id)}

@@ -124,7 +124,7 @@ export default function ThumbnailPicker({ value, chosen, saving, onSave }: {
         </p>
         {!loadingFaces && faces.length === 0 && (
           <p className="text-[11px] mt-1" style={muted}>
-            No saved face yet. <a href="/photobooth" className="underline" style={{ color: '#7C3AED' }}>Add your selfies</a> to put yourself on these.
+            No saved face yet. <a href="/photobooth" className="underline" style={{ color: 'var(--accent)' }}>Add your selfies</a> to put yourself on these.
           </p>
         )}
       </div>
@@ -138,7 +138,7 @@ export default function ThumbnailPicker({ value, chosen, saving, onSave }: {
               a toggle that reads the same in both is a toggle nobody trusts. */}
           <button type="button" disabled={saving} onClick={() => setMixLooks(v => !v)}
             className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold disabled:opacity-60"
-            style={mixLooks ? { background: '#7C3AED', color: '#fff' } : off}>
+            style={mixLooks ? { background: 'var(--accent)', color: '#fff' } : off}>
             <Shuffle size={11} />
             {mixLooks
               ? (lookIds.length > 0 ? `Mixing your ${lookIds.length}` : 'Mixing all of them')
@@ -160,7 +160,7 @@ export default function ThumbnailPicker({ value, chosen, saving, onSave }: {
             return (
               <button key={l.id} type="button" disabled={saving} title={l.blurb}
                 onClick={() => setLookIds(prev => picked ? prev.filter(x => x !== l.id) : [...prev, l.id])}
-                className={chipBase} style={picked ? { background: '#7C3AED', color: '#fff' } : off}>
+                className={chipBase} style={picked ? { background: 'var(--accent)', color: '#fff' } : off}>
                 {l.name}
               </button>
             )
@@ -209,7 +209,7 @@ export default function ThumbnailPicker({ value, chosen, saving, onSave }: {
       <div className="mt-4 flex items-center gap-3">
         <button type="button" onClick={save} disabled={saving}
           className="h-9 px-4 rounded-lg text-[13px] font-semibold text-white disabled:opacity-60 inline-flex items-center gap-2"
-          style={{ background: '#7C3AED' }}>
+          style={{ background: 'var(--accent)' }}>
           {saving && <Loader2 size={13} className="animate-spin" />}
           {chosen ? 'Update the look' : 'Use this look'}
         </button>

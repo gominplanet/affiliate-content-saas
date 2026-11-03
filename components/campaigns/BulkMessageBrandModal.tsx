@@ -418,7 +418,7 @@ export default function BulkMessageBrandModal({ campaigns, alreadyMessaged, alre
                 <span aria-hidden className="mt-[1px]">🔐</span>
                 <span>
                   Make sure you&apos;re signed into{' '}
-                  <a href="https://affiliate-program.amazon.com/p/connect/requests?status=opportunity&type=affiliate-plus" target="_blank" rel="noreferrer" className="font-semibold" style={{ color: '#7C3AED' }}>Amazon Creator Connections</a>{' '}
+                  <a href="https://affiliate-program.amazon.com/p/connect/requests?status=opportunity&type=affiliate-plus" target="_blank" rel="noreferrer" className="font-semibold" style={{ color: 'var(--accent)' }}>Amazon Creator Connections</a>{' '}
                   in this browser with SCOUT installed, then hit send. Everything runs in the background, no tabs open.
                 </span>
               </div>
@@ -478,7 +478,7 @@ export default function BulkMessageBrandModal({ campaigns, alreadyMessaged, alre
                   <option value="">Load a saved template…</option>
                   {templates.map(t => <option key={t.name} value={t.name}>{t.name}</option>)}
                 </select>
-                <button type="button" onClick={saveTemplate} className="text-[12px] font-medium hover:underline" style={{ color: '#7C3AED' }}>Save current</button>
+                <button type="button" onClick={saveTemplate} className="text-[12px] font-medium hover:underline" style={{ color: 'var(--accent)' }}>Save current</button>
                 {templates.length > 0 && (
                   <button type="button" onClick={() => { const n = window.prompt('Delete which template? Type its exact name:')?.trim(); if (n) deleteTemplate(n) }} className="text-[12px] font-medium hover:underline ml-auto" style={{ color: 'var(--text-faint)' }}>Delete…</button>
                 )}
@@ -505,7 +505,7 @@ export default function BulkMessageBrandModal({ campaigns, alreadyMessaged, alre
                     return (
                       <div key={i} className="rounded-lg border" style={{ borderColor: over ? '#ff3b30' : 'var(--border)' }}>
                         <div className="flex items-center justify-between px-2.5 pt-1.5">
-                          <span className="text-[10px] font-bold uppercase tracking-wide px-1.5 py-[1px] rounded" style={{ background: 'rgb(var(--brand-rgb) / 0.12)', color: '#7C3AED' }}>Message {i + 1}</span>
+                          <span className="text-[10px] font-bold uppercase tracking-wide px-1.5 py-[1px] rounded" style={{ background: 'rgb(var(--brand-rgb) / 0.12)', color: 'var(--accent)' }}>Message {i + 1}</span>
                           <div className="flex items-center gap-2">
                             <span className="text-[10px] tabular-nums" style={{ color: over ? '#ff3b30' : 'var(--text-faint)' }}>{seg.length}/1000</span>
                             {segments.length > 1 && (
@@ -525,7 +525,7 @@ export default function BulkMessageBrandModal({ campaigns, alreadyMessaged, alre
                   <p className="text-[11px] leading-relaxed pt-1" style={{ color: 'var(--text-faint)' }}>
                     <b>[[PRODUCT]]</b> and <b>[[ASIN]]</b> get replaced with each brand&apos;s own product when it sends. Keep them in the message.
                     {' '}Greeting, credibility, links &amp; sample address come from your saved profile.{' '}
-                    <button type="button" onClick={() => setEditWording(true)} className="font-semibold underline" style={{ color: '#7C3AED' }}>edit it here</button>.
+                    <button type="button" onClick={() => setEditWording(true)} className="font-semibold underline" style={{ color: 'var(--accent)' }}>edit it here</button>.
                   </p>
                 </div>
               )}
@@ -538,7 +538,7 @@ export default function BulkMessageBrandModal({ campaigns, alreadyMessaged, alre
                   <span aria-hidden className="mt-[1px]">⚡</span>
                   <span style={{ color: 'var(--text-soft)' }}>
                     <b style={{ color: 'var(--text)' }}>Switch on background sending (one time):</b> open{' '}
-                    <a href="https://affiliate-program.amazon.com/p/connect/requests?status=opportunity&type=affiliate-plus" target="_blank" rel="noreferrer" className="font-semibold" style={{ color: '#7C3AED' }}>Creator Connections</a>, message any one brand by hand, then hit <b style={{ color: 'var(--text)' }}>Retry</b>. MVP remembers it on your account, so you won&apos;t need to do this again, even after a SCOUT update.
+                    <a href="https://affiliate-program.amazon.com/p/connect/requests?status=opportunity&type=affiliate-plus" target="_blank" rel="noreferrer" className="font-semibold" style={{ color: 'var(--accent)' }}>Creator Connections</a>, message any one brand by hand, then hit <b style={{ color: 'var(--text)' }}>Retry</b>. MVP remembers it on your account, so you won&apos;t need to do this again, even after a SCOUT update.
                   </span>
                 </div>
               )}

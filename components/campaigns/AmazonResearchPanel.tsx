@@ -215,7 +215,7 @@ export default function AmazonResearchPanel({ canAct = true, onSavedChange }: { 
           {!canAct && (
             <button onClick={() => void load(0)} disabled={loading || !hasFilters}
               className="shrink-0 inline-flex items-center gap-1.5 h-11 px-4 rounded-xl text-sm font-semibold text-white disabled:opacity-50"
-              style={{ background: '#7C3AED' }}>
+              style={{ background: 'var(--accent)' }}>
               {loading ? <><Loader2 size={14} className="animate-spin" /> Searching…</> : <><Search size={14} /> Search</>}
             </button>
           )}
@@ -382,7 +382,7 @@ function ProductCard({ p, canAct, saved, onToggleSave, onDeepDive }: {
         <BarChart3 size={10} /> Data
       </button>
       {p.mvpApproved && (
-        <span className="absolute top-2 left-2 z-10 inline-flex items-center gap-1 text-[10px] font-bold rounded-full px-2 py-1 text-white" style={{ background: '#7C3AED' }}>
+        <span className="absolute top-2 left-2 z-10 inline-flex items-center gap-1 text-[10px] font-bold rounded-full px-2 py-1 text-white" style={{ background: 'var(--accent)' }}>
           <Sparkles size={10} /> MVP pick
         </span>
       )}
@@ -398,7 +398,7 @@ function ProductCard({ p, canAct, saved, onToggleSave, onDeepDive }: {
       ) : (
         <button onClick={writeReview} disabled={gen === 'working'}
           className="w-full inline-flex items-center justify-center gap-1.5 text-xs font-semibold rounded-full py-2 text-white disabled:opacity-60 transition"
-          style={{ background: '#7C3AED' }}>
+          style={{ background: 'var(--accent)' }}>
           {gen === 'working' ? <><Loader2 size={13} className="animate-spin" /> Writing…</> : <><PenLine size={13} /> Write review <ArrowRight size={13} /></>}
         </button>
       )}

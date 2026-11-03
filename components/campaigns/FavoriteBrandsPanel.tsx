@@ -210,7 +210,7 @@ export default function FavoriteBrandsPanel({ onChanged }: { onChanged?: () => v
           <button type="button" onClick={() => void refreshAllLive()} disabled={refreshingLive}
             title="Pull the latest campaigns for every favorite brand straight from your Amazon grid"
             className="ml-auto h-9 px-3.5 inline-flex items-center gap-2 rounded-lg text-[13px] font-semibold text-white shadow-sm disabled:opacity-60"
-            style={{ background: '#7C3AED' }}>
+            style={{ background: 'var(--accent)' }}>
             {refreshingLive ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
             {refreshingLive ? 'Refreshing…' : 'Refresh from Amazon'}
           </button>
@@ -231,7 +231,7 @@ export default function FavoriteBrandsPanel({ onChanged }: { onChanged?: () => v
           style={{ borderColor: 'var(--border)', color: 'var(--text)' }}
         />
         <button type="button" onClick={() => void add()} disabled={adding || !input.trim()}
-          className="h-9 px-3 inline-flex items-center gap-1.5 rounded-lg text-sm font-semibold text-white disabled:opacity-60" style={{ background: '#7C3AED' }}>
+          className="h-9 px-3 inline-flex items-center gap-1.5 rounded-lg text-sm font-semibold text-white disabled:opacity-60" style={{ background: 'var(--accent)' }}>
           {adding ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />} Add
         </button>
       </div>

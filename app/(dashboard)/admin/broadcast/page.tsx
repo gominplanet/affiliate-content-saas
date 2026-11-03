@@ -217,7 +217,7 @@ export default function BroadcastPage() {
             <History size={14} className="text-[#7C3AED]" />
             <p className="text-[13px] font-semibold" style={{ color: 'var(--text)' }}>Recent broadcasts</p>
           </div>
-          <button onClick={loadHistory} title="Refresh" className="inline-flex items-center gap-1 text-[11px] font-semibold hover:underline" style={{ color: '#7C3AED' }}>
+          <button onClick={loadHistory} title="Refresh" className="inline-flex items-center gap-1 text-[11px] font-semibold hover:underline" style={{ color: 'var(--accent)' }}>
             <RefreshCw size={11} className={loadingHistory ? 'animate-spin' : ''} /> Refresh
           </button>
         </div>

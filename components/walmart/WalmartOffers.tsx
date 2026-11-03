@@ -257,7 +257,7 @@ export default function WalmartOffers({ embedded = false, autoRun = false, minDi
                         <span className="absolute top-2 left-2 text-xs font-bold bg-red-600 text-white rounded px-1.5 py-0.5">-{Math.round(o.discountPct)}%</span>
                       )}
                       {o.perSale != null && o.perSale >= 10 && (
-                        <span className="absolute bottom-2 right-2 text-[10px] font-bold text-white rounded px-1.5 py-0.5 inline-flex items-center gap-0.5" style={{ background: '#7C3AED' }} title="High estimated earnings per sale"><Flame size={10} /> Top pick</span>
+                        <span className="absolute bottom-2 right-2 text-[10px] font-bold text-white rounded px-1.5 py-0.5 inline-flex items-center gap-0.5" style={{ background: 'var(--accent)' }} title="High estimated earnings per sale"><Flame size={10} /> Top pick</span>
                       )}
                       {o.posted && (
                         <span className="absolute bottom-2 left-2 text-[10px] font-bold bg-emerald-600 text-white rounded px-1.5 py-0.5 inline-flex items-center gap-0.5" title="You've already published this"><Check size={10} /> Published</span>

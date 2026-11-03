@@ -44,7 +44,7 @@ export default function StartHere({ canDrop, videoTools, deals, encore }: StartH
         {/* Upload leads: Drop starts everything after the video is made. */}
         <Link href={upload.href}
           className="group rounded-2xl p-5 flex flex-col gap-3 transition-transform duration-200 hover:-translate-y-0.5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
-          style={{ background: 'linear-gradient(135deg, #7C3AED, #DB2777)', color: '#fff', boxShadow: '0 10px 30px rgb(var(--brand-rgb) / 0.28)', outlineColor: '#7C3AED' }}>
+          style={{ background: 'linear-gradient(135deg, #7C3AED, #DB2777)', color: '#fff', boxShadow: '0 10px 30px rgb(var(--brand-rgb) / 0.28)', outlineColor: 'var(--accent)' }}>
           <span className="flex items-center gap-2.5">
             <span className="grid place-items-center w-10 h-10 rounded-xl" style={{ background: 'rgba(255,255,255,0.18)' }}><UploadCloud size={20} /></span>
             <span className="text-[18px] font-semibold leading-tight">Upload finished videos</span>
@@ -54,7 +54,7 @@ export default function StartHere({ canDrop, videoTools, deals, encore }: StartH
               ? 'Drop them in, say once where each one goes, and press Launch. YouTube, Amazon, your blog and TRYBE, from one place.'
               : 'Send your finished videos out from one place, with the details and links filled in for you.'}
           </span>
-          <span className="mt-auto inline-flex items-center gap-1.5 self-start rounded-lg px-3 py-1.5 text-[13px] font-semibold" style={{ background: '#fff', color: '#7C3AED' }}>
+          <span className="mt-auto inline-flex items-center gap-1.5 self-start rounded-lg px-3 py-1.5 text-[13px] font-semibold" style={{ background: '#fff', color: 'var(--accent)' }}>
             {upload.label} <ArrowRight size={14} className="transition-transform group-hover:translate-x-0.5" />
           </span>
         </Link>

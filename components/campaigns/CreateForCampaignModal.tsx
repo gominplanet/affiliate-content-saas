@@ -134,11 +134,11 @@ export default function CreateForCampaignModal({ row, onClose, onWrite, writing 
           <div className="rounded-xl border p-3.5" style={{ borderColor: 'var(--border)' }}>
             <div className="flex items-baseline justify-between gap-3">
               <p className="text-[13px] font-bold" style={{ color: 'var(--text)' }}>
-                Making it about <span style={{ color: '#7C3AED' }}>{chosenName}</span>
+                Making it about <span style={{ color: 'var(--accent)' }}>{chosenName}</span>
               </p>
               {others.length > 0 && (
                 <button type="button" onClick={() => setPicking(v => !v)}
-                  className="text-[12px] font-semibold hover:underline flex-shrink-0" style={{ color: '#7C3AED' }}>
+                  className="text-[12px] font-semibold hover:underline flex-shrink-0" style={{ color: 'var(--accent)' }}>
                   {picking ? 'Keep this one' : `Pick another (${others.length + 1})`}
                 </button>
               )}
@@ -177,7 +177,7 @@ export default function CreateForCampaignModal({ row, onClose, onWrite, writing 
                   } finally { setReading(false) }
                 }}
                 className="mt-2 inline-flex items-center gap-1.5 text-[12px] font-semibold disabled:opacity-50"
-                style={{ color: '#7C3AED' }}>
+                style={{ color: 'var(--accent)' }}>
                 {reading ? <Loader2 size={12} className="animate-spin" /> : null}
                 {reading ? 'Reading Amazon’s campaign page…' : 'Read the products from Amazon'}
               </button>
@@ -215,7 +215,7 @@ export default function CreateForCampaignModal({ row, onClose, onWrite, writing 
                         {p.title || p.priceCents != null ? '' : ' · nothing known about this one yet'}
                       </span>
                     </span>
-                    {p.asin === asin && <Check size={14} style={{ color: '#7C3AED', flexShrink: 0 }} />}
+                    {p.asin === asin && <Check size={14} style={{ color: 'var(--accent)', flexShrink: 0 }} />}
                   </button>
                 ))}
                 </>)}

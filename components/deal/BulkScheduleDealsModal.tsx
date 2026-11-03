@@ -141,7 +141,7 @@ export default function BulkScheduleDealsModal({
             <span className="font-semibold text-foreground">{fmt(lastMs)}</span>. Each caption is written when it posts.
           </div>
 
-          <div className="flex items-center gap-1.5 text-[12px]" style={{ color: '#7C3AED' }}>
+          <div className="flex items-center gap-1.5 text-[12px]" style={{ color: 'var(--accent)' }}>
             <Info size={14} className="shrink-0" />
             <span>We only post each deal if it&apos;s still live at its scheduled time.</span>
           </div>

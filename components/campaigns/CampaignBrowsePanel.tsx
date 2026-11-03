@@ -324,7 +324,7 @@ export default function CampaignBrowsePanel({
       <div className="card mb-5 overflow-hidden" style={{ borderWidth: 2, borderColor: 'rgb(var(--brand-rgb) / 0.30)' }}>
         <div className="px-6 py-12 text-center max-w-lg mx-auto">
           <span className="grid place-items-center w-14 h-14 rounded-2xl mx-auto mb-4" style={{ background: 'rgb(var(--brand-rgb) / 0.10)' }}>
-            <Lock size={26} style={{ color: '#7C3AED' }} />
+            <Lock size={26} style={{ color: 'var(--accent)' }} />
           </span>
           <h3 className="text-[16px] font-bold mb-2" style={{ color: 'var(--text)' }}>Creator Connections access required</h3>
           <p className="text-[13px] leading-relaxed mb-1" style={{ color: 'var(--text-soft)' }}>
@@ -337,7 +337,7 @@ export default function CampaignBrowsePanel({
             onClick={verifyCcAccess}
             disabled={verifying}
             className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full text-[13px] font-semibold text-white disabled:opacity-70"
-            style={{ background: '#7C3AED' }}>
+            style={{ background: 'var(--accent)' }}>
             {verifying ? <><Loader2 size={15} className="animate-spin" /> Verifying…</> : <><ShieldCheck size={15} /> Verify my CC access</>}
           </button>
           {verifyMsg && <p className="text-[12px] leading-relaxed mt-4" style={{ color: 'var(--text-faint)' }}>{verifyMsg}</p>}
@@ -647,7 +647,7 @@ function BrowseCard({ c, saved, covered, onToggleSave, onMessageBrand, onDeepDiv
           ) : (
             <button onClick={writeReview} disabled={gen === 'working'}
               className="w-full inline-flex items-center justify-center gap-1.5 text-xs font-semibold rounded-full py-2 text-white disabled:opacity-60 transition"
-              style={{ background: '#7C3AED' }}>
+              style={{ background: 'var(--accent)' }}>
               {gen === 'working' ? <><Loader2 size={13} className="animate-spin" /> Writing…</> : <><PenLine size={13} /> Write review <ArrowRight size={13} /></>}
             </button>
           )}
@@ -659,7 +659,7 @@ function BrowseCard({ c, saved, covered, onToggleSave, onMessageBrand, onDeepDiv
             </button>
             <button onClick={onMessageBrand} title="Message the brand"
               className="inline-flex items-center justify-center gap-1 text-[11px] font-semibold rounded-full px-2.5 py-1.5 border flex-1"
-              style={{ borderColor: 'rgb(var(--brand-rgb) / 0.4)', color: '#7C3AED' }}>
+              style={{ borderColor: 'rgb(var(--brand-rgb) / 0.4)', color: 'var(--accent)' }}>
               <MessageCircle size={12} /> Message
             </button>
             <a href={amazonUrl} target="_blank" rel="noopener noreferrer" title="Buy to review on Amazon"

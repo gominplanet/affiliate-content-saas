@@ -543,7 +543,7 @@ export default function PhotoboothPage() {
                             className="flex-1 h-8 px-2.5 text-[12px] rounded-lg border bg-transparent outline-none focus:border-[#7C3AED] border-gray-200 dark:border-white/10 text-[#1d1d1f] dark:text-[#f5f5f7]"
                           />
                           <button type="button" onClick={() => void saveOutfit(m.id)} disabled={!dirty || savingOutfit === m.id}
-                            className="h-8 px-3 inline-flex items-center gap-1 rounded-lg text-[12px] font-semibold text-white disabled:opacity-50" style={{ background: '#7C3AED' }}>
+                            className="h-8 px-3 inline-flex items-center gap-1 rounded-lg text-[12px] font-semibold text-white disabled:opacity-50" style={{ background: 'var(--accent)' }}>
                             {savingOutfit === m.id ? <Loader2 size={12} className="animate-spin" /> : 'Save'}
                           </button>
                         </div>

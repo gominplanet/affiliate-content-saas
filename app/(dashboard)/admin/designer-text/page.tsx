@@ -169,7 +169,7 @@ export default function DesignerTextTestPage() {
             onClick={handleRender}
             disabled={loading || !baseImageUrl || !headline}
             className="w-full py-3 rounded-lg font-semibold text-white disabled:opacity-50"
-            style={{ background: '#7C3AED' }}
+            style={{ background: 'var(--accent)' }}
           >
             {loading ? 'Rendering…' : 'Render thumbnail'}
           </button>

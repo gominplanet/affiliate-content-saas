@@ -54,8 +54,8 @@ export default function SocialLaunchKitPage() {
         style={{ background: 'rgb(var(--brand-rgb) / 0.06)', border: '1px solid var(--border)' }}>
         <Rocket size={16} className="text-[#7C3AED] flex-shrink-0 mt-0.5" />
         <p className="text-[12px] leading-relaxed" style={{ color: 'var(--text-soft)' }}>
-          Everything is generated from your <a href="/brand" className="font-semibold hover:underline" style={{ color: '#7C3AED' }}>Brand Profile</a> and voice, so it sounds like you.
-          You still click the final &quot;create&quot; on each platform (MVP can&apos;t make the account for you) but every field and image is done. Once it&apos;s live, connect it in <a href="/connect-socials" className="font-semibold hover:underline" style={{ color: '#7C3AED' }}>Connect Socials</a> to auto-post.
+          Everything is generated from your <a href="/brand" className="font-semibold hover:underline" style={{ color: 'var(--accent)' }}>Brand Profile</a> and voice, so it sounds like you.
+          You still click the final &quot;create&quot; on each platform (MVP can&apos;t make the account for you) but every field and image is done. Once it&apos;s live, connect it in <a href="/connect-socials" className="font-semibold hover:underline" style={{ color: 'var(--accent)' }}>Connect Socials</a> to auto-post.
         </p>
       </div>
 

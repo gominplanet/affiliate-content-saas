@@ -68,9 +68,9 @@ export default function PassportLinksList({ onChanged }: { onChanged?: () => voi
   return (
     <div className="card p-0 overflow-hidden mb-5">
       <button onClick={() => setOpen((v) => !v)} className="w-full flex items-center gap-2 px-4 py-3 text-left">
-        <LinkIcon size={15} style={{ color: '#7C3AED' }} />
+        <LinkIcon size={15} style={{ color: 'var(--accent)' }} />
         <span className="flex-1 text-[13px] font-semibold" style={{ color: 'var(--text)' }}>Your links{total ? ` (${total.toLocaleString()})` : ''}</span>
-        <span className="text-[12px]" style={{ color: '#7C3AED' }}>{open ? 'Hide' : 'Manage groups per link'}</span>
+        <span className="text-[12px]" style={{ color: 'var(--accent)' }}>{open ? 'Hide' : 'Manage groups per link'}</span>
       </button>
 
       {open && (

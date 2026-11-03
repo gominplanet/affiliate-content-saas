@@ -137,7 +137,7 @@ export default function TrybeUploadTell({ brandId, brandName, videos, chat, chat
           ) : (
             <div className="mt-2 flex flex-wrap items-center gap-2">
               <button type="button" onClick={() => void send()} disabled={sending || made.by === 'writing' || !text.trim() || payWords.length > 0}
-                className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12.5px] font-semibold text-white disabled:opacity-50" style={{ background: '#7C3AED' }}>
+                className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12.5px] font-semibold text-white disabled:opacity-50" style={{ background: 'var(--accent)' }}>
                 {sending ? <Loader2 size={13} className="animate-spin" /> : <Send size={13} />} Send in {brandName} chat
               </button>
               {onOpenChat && <button type="button" onClick={() => onOpenChat(chat.id)} className="rounded-lg border px-3 py-1.5 text-[12.5px] font-semibold" style={{ borderColor: 'var(--border)' }}>Open the chat</button>}

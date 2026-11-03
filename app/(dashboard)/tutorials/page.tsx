@@ -1,6 +1,8 @@
 import type { Metadata } from 'next'
 import { BookOpen, Youtube, Clapperboard } from 'lucide-react'
 import { TUTORIAL_VIDEOS_PAUSED } from '@/lib/tutorial-videos'
+import { ByLook } from '@/components/layout/teal-ui'
+import PageHero from '@/components/layout/PageHero'
 
 export const metadata: Metadata = { title: 'Tutorials' }
 
@@ -57,23 +59,32 @@ const TUTORIALS = [
 export default function TutorialsPage() {
   return (
     <div className="max-w-7xl mx-auto px-6 sm:px-8 py-10">
-      {/* Header */}
-      <div className="mb-10">
-        <div className="flex items-center gap-3 mb-2">
-          <span
-            className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
-            style={{ background: 'linear-gradient(135deg, #7C3AED 0%, #DB2777 100%)' }}
-          >
-            <BookOpen size={17} className="text-white" />
-          </span>
-          <h1 className="text-[28px] font-semibold tracking-tight" style={{ color: 'var(--text)' }}>
-            Tutorials
-          </h1>
-        </div>
-        <p className="text-[14px] mt-1 ml-12" style={{ color: 'var(--text-soft)' }}>
-          Step-by-step video guides to get the most out of MVP Affiliate.
-        </p>
-      </div>
+      <ByLook
+        teal={(
+          <PageHero title="Tutorials" subtitle="Step-by-step video guides to get the most out of MVP Affiliate." />
+        )}
+        classic={(
+          <>
+          {/* Header */}
+          <div className="mb-10">
+            <div className="flex items-center gap-3 mb-2">
+              <span
+                className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
+                style={{ background: 'linear-gradient(135deg, #7C3AED 0%, #DB2777 100%)' }}
+              >
+                <BookOpen size={17} className="text-white" />
+              </span>
+              <h1 className="text-[28px] font-semibold tracking-tight" style={{ color: 'var(--text)' }}>
+                Tutorials
+              </h1>
+            </div>
+            <p className="text-[14px] mt-1 ml-12" style={{ color: 'var(--text-soft)' }}>
+              Step-by-step video guides to get the most out of MVP Affiliate.
+            </p>
+          </div>
+          </>
+        )}
+      />
 
       {/* Subscribe CTA — the MVP YouTube channel has ongoing tips & tricks for
           Amazon Influencers / Associates and affiliate marketing beyond these

@@ -105,7 +105,7 @@ export default function PassportLinksCard() {
 
           <div className="mt-3">
             <button onClick={save} disabled={saving}
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-[13px] font-semibold text-white disabled:opacity-60" style={{ background: '#7C3AED' }}>
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-[13px] font-semibold text-white disabled:opacity-60" style={{ background: 'var(--accent)' }}>
               {saving ? <Loader2 size={14} className="animate-spin" /> : null} Save country tags
             </button>
           </div>

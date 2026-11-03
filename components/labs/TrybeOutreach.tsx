@@ -64,6 +64,9 @@ import { readVoice } from '@/components/labs/useTrybeVoice'
 import { DEFAULT_PRIORITIES, adLibraryUrl, type Priorities } from '@/lib/trybe-pick'
 import { type FinderFilters, type FilterId, type DirStats, type CrowdRead, type SpendRead } from '@/lib/trybe-finder'
 import type { SellsRead } from '@/lib/trybe-sells'
+import { useLook } from '@/components/layout/shell-nav-context'
+import PageHero from '@/components/layout/PageHero'
+import { tealMain } from '@/components/layout/teal-ui'
 
 /** A website link names where it goes: its address, not "Website". */
 const siteName = (url: string) => { try { return new URL(/^https?:\/\//i.test(url) ? url : `https://${url}`).hostname.replace(/^www\./, '') } catch { return 'Their website' } }
@@ -497,6 +500,8 @@ function sentShows(r: { b: { name: string; status: string }; reply: string; rq?:
 }
 
 export default function TrybeOutreach({ preview = false }: { preview?: boolean } = {}) {
+  // The new look (lib/look, behind Labs): the shared header card.
+  const teal = useLook() === 'teal'
   const [brands, setBrands] = useState<Brand[]>([])
   // "Include my results in members' combined numbers" (migration 428).
   const [poolOptOut, setPoolOptOut] = useState(false)
@@ -1847,34 +1852,59 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
   return (
     <div className="max-w-6xl mx-auto px-4 py-8 space-y-6" style={{ color: 'var(--text)' }}>
       <Suspense fallback={null}><TabQueryWatcher onTab={onTabQuery} /></Suspense>
-      {/* Header: what this is, in one line, and where to join. */}
-      <header className="flex flex-wrap items-end gap-3">
-        <div className="flex-1 min-w-[16rem]">
-          <h1 className="text-[34px] font-bold tracking-tight leading-none flex items-center gap-3">
-            <span className="w-10 h-10 rounded-xl inline-flex items-center justify-center" style={{ background: PURPLE, color: '#fff' }}><Handshake size={20} /></span>
-            TRYBE
-          </h1>
-          <p className="text-[14.5px] mt-2 max-w-[60ch]" style={soft}>Find brands that fit your channel, send each a first message in your words, answer them, and plan the videos they pay for.</p>
-        </div>
-        {/* Not on TRYBE yet: where to join, in plain sight (Seb, 2026-10-06).
-            MVP's referral link, and it says so. */}
-        <a href={TRYBE_JOIN_URL} target="_blank" rel="sponsored noopener noreferrer" title="MVP's referral link"
-          className="inline-flex items-center gap-1 text-[12.5px] font-semibold rounded-full border px-3 py-1.5" style={{ borderColor: 'rgb(var(--brand-rgb) / 0.35)', color: PURPLE }}>
-          {/* The referral is said on the link itself, not only on hover. */}
-          New to TRYBE? Join free on TRYBE <span className="font-normal">(MVP&rsquo;s referral link)</span> <ExternalLink size={11} />
-        </a>
-        {/* DAILY REFRESH: the MVP team only (Seb, 2026-10-21). */}
-        {isAdmin && !preview && (
-          daily?.running
-            ? <button onClick={() => { dailyStop.current = true }} className="inline-flex items-center gap-1.5 text-[12.5px] font-semibold rounded-full px-3 py-1.5" style={{ background: PURPLE, color: '#fff' }} title="Stop after the brand being read now">
-                <Loader2 size={12} className="animate-spin" /> Refreshing... Stop
-              </button>
-            : <button onClick={() => void dailyRefresh()} className="inline-flex items-center gap-1.5 text-[12.5px] font-semibold rounded-full px-3 py-1.5" style={{ background: PURPLE, color: '#fff' }}
-                title="Team only: collect TRYBE's brand list again, read the Top 100, and count Meta ads for every brand not counted this week. Can run all night; Stop keeps every count, and the next press carries on.">
-                <RotateCcw size={12} /> Daily refresh
-              </button>
-        )}
-      </header>
+      {teal ? (
+        <PageHero
+          title="TRYBE"
+          subtitle="Find brands that fit your channel, send each a first message in your words, answer them, and plan the videos they pay for."
+          actions={<>
+            <a href={TRYBE_JOIN_URL} target="_blank" rel="sponsored noopener noreferrer" title="MVP's referral link" className={tealMain}>
+              New to TRYBE? Join free on TRYBE <ExternalLink size={14} />
+            </a>
+            <span className="text-[12.5px]" style={{ color: 'var(--text-3)' }}>That is MVP&rsquo;s referral link.</span>
+            {isAdmin && !preview && (
+              daily?.running
+                ? <button onClick={() => { dailyStop.current = true }} className="inline-flex items-center gap-1.5 text-[12.5px] font-semibold rounded-full px-3 py-1.5" style={{ background: 'var(--surface-2)', color: 'var(--text)' }} title="Stop after the brand being read now">
+                    <Loader2 size={12} className="animate-spin" /> Refreshing... Stop
+                  </button>
+                : <button onClick={() => void dailyRefresh()} className="inline-flex items-center gap-1.5 text-[12.5px] font-semibold rounded-full px-3 py-1.5" style={{ background: 'var(--surface-2)', color: 'var(--text)' }}
+                    title="Team only: collect TRYBE's brand list again, read the Top 100, and count Meta ads for every brand not counted this week. Can run all night; Stop keeps every count, and the next press carries on.">
+                    <RotateCcw size={12} /> Daily refresh
+                  </button>
+            )}
+          </>}
+        />
+      ) : (
+        <>
+          {/* Header: what this is, in one line, and where to join. */}
+          <header className="flex flex-wrap items-end gap-3">
+            <div className="flex-1 min-w-[16rem]">
+              <h1 className="text-[34px] font-bold tracking-tight leading-none flex items-center gap-3">
+                <span className="w-10 h-10 rounded-xl inline-flex items-center justify-center" style={{ background: PURPLE, color: '#fff' }}><Handshake size={20} /></span>
+                TRYBE
+              </h1>
+              <p className="text-[14.5px] mt-2 max-w-[60ch]" style={soft}>Find brands that fit your channel, send each a first message in your words, answer them, and plan the videos they pay for.</p>
+            </div>
+            {/* Not on TRYBE yet: where to join, in plain sight (Seb, 2026-10-06).
+                MVP's referral link, and it says so. */}
+            <a href={TRYBE_JOIN_URL} target="_blank" rel="sponsored noopener noreferrer" title="MVP's referral link"
+              className="inline-flex items-center gap-1 text-[12.5px] font-semibold rounded-full border px-3 py-1.5" style={{ borderColor: 'rgb(var(--brand-rgb) / 0.35)', color: PURPLE }}>
+              {/* The referral is said on the link itself, not only on hover. */}
+              New to TRYBE? Join free on TRYBE <span className="font-normal">(MVP&rsquo;s referral link)</span> <ExternalLink size={11} />
+            </a>
+            {/* DAILY REFRESH: the MVP team only (Seb, 2026-10-21). */}
+            {isAdmin && !preview && (
+              daily?.running
+                ? <button onClick={() => { dailyStop.current = true }} className="inline-flex items-center gap-1.5 text-[12.5px] font-semibold rounded-full px-3 py-1.5" style={{ background: PURPLE, color: '#fff' }} title="Stop after the brand being read now">
+                    <Loader2 size={12} className="animate-spin" /> Refreshing... Stop
+                  </button>
+                : <button onClick={() => void dailyRefresh()} className="inline-flex items-center gap-1.5 text-[12.5px] font-semibold rounded-full px-3 py-1.5" style={{ background: PURPLE, color: '#fff' }}
+                    title="Team only: collect TRYBE's brand list again, read the Top 100, and count Meta ads for every brand not counted this week. Can run all night; Stop keeps every count, and the next press carries on.">
+                    <RotateCcw size={12} /> Daily refresh
+                  </button>
+            )}
+          </header>
+        </>
+      )}
 
       {/* What the daily refresh is doing, or did last time. */}
       {isAdmin && !preview && daily && (

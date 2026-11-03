@@ -11,6 +11,8 @@ import { Loader2, Radio, Scissors, Copy, Trash2, Download, ArrowRight } from 'lu
 import { toast } from 'sonner'
 import { requestLiveReplay } from '@/lib/extension-frame'
 import { fmtClock, shortTitle, windowShare, type LiveMoment } from '@/lib/live-followup'
+import { useLook } from '@/components/layout/shell-nav-context'
+import PageHero from '@/components/layout/PageHero'
 
 type Followup = {
   audio_url?: string | null
@@ -38,6 +40,8 @@ async function post(body: Record<string, unknown>) {
 }
 
 export default function LiveFollowup() {
+  // The new look (lib/look, behind Labs): the shared header card.
+  const teal = useLook() === 'teal'
   const [list, setList] = useState<ListRow[] | null>(null)
   const [listError, setListError] = useState<string | null>(null)
   const [plans, setPlans] = useState<Plan[]>([])
@@ -155,13 +159,22 @@ export default function LiveFollowup() {
 
   return (
     <div className="max-w-4xl mx-auto px-4 sm:px-6 py-8 flex flex-col gap-6">
-      <header>
-        <p className="text-[11px] font-semibold uppercase tracking-[0.12em]" style={{ color: 'var(--text-faint)' }}>Amazon Live</p>
-        <h1 className="text-[24px] font-semibold tracking-tight" style={{ color: 'var(--text)' }}>Live follow-up</h1>
-        <p className="text-[13px] max-w-2xl" style={{ color: 'var(--text-soft)' }}>
-          After a Live, paste the replay link. MVP finds the moment you showed each product, cuts a vertical clip for each, and writes an &quot;everything I showed&quot; post. Nothing posts from here: each clip opens in Clip Factory as a draft.
-        </p>
-      </header>
+      {teal ? (
+        <PageHero
+          title="Live follow-up"
+          subtitle="After a Live, paste the replay link. MVP finds the moment you showed each product, cuts a vertical clip for each, and writes an everything I showed post. Nothing posts from here: each clip opens in Clip Factory as a draft."
+        />
+      ) : (
+        <>
+          <header>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.12em]" style={{ color: 'var(--text-faint)' }}>Amazon Live</p>
+            <h1 className="text-[24px] font-semibold tracking-tight" style={{ color: 'var(--text)' }}>Live follow-up</h1>
+            <p className="text-[13px] max-w-2xl" style={{ color: 'var(--text-soft)' }}>
+              After a Live, paste the replay link. MVP finds the moment you showed each product, cuts a vertical clip for each, and writes an &quot;everything I showed&quot; post. Nothing posts from here: each clip opens in Clip Factory as a draft.
+            </p>
+          </header>
+        </>
+      )}
 
       <section className={card} style={cardStyle}>
         <h2 className="text-[14px] font-semibold" style={{ color: 'var(--text)' }}>New follow-up</h2>

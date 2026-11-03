@@ -341,7 +341,7 @@ export default function AdminCcImportPage() {
           </div>
           <button onClick={autoLoad} disabled={autoLoading}
             className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-[13px] font-semibold text-white disabled:opacity-70 shrink-0"
-            style={{ background: '#7C3AED' }}>
+            style={{ background: 'var(--accent)' }}>
             {autoLoading ? <Loader2 size={15} className="animate-spin" /> : <Download size={15} />}
             {autoLoading ? 'Loading from Amazon…' : 'Load all from Amazon'}
           </button>
@@ -454,7 +454,7 @@ export default function AdminCcImportPage() {
           onClick={() => merge()}
           disabled={!canMerge || merging || !!drain?.active}
           className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-[14px] font-semibold text-white disabled:opacity-50"
-          style={{ background: '#7C3AED' }}>
+          style={{ background: 'var(--accent)' }}>
           {merging
             ? <><Loader2 size={16} className="animate-spin" /> Merging{remaining != null ? `, ${remaining.toLocaleString()} left` : '…'}</>
             : <>{mergeLabel(addOnly)} <ArrowRight size={16} /></>}
@@ -466,7 +466,7 @@ export default function AdminCcImportPage() {
           disabled={!canMerge || merging || bgStarting || !!drain?.active}
           title="Kick off the merge on the server and close the tab: a cron drains it to completion, no need to keep this open."
           className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-[13px] font-semibold border disabled:opacity-50"
-          style={{ borderColor: '#7C3AED', color: '#7C3AED' }}>
+          style={{ borderColor: 'var(--accent)', color: 'var(--accent)' }}>
           {bgStarting ? <><Loader2 size={16} className="animate-spin" /> Starting…</> : <>{backgroundLabel(addOnly)}</>}
         </button>
         <button onClick={loadCounts} disabled={loading || merging}
@@ -487,7 +487,7 @@ export default function AdminCcImportPage() {
       {/* Background-drain status — the cron owns the work; the tab can be closed. */}
       {drain?.active && (
         <div className="card p-4 mb-5 flex items-start gap-2.5" style={{ borderColor: 'rgb(var(--brand-rgb) / 0.4)' }}>
-          <Loader2 size={16} className="flex-shrink-0 mt-0.5 animate-spin" style={{ color: '#7C3AED' }} />
+          <Loader2 size={16} className="flex-shrink-0 mt-0.5 animate-spin" style={{ color: 'var(--accent)' }} />
           <div className="flex-1">
             <p className="text-[13px] font-semibold" style={{ color: 'var(--text)' }}>
               {drain.phase === 'hide' || (drain.phase === 'purge' && drain.mode === 'add-only')
@@ -631,7 +631,7 @@ export default function AdminCcImportPage() {
       {/* Backfill ASINs — fill asins/rep_asin from the campaign name for rows
           that imported with an empty asins[] (so they show + can be enriched). */}
       <div className="card p-5 mb-5">
-        <div className="flex items-center gap-2 mb-1.5" style={{ color: '#7C3AED' }}>
+        <div className="flex items-center gap-2 mb-1.5" style={{ color: 'var(--accent)' }}>
           <Database size={16} />
           <span className="text-[11px] uppercase tracking-wide font-semibold" style={{ color: 'var(--text-faint)' }}>Backfill ASINs</span>
         </div>
@@ -641,7 +641,7 @@ export default function AdminCcImportPage() {
         <div className="flex items-center gap-3 flex-wrap">
           <button onClick={() => backfillAsins()} disabled={backfilling || loading || merging}
             className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-[13px] font-semibold text-white disabled:opacity-50"
-            style={{ background: '#7C3AED' }}>
+            style={{ background: 'var(--accent)' }}>
             {backfilling
               ? <><Loader2 size={15} className="animate-spin" /> Backfilling{backfillFilled != null ? `: ${backfillFilled.toLocaleString()}` : '…'}</>
               : <><Database size={15} /> Backfill ASINs from names</>}

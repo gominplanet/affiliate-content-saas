@@ -57,6 +57,8 @@ import DealsHubImport from '@/components/deals/DealsHubImport'
 import QuickPostModal, { type QuickPostDeal } from '@/components/deal/QuickPostModal'
 import ShowcaseToggle, { useShowcase } from '@/components/product/ShowcaseToggle'
 import { tierAllowsSocial } from '@/lib/tier'
+import { ByLook } from '@/components/layout/teal-ui'
+import PageHero from '@/components/layout/PageHero'
 
 interface DealRow {
   id: string
@@ -632,9 +634,9 @@ export default function DealsHubPage() {
             <p className="text-[13px] font-semibold mb-1" style={{ color: 'var(--text)' }}>In the meantime</p>
             <p className="text-[13px] leading-relaxed" style={{ color: 'var(--text-soft)' }}>
               Keep publishing evergreen{' '}
-              <Link href="/content" className="underline" style={{ color: '#7C3AED' }}>reviews</Link>{' '}
+              <Link href="/content" className="underline" style={{ color: 'var(--accent)' }}>reviews</Link>{' '}
               and{' '}
-              <Link href="/comparison" className="underline" style={{ color: '#7C3AED' }}>comparisons</Link>.
+              <Link href="/comparison" className="underline" style={{ color: 'var(--accent)' }}>comparisons</Link>.
               Those rank year-round, so they&rsquo;ll already be live and earning when the next sale hits.
             </p>
           </div>
@@ -670,19 +672,28 @@ export default function DealsHubPage() {
     <>
       <ConfirmHost />
       <div className="flex flex-col gap-6">
-        {/* ── Header ─────────────────────────────────────────────────── */}
-        <div className="flex items-start justify-between gap-4 flex-wrap">
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2" style={{ color: 'var(--text)' }}>
-              <BadgePercent className="w-7 h-7" style={{ color: '#7C3AED' }} />
-              Deals Hub
-              <DealsHubGuide />
-            </h1>
-            <p className="text-sm mt-1" style={{ color: 'var(--text-2)' }}>
-              Drop any Amazon URL, Geniuslink, amzn.to short link, or a bare ASIN. The agent writes a timely deal post with a baked thumbnail, end-date countdown, and your promo code or special link wired into every CTA.
-            </p>
-          </div>
-        </div>
+        <ByLook
+          teal={(
+            <PageHero title="Deals Hub" subtitle="Drop any Amazon link, Geniuslink, amzn.to short link or bare ASIN. MVP writes a timely deal post with a thumbnail, the end date countdown, and your promo code or special link in every button." guide={<DealsHubGuide />} />
+          )}
+          classic={(
+            <>
+            {/* ── Header ─────────────────────────────────────────────────── */}
+            <div className="flex items-start justify-between gap-4 flex-wrap">
+              <div>
+                <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2" style={{ color: 'var(--text)' }}>
+                  <BadgePercent className="w-7 h-7" style={{ color: 'var(--accent)' }} />
+                  Deals Hub
+                  <DealsHubGuide />
+                </h1>
+                <p className="text-sm mt-1" style={{ color: 'var(--text-2)' }}>
+                  Drop any Amazon URL, Geniuslink, amzn.to short link, or a bare ASIN. The agent writes a timely deal post with a baked thumbnail, end-date countdown, and your promo code or special link wired into every CTA.
+                </p>
+              </div>
+            </div>
+            </>
+          )}
+        />
 
         {/* ── Import your Deals Hub file ─────────────────────────────── */}
         {/* The June importer sent every row to the server and was removed.
@@ -747,7 +758,7 @@ export default function DealsHubPage() {
                 target="_blank"
                 rel="noopener noreferrer"
                 className="font-medium hover:underline inline-flex items-center gap-0.5"
-                style={{ color: '#7C3AED' }}
+                style={{ color: 'var(--accent)' }}
               >
                 Amazon Associates → Deals Hub <ExternalLink size={11} />
               </a>

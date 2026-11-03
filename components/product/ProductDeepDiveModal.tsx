@@ -305,7 +305,7 @@ export default function ProductDeepDiveModal({ asin, title, imageUrl, onClose }:
           ) : (
             <button onClick={writeReview} disabled={gen === 'working'}
               className="flex-1 inline-flex items-center justify-center gap-1.5 text-xs font-semibold rounded-full py-2.5 text-white disabled:opacity-60 transition"
-              style={{ background: '#7C3AED' }}>
+              style={{ background: 'var(--accent)' }}>
               {gen === 'working' ? <><Loader2 size={13} className="animate-spin" /> Writing…</> : <><PenLine size={13} /> Write review <ArrowRight size={13} /></>}
             </button>
           )}

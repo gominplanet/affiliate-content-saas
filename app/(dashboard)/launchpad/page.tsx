@@ -971,7 +971,7 @@ export default function LaunchpadPage() {
 
         {/* 1. Upload + CTA */}
         <StepRow n={1} state={s1} last={false}
-          icon={<Upload size={15} style={{ color: '#7C3AED' }} />}
+          icon={<Upload size={15} style={{ color: 'var(--accent)' }} />}
           title="Upload your video & design the CTA">
           {wasResumed && renderedUrl && (
             <p className="text-[12px] mb-3 inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5" style={{ color: '#10B981', background: 'rgba(16,185,129,0.08)' }}>
@@ -997,7 +997,7 @@ export default function LaunchpadPage() {
 
         {/* 2. Product ASIN — required for titles + thumbnail */}
         <StepRow n={2} state={s2} last={false}
-          icon={<Package size={15} style={{ color: '#7C3AED' }} />}
+          icon={<Package size={15} style={{ color: 'var(--accent)' }} />}
           title="Product ASIN"
           hint="Unlocks once your video is uploaded.">
           <input value={asin} onChange={e => { setAsin(e.target.value); onAsinChanged(e.target.value) }} placeholder="B0XXXXXXXX or a product link"
@@ -1013,7 +1013,7 @@ export default function LaunchpadPage() {
               thumbnail step. Show it running with a live count so the pause reads
               as work in progress rather than a stuck screen. */}
           {asinOk && preparing && !meta && (
-            <p className="text-[12px] mt-1.5 inline-flex items-center gap-1.5" style={{ color: '#7C3AED' }}>
+            <p className="text-[12px] mt-1.5 inline-flex items-center gap-1.5" style={{ color: 'var(--accent)' }}>
               <Loader2 size={13} className="animate-spin" />
               Looking up the product and writing your titles… {prepElapsed}s <span style={muted}>(usually about 10 seconds, then Thumbnails unlocks)</span>
             </p>
@@ -1024,12 +1024,12 @@ export default function LaunchpadPage() {
             these just as much as YouTube does, so a creator who skips YouTube still
             leaves this step with a thumbnail for every storefront. */}
         <StepRow n={3} state={s3} last={false}
-          icon={<Sparkles size={15} style={{ color: '#7C3AED' }} />}
+          icon={<Sparkles size={15} style={{ color: 'var(--accent)' }} />}
           title="Thumbnails"
           hint="Unlocks once your video is uploaded and the ASIN is set."
           actions={thumbUrl ? (
             <button type="button" onClick={() => void genThumbnail()} disabled={thumbBusy}
-              className="text-[12px] font-medium inline-flex items-center gap-1 disabled:opacity-50" style={{ color: '#7C3AED' }}>
+              className="text-[12px] font-medium inline-flex items-center gap-1 disabled:opacity-50" style={{ color: 'var(--accent)' }}>
               {thumbBusy ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />} Regenerate
             </button>
           ) : (thumbBusy || thumbSkipped) ? undefined : (
@@ -1058,7 +1058,7 @@ export default function LaunchpadPage() {
             {/* The headline is written from the title, so this step waits on it.
                 Say so plainly, with a count, instead of showing dead controls. */}
             {!meta && preparing && (
-              <p className="text-[12px] mb-3 inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5" style={{ color: '#7C3AED', background: 'rgb(var(--brand-rgb) / 0.07)' }}>
+              <p className="text-[12px] mb-3 inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5" style={{ color: 'var(--accent)', background: 'rgb(var(--brand-rgb) / 0.07)' }}>
                 <Loader2 size={13} className="animate-spin" />
                 Writing your title first… {prepElapsed}s <span style={muted}>Usually about 10 seconds. Pick your face and style now, they are ready to use.</span>
               </p>
@@ -1085,7 +1085,7 @@ export default function LaunchpadPage() {
                 </button>
               </div>
               {faceModels.length === 0 && (
-                <p className="text-[11px] mt-1" style={muted}>No saved face yet. <a href="/photobooth" className="underline" style={{ color: '#7C3AED' }}>Add your selfies</a> to put yourself on the thumbnail.</p>
+                <p className="text-[11px] mt-1" style={muted}>No saved face yet. <a href="/photobooth" className="underline" style={{ color: 'var(--accent)' }}>Add your selfies</a> to put yourself on the thumbnail.</p>
               )}
             </div>
 
@@ -1120,7 +1120,7 @@ export default function LaunchpadPage() {
                         // While the title is still being written the button says so
                         // and counts, rather than looking broken.
                         <button type="button" onClick={() => void genThumbnail()} disabled={!meta && preparing}
-                          className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-white disabled:opacity-60" style={{ background: '#7C3AED' }}>
+                          className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-white disabled:opacity-60" style={{ background: 'var(--accent)' }}>
                           {!meta && preparing
                             ? <><Loader2 size={15} className="animate-spin" /> Writing your title… {prepElapsed}s</>
                             : <><Sparkles size={15} /> Generate thumbnail</>}
@@ -1142,7 +1142,7 @@ export default function LaunchpadPage() {
           actions={
             ytOpen === 'choose' ? (
               <div className="flex items-center gap-2">
-                <button type="button" onClick={() => { setYtOpen('prepare'); if (!meta) void prepare() }} className="text-[12px] font-medium px-3 py-1.5 rounded-lg text-white" style={{ background: '#7C3AED' }}>Prepare & publish</button>
+                <button type="button" onClick={() => { setYtOpen('prepare'); if (!meta) void prepare() }} className="text-[12px] font-medium px-3 py-1.5 rounded-lg text-white" style={{ background: 'var(--accent)' }}>Prepare & publish</button>
                 <button type="button" onClick={() => setYtOpen('skipped')} className="text-[12px] underline" style={muted}>Skip YouTube</button>
               </div>
             ) : ytOpen === 'skipped' ? (
@@ -1185,7 +1185,7 @@ export default function LaunchpadPage() {
                       {thumbUrl && (
                         <div className="flex items-center gap-2.5">
                           <img src={thumbUrl} alt="Thumbnail" className="w-28 rounded-lg border" style={{ borderColor: 'var(--border)' }} />
-                          <p className="text-[11px]" style={muted}>Your thumbnail from Step 3. <button type="button" onClick={() => void genThumbnail()} disabled={thumbBusy} className="underline disabled:opacity-50" style={{ color: '#7C3AED' }}>Regenerate</button></p>
+                          <p className="text-[11px]" style={muted}>Your thumbnail from Step 3. <button type="button" onClick={() => void genThumbnail()} disabled={thumbBusy} className="underline disabled:opacity-50" style={{ color: 'var(--accent)' }}>Regenerate</button></p>
                         </div>
                       )}
 
@@ -1236,7 +1236,7 @@ export default function LaunchpadPage() {
                           <p className="text-[13px] leading-relaxed" style={label}>{publishError}</p>
                           <div className="flex flex-wrap items-center gap-3">
                             <button type="button" onClick={() => setYtOpen('skipped')}
-                              className="text-[12.5px] font-semibold px-3 py-1.5 rounded-lg text-white" style={{ background: '#7C3AED' }}>
+                              className="text-[12.5px] font-semibold px-3 py-1.5 rounded-lg text-white" style={{ background: 'var(--accent)' }}>
                               Skip YouTube, continue to Amazon
                             </button>
                             <button type="button" onClick={() => void publish()} disabled={publishing}
@@ -1355,7 +1355,7 @@ export default function LaunchpadPage() {
                     onClick={() => void checkInternationalGeos()}
                     disabled={intlState === 'checking'}
                     className="mt-3 inline-flex items-center gap-2 px-4 py-2 rounded-xl text-[13px] font-semibold text-white disabled:opacity-60"
-                    style={{ background: '#7C3AED' }}
+                    style={{ background: 'var(--accent)' }}
                   >
                     {intlState === 'checking'
                       ? <><Loader2 size={13} className="animate-spin" /> Checking five stores…</>
@@ -1415,14 +1415,14 @@ export default function LaunchpadPage() {
         {/* 5. Creator Connections (US) — after the uploads, offer to accept a
             live US campaign for this product right here. */}
         <StepRow n={6} state={s6} last={false}
-          icon={<Handshake size={15} style={{ color: '#7C3AED' }} />}
+          icon={<Handshake size={15} style={{ color: 'var(--accent)' }} />}
           title="Creator Connections (US)"
           hint="Unlocks once your video is on its way to your storefronts.">
           <>
             <p className="text-[12px] mb-3" style={muted}>See if this product has a live US Creator Connections campaign, and accept it right here to start earning the commission.</p>
             {!ccCampaign ? (
               <button onClick={() => void findCc()} disabled={ccFinding}
-                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-white disabled:opacity-60" style={{ background: '#7C3AED' }}>
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-white disabled:opacity-60" style={{ background: 'var(--accent)' }}>
                 {ccFinding ? <><Loader2 size={15} className="animate-spin" /> Checking…</> : <><Handshake size={15} /> Check Creator Connections</>}
               </button>
             ) : ccCampaign.found ? (
@@ -1434,7 +1434,7 @@ export default function LaunchpadPage() {
                     <span className="inline-flex items-center gap-1 text-[13px] font-medium" style={{ color: '#10B981' }}><Check size={14} /> Accepted</span>
                   ) : (
                     <button onClick={() => void acceptCc()} disabled={ccAccepting || !ccCampaign.detailsUrl}
-                      className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-white disabled:opacity-60" style={{ background: '#7C3AED' }}>
+                      className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-white disabled:opacity-60" style={{ background: 'var(--accent)' }}>
                       {ccAccepting ? <><Loader2 size={15} className="animate-spin" /> Accepting…</> : <><Handshake size={15} /> Accept campaign</>}
                     </button>
                   )}
@@ -1450,13 +1450,13 @@ export default function LaunchpadPage() {
             now a row in youtube_videos, so the Blog Post Generator can turn it into
             a post and push it to socials; deep-link straight to that video. */}
         <StepRow n={7} state={s7} last={true}
-          icon={<Sparkles size={15} style={{ color: '#7C3AED' }} />}
+          icon={<Sparkles size={15} style={{ color: 'var(--accent)' }} />}
           title="Blog post & social push"
           hint="Unlocks once your video is on its way to your storefronts.">
           <>
             <p className="text-[12px] mb-3" style={muted}>Your video is live on YouTube and Amazon. Now turn it into a blog post and push it to your socials from Blog posts, with this video already selected.</p>
             <a href={`/content?tab=horizontal${masterId ? `&video=${encodeURIComponent(masterId)}` : ''}`}
-              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold text-white" style={{ background: '#7C3AED' }}>
+              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold text-white" style={{ background: 'var(--accent)' }}>
               <Sparkles size={15} /> Create the blog post &amp; social push
             </a>
           </>

@@ -513,7 +513,7 @@ function SalesVideo({ id, tag, caption, big, eager }: { id: string; tag: string;
         )}
       </div>
       <figcaption className="mt-2.5">
-        <span className="text-[10.5px] font-bold uppercase tracking-[0.14em]" style={{ color: '#7C3AED' }}>{tag}</span>
+        <span className="text-[10.5px] font-bold uppercase tracking-[0.14em]" style={{ color: 'var(--accent)' }}>{tag}</span>
         <p className={`${big ? 'text-[17px]' : 'text-[14px]'} font-semibold leading-snug mt-0.5`} style={{ color: 'var(--text)' }}>{caption}</p>
       </figcaption>
     </figure>
@@ -536,7 +536,7 @@ export function SalesVideosSection() {
     <section id="videos" className="px-6 lg:px-8 pt-12 pb-8 relative">
       <div className="max-w-6xl mx-auto">
         <div className="text-center max-w-2xl mx-auto">
-          <span className="text-[11px] font-bold uppercase tracking-[0.16em]" style={{ color: '#7C3AED' }}>Watch it work</span>
+          <span className="text-[11px] font-bold uppercase tracking-[0.16em]" style={{ color: 'var(--accent)' }}>Watch it work</span>
           <h2 className="text-[32px] sm:text-[44px] font-extrabold tracking-[-0.03em] leading-[1.03] mt-3" style={{ color: 'var(--text)' }}>
             See exactly what you get
           </h2>
@@ -548,7 +548,7 @@ export function SalesVideosSection() {
           {rest.map((v) => <SalesVideo key={v.id} {...v} />)}
         </div>
         <p className="text-center mt-8">
-          <a href={SALES_CHANNEL_URL} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 text-[14px] font-semibold" style={{ color: '#7C3AED' }}>
+          <a href={SALES_CHANNEL_URL} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 text-[14px] font-semibold" style={{ color: 'var(--accent)' }}>
             More on the MVP Affiliate channel <ArrowRight size={14} />
           </a>
         </p>

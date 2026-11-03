@@ -130,7 +130,7 @@ export default function PassportPage() {
         <div className="card p-8 text-center">
           <p className="text-sm font-semibold" style={{ color: 'var(--text)' }}>Passport Links did not load</p>
           <p className="text-[13px] mt-1" style={{ color: 'var(--text-3)' }}>The server did not answer. Your links still work while this page is down.</p>
-          <button type="button" onClick={checkAccess} className="inline-flex items-center gap-1.5 mt-4 px-4 py-2 rounded-lg text-[13px] font-semibold text-white" style={{ background: '#7C3AED' }}>
+          <button type="button" onClick={checkAccess} className="inline-flex items-center gap-1.5 mt-4 px-4 py-2 rounded-lg text-[13px] font-semibold text-white" style={{ background: 'var(--accent)' }}>
             Try again
           </button>
         </div>
@@ -141,7 +141,7 @@ export default function PassportPage() {
           <p className="text-[13px] mt-1 max-w-md mx-auto" style={{ color: 'var(--text-3)' }}>
             Geo-routing links, the click dashboard, and one-paste link creation are available on the Amazon and Pro plans. Upgrade to turn every link into a worldwide-earning Passport Link.
           </p>
-          <a href="/pricing" className="inline-flex items-center gap-1.5 mt-4 px-4 py-2 rounded-lg text-[13px] font-semibold text-white" style={{ background: '#7C3AED' }}>
+          <a href="/pricing" className="inline-flex items-center gap-1.5 mt-4 px-4 py-2 rounded-lg text-[13px] font-semibold text-white" style={{ background: 'var(--accent)' }}>
             See plans
           </a>
         </div>
@@ -164,7 +164,7 @@ export default function PassportPage() {
             <button
               onClick={() => void load(days, group)}
               className="mt-2 text-[12px] font-semibold underline underline-offset-2"
-              style={{ color: '#7C3AED' }}
+              style={{ color: 'var(--accent)' }}
             >
               Try again
             </button>
@@ -189,7 +189,7 @@ export default function PassportPage() {
           className="w-full flex items-center gap-3 px-4 py-3 text-left"
           aria-expanded={setupOpen}
         >
-          <Settings2 size={16} style={{ color: '#7C3AED' }} />
+          <Settings2 size={16} style={{ color: 'var(--accent)' }} />
           <span className="flex-1 min-w-0">
             <span className="block text-[14px] font-semibold" style={{ color: 'var(--text)' }}>Set up your links</span>
             <span className="block text-[12px]" style={{ color: 'var(--text-3)' }}>Affiliate networks and your Amazon tag for each country</span>
@@ -262,7 +262,7 @@ export default function PassportPage() {
 
           {/* Trend */}
           <div className="card p-4 mb-5">
-            <div className="flex items-center gap-2 mb-3" style={{ color: '#7C3AED' }}>
+            <div className="flex items-center gap-2 mb-3" style={{ color: 'var(--accent)' }}>
               <TrendingUp size={15} /><span className="text-[11px] uppercase tracking-wide font-semibold" style={{ color: 'var(--text-faint)' }}>Clicks over time</span>
             </div>
             <div className="flex items-end gap-[3px] h-24">
@@ -285,7 +285,7 @@ export default function PassportPage() {
                   <div key={c.country} className="flex items-center gap-2">
                     <span className="text-[13px] w-40 flex-shrink-0 truncate" style={{ color: 'var(--text)' }}>{cn(c.country).flag} {cn(c.country).name}</span>
                     <div className="flex-1 h-2 rounded-full overflow-hidden" style={{ background: 'var(--surface-2)' }}>
-                      <div className="h-full rounded-full" style={{ width: `${(c.count / total) * 100}%`, background: '#7C3AED' }} />
+                      <div className="h-full rounded-full" style={{ width: `${(c.count / total) * 100}%`, background: 'var(--accent)' }} />
                     </div>
                     <span className="text-[12px] font-semibold w-12 text-right tabular-nums" style={{ color: 'var(--text-soft)' }}>{c.count.toLocaleString()}</span>
                   </div>

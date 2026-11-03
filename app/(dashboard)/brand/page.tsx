@@ -1253,7 +1253,7 @@ export default function BrandPage() {
                   <p className="text-[11px] text-[#6e6e73] dark:text-[#ebebf0] leading-relaxed mb-2">
                     Your US Associates tag (below) earns on US clicks. To earn on other countries too, add a per-country Associates tag for each store on the Passport page. Without a country&rsquo;s tag, shoppers still reach their local Amazon, just under your US tag.
                   </p>
-                  <a href="/passport" className="inline-flex items-center gap-1 text-[11px] font-semibold" style={{ color: '#7C3AED' }}>
+                  <a href="/passport" className="inline-flex items-center gap-1 text-[11px] font-semibold" style={{ color: 'var(--accent)' }}>
                     Manage Passport Links &amp; country tags <ArrowRight size={11} />
                   </a>
                 </div>

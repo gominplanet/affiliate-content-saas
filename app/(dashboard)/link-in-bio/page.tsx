@@ -19,6 +19,8 @@ import { effectiveTier, VIEW_AS_EVENT } from '@/lib/view-as'
 import { type Tier } from '@/lib/tier'
 import { canUseDealRadar } from '@/lib/feature-access'
 import { LINK_THEMES, LINK_PRESETS, presetFor, type LinkPage, type LinkPageItem } from '@/lib/link-in-bio'
+import { ByLook, TealChip, tealLine, tealLineStyle } from '@/components/layout/teal-ui'
+import PageHero from '@/components/layout/PageHero'
 
 // Brand glyph for a link icon slug — used in the editor list + preset chips.
 function LinkGlyph({ slug, size = 15 }: { slug: string | null; size?: number }) {
@@ -332,25 +334,41 @@ export default function LinkInBioPage() {
   return (
     <div className="max-w-3xl mx-auto px-4 py-6 space-y-6">
       {/* Header */}
-      <div className="flex items-start justify-between gap-4 flex-wrap">
-        <div>
-          <div className="flex items-center gap-2">
-            <div className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-violet-100 text-violet-600"><Link2 size={20} /></div>
-            <h1 className="text-2xl font-bold">Link in Bio</h1>
-          </div>
-          <p className="text-sm text-muted-foreground mt-1">A shoppable grid of your product picks: one link for your Instagram / TikTok bio.</p>
-          <button onClick={() => setShowGuide(true)} className="mt-1.5 text-xs font-medium text-violet-600 dark:text-violet-400 underline inline-flex items-center gap-1">
-            <HelpCircle size={13} /> How the Shop page works
-          </button>
-        </div>
-        {page && (
-          <div className="flex items-center gap-2">
-            {page.published
-              ? <a href={publicUrl} target="_blank" rel="noopener noreferrer"><Button variant="outline" size="sm"><ExternalLink className="h-4 w-4 mr-1.5" /> View</Button></a>
-              : <span className="text-xs text-amber-600 font-medium inline-flex items-center gap-1">Draft, not public yet</span>}
-          </div>
+      <ByLook
+        teal={(
+          <PageHero
+            title="Link in Bio"
+            subtitle="A shoppable grid of your product picks: one link for your Instagram and TikTok bio, with the store named on every link."
+            guide={<button onClick={() => setShowGuide(true)} className="text-xs font-semibold underline inline-flex items-center gap-1" style={{ color: 'var(--accent-text)' }}><HelpCircle size={13} /> How the Shop page works</button>}
+            actions={page ? (page.published
+              ? <a href={publicUrl} target="_blank" rel="noopener noreferrer" className={tealLine} style={tealLineStyle}><ExternalLink size={15} /> View your page</a>
+              : <TealChip tone="plain">Draft, not public yet</TealChip>) : undefined}
+          />
         )}
-      </div>
+        classic={(
+          <>
+          <div className="flex items-start justify-between gap-4 flex-wrap">
+            <div>
+              <div className="flex items-center gap-2">
+                <div className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-violet-100 text-violet-600"><Link2 size={20} /></div>
+                <h1 className="text-2xl font-bold">Link in Bio</h1>
+              </div>
+              <p className="text-sm text-muted-foreground mt-1">A shoppable grid of your product picks: one link for your Instagram / TikTok bio.</p>
+              <button onClick={() => setShowGuide(true)} className="mt-1.5 text-xs font-medium text-violet-600 dark:text-violet-400 underline inline-flex items-center gap-1">
+                <HelpCircle size={13} /> How the Shop page works
+              </button>
+            </div>
+            {page && (
+              <div className="flex items-center gap-2">
+                {page.published
+                  ? <a href={publicUrl} target="_blank" rel="noopener noreferrer"><Button variant="outline" size="sm"><ExternalLink className="h-4 w-4 mr-1.5" /> View</Button></a>
+                  : <span className="text-xs text-amber-600 font-medium inline-flex items-center gap-1">Draft, not public yet</span>}
+              </div>
+            )}
+          </div>
+          </>
+        )}
+      />
 
       {showGuide && <ShopPageGuide onClose={closeGuide} />}
 

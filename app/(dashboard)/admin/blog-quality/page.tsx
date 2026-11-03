@@ -330,7 +330,7 @@ export default async function BlogQualityPage() {
                       <div className="w-full h-1.5 bg-gray-100 rounded-full overflow-hidden">
                         <div
                           className="h-full rounded-full"
-                          style={{ width: `${(p.count / maxCount) * 100}%`, background: '#7C3AED' }}
+                          style={{ width: `${(p.count / maxCount) * 100}%`, background: 'var(--accent)' }}
                         />
                       </div>
                     </div>

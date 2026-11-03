@@ -57,22 +57,22 @@ export default function MadeForYouFeed() {
         style={{ borderColor: open ? '#7C3AED' : 'rgb(var(--brand-rgb) / 0.35)', background: 'linear-gradient(160deg, rgb(var(--brand-rgb) / 0.10), rgb(var(--brand-rgb) / 0.02))' }}
       >
         <span className="inline-flex items-center gap-2.5 min-w-0">
-          <span className="w-8 h-8 rounded-lg grid place-items-center flex-shrink-0 text-white" style={{ background: '#7C3AED' }}><Sparkles size={16} /></span>
+          <span className="w-8 h-8 rounded-lg grid place-items-center flex-shrink-0 text-white" style={{ background: 'var(--accent)' }}><Sparkles size={16} /></span>
           <span className="flex flex-col items-start min-w-0">
-            <span className="text-[13px] font-bold uppercase tracking-wide" style={{ color: '#7C3AED' }}>{personalized ? 'Made for your channel' : 'Trending picks to try'}</span>
+            <span className="text-[13px] font-bold uppercase tracking-wide" style={{ color: 'var(--accent)' }}>{personalized ? 'Made for your channel' : 'Trending picks to try'}</span>
             <span className="text-[11px] text-left" style={{ color: 'var(--text-soft)' }}>
               {personalized ? 'Products matched to what already earns for you' : 'Sync your storefront earnings to personalize these'}
             </span>
           </span>
         </span>
         <span className="inline-flex items-center gap-2 flex-shrink-0">
-          <span className="text-[11px] font-bold rounded-full px-2 py-0.5 hidden sm:inline" style={{ background: 'rgb(var(--brand-rgb) / 0.14)', color: '#7C3AED' }}>{picks.length} pick{picks.length === 1 ? '' : 's'}</span>
+          <span className="text-[11px] font-bold rounded-full px-2 py-0.5 hidden sm:inline" style={{ background: 'rgb(var(--brand-rgb) / 0.14)', color: 'var(--accent)' }}>{picks.length} pick{picks.length === 1 ? '' : 's'}</span>
           <span onClick={(e) => { e.stopPropagation(); refresh() }} title="Recompute from your latest earnings"
             className="p-1 rounded-md cursor-pointer" style={{ color: 'var(--text-faint)' }}>
             {refreshing ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
           </span>
-          <span className="text-[12px] font-bold" style={{ color: '#7C3AED' }}>{open ? 'Hide' : 'View'}</span>
-          <ChevronDown size={17} style={{ color: '#7C3AED', transform: open ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }} />
+          <span className="text-[12px] font-bold" style={{ color: 'var(--accent)' }}>{open ? 'Hide' : 'View'}</span>
+          <ChevronDown size={17} style={{ color: 'var(--accent)', transform: open ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }} />
         </span>
       </button>
 
@@ -83,7 +83,7 @@ export default function MadeForYouFeed() {
               key={p.asin}
               model={p}
               overlays={personalized && reasons.length ? (
-                <span className="absolute top-2 left-2 z-10 text-[10px] font-bold rounded-full px-2 py-0.5 text-white inline-flex items-center gap-1" style={{ background: '#7C3AED' }}>
+                <span className="absolute top-2 left-2 z-10 text-[10px] font-bold rounded-full px-2 py-0.5 text-white inline-flex items-center gap-1" style={{ background: 'var(--accent)' }}>
                   <Sparkles size={9} /> Match
                 </span>
               ) : undefined}
@@ -91,7 +91,7 @@ export default function MadeForYouFeed() {
                 <div className="flex flex-col gap-0.5">
                   {reasons.map((r, i) => (
                     <span key={i} className="text-[11px] inline-flex items-center gap-1" style={{ color: 'var(--text-soft, #6e6e73)' }}>
-                      <span style={{ color: '#7C3AED' }}>✓</span> {r}
+                      <span style={{ color: 'var(--accent)' }}>✓</span> {r}
                     </span>
                   ))}
                 </div>
@@ -99,7 +99,7 @@ export default function MadeForYouFeed() {
               footer={
                 <div className="flex items-center gap-1.5">
                   <button onClick={() => setDive({ asin: p.asin!, title: p.title, imageUrl: p.imageUrl })}
-                    className="flex-1 inline-flex items-center justify-center gap-1 text-[11px] font-semibold rounded-full py-2 text-white" style={{ background: '#7C3AED' }}>
+                    className="flex-1 inline-flex items-center justify-center gap-1 text-[11px] font-semibold rounded-full py-2 text-white" style={{ background: 'var(--accent)' }}>
                     <BarChart3 size={12} /> Deep dive
                   </button>
                   {p.imageHref && (

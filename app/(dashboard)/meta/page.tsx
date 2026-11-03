@@ -38,6 +38,8 @@ import UnfinishedGroupPosts, { type UnfinishedPost } from '@/components/meta/Unf
 import WhyGroupFirst from '@/components/meta/WhyGroupFirst'
 import FacebookQueue from '@/components/meta/FacebookQueue'
 import { NICHE_PRESETS as NICHES, nicheWords, type NicheGroup } from '@/lib/facebook-niche'
+import { ByLook, TealChip } from '@/components/layout/teal-ui'
+import PageHero from '@/components/layout/PageHero'
 
 type Place = { status: 'none' | 'group' | 'both'; groupPostUrl: string | null; pagePostUrl: string | null; at: string | null }
 type Hub = {
@@ -271,13 +273,22 @@ function MetaHub() {
 
   return (
     <div className="max-w-3xl mx-auto py-6 px-4 flex flex-col gap-4">
-      <div className="flex flex-col gap-1">
-        <div className="flex items-center gap-2 flex-wrap">
-          <h1 className="text-lg font-semibold" style={{ color: 'var(--text)' }}>Meta Hub</h1>
-          <span className="ml-auto text-[12.5px] font-semibold" style={{ color: doneCount === 5 ? OK : 'var(--text-soft)' }}>{doneCount} of 5 done</span>
-        </div>
-        <p className="text-[13px]" style={{ color: 'var(--text-soft)' }}>Your Facebook Page and niche Groups, set up and posting from one place.</p>
-      </div>
+      <ByLook
+        teal={(
+          <PageHero title="Meta Hub" subtitle="Your Facebook Page and niche Groups, set up and posting from one place." actions={<TealChip tone={doneCount === 5 ? 'good' : 'brand'}>{doneCount} of 5 done</TealChip>} />
+        )}
+        classic={(
+          <>
+          <div className="flex flex-col gap-1">
+            <div className="flex items-center gap-2 flex-wrap">
+              <h1 className="text-lg font-semibold" style={{ color: 'var(--text)' }}>Meta Hub</h1>
+              <span className="ml-auto text-[12.5px] font-semibold" style={{ color: doneCount === 5 ? OK : 'var(--text-soft)' }}>{doneCount} of 5 done</span>
+            </div>
+            <p className="text-[13px]" style={{ color: 'var(--text-soft)' }}>Your Facebook Page and niche Groups, set up and posting from one place.</p>
+          </div>
+          </>
+        )}
+      />
 
       {/* HOW FACEBOOK WORKS, said once, plainly. */}
       <div className="rounded-2xl border p-4 flex flex-col gap-2" style={{ borderColor: 'rgba(24,119,242,0.35)', background: 'rgba(24,119,242,0.06)' }}>

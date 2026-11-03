@@ -79,7 +79,7 @@ export default function AudioTracksPage() {
           onClick={check}
           disabled={loading || !value.trim()}
           className="rounded-xl px-5 py-3 text-[14px] font-semibold text-white disabled:opacity-50"
-          style={{ background: '#7C3AED' }}
+          style={{ background: 'var(--accent)' }}
         >
           {loading ? <Loader2 size={16} className="animate-spin" /> : 'Check'}
         </button>

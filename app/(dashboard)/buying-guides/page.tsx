@@ -440,7 +440,7 @@ export default function BuyingGuidesPage() {
         <div className="rounded-xl border p-8" style={{ background: 'var(--panel)', borderColor: 'var(--border)' }}>
           <div className="flex items-start gap-4">
             <div className="p-3 rounded-xl" style={{ background: 'rgb(var(--brand-rgb) / .12)' }}>
-              <Lock className="w-6 h-6" style={{ color: '#7C3AED' }} />
+              <Lock className="w-6 h-6" style={{ color: 'var(--accent)' }} />
             </div>
             <div className="flex-1">
               <h1 className="text-2xl font-bold tracking-tight" style={{ color: 'var(--text)' }}>Auto-curate is locked</h1>
@@ -467,7 +467,7 @@ export default function BuyingGuidesPage() {
               <Button
                 onClick={() => setSource('manual')}
                 className="mt-5 px-5"
-                style={{ background: '#7C3AED', color: '#fff' }}
+                style={{ background: 'var(--accent)', color: '#fff' }}
               >
                 <ListChecks className="w-4 h-4 mr-2" />
                 Pick the products myself instead
@@ -522,7 +522,7 @@ export default function BuyingGuidesPage() {
       <div className="rounded-xl border p-6" style={{ background: 'var(--panel)', borderColor: 'var(--border)' }}>
         <div className="flex items-start gap-4 mb-5">
           <div className="p-3 rounded-xl" style={{ background: 'rgb(var(--brand-rgb) / .12)' }}>
-            <BookOpen className="w-6 h-6" style={{ color: '#7C3AED' }} />
+            <BookOpen className="w-6 h-6" style={{ color: 'var(--accent)' }} />
           </div>
           <div className="flex-1">
             <div className="flex items-start justify-between gap-3 flex-wrap">
@@ -608,7 +608,7 @@ export default function BuyingGuidesPage() {
                 type="submit"
                 disabled={generating || !topic.trim()}
                 className="px-5 whitespace-nowrap"
-                style={{ background: '#7C3AED', color: '#fff' }}
+                style={{ background: 'var(--accent)', color: '#fff' }}
               >
                 {generating ? (
                   <><Loader2 className="w-4 h-4 animate-spin mr-2" /> Writing…</>
@@ -683,7 +683,7 @@ export default function BuyingGuidesPage() {
                   onClick={addManualUrl}
                   disabled={generating}
                   className="mt-2 flex items-center gap-1.5 text-xs font-medium hover:underline disabled:opacity-50"
-                  style={{ color: '#7C3AED' }}
+                  style={{ color: 'var(--accent)' }}
                 >
                   <Plus size={13} /> Add another product
                 </button>
@@ -694,7 +694,7 @@ export default function BuyingGuidesPage() {
               type="submit"
               disabled={generating || manualValidCount < 2}
               className="px-5"
-              style={{ background: '#7C3AED', color: '#fff' }}
+              style={{ background: 'var(--accent)', color: '#fff' }}
             >
               {generating ? (
                 <><Loader2 className="w-4 h-4 animate-spin mr-2" /> Researching & writing…</>
@@ -736,7 +736,7 @@ export default function BuyingGuidesPage() {
                 onClick={() => void publishApproved()}
                 disabled={generating || previewPicks.length < 3}
                 className="px-5 whitespace-nowrap"
-                style={{ background: '#7C3AED', color: '#fff' }}
+                style={{ background: 'var(--accent)', color: '#fff' }}
               >
                 {generating ? (
                   <><Loader2 className="w-4 h-4 animate-spin mr-2" /> Writing…</>
@@ -765,7 +765,7 @@ export default function BuyingGuidesPage() {
                 }} />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2 mb-1">
-                    <span className="inline-flex items-center justify-center w-5 h-5 rounded-full text-xs font-bold" style={{ background: 'rgb(var(--brand-rgb) / .12)', color: '#7C3AED' }}>
+                    <span className="inline-flex items-center justify-center w-5 h-5 rounded-full text-xs font-bold" style={{ background: 'rgb(var(--brand-rgb) / .12)', color: 'var(--accent)' }}>
                       {i + 1}
                     </span>
                     <input
@@ -774,7 +774,7 @@ export default function BuyingGuidesPage() {
                       onChange={e => updatePickLabel(p.wordpress_url, e.target.value.slice(0, 60))}
                       disabled={generating}
                       className="flex-1 text-xs font-bold uppercase tracking-wider px-2 py-1 rounded outline-none border"
-                      style={{ background: 'var(--panel)', color: '#7C3AED', borderColor: 'var(--border)' }}
+                      style={{ background: 'var(--panel)', color: 'var(--accent)', borderColor: 'var(--border)' }}
                     />
                   </div>
                   <div className="font-medium text-sm truncate" style={{ color: 'var(--text)' }} title={p.title}>{p.title}</div>
@@ -823,7 +823,7 @@ export default function BuyingGuidesPage() {
                 style={{ background: 'var(--panel)', color: 'var(--text)', borderColor: 'var(--border)' }}
               >
                 <span className="capitalize">{s.topic}</span>
-                <span className="text-xs font-semibold px-1.5 py-0.5 rounded-full" style={{ background: 'rgb(var(--brand-rgb) / .12)', color: '#7C3AED' }}>
+                <span className="text-xs font-semibold px-1.5 py-0.5 rounded-full" style={{ background: 'rgb(var(--brand-rgb) / .12)', color: 'var(--accent)' }}>
                   {s.count}
                 </span>
                 <ArrowRight className="w-3.5 h-3.5 opacity-50" />

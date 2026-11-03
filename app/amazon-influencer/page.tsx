@@ -297,7 +297,7 @@ export default function AmazonInfluencerPage() {
             ))}
           </div>
           <div className="mt-8 text-center">
-            <Link href="/pricing" className="inline-flex items-center gap-1.5 text-sm font-semibold hover:opacity-80" style={{ color: '#7C3AED' }}>
+            <Link href="/pricing" className="inline-flex items-center gap-1.5 text-sm font-semibold hover:opacity-80" style={{ color: 'var(--accent)' }}>
               Compare all plans <ArrowRight size={14} />
             </Link>
           </div>

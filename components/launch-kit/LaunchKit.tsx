@@ -179,7 +179,7 @@ export default function LaunchKit({ only, embedded = false, initialNiche, onGrou
         <div className="flex items-start gap-2.5 rounded-xl px-3 py-3 mb-4" style={{ background: 'rgba(245,158,11,0.10)', border: '1px solid rgba(245,158,11,0.3)' }}>
           <Lock size={16} style={{ color: '#b26a00' }} className="flex-shrink-0 mt-0.5" />
           <p className="text-[12px] leading-relaxed" style={{ color: 'var(--text-soft)' }}>
-            The Social Launch Kit is available on any <b>paid plan</b>. <a href="/pricing" className="font-semibold hover:underline" style={{ color: '#7C3AED' }}>Upgrade</a> to unlock it.
+            The Social Launch Kit is available on any <b>paid plan</b>. <a href="/pricing" className="font-semibold hover:underline" style={{ color: 'var(--accent)' }}>Upgrade</a> to unlock it.
           </p>
         </div>
       )}
@@ -316,7 +316,7 @@ function PlatformCard({
             {kit.keywords.length > 0 && (
               <Field label="Keywords / interests" action={
                 <button onClick={() => onCopy(kit.keywords.join(', '), `${slot}-kwall`, 'All keywords')}
-                  className="text-[11px] font-semibold hover:underline" style={{ color: '#7C3AED' }}>Copy all</button>
+                  className="text-[11px] font-semibold hover:underline" style={{ color: 'var(--accent)' }}>Copy all</button>
               }>
                 <div className="flex flex-wrap gap-1.5">
                   {kit.keywords.map((k, i) => (
@@ -400,7 +400,7 @@ function PlatformCard({
               )}
             </div>
             <p className="text-[11px] mt-2" style={{ color: 'var(--text-faint)' }}>
-              These are built from your logo + banner in <a href="/brand" target="_blank" rel="noopener noreferrer" className="hover:underline" style={{ color: '#7C3AED' }}>Brand Profile</a>. Add or update them there to change the look. Want your exact logo as the profile picture? Download it from Brand Profile and upload that instead.
+              These are built from your logo + banner in <a href="/brand" target="_blank" rel="noopener noreferrer" className="hover:underline" style={{ color: 'var(--accent)' }}>Brand Profile</a>. Add or update them there to change the look. Want your exact logo as the profile picture? Download it from Brand Profile and upload that instead.
             </p>
           </Field>
 
@@ -413,7 +413,7 @@ function PlatformCard({
               <ol className="flex flex-col gap-2.5">
                 {spec.steps.map((s, i) => (
                   <li key={i} className="flex gap-2.5">
-                    <span className="grid place-items-center w-5 h-5 rounded-full text-[11px] font-bold flex-shrink-0 text-white" style={{ background: '#7C3AED' }}>{i + 1}</span>
+                    <span className="grid place-items-center w-5 h-5 rounded-full text-[11px] font-bold flex-shrink-0 text-white" style={{ background: 'var(--accent)' }}>{i + 1}</span>
                     <div className="min-w-0">
                       <p className="text-[12px] font-semibold" style={{ color: 'var(--text)' }}>{s.title}</p>
                       <p className="text-[11px] leading-relaxed mt-0.5" style={{ color: 'var(--text-soft)' }}>{s.detail}</p>
@@ -422,7 +422,7 @@ function PlatformCard({
                 ))}
               </ol>
               <a href={spec.createUrl} target="_blank" rel="noopener noreferrer"
-                className="inline-flex items-center gap-1.5 mt-3 px-3.5 py-2 rounded-lg text-[13px] font-semibold text-white" style={{ background: '#7C3AED' }}>
+                className="inline-flex items-center gap-1.5 mt-3 px-3.5 py-2 rounded-lg text-[13px] font-semibold text-white" style={{ background: 'var(--accent)' }}>
                 {spec.createLabel} <ExternalLink size={13} />
               </a>
             </div>
@@ -447,7 +447,7 @@ function GroupNicheBar({ niche, onNiche, kits, usage }: { niche: string; onNiche
   const chip = (label: string, value: string, on: boolean, done?: boolean) => (
     <button key={`${label}-${value}`} type="button" onClick={() => onNiche(value)}
       className="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[12px] font-semibold border"
-      style={on ? { background: '#7C3AED', borderColor: '#7C3AED', color: '#fff' } : { borderColor: 'var(--border)', color: 'var(--text)' }}>
+      style={on ? { background: 'var(--accent)', borderColor: 'var(--accent)', color: '#fff' } : { borderColor: 'var(--border)', color: 'var(--text)' }}>
       {done && <Check size={11} />} {label}
     </button>
   )
@@ -591,7 +591,7 @@ function ImageSlot({ label, imgKey, images, busyImg, isAdmin, refDataUrl, styleV
             {(['bold', 'minimal'] as const).map(s => (
               <button key={s} onClick={() => onStyle(s)}
                 className="px-2 py-0.5 rounded-md text-[10px] font-semibold capitalize transition-colors"
-                style={styleValue === s ? { background: '#7C3AED', color: '#fff' } : { color: 'var(--text-faint)' }}>
+                style={styleValue === s ? { background: 'var(--accent)', color: '#fff' } : { color: 'var(--text-faint)' }}>
                 {s}
               </button>
             ))}
@@ -636,7 +636,7 @@ function ImageSlot({ label, imgKey, images, busyImg, isAdmin, refDataUrl, styleV
         <input ref={fileRef} type="file" accept="image/*" className="hidden"
           onChange={e => { onPickRef(e.target.files?.[0] ?? null); e.currentTarget.value = '' }} />
         {refDataUrl ? (
-          <span className="inline-flex items-center gap-1 pl-1 pr-1.5 py-1 rounded-lg text-[11px] font-semibold border" style={{ borderColor: 'rgb(var(--brand-rgb) / 0.4)', color: '#7C3AED' }}>
+          <span className="inline-flex items-center gap-1 pl-1 pr-1.5 py-1 rounded-lg text-[11px] font-semibold border" style={{ borderColor: 'rgb(var(--brand-rgb) / 0.4)', color: 'var(--accent)' }}>
             <img src={refDataUrl} alt="" className="w-4 h-4 rounded object-cover" /> Reference
             <button onClick={onClearRef} title="Remove reference" className="ml-0.5"><X size={11} /></button>
           </span>

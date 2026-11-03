@@ -48,6 +48,8 @@ import type { Tier } from '@/lib/tier'
 import { youtubeUploadEnabled } from '@/lib/feature-flags'
 import { canUsePreview } from '@/lib/labs-preview'
 import { hasVideoTools } from '@/lib/amazon-plan'
+import { useLook } from '@/components/layout/shell-nav-context'
+import PageHero from '@/components/layout/PageHero'
 
 const TikTokDirectModal = dynamic(
   () => import('@/components/TikTokDirectModal').then(m => ({ default: m.TikTokDirectModal })),
@@ -173,6 +175,8 @@ function BadgeStage({ videoUrl, badgeUrl, pos, widthPct, onChange }: {
  *  page header, and Facebook is the only place a clip is published, so the
  *  creator never leaves Meta Hub to make and post a Reel. */
 export default function ClipFactory({ facebookOnly = false }: { facebookOnly?: boolean } = {}) {
+  // The new look (lib/look, behind Labs): the shared header card.
+  const teal = useLook() === 'teal'
   const supabase = useMemo(() => createBrowserClient(), [])
   const [tier, setTier] = useState<Tier | string>('trial')
   const [gateLoaded, setGateLoaded] = useState(false)
@@ -966,7 +970,15 @@ export default function ClipFactory({ facebookOnly = false }: { facebookOnly?: b
   return (
     <div className={facebookOnly ? '' : 'max-w-5xl mx-auto px-4 sm:px-6 py-6'}>
       {/* Header */}
-      {!facebookOnly && (<>
+      {!facebookOnly && teal && (
+        <PageHero
+          title="Clip Factory"
+          subtitle="Make a vertical short from a long video, add a shoppable call to action and the product link, then publish to Instagram, TikTok and YouTube."
+          guide={<ClipFactoryGuide />}
+          actions={<ShortsQuotaBadge />}
+        />
+      )}
+      {!facebookOnly && !teal && (<>
       <div className="flex items-center gap-2 mb-1">
         <Rocket size={20} style={{ color: PURPLE }} />
         <h1 className="text-xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Clip Factory</h1>

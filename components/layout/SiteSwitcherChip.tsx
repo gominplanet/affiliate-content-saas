@@ -172,7 +172,7 @@ export default function SiteSwitcherChip({ currentHostname }: { currentHostname:
                   </span>
                 </span>
                 {busy ? <Loader2 size={14} className="animate-spin flex-shrink-0" style={{ color: 'var(--text-faint)' }} />
-                  : active ? <Check size={14} className="flex-shrink-0" style={{ color: '#7C3AED' }} /> : null}
+                  : active ? <Check size={14} className="flex-shrink-0" style={{ color: 'var(--accent)' }} /> : null}
               </button>
             )
           })}

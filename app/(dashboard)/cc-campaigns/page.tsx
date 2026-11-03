@@ -34,6 +34,8 @@ import { ccProofIds } from '@/lib/cc-access'
 import { refreshLiveSpots, liveSpotTerms, liveCheckWords, newCampaignsWords, type LiveSpotsResult } from '@/lib/cc-live-spots'
 import { scoutAtLeast, SCOUT_CC_NEW_MIN_VERSION } from '@/lib/scout-version'
 import { brandsToRecheck, spotAgeWords } from '@/lib/cc-spot-freshness'
+import { useLook } from '@/components/layout/shell-nav-context'
+import { TealSteps } from '@/components/layout/teal-ui'
 
 // Max campaigns selectable for one bulk-message run.
 const BULK_MAX = 100
@@ -381,6 +383,8 @@ function LoadMoreButton({ onClick, busy, more, barUp }: { onClick: () => void; b
 }
 
 export default function CcCampaignsPage() {
+  // The new look (lib/look, behind Labs).
+  const teal = useLook() === 'teal'
   const [campaigns, setCampaigns] = useState<Campaign[]>([])
   // The catalogue has no open spot counts at all (a broken upload), as opposed
   // to nothing matching: said differently on screen.
@@ -972,6 +976,13 @@ export default function CcCampaignsPage() {
         title="Brand campaigns"
         subtitle={<>Every live Creator Connections campaign with the numbers that matter (commission, $ per sale, spots left, whether the brand actually pays out) and one click to turn it into a blog post.<span className="block mt-1 text-[12px]">Formerly CC Campaigns.</span></>}
       />
+      {teal && !locked && (
+        <TealSteps steps={[
+          ['Find a campaign', 'Sorted by what it pays, the spots left and whether the brand pays out.'],
+          ['Join it', 'SCOUT asks to join on Amazon for you, and it moves to Joined.'],
+          ['Make the content', 'A blog post in one press, or a video with the campaign link.'],
+        ]} />
+      )}
 
       {locked ? (
         <div className="card p-8 max-w-lg flex flex-col items-center text-center gap-4">

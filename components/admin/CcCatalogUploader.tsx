@@ -260,13 +260,13 @@ export default function CcCatalogUploader({ onDone, addOnly = true }: {
           onChange={e => pick(e.target.files)} />
         {unzipping ? (
           <>
-            <Loader2 size={26} className="mx-auto mb-2 animate-spin" style={{ color: '#7C3AED' }} />
+            <Loader2 size={26} className="mx-auto mb-2 animate-spin" style={{ color: 'var(--accent)' }} />
             <p className="text-[13px] font-medium" style={{ color: 'var(--text)' }}>Unzipping…</p>
             <p className="text-[11px] mt-0.5" style={{ color: 'var(--text-faint)' }}>Reading the CSVs out of your ZIP(s)</p>
           </>
         ) : (
           <>
-            <UploadCloud size={26} className="mx-auto mb-2" style={{ color: '#7C3AED' }} />
+            <UploadCloud size={26} className="mx-auto mb-2" style={{ color: 'var(--accent)' }} />
             <p className="text-[13px] font-medium" style={{ color: 'var(--text)' }}>Drag the ZIP file(s) here, or click to choose</p>
             <p className="text-[11px] mt-0.5" style={{ color: 'var(--text-faint)' }}>The two Amazon ZIPs (or loose CSVs) · they combine automatically</p>
           </>
@@ -333,7 +333,7 @@ export default function CcCatalogUploader({ onDone, addOnly = true }: {
             onClick={start}
             disabled={phase === 'uploading' || !files.length || !!missingReq.length}
             className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-[13px] font-semibold text-white disabled:opacity-50"
-            style={{ background: '#7C3AED' }}>
+            style={{ background: 'var(--accent)' }}>
             {phase === 'uploading' ? <><Loader2 size={15} className="animate-spin" /> Uploading… {pct}%</> : <><UploadCloud size={15} /> Upload to staging</>}
           </button>
         )}
@@ -349,7 +349,7 @@ export default function CcCatalogUploader({ onDone, addOnly = true }: {
 
       {phase === 'uploading' && (
         <div className="mt-3 h-2 rounded-full overflow-hidden" style={{ background: 'var(--surface-2)' }}>
-          <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: '#7C3AED' }} />
+          <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: 'var(--accent)' }} />
         </div>
       )}
       {err && <p className="text-[12px] mt-3" style={{ color: '#ff3b30' }}>{err}</p>}

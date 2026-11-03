@@ -879,12 +879,12 @@ export function IntegrationsPanel({ onLoad, mode = 'all' }: { onLoad: () => void
         >
           <div className="flex items-start gap-3">
             <div className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: 'rgb(var(--brand-rgb) / 0.15)' }}>
-              <Clock size={16} style={{ color: '#7C3AED' }} />
+              <Clock size={16} style={{ color: 'var(--accent)' }} />
             </div>
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 flex-wrap mb-1">
                 <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">1 integration coming soon</p>
-                <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full" style={{ background: '#7C3AED', color: '#fff' }}>Under review</span>
+                <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full" style={{ background: 'var(--accent)', color: '#fff' }}>Under review</span>
               </div>
               <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] leading-relaxed mb-3">
                 <strong>TikTok</strong> is currently going through the official approval process. It&apos;ll unlock here automatically once approved. Until then, every other channel below (WordPress, Facebook, Instagram, Threads, LinkedIn, Pinterest, Bluesky, Twitter, Telegram, YouTube) works as normal.

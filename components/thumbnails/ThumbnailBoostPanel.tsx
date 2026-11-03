@@ -307,7 +307,7 @@ export default function ThumbnailBoostPanel({ boost, face, disabled, showQuestio
               <img src={boost.styleReferenceUrl} alt="Style reference" className="h-8 w-14 object-cover rounded-md border border-gray-200 dark:border-white/10" />
               {!boost.loadedPresetId && (
                 <button type="button" disabled={boost.savingPreset || disabled} onClick={() => void boost.saveCurrentAsPreset()}
-                  className="text-[12px] font-semibold px-3 py-1.5 rounded-full text-white disabled:opacity-60" style={{ background: '#7C3AED' }}>
+                  className="text-[12px] font-semibold px-3 py-1.5 rounded-full text-white disabled:opacity-60" style={{ background: 'var(--accent)' }}>
                   {boost.savingPreset ? 'Saving…' : 'Save look'}
                 </button>
               )}

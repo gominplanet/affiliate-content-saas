@@ -338,7 +338,7 @@ export default function QuickPostModal({
                   className="w-32 text-sm rounded-lg border bg-background p-2.5"
                 />
               </div>
-              <div className="flex items-center gap-1.5 text-[12px]" style={{ color: '#7C3AED' }}>
+              <div className="flex items-center gap-1.5 text-[12px]" style={{ color: 'var(--accent)' }}>
                 <Info size={14} className="shrink-0" />
                 <span>We&apos;ll only post if the deal is still live.</span>
                 <InfoTip>

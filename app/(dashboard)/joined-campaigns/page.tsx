@@ -382,7 +382,7 @@ export default function JoinedCampaignsPage() {
           {rows.length === 0 ? (
             <p className="text-[13px] py-8 text-center" style={{ color: 'var(--text-faint)' }}>
               {s && s.joined === 0
-                ? <>You have not joined a campaign through MVP yet. <Link href="/cc-campaigns" className="font-semibold" style={{ color: '#7C3AED' }}>Browse campaigns</Link>, message any brand you like without joining, and join one when you are ready to make something for it. Campaigns you joined on Amazon itself stay on Amazon; this page is what MVP did.</>
+                ? <>You have not joined a campaign through MVP yet. <Link href="/cc-campaigns" className="font-semibold" style={{ color: 'var(--accent)' }}>Browse campaigns</Link>, message any brand you like without joining, and join one when you are ready to make something for it. Campaigns you joined on Amazon itself stay on Amazon; this page is what MVP did.</>
                 : 'Nothing in this group.'}
             </p>
           ) : (
@@ -406,7 +406,7 @@ export default function JoinedCampaignsPage() {
                           {r.product || r.brand || r.asin}
                         </span>
                         {r.commissionPct != null && (
-                          <span className="text-[10px] font-bold px-1.5 py-[1px] rounded flex-shrink-0" style={{ background: 'rgb(var(--brand-rgb) / 0.12)', color: '#7C3AED' }}>
+                          <span className="text-[10px] font-bold px-1.5 py-[1px] rounded flex-shrink-0" style={{ background: 'rgb(var(--brand-rgb) / 0.12)', color: 'var(--accent)' }}>
                             {r.commissionPct}%{r.perSaleCents != null ? ` · ${money(r.perSaleCents)} a sale` : ''}
                           </span>
                         )}
@@ -468,7 +468,7 @@ export default function JoinedCampaignsPage() {
                         <div className="flex flex-wrap gap-x-3 gap-y-1 mt-1.5">
                           {r.content.filter(c => c.url).slice(0, 4).map((c, i) => (
                             <a key={i} href={c.url as string} target="_blank" rel="noreferrer"
-                              className="inline-flex items-center gap-1 text-[11.5px] font-medium hover:underline" style={{ color: '#7C3AED' }}>
+                              className="inline-flex items-center gap-1 text-[11.5px] font-medium hover:underline" style={{ color: 'var(--accent)' }}>
                               <ExternalLink size={11} /> {c.title || c.kind}
                             </a>
                           ))}

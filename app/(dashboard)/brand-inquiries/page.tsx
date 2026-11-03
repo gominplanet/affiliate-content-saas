@@ -5,6 +5,8 @@ import { BrandInquiriesGuide } from '@/components/guide/tool-guides'
 import { toast } from 'sonner'
 import { Handshake, Mail, Archive, Loader2, Inbox } from 'lucide-react'
 import BrandCtaSettings from '@/components/brand/BrandCtaSettings'
+import { ByLook } from '@/components/layout/teal-ui'
+import PageHero from '@/components/layout/PageHero'
 
 interface Inquiry {
   id: string
@@ -59,15 +61,24 @@ export default function BrandInquiriesPage() {
 
   return (
     <div className="max-w-5xl">
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold flex items-center gap-2">
-          <Handshake size={22} className="text-[#7C3AED]" /> Brand Inquiries
-          <BrandInquiriesGuide />
-        </h1>
-        <p className="text-sm text-[var(--text-3)] mt-1">
-          Messages brands sent through the &quot;Work with brands&quot; banner on your blog. Set the banner up on the right.
-        </p>
-      </div>
+      <ByLook
+        teal={(
+          <PageHero title="Brand inquiries" subtitle="Messages brands sent through the Work with brands banner on your blog. Set the banner up on the right." guide={<BrandInquiriesGuide />} />
+        )}
+        classic={(
+          <>
+          <div className="mb-6">
+            <h1 className="text-2xl font-bold flex items-center gap-2">
+              <Handshake size={22} className="text-[#7C3AED]" /> Brand Inquiries
+              <BrandInquiriesGuide />
+            </h1>
+            <p className="text-sm text-[var(--text-3)] mt-1">
+              Messages brands sent through the &quot;Work with brands&quot; banner on your blog. Set the banner up on the right.
+            </p>
+          </div>
+          </>
+        )}
+      />
 
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-6 items-start">
         {/* Left column — the message inbox */}

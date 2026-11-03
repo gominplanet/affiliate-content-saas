@@ -20,6 +20,8 @@ import { Button } from '@/components/ui/button'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { TIERS, normalizeTier } from '@/lib/tier'
 import { inertHtml } from '@/lib/inert-html'
+import { useLook } from '@/components/layout/shell-nav-context'
+import PageHero from '@/components/layout/PageHero'
 
 // The section toggles, in display order. Keys match the API's SECTION_ORDER.
 const SECTIONS: { key: string; label: string; hint: string }[] = [
@@ -46,6 +48,8 @@ const LENGTHS: { key: 'short' | 'medium' | 'long'; label: string; words: string 
 ]
 
 export default function ArticlesPage() {
+  // The new look (lib/look, behind Labs): the shared header card.
+  const teal = useLook() === 'teal'
   // Entitlement gate — null = still loading (avoid flashing the notice).
   const [canUse, setCanUse] = useState<boolean | null>(null)
 
@@ -295,7 +299,7 @@ export default function ArticlesPage() {
         <div className="rounded-xl border p-8" style={{ background: 'var(--panel)', borderColor: 'var(--border)' }}>
           <div className="flex items-start gap-4">
             <div className="p-3 rounded-xl" style={{ background: 'rgb(var(--brand-rgb) / .12)' }}>
-              <FlaskConical className="w-6 h-6" style={{ color: '#7C3AED' }} />
+              <FlaskConical className="w-6 h-6" style={{ color: 'var(--accent)' }} />
             </div>
             <div>
               <h1 className="text-2xl font-bold tracking-tight" style={{ color: 'var(--text)' }}>Articles</h1>
@@ -320,28 +324,36 @@ export default function ArticlesPage() {
 
   return (
     <div className="space-y-6">
-      {/* ── Hero ─────────────────────────────────────────────────────── */}
-      <div className="rounded-xl border p-6" style={{ background: 'var(--panel)', borderColor: 'var(--border)' }}>
-        <div className="flex items-start gap-4">
-          <div className="p-3 rounded-xl" style={{ background: 'rgb(var(--brand-rgb) / .12)' }}>
-            <Newspaper className="w-6 h-6" style={{ color: '#7C3AED' }} />
-          </div>
-          <div className="flex-1">
-            <div className="flex items-center gap-2.5 flex-wrap">
-              <h1 className="text-2xl font-bold tracking-tight" style={{ color: 'var(--text)' }}>Articles</h1>
-              <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full" style={{ background: 'rgb(var(--brand-rgb) / .12)', color: '#7C3AED' }}>
-                New
-              </span>
+      {teal ? (
+        <PageHero
+          title="Articles"
+          subtitle="A researched, opinionated article, not a product review. Give it a topic and your take, tick the sections to include, and MVP researches it on the web and writes the full article with facts, stats, a table, a chart and an FAQ."
+        />
+      ) : (
+        <>
+          {/* ── Hero ─────────────────────────────────────────────────────── */}
+          <div className="rounded-xl border p-6" style={{ background: 'var(--panel)', borderColor: 'var(--border)' }}>
+            <div className="flex items-start gap-4">
+              <div className="p-3 rounded-xl" style={{ background: 'rgb(var(--brand-rgb) / .12)' }}>
+                <Newspaper className="w-6 h-6" style={{ color: 'var(--accent)' }} />
+              </div>
+              <div className="flex-1">
+                <div className="flex items-center gap-2.5 flex-wrap">
+                  <h1 className="text-2xl font-bold tracking-tight" style={{ color: 'var(--text)' }}>Articles</h1>
+                  <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full" style={{ background: 'rgb(var(--brand-rgb) / .12)', color: 'var(--accent)' }}>
+                    New
+                  </span>
+                </div>
+                <p className="text-sm mt-1.5" style={{ color: 'var(--text-2)' }}>
+                  Generate a researched, opinionated informational article (not a product review). Give it a topic and your
+                  take, tick which sections to include, and MVP researches the topic on the web and writes a full article with
+                  facts, stats, a data table and chart, and an FAQ.
+                </p>
+              </div>
             </div>
-            <p className="text-sm mt-1.5" style={{ color: 'var(--text-2)' }}>
-              Generate a researched, opinionated informational article (not a product review). Give it a topic and your
-              take, tick which sections to include, and MVP researches the topic on the web and writes a full article with
-              facts, stats, a data table and chart, and an FAQ.
-            </p>
           </div>
-        </div>
-      </div>
-
+        </>
+      )}
       {/* ── Form ─────────────────────────────────────────────────────── */}
       <form onSubmit={onSubmit} className="rounded-xl border p-6 space-y-5" style={{ background: 'var(--panel)', borderColor: 'var(--border)' }}>
         {/* Topic */}
@@ -365,7 +377,7 @@ export default function ArticlesPage() {
             onClick={suggest}
             disabled={generating || suggesting}
             className="mt-2 inline-flex items-center gap-1.5 text-xs font-medium rounded-md px-3 py-1.5 border disabled:opacity-50"
-            style={{ background: 'transparent', color: '#7C3AED', borderColor: '#7C3AED' }}
+            style={{ background: 'transparent', color: 'var(--accent)', borderColor: 'var(--accent)' }}
           >
             {suggesting ? 'Thinking…' : '✨ Suggest topics from my content'}
           </button>
@@ -470,7 +482,7 @@ export default function ArticlesPage() {
               {voiceReady === false && (
                 <p className="text-xs mt-1.5 leading-snug" style={{ color: '#b45309' }}>
                   You haven’t set up Voice Training yet, so this falls back to the tone preset.{' '}
-                  <a href="/learn" className="underline font-medium" style={{ color: '#7C3AED' }}>Train your voice</a> to make articles sound like you.
+                  <a href="/learn" className="underline font-medium" style={{ color: 'var(--accent)' }}>Train your voice</a> to make articles sound like you.
                 </p>
               )}
             </div>
@@ -633,7 +645,7 @@ export default function ArticlesPage() {
             type="submit"
             disabled={generating || !topic.trim()}
             className="px-5"
-            style={{ background: '#7C3AED', color: '#fff' }}
+            style={{ background: 'var(--accent)', color: '#fff' }}
           >
             {busy === 'preview'
               ? <><Loader2 className="w-4 h-4 animate-spin mr-2" /> Writing…</>
@@ -686,7 +698,7 @@ export default function ArticlesPage() {
       <div className="rounded-xl border" style={{ background: 'var(--panel)', borderColor: 'var(--border)' }}>
         <button onClick={() => setBulkOpen(o => !o)} className="w-full flex items-center justify-between gap-2 p-4 text-left">
           <span className="inline-flex items-center gap-2 min-w-0">
-            <Layers className="w-4 h-4" style={{ color: '#7C3AED' }} />
+            <Layers className="w-4 h-4" style={{ color: 'var(--accent)' }} />
             <span className="font-semibold" style={{ color: 'var(--text)' }}>Bulk generate</span>
             <span className="text-xs" style={{ color: 'var(--text-2)' }}>Publish many articles from a list of topics</span>
           </span>
@@ -703,7 +715,7 @@ export default function ArticlesPage() {
               style={{ background: 'var(--bg)', color: 'var(--text)', borderColor: 'var(--border)' }}
             />
             <div className="flex items-center gap-3 mt-2 flex-wrap">
-              <Button onClick={() => void runBulk()} disabled={bulkRunning || !bulkTopics.trim()} className="px-5" style={{ background: '#7C3AED', color: '#fff' }}>
+              <Button onClick={() => void runBulk()} disabled={bulkRunning || !bulkTopics.trim()} className="px-5" style={{ background: 'var(--accent)', color: '#fff' }}>
                 {bulkRunning ? <><Loader2 className="w-4 h-4 animate-spin mr-2" /> Publishing…</> : <><UploadCloud className="w-4 h-4 mr-2" /> Publish all</>}
               </Button>
               <span className="text-xs" style={{ color: 'var(--text-2)' }}>Uses your current sections, tone and length. Up to 25 at a time; each takes ~1 minute.</span>
@@ -714,10 +726,10 @@ export default function ArticlesPage() {
                   <li key={i} className="flex items-center gap-2">
                     {r.status === 'done' ? <Check className="w-3.5 h-3.5" style={{ color: '#248a3d' }} />
                       : r.status === 'error' ? <AlertCircle className="w-3.5 h-3.5" style={{ color: '#c0392b' }} />
-                      : r.status === 'writing' ? <Loader2 className="w-3.5 h-3.5 animate-spin" style={{ color: '#7C3AED' }} />
+                      : r.status === 'writing' ? <Loader2 className="w-3.5 h-3.5 animate-spin" style={{ color: 'var(--accent)' }} />
                       : <span className="w-3.5 h-3.5 rounded-full border" style={{ borderColor: 'var(--border)' }} />}
                     <span className="flex-1 truncate" style={{ color: 'var(--text)' }}>{r.topic}</span>
-                    {r.status === 'done' && r.url && <a href={r.url} target="_blank" rel="noopener noreferrer" className="text-xs font-medium inline-flex items-center gap-0.5" style={{ color: '#7C3AED' }}>View <ExternalLink className="w-3 h-3" /></a>}
+                    {r.status === 'done' && r.url && <a href={r.url} target="_blank" rel="noopener noreferrer" className="text-xs font-medium inline-flex items-center gap-0.5" style={{ color: 'var(--accent)' }}>View <ExternalLink className="w-3 h-3" /></a>}
                     {r.status === 'error' && <span className="text-xs" style={{ color: '#c0392b' }}>{r.error}</span>}
                   </li>
                 ))}
@@ -731,7 +743,7 @@ export default function ArticlesPage() {
       <div className="rounded-xl border" style={{ background: 'var(--panel)', borderColor: 'var(--border)' }}>
         <button onClick={() => setRefreshOpen(o => !o)} className="w-full flex items-center justify-between gap-2 p-4 text-left">
           <span className="inline-flex items-center gap-2 min-w-0">
-            <RefreshCw className="w-4 h-4" style={{ color: '#7C3AED' }} />
+            <RefreshCw className="w-4 h-4" style={{ color: 'var(--accent)' }} />
             <span className="font-semibold" style={{ color: 'var(--text)' }}>Refresh a published article</span>
             <span className="text-xs" style={{ color: 'var(--text-2)' }}>Re-research and update the facts, in place</span>
           </span>
@@ -749,7 +761,7 @@ export default function ArticlesPage() {
                   <li key={a.id} className="flex items-center gap-2">
                     <span className="flex-1 truncate" style={{ color: 'var(--text)' }}>{a.title}</span>
                     {a.updatedAt && <span className="text-[11px] shrink-0" style={{ color: 'var(--text-2)' }}>updated {new Date(a.updatedAt).toLocaleDateString()}</span>}
-                    <button onClick={() => void refreshArticle(a.id)} disabled={!!refreshingId} className="text-xs font-semibold inline-flex items-center gap-1 disabled:opacity-50" style={{ color: '#7C3AED' }}>
+                    <button onClick={() => void refreshArticle(a.id)} disabled={!!refreshingId} className="text-xs font-semibold inline-flex items-center gap-1 disabled:opacity-50" style={{ color: 'var(--accent)' }}>
                       {refreshingId === a.id ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Refreshing…</> : <><RefreshCw className="w-3.5 h-3.5" /> Refresh</>}
                     </button>
                   </li>
@@ -817,7 +829,7 @@ export default function ArticlesPage() {
                     {!!preview.voiceWhy?.usedAvoid && <span className="px-1.5 py-0.5 rounded" style={{ background: 'rgb(var(--brand-rgb) / 0.12)', color: '#6d28d9' }}>{preview.voiceWhy.usedAvoid} words you avoid</span>}
                   </div>
                   <p className="mt-2" style={{ color: 'var(--text-2)' }}>
-                    Want to shape this? <a href="/learn" className="underline font-medium" style={{ color: '#7C3AED' }}>Edit your Voice Training</a>.
+                    Want to shape this? <a href="/learn" className="underline font-medium" style={{ color: 'var(--accent)' }}>Edit your Voice Training</a>.
                   </p>
                 </div>
               )}
@@ -833,7 +845,7 @@ export default function ArticlesPage() {
               onClick={() => void publishPreview()}
               disabled={generating}
               className="px-5 whitespace-nowrap flex-shrink-0"
-              style={{ background: '#7C3AED', color: '#fff' }}
+              style={{ background: 'var(--accent)', color: '#fff' }}
             >
               {busy === 'publishing'
                 ? <><Loader2 className="w-4 h-4 animate-spin mr-2" /> Publishing…</>

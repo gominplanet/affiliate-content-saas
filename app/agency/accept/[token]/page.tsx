@@ -82,7 +82,7 @@ export default function AcceptInvitePage({ params }: { params: Promise<{ token: 
             <Link
               href={`/login?next=${encodeURIComponent(`/agency/accept/${token}`)}`}
               className="px-4 py-2 rounded-lg font-semibold text-white text-sm"
-              style={{ background: '#7C3AED' }}
+              style={{ background: 'var(--accent)' }}
             >
               Sign in
             </Link>
@@ -118,7 +118,7 @@ export default function AcceptInvitePage({ params }: { params: Promise<{ token: 
           <button
             onClick={() => router.push('/dashboard')}
             className="px-5 py-2 rounded-lg font-semibold text-white text-sm"
-            style={{ background: '#7C3AED' }}
+            style={{ background: 'var(--accent)' }}
           >
             Go to dashboard
           </button>

@@ -48,6 +48,8 @@ import {
   VA_PERMISSION_KEYS, VA_PERMISSION_META, DEFAULT_VA_PERMISSIONS,
   type VaPermissions, type VaPermissionKey,
 } from '@/lib/agency-permissions'
+import { ByLook } from '@/components/layout/teal-ui'
+import PageHero from '@/components/layout/PageHero'
 
 interface InviteRow {
   id: string
@@ -297,17 +299,26 @@ export default function AgencyPage() {
 
   return (
     <div className="max-w-3xl mx-auto p-6 space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold flex items-center gap-2">
-          <Users size={22} /> Team
-          <VirtualAssistantsGuide />
-        </h1>
-        <p className="text-sm text-gray-500 mt-1 dark:text-gray-400">
-          Invite VAs or contractors to work in your workspace. They get their own login on your
-          single Pro subscription. <b>{seatsCopy}</b>.
-          <span className="block mt-1 text-[12px]">Formerly Virtual Assistants.</span>
-        </p>
-      </div>
+      <ByLook
+        teal={(
+          <PageHero title="Team" subtitle={<>Invite VAs or contractors to work in your workspace. They get their own login on your single Pro subscription. <b>{seatsCopy}</b>.</>} guide={<VirtualAssistantsGuide />} />
+        )}
+        classic={(
+          <>
+          <div>
+            <h1 className="text-2xl font-bold flex items-center gap-2">
+              <Users size={22} /> Team
+              <VirtualAssistantsGuide />
+            </h1>
+            <p className="text-sm text-gray-500 mt-1 dark:text-gray-400">
+              Invite VAs or contractors to work in your workspace. They get their own login on your
+              single Pro subscription. <b>{seatsCopy}</b>.
+              <span className="block mt-1 text-[12px]">Formerly Virtual Assistants.</span>
+            </p>
+          </div>
+          </>
+        )}
+      />
 
       {/* What a VA can reach. Content sharing is real (migration 116 widened
           SELECT on the content tables). The credential row is deliberately not
@@ -404,7 +415,7 @@ export default function AgencyPage() {
             onClick={handleInvite}
             disabled={inviting || !canInvite || !email.trim()}
             className="px-4 py-2 rounded-lg font-semibold text-white text-sm inline-flex items-center gap-1.5 disabled:opacity-50"
-            style={{ background: '#7C3AED' }}
+            style={{ background: 'var(--accent)' }}
           >
             <Plus size={14} /> {inviting ? 'Sending…' : 'Send invite'}
           </button>
@@ -481,7 +492,7 @@ export default function AgencyPage() {
                           onClick={() => void saveMemberPermissions(m.id)}
                           disabled={savingMember}
                           className="px-3 py-1.5 text-xs font-semibold text-white rounded inline-flex items-center gap-1 disabled:opacity-50"
-                          style={{ background: '#7C3AED' }}
+                          style={{ background: 'var(--accent)' }}
                         >
                           <Check size={11} /> {savingMember ? 'Saving…' : 'Save'}
                         </button>

@@ -285,7 +285,7 @@ export default function VideoInsights({ refreshKey }: { refreshKey: number }) {
       {findings.length > 0 && (
         <div className="card p-5">
           <p className="text-[12px] font-semibold mb-1 inline-flex items-center gap-1.5" style={label}>
-            <Lightbulb size={14} style={{ color: '#7C3AED' }} /> What this says you should do
+            <Lightbulb size={14} style={{ color: 'var(--accent)' }} /> What this says you should do
           </p>
           <p className="text-[11px] mb-4" style={muted}>
             Read from your {data.videos.toLocaleString()} videos{librarySpan}. Biggest first. Each one says what the data
@@ -320,7 +320,7 @@ export default function VideoInsights({ refreshKey }: { refreshKey: number }) {
             </div>
             <div>
               <p className="text-[11px] uppercase tracking-wide" style={muted}>Views sitting on Amazon</p>
-              <p className="text-[22px] font-bold tabular-nums" style={{ color: '#7C3AED' }}>{num(conc?.totalViews)}</p>
+              <p className="text-[22px] font-bold tabular-nums" style={{ color: 'var(--accent)' }}>{num(conc?.totalViews)}</p>
             </div>
             <div>
               <p className="text-[11px] uppercase tracking-wide" style={muted}>Onsite / offsite</p>
@@ -345,7 +345,7 @@ export default function VideoInsights({ refreshKey }: { refreshKey: number }) {
       {byPublish.length > 2 && (
         <div className="card p-5">
           <p className="text-[12px] font-semibold mb-3 inline-flex items-center gap-1.5" style={label}>
-            <Radio size={14} style={{ color: '#7C3AED' }} /> How far each video reaches, by the month you published it
+            <Radio size={14} style={{ color: 'var(--accent)' }} /> How far each video reaches, by the month you published it
           </p>
           <div className="flex items-end gap-1" style={{ height: 150 }}>
             {byPublish.map((m, i) => {
@@ -359,7 +359,7 @@ export default function VideoInsights({ refreshKey }: { refreshKey: number }) {
                      title={`${m.month}: ${m.videos} videos published, the typical one reached ${num(m.medianViews)} people, the best tenth reached ${num(m.topDecileViews)}`}>
                   <span className="text-[9px] tabular-nums" style={muted}>{m.medianViews != null && m.medianViews >= 1 ? Math.round(m.medianViews) : ''}</span>
                   <div className="w-full flex items-end justify-center" style={{ height: 100 }}>
-                    <div style={{ width: '70%', height: `${((m.medianViews ?? 0) / maxMedian) * 100}%`, background: '#7C3AED', borderRadius: '3px 3px 0 0', minHeight: m.medianViews ? 2 : 0 }} />
+                    <div style={{ width: '70%', height: `${((m.medianViews ?? 0) / maxMedian) * 100}%`, background: 'var(--accent)', borderRadius: '3px 3px 0 0', minHeight: m.medianViews ? 2 : 0 }} />
                   </div>
                   <span className="text-[9px] whitespace-nowrap" style={{ ...muted, fontWeight: newYear ? 600 : 400 }}>
                     {newYear ? year.slice(2) : ''}{newYear ? '/' : ''}{m.month.slice(5)}
@@ -472,7 +472,7 @@ export default function VideoInsights({ refreshKey }: { refreshKey: number }) {
               {months.map(m => (
                 <div key={m.month} className="flex-1 flex flex-col justify-end items-center gap-1" title={`${m.month}: ${m.videos} videos, ${money(m.earningsCents)}`}>
                   <div className="w-full flex items-end justify-center gap-0.5" style={{ height: 100 }}>
-                    <div style={{ width: '42%', height: `${(m.videos / maxVideos) * 100}%`, background: '#7C3AED', borderRadius: '3px 3px 0 0', minHeight: m.videos ? 2 : 0 }} />
+                    <div style={{ width: '42%', height: `${(m.videos / maxVideos) * 100}%`, background: 'var(--accent)', borderRadius: '3px 3px 0 0', minHeight: m.videos ? 2 : 0 }} />
                     <div style={{ width: '42%', height: `${((m.earningsCents ?? 0) / maxEarn) * 100}%`, background: '#10B981', borderRadius: '3px 3px 0 0', minHeight: m.earningsCents ? 2 : 0 }} />
                   </div>
                   <span className="text-[10px]" style={muted}>{m.month.slice(5)}</span>
@@ -488,7 +488,7 @@ export default function VideoInsights({ refreshKey }: { refreshKey: number }) {
 
       <div className="card p-5">
         <p className="text-[12px] font-semibold mb-3 inline-flex items-center gap-1.5" style={label}>
-          <Film size={14} style={{ color: '#7C3AED' }} /> Your best work
+          <Film size={14} style={{ color: 'var(--accent)' }} /> Your best work
         </p>
         <div className="overflow-x-auto">
           <table className="w-full text-[13px]">

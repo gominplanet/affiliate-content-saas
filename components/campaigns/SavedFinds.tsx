@@ -95,7 +95,7 @@ export default function SavedFinds({
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="inline-flex items-center px-1.5 py-0.5 rounded-md text-[10px] font-bold"
-                    style={it.source === 'campaign' ? { background: 'rgb(var(--brand-rgb) / 0.12)', color: '#7C3AED' } : { background: 'rgba(10,132,255,0.12)', color: '#0a84ff' }}>
+                    style={it.source === 'campaign' ? { background: 'rgb(var(--brand-rgb) / 0.12)', color: 'var(--accent)' } : { background: 'rgba(10,132,255,0.12)', color: '#0a84ff' }}>
                     {it.source === 'campaign' ? 'Affiliate+' : 'Onsite'}
                   </span>
                   <p className="text-[13px] font-semibold truncate" style={{ color: 'var(--text)' }}>
@@ -118,7 +118,7 @@ export default function SavedFinds({
                         brandLabel: it.brand || undefined,
                       })}
                       className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold border"
-                      style={{ borderColor: 'rgb(var(--brand-rgb) / 0.4)', color: '#7C3AED' }}>
+                      style={{ borderColor: 'rgb(var(--brand-rgb) / 0.4)', color: 'var(--accent)' }}>
                       <MessageCircle size={11} /> Message brand
                     </button>
                   )}

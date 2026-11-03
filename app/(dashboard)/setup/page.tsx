@@ -15,6 +15,8 @@ import { metaEnabled, socialEnabled, type GatedSocialPlatform } from '@/lib/feat
 import { effectiveTier } from '@/lib/view-as'
 import { Suspense } from 'react'
 import WordPressSitesManager from '@/components/dashboard/WordPressSitesManager'
+import { ByLook } from '@/components/layout/teal-ui'
+import PageHero from '@/components/layout/PageHero'
 
 type Mode = 'existing' | 'new' | null
 type Step = 1 | 2 | 3 | 4 | 5
@@ -1208,12 +1210,21 @@ function SetupPageInner() {
   if (setupComplete && !forceWizard) {
     return (
       <div className="max-w-2xl mx-auto space-y-4">
-        <div className="mb-2">
-          <h1 className="text-2xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] tracking-tight">Blog Set Up</h1>
-          <p className="text-sm text-[#6e6e73] dark:text-[#ebebf0] mt-0.5">
-            Your WordPress sites, connection health, and publishing settings.
-          </p>
-        </div>
+        <ByLook
+          teal={(
+            <PageHero title="Blog set up" subtitle="Your WordPress sites, connection health, and publishing settings." />
+          )}
+          classic={(
+            <>
+            <div className="mb-2">
+              <h1 className="text-2xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] tracking-tight">Blog Set Up</h1>
+              <p className="text-sm text-[#6e6e73] dark:text-[#ebebf0] mt-0.5">
+                Your WordPress sites, connection health, and publishing settings.
+              </p>
+            </div>
+            </>
+          )}
+        />
 
         {/* ── Primary status ────────────────────────────────────────────────
             Reports what the publisher can resolve RIGHT NOW, in three states

@@ -1433,7 +1433,7 @@ function NewsletterFormPreview({
           <button
             type="button"
             disabled
-            style={{ width: '100%', padding: '10px 16px', border: 'none', borderRadius: 10, background: '#7C3AED', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'default' }}
+            style={{ width: '100%', padding: '10px 16px', border: 'none', borderRadius: 10, background: 'var(--accent)', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'default' }}
           >
             {b}
           </button>

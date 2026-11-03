@@ -36,7 +36,7 @@ export default function TrybeSampleGuard({ samples, onFilm }: { samples?: Row[] 
     <div className="flex flex-wrap items-start gap-2 rounded-xl px-3 py-2.5 mb-3" style={{ background: stop ? 'rgba(220,38,38,0.08)' : 'rgba(180,83,9,0.09)' }} role="status">
       <PackageX size={15} className="mt-0.5 shrink-0" style={{ color: stop ? '#DC2626' : '#B45309' }} />
       <p className="text-[12.5px] flex-1 min-w-[14rem]"><b>{stop ? 'Sample jail:' : 'Samples piling up:'}</b> {g.says}</p>
-      {onFilm && <button onClick={onFilm} className="text-[12px] font-semibold underline" style={{ color: '#7C3AED' }}>Plan them in This week</button>}
+      {onFilm && <button onClick={onFilm} className="text-[12px] font-semibold underline" style={{ color: 'var(--accent)' }}>Plan them in This week</button>}
     </div>
   )
 }

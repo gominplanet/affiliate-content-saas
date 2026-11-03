@@ -253,7 +253,7 @@ export default function ProductBreakdown({ refreshKey }: { refreshKey: number })
 
         <div className="card p-4">
           <p className="text-[12px] font-semibold mb-2 inline-flex items-center gap-1.5" style={label}>
-            <Video size={14} style={{ color: '#7C3AED' }} /> Winning on Amazon, absent off it
+            <Video size={14} style={{ color: 'var(--accent)' }} /> Winning on Amazon, absent off it
           </p>
           {uncovered.length === 0 ? (
             <p className="text-[12px]" style={muted}>Every product that earned already has a video off Amazon.</p>
@@ -265,9 +265,9 @@ export default function ProductBreakdown({ refreshKey }: { refreshKey: number })
                   <span style={muted}>
                     {money(p.earningsCents)} earned, no video off Amazon
                     {shelfKnown && p.amazonVideo ? (
-                      <span style={{ color: '#7C3AED' }}> · you have a video on Amazon</span>
+                      <span style={{ color: 'var(--accent)' }}> · you have a video on Amazon</span>
                     ) : shelfKnown && p.onStorefront ? (
-                      <span style={{ color: '#7C3AED' }}> · on your storefront</span>
+                      <span style={{ color: 'var(--accent)' }}> · on your storefront</span>
                     ) : null}
                   </span>
                 </li>

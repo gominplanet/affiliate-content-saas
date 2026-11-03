@@ -75,7 +75,7 @@ export default function LinkStyleNudge() {
         <Link
           href="/brand#affiliate"
           className="inline-flex items-center gap-1 mt-2 text-[12px] font-semibold"
-          style={{ color: '#7C3AED' }}
+          style={{ color: 'var(--accent)' }}
         >
           Pick my link style <ArrowRight size={12} />
         </Link>

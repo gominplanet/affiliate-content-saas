@@ -41,7 +41,7 @@ export default function PassportQuickLink({ onCreated }: { onCreated?: () => voi
   return (
     <div className="card p-4">
       <div className="flex items-center gap-2 mb-1">
-        <Link2 size={15} style={{ color: '#7C3AED' }} />
+        <Link2 size={15} style={{ color: 'var(--accent)' }} />
         <h2 className="text-[15px] font-semibold" style={{ color: 'var(--text)' }}>Create a Passport Link</h2>
       </div>
       <p className="text-[12.5px] mb-3" style={{ color: 'var(--text-3)' }}>
@@ -71,7 +71,7 @@ export default function PassportQuickLink({ onCreated }: { onCreated?: () => voi
         <div className="mt-3 flex items-center gap-2 rounded-lg border p-2.5"
           style={{ borderColor: 'rgb(var(--brand-rgb) / 0.35)', background: 'rgb(var(--brand-rgb) / 0.06)' }}>
           <a href={result} target="_blank" rel="noopener noreferrer"
-            className="flex-1 min-w-0 truncate text-[13px] font-semibold" style={{ color: '#7C3AED' }}>{result}</a>
+            className="flex-1 min-w-0 truncate text-[13px] font-semibold" style={{ color: 'var(--accent)' }}>{result}</a>
           <button onClick={copy}
             className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[12px] font-semibold flex-shrink-0"
             style={{ background: copied ? 'rgba(16,185,129,0.15)' : 'var(--surface-2)', color: copied ? '#10B981' : 'var(--text-soft)' }}>

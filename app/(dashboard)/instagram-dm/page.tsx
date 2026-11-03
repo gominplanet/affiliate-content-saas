@@ -25,6 +25,9 @@ import { canUseIgDm } from '@/lib/ig-dm-access'
 import FacebookDmStatus from '@/components/instagram/FacebookDmStatus'
 import InstagramDmStatus from '@/components/instagram/InstagramDmStatus'
 import { renderMessage } from '@/lib/ig-dm-message'
+import { useLook } from '@/components/layout/shell-nav-context'
+import PageHero from '@/components/layout/PageHero'
+import { TealSteps } from '@/components/layout/teal-ui'
 
 const EXAMPLE_LINK = 'https://mvpl.ink/abc123'
 const DEFAULT_TEMPLATE = 'Here you go 🔗 {link}'
@@ -75,6 +78,8 @@ export default function InstagramDmPage() {
 
 /** `team`: the MVP team also sees Facebook's side, not yet approved by Meta. */
 function InstagramDm({ team }: { team: boolean }) {
+  // The new look (lib/look, behind Labs): the shared header card.
+  const teal = useLook() === 'teal'
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [enabled, setEnabled] = useState(false)
@@ -211,15 +216,32 @@ function InstagramDm({ team }: { team: boolean }) {
 
   return (
     <div className="max-w-2xl mx-auto py-6 px-4 flex flex-col gap-5">
-      <div className="flex items-center gap-2 flex-wrap">
-        <Instagram size={20} className="text-[#E1306C]" />
-        <h1 className="text-lg font-semibold" style={{ color: 'var(--text)' }}>Instagram Auto-DM</h1>
-        <InstagramDmGuide />
-      </div>
-      <p className="text-sm" style={{ color: 'var(--text-soft)' }}>
-        When someone comments your keyword on an Instagram{team ? <> <em>or Facebook</em></> : null} post, MVP DMs them the right link.
-        No manual replies, no “link in bio.”
-      </p>
+      {teal ? (
+        <div>
+          <PageHero
+            title="Instagram Auto-DM"
+            subtitle={<>When someone comments your keyword on an Instagram{team ? <> <em>or Facebook</em></> : null} post, MVP sends them the right link by DM. No manual replies, no link in bio.</>}
+            guide={<InstagramDmGuide />}
+          />
+          <TealSteps className="" steps={[
+            ['Pick a post', 'Any Instagram post or Reel you have published.'],
+            ['Set a keyword and the link', 'The word people comment, and the product link they get.'],
+            ['MVP sends the DMs', 'Everyone who comments it gets the link, paced so Instagram is happy.'],
+          ]} />
+        </div>
+      ) : (
+        <>
+          <div className="flex items-center gap-2 flex-wrap">
+            <Instagram size={20} className="text-[#E1306C]" />
+            <h1 className="text-lg font-semibold" style={{ color: 'var(--text)' }}>Instagram Auto-DM</h1>
+            <InstagramDmGuide />
+          </div>
+          <p className="text-sm" style={{ color: 'var(--text-soft)' }}>
+            When someone comments your keyword on an Instagram{team ? <> <em>or Facebook</em></> : null} post, MVP DMs them the right link.
+            No manual replies, no “link in bio.”
+          </p>
+        </>
+      )}
 
       {/* ONE RECONNECT (Meta approved Auto-DM on 2026-10-23): an Instagram
           connected before then never granted the two messaging permissions. */}
@@ -467,7 +489,7 @@ function InstagramDm({ team }: { team: boolean }) {
               </p>
               <Link href="/clip-factory"
                 className="inline-flex items-center gap-1.5 mt-2 px-3 py-1.5 rounded-lg text-[13px] font-semibold text-white"
-                style={{ background: '#7C3AED' }}>
+                style={{ background: 'var(--accent)' }}>
                 <Flame size={13} /> Open Clip Factory
               </Link>
             </div>

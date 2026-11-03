@@ -95,7 +95,7 @@ export default function LinkStyleTiles({
                 {locked ? (
                   <Lock size={14} className="text-[#86868b]" />
                 ) : on ? (
-                  <span className="w-5 h-5 rounded-full flex items-center justify-center" style={{ background: '#7C3AED', color: '#fff' }}>
+                  <span className="w-5 h-5 rounded-full flex items-center justify-center" style={{ background: 'var(--accent)', color: '#fff' }}>
                     <Check size={12} strokeWidth={3} />
                   </span>
                 ) : (
@@ -119,7 +119,7 @@ export default function LinkStyleTiles({
         className="mt-2.5 w-full text-left rounded-xl border p-3 flex items-start gap-2.5 disabled:opacity-70"
         style={{ borderColor: 'rgb(var(--brand-rgb) / 0.35)', background: 'linear-gradient(135deg, rgb(var(--brand-rgb) / 0.08), rgba(52,199,89,0.04))' }}
       >
-        <Globe size={15} style={{ color: '#7C3AED' }} className="mt-0.5 flex-shrink-0" />
+        <Globe size={15} style={{ color: 'var(--accent)' }} className="mt-0.5 flex-shrink-0" />
         <span className="text-[11.5px] text-[#3a3a3c] dark:text-[#d2d2d7] leading-snug">
           <b className="text-[#1d1d1f] dark:text-[#f5f5f7]">Passport Links geo-routes your links free</b> on your plan, with no per-click fees.{' '}
           {selected === 'geniuslink'

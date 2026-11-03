@@ -272,7 +272,7 @@ export default function CoverageBoard() {
                       existed was indistinguishable from a listing selling every
                       day. It reads as a problem because it is one. */}
                   {m.notShowing > 0 && <span><strong style={{ color: '#d97706' }}>{m.notShowing}</strong> not showing on the storefront</span>}
-                  {m.ready > 0 && <span><strong style={{ color: '#7C3AED' }}>{m.ready}</strong> ready to upload</span>}
+                  {m.ready > 0 && <span><strong style={{ color: 'var(--accent)' }}>{m.ready}</strong> ready to upload</span>}
                   {/* Named as its own step. These have not been translated or
                       dubbed yet: we are still checking whether Amazon sells the
                       product in this country at all, which is what stops a dub
@@ -299,7 +299,7 @@ export default function CoverageBoard() {
 
       {/* ── 3. UPLOAD ────────────────────────────────────────────────────── */}
       {board?.ready && (board.ready.total > 0 || board.ready.unreachable > 0) && (
-        <section className="mt-5 rounded-2xl border p-5" style={{ borderColor: '#7C3AED' }}>
+        <section className="mt-5 rounded-2xl border p-5" style={{ borderColor: 'var(--accent)' }}>
           <h2 className="text-[15px] font-semibold" style={text}>
             {board.ready.total} listings ready to go up
           </h2>
@@ -321,7 +321,7 @@ export default function CoverageBoard() {
             <button
               type="button" onClick={() => void uploadReady()} disabled={uploading}
               className="mt-4 inline-flex items-center gap-2 rounded-xl px-5 py-2.5 text-[14px] font-semibold text-white disabled:opacity-50"
-              style={{ background: '#7C3AED' }}
+              style={{ background: 'var(--accent)' }}
             >
               {uploading ? <Loader2 size={15} className="animate-spin" /> : <Upload size={15} />}
               Upload them now

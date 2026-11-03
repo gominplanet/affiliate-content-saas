@@ -19,6 +19,8 @@ import WhyGroupFirst from '@/components/meta/WhyGroupFirst'
 import Link from 'next/link'
 import { toast } from 'sonner'
 import { Loader2, Sparkles, Send, Trash2, ExternalLink, CheckCircle2, AlertCircle, ListChecks, Video, BadgeDollarSign } from 'lucide-react'
+import { ByLook, TealSteps } from '@/components/layout/teal-ui'
+import PageHero from '@/components/layout/PageHero'
 
 type Source = 'epc' | 'videos'
 type Group = { name: string; url: string }
@@ -263,13 +265,29 @@ export default function GroupPostQueue() {
 
   return (
     <div className="max-w-5xl mx-auto px-4 sm:px-6 py-8 flex flex-col gap-6">
-      <header>
-        <p className="text-[11px] font-semibold uppercase tracking-[0.12em]" style={{ color: 'var(--text-faint)' }}>Facebook</p>
-        <h1 className="text-[24px] font-semibold tracking-tight" style={{ color: 'var(--text)' }}>Group Post Queue</h1>
-        <p className="text-[13px] max-w-2xl" style={{ color: 'var(--text-soft)' }}>
-          Pick Sponsored Products or your Amazon videos, write every post at once, then work down the list. Each post goes into your Group with your affiliate link: SCOUT fills it in and you press Post. MVP then posts on your Page linking to that Group post, so your Page never uses up Meta's link limit.
-        </p>
-      </header>
+      <ByLook
+        teal={(
+          <div>
+            <PageHero title="Group Post Queue" subtitle="Pick Sponsored Products or your Amazon videos, and every post is written at once. Each goes into your Facebook Group with your affiliate link, SCOUT fills it in and you press Post, then MVP posts on your Page linking to it." />
+            <TealSteps className="" steps={[
+              ['Pick the products', 'Sponsored Products or your Amazon videos, a batch at a time.'],
+              ['Post to your Group', 'SCOUT fills each post with your link. You press Post.'],
+              ['MVP posts to your Page', 'A Page post links to the Group post, so the Page keeps its link allowance.'],
+            ]} />
+          </div>
+        )}
+        classic={(
+          <>
+          <header>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.12em]" style={{ color: 'var(--text-faint)' }}>Facebook</p>
+            <h1 className="text-[24px] font-semibold tracking-tight" style={{ color: 'var(--text)' }}>Group Post Queue</h1>
+            <p className="text-[13px] max-w-2xl" style={{ color: 'var(--text-soft)' }}>
+              Pick Sponsored Products or your Amazon videos, write every post at once, then work down the list. Each post goes into your Group with your affiliate link: SCOUT fills it in and you press Post. MVP then posts on your Page linking to that Group post, so your Page never uses up Meta's link limit.
+            </p>
+          </header>
+          </>
+        )}
+      />
 
       <WhyGroupFirst />
 

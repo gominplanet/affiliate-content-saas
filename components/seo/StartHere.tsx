@@ -95,7 +95,7 @@ export default function StartHere({ summary, connected, onGoToGetFound, onRefres
       <div className="p-4 sm:p-5">
         <div className="flex items-center gap-2.5 mb-1">
           <div className="w-8 h-8 rounded-lg grid place-items-center flex-shrink-0" style={{ background: allClear ? 'rgba(5,150,105,0.14)' : 'rgb(var(--brand-rgb) / 0.12)' }}>
-            {allClear ? <CheckCircle2 size={17} style={{ color: '#059669' }} /> : <ListChecks size={17} style={{ color: '#7C3AED' }} />}
+            {allClear ? <CheckCircle2 size={17} style={{ color: '#059669' }} /> : <ListChecks size={17} style={{ color: 'var(--accent)' }} />}
           </div>
           <div>
             <p className="text-[14px] font-bold" style={{ color: 'var(--text)' }}>Start here</p>
@@ -134,7 +134,7 @@ export default function StartHere({ summary, connected, onGoToGetFound, onRefres
                     <button
                       onClick={onRefreshUrls}
                       className="inline-flex items-center gap-1 text-[12.5px] font-semibold rounded-lg px-2.5 py-1"
-                      style={{ background: 'rgb(var(--brand-rgb) / 0.12)', color: '#7C3AED' }}
+                      style={{ background: 'rgb(var(--brand-rgb) / 0.12)', color: 'var(--accent)' }}
                     >
                       Refresh addresses <ArrowRight size={12} />
                     </button>
@@ -143,7 +143,7 @@ export default function StartHere({ summary, connected, onGoToGetFound, onRefres
                     <a
                       href="/tools/title-audit"
                       className="inline-flex items-center gap-1 text-[12.5px] font-semibold rounded-lg px-2.5 py-1"
-                      style={{ background: 'rgb(var(--brand-rgb) / 0.12)', color: '#7C3AED' }}
+                      style={{ background: 'rgb(var(--brand-rgb) / 0.12)', color: 'var(--accent)' }}
                     >
                       Open Title Check <ArrowRight size={12} />
                     </a>
@@ -152,7 +152,7 @@ export default function StartHere({ summary, connected, onGoToGetFound, onRefres
                     <a
                       href="/api/auth/gsc"
                       className="inline-flex items-center gap-1 text-[12.5px] font-semibold rounded-lg px-2.5 py-1"
-                      style={{ background: 'rgb(var(--brand-rgb) / 0.12)', color: '#7C3AED' }}
+                      style={{ background: 'rgb(var(--brand-rgb) / 0.12)', color: 'var(--accent)' }}
                     >
                       Connect it <ExternalLink size={12} />
                     </a>
@@ -170,7 +170,7 @@ export default function StartHere({ summary, connected, onGoToGetFound, onRefres
                     <a
                       href="/articles"
                       className="inline-flex items-center gap-1 text-[12.5px] font-semibold rounded-lg px-2.5 py-1"
-                      style={{ background: 'rgb(var(--brand-rgb) / 0.12)', color: '#7C3AED' }}
+                      style={{ background: 'rgb(var(--brand-rgb) / 0.12)', color: 'var(--accent)' }}
                     >
                       Write a post <ArrowRight size={12} />
                     </a>

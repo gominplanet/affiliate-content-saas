@@ -257,7 +257,7 @@ export default function SavedCampaignsPage() {
                   <a
                     href={`/wayward?asin=${encodeURIComponent(s.asin)}`}
                     className="btn-secondary w-full flex items-center gap-1.5 text-xs justify-center"
-                    style={{ background: 'rgb(var(--brand-rgb) / 0.10)', color: '#7C3AED', borderColor: 'rgb(var(--brand-rgb) / 0.25)' }}
+                    style={{ background: 'rgb(var(--brand-rgb) / 0.10)', color: 'var(--accent)', borderColor: 'rgb(var(--brand-rgb) / 0.25)' }}
                     title="Open this product in MVP x Wayward"
                   >
                     <ExternalLink size={13} /> View on Wayward

@@ -80,7 +80,7 @@ export default function NetworkOutreachModal({ target, onClose }: { target: Netw
           <p className="text-[12px] leading-relaxed mb-2" style={{ color: 'var(--text-soft)' }}>
             No Amazon Affiliate+ campaign for this product, so MVP drafts a direct message from your Outreach Profile. <b>Copy it</b>, then open {target.network} and paste it on the brand&rsquo;s page.
           </p>
-          <a href="/collaborations" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-[11px] font-semibold hover:underline mb-2" style={{ color: '#7C3AED' }}>
+          <a href="/collaborations" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-[11px] font-semibold hover:underline mb-2" style={{ color: 'var(--accent)' }}>
             <SlidersHorizontal size={11} /> Change your greeting, offer, links &amp; sign-off
           </a>
           {drafting && !message ? (
@@ -102,7 +102,7 @@ export default function NetworkOutreachModal({ target, onClose }: { target: Netw
           </button>
           <button onClick={copy} disabled={drafting || !message.trim()}
             className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-[13px] font-semibold text-white disabled:opacity-60"
-            style={{ background: '#7C3AED' }}>
+            style={{ background: 'var(--accent)' }}>
             <Copy size={14} /> Copy message
           </button>
           <a href={target.networkUrl} target="_blank" rel="noopener noreferrer"

@@ -165,7 +165,7 @@ export default function AmazonJoinPage() {
           </p>
           <p className="text-[13.5px] text-[#6e6e73] dark:text-[#ebebf0]">
             Want a blog of your own?{' '}
-            <Link href="/pricing" className="font-semibold hover:underline" style={{ color: '#7C3AED' }}>
+            <Link href="/pricing" className="font-semibold hover:underline" style={{ color: 'var(--accent)' }}>
               That is the Pro plan
             </Link>
             .

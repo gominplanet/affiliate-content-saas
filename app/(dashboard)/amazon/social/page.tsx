@@ -12,6 +12,8 @@ import SocialConnections from '@/components/amazon/SocialConnections'
 import ScheduledQueue from '@/components/amazon/ScheduledQueue'
 import AffiliateSetup from '@/components/amazon/AffiliateSetup'
 import PageExplainer from '@/components/amazon/PageExplainer'
+import { ByLook } from '@/components/layout/teal-ui'
+import PageHero from '@/components/layout/PageHero'
 
 export const metadata: Metadata = {
   title: 'Social designs',
@@ -21,20 +23,29 @@ export const metadata: Metadata = {
 export default function AmazonSocialPage() {
   return (
     <div className="max-w-5xl mx-auto">
-      <header className="mb-8">
-        <div className="flex items-center gap-2 mb-3">
-          <Share2 size={14} className="text-[#d97706]" />
-          <span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: 'var(--text-soft)' }}>
-            Share · Social designs
-          </span>
-        </div>
-        <h1 className="text-2xl sm:text-3xl font-bold tracking-tight mb-2" style={{ color: 'var(--text)' }}>
-          One design, three networks
-        </h1>
-        <p className="text-sm max-w-2xl" style={{ color: 'var(--text-soft)' }}>
-          MVP Art Director makes scroll-stopping designs, then turns them into great Pins and posts. Caption, affiliate link and publishing, handled.
-        </p>
-      </header>
+      <ByLook
+        teal={(
+          <PageHero title="One design, three networks" subtitle="MVP Art Director makes scroll-stopping designs, then turns them into Pins and posts. Caption, affiliate link and publishing, handled." />
+        )}
+        classic={(
+          <>
+          <header className="mb-8">
+            <div className="flex items-center gap-2 mb-3">
+              <Share2 size={14} className="text-[#d97706]" />
+              <span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: 'var(--text-soft)' }}>
+                Share · Social designs
+              </span>
+            </div>
+            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight mb-2" style={{ color: 'var(--text)' }}>
+              One design, three networks
+            </h1>
+            <p className="text-sm max-w-2xl" style={{ color: 'var(--text-soft)' }}>
+              MVP Art Director makes scroll-stopping designs, then turns them into great Pins and posts. Caption, affiliate link and publishing, handled.
+            </p>
+          </header>
+          </>
+        )}
+      />
 
       <PageExplainer
         eyebrow="New here? Here’s the flow"

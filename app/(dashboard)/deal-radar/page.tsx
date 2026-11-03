@@ -28,6 +28,9 @@ import { createBrowserClient } from '@/lib/supabase/client'
 import { type Tier, tierAllowsSocial } from '@/lib/tier'
 import { effectiveTier, VIEW_AS_EVENT } from '@/lib/view-as'
 import { canUseDealRadar, canBrowseDealRadar } from '@/lib/feature-access'
+import { useLook } from '@/components/layout/shell-nav-context'
+import PageHero from '@/components/layout/PageHero'
+import { TealSteps, tealMain } from '@/components/layout/teal-ui'
 
 interface DealCampaign {
   commissionPct: number; brand: string | null; detailsUrl: string | null
@@ -232,6 +235,8 @@ function SelectPill({ value, onChange, children }: {
 }
 
 export default function DealRadarPage() {
+  // The new look (lib/look, behind Labs).
+  const teal = useLook() === 'teal'
   // ── Tier (honors admin View-as), mirrors the Deals Hub page ───────────────
   const [tier, setTier] = useState<Tier | null>(null)
   useEffect(() => {
@@ -396,34 +401,58 @@ export default function DealRadarPage() {
 
   return (
     <div className="max-w-7xl mx-auto px-4 py-6 space-y-6">
-      {/* Header */}
-      <div className="flex items-start justify-between gap-4 flex-wrap">
+      {teal ? (
         <div>
-          <div className="flex items-center gap-2 flex-wrap">
-            <div className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-orange-100 text-orange-600"><Radar size={20} /></div>
-            <h1 className="text-2xl font-bold">Deal Radar</h1>
-            <button onClick={() => setShowGuide(true)} className="text-xs font-medium text-orange-600 dark:text-orange-400 underline inline-flex items-center gap-1">
-              <HelpCircle size={13} /> Full guide
-            </button>
-            {!showHelp && (
-              <button onClick={() => setShowHelp(true)} className="text-xs text-muted-foreground underline inline-flex items-center gap-1">
-                <HelpCircle size={13} /> How it works
-              </button>
-            )}
-          </div>
-          <p className="text-sm text-muted-foreground mt-1">
-            {source === 'amazon'
+          <PageHero
+            title="Deal Radar"
+            subtitle={source === 'amazon'
               ? 'Live Amazon deals in your niche. Turn any one into a blog post, then push it to social.'
               : 'Live Walmart price drops from your PartnerBoost account, run through MVP’s rules. Turn any one into a post with a cloaked link.'}
-          </p>
+            guide={<button onClick={() => setShowGuide(true)} className="text-xs font-semibold underline inline-flex items-center gap-1" style={{ color: 'var(--accent-text)' }}><HelpCircle size={13} /> Full guide</button>}
+            actions={<>
+              <button type="button" onClick={() => void load()} disabled={loading} className={tealMain}><RefreshCw size={16} className={loading ? 'animate-spin' : ''} /> {loading ? 'Refreshing…' : 'Refresh the deals'}</button>
+              {isPaid && <DigestToggle />}
+              {!showHelp && <button type="button" onClick={() => setShowHelp(true)} className="text-[13px] font-semibold underline inline-flex items-center gap-1" style={{ color: 'var(--text-2)' }}><HelpCircle size={13} /> How it works</button>}
+            </>}
+          />
+          <TealSteps className="" steps={[
+            ['Pick a deal', 'Live markdowns, filtered by MVP rules. Double wins pay a bounty too.'],
+            ['Make a post', 'One press turns it into a blog post with your link and disclosure.'],
+            ['Push it to social', 'Send it to your accounts while the price is still down.'],
+          ]} />
         </div>
-        <div className="flex items-center gap-2">
-          {isPaid && <DigestToggle />}
-          <Button variant="outline" size="sm" onClick={() => void load()} disabled={loading}>
-            <RefreshCw className={`h-4 w-4 mr-1.5 ${loading ? 'animate-spin' : ''}`} /> Refresh
-          </Button>
-        </div>
-      </div>
+      ) : (
+        <>
+          {/* Header */}
+          <div className="flex items-start justify-between gap-4 flex-wrap">
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <div className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-orange-100 text-orange-600"><Radar size={20} /></div>
+                <h1 className="text-2xl font-bold">Deal Radar</h1>
+                <button onClick={() => setShowGuide(true)} className="text-xs font-medium text-orange-600 dark:text-orange-400 underline inline-flex items-center gap-1">
+                  <HelpCircle size={13} /> Full guide
+                </button>
+                {!showHelp && (
+                  <button onClick={() => setShowHelp(true)} className="text-xs text-muted-foreground underline inline-flex items-center gap-1">
+                    <HelpCircle size={13} /> How it works
+                  </button>
+                )}
+              </div>
+              <p className="text-sm text-muted-foreground mt-1">
+                {source === 'amazon'
+                  ? 'Live Amazon deals in your niche. Turn any one into a blog post, then push it to social.'
+                  : 'Live Walmart price drops from your PartnerBoost account, run through MVP’s rules. Turn any one into a post with a cloaked link.'}
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              {isPaid && <DigestToggle />}
+              <Button variant="outline" size="sm" onClick={() => void load()} disabled={loading}>
+                <RefreshCw className={`h-4 w-4 mr-1.5 ${loading ? 'animate-spin' : ''}`} /> Refresh
+              </Button>
+            </div>
+          </div>
+        </>
+      )}
 
       {/* Marketplace source toggle — Amazon (cached Keepa feed) vs Walmart (live
           time-boxed PartnerBoost boosts). */}

@@ -108,7 +108,7 @@ function PlanCard({
       {ribbon && (
         <span
           className="absolute -top-3 left-1/2 -translate-x-1/2 px-4 py-1 rounded-full text-[11px] font-bold uppercase tracking-[0.12em] text-white whitespace-nowrap"
-          style={{ background: '#7C3AED' }}
+          style={{ background: 'var(--accent)' }}
         >
           {ribbon}
         </span>
@@ -132,7 +132,7 @@ function PlanCard({
       <ul className="px-6 sm:px-7 py-6 flex flex-col gap-3 flex-1">
         {features.map((f) => (
           <li key={f} className="flex gap-2.5 text-[14px] leading-snug" style={{ color: 'rgba(0,0,0,0.72)' }}>
-            <Check size={16} className="mt-0.5 flex-shrink-0" style={{ color: '#7C3AED' }} />
+            <Check size={16} className="mt-0.5 flex-shrink-0" style={{ color: 'var(--accent)' }} />
             <span>{f}</span>
           </li>
         ))}
@@ -212,7 +212,7 @@ export default function AdPricingTable({ focus, freeHref }: { focus: PaidTier; f
               onClick={() => setYearly(false)}
               aria-pressed={!yearly}
               className="px-5 py-2 rounded-full text-[14px] font-semibold transition-colors"
-              style={!yearly ? { background: '#7C3AED', color: '#fff' } : { color: 'rgba(0,0,0,0.6)' }}
+              style={!yearly ? { background: 'var(--accent)', color: '#fff' } : { color: 'rgba(0,0,0,0.6)' }}
             >
               Monthly
             </button>
@@ -221,7 +221,7 @@ export default function AdPricingTable({ focus, freeHref }: { focus: PaidTier; f
               onClick={() => setYearly(true)}
               aria-pressed={yearly}
               className="px-5 py-2 rounded-full text-[14px] font-semibold transition-colors"
-              style={yearly ? { background: '#7C3AED', color: '#fff' } : { color: 'rgba(0,0,0,0.6)' }}
+              style={yearly ? { background: 'var(--accent)', color: '#fff' } : { color: 'rgba(0,0,0,0.6)' }}
             >
               Yearly <span className="font-bold" style={{ color: yearly ? '#fff' : '#7C3AED' }}>save {bestPct}%</span>
             </button>

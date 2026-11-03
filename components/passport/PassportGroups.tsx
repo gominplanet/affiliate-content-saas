@@ -99,10 +99,10 @@ export default function PassportGroups({
   return (
     <div className="card p-0 overflow-hidden mb-5">
       <div className="flex items-center gap-2 px-4 py-2.5" style={{ borderBottom: '1px solid var(--border)' }}>
-        <Layers size={14} style={{ color: '#7C3AED' }} />
+        <Layers size={14} style={{ color: 'var(--accent)' }} />
         <span className="text-[11px] uppercase tracking-wide font-semibold" style={{ color: 'var(--text-faint)' }}>Groups</span>
         {loading && <Loader2 size={12} className="animate-spin" style={{ color: 'var(--text-faint)' }} />}
-        <button onClick={() => { setCreating((v) => !v); setNewName('') }} className="ml-auto inline-flex items-center gap-1 text-[12px] font-semibold" style={{ color: '#7C3AED' }}>
+        <button onClick={() => { setCreating((v) => !v); setNewName('') }} className="ml-auto inline-flex items-center gap-1 text-[12px] font-semibold" style={{ color: 'var(--accent)' }}>
           <Plus size={13} /> New group
         </button>
       </div>
@@ -112,7 +112,7 @@ export default function PassportGroups({
           <input autoFocus value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="Group name (e.g. Holiday campaign)"
             onKeyDown={(e) => { if (e.key === 'Enter') void create(); if (e.key === 'Escape') { setCreating(false); setNewName('') } }}
             className="input-field text-[12.5px] py-1 flex-1 min-w-0 max-w-xs" />
-          <button onClick={create} disabled={busy || !newName.trim()} className="text-[12px] font-semibold px-2.5 py-1 rounded-md text-white disabled:opacity-50" style={{ background: '#7C3AED' }}>
+          <button onClick={create} disabled={busy || !newName.trim()} className="text-[12px] font-semibold px-2.5 py-1 rounded-md text-white disabled:opacity-50" style={{ background: 'var(--accent)' }}>
             {busy ? <Loader2 size={13} className="animate-spin" /> : 'Add'}
           </button>
           <button onClick={() => { setCreating(false); setNewName('') }} style={{ color: 'var(--text-faint)' }}><X size={15} /></button>

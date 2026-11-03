@@ -13,6 +13,8 @@ import { errText } from '@/lib/err-text'
 import { requestIdeaListScan, requestStorefrontScan } from '@/lib/extension-frame'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { HeadlineStyleToggle, useHeadlineStyle, headlineStyleValue } from '@/components/thumbnails/HeadlineStyleToggle'
+import { useLook } from '@/components/layout/shell-nav-context'
+import { TealSteps } from '@/components/layout/teal-ui'
 
 
 interface Item { asin: string; title: string | null; image: string | null }
@@ -25,6 +27,8 @@ const PURPLE = 'var(--accent)'
 const dollars = (c: number | null) => (c == null ? null : `$${(c / 100).toFixed(2)}`)
 
 export default function IdeaListsPage() {
+  // The new look (lib/look, behind Labs).
+  const teal = useLook() === 'teal'
   const [synced, setSynced] = useState<SyncedList[]>([])
   const [loadingSynced, setLoadingSynced] = useState(true)
   const [storefrontUrl, setStorefrontUrl] = useState<string | null>(null)
@@ -250,30 +254,43 @@ export default function IdeaListsPage() {
         subtitle="Turn an Amazon idea list into a curated shopping-guide post. MVP scores the products, picks the best, and links each one plus your full list."
       />
 
-      {/* How it works — explainer */}
-      <div className="rounded-xl border border-[#7C3AED]/25 bg-[#7C3AED]/[0.06] p-4 mt-4">
-        <p className="text-[13px] font-bold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">How it works</p>
-        <p className="text-[12px] text-[#4b4b4f] dark:text-[#b0b0b5] mb-3">
-          Turn any Amazon idea list into a ready-to-publish <strong>shopping guide</strong> on your blog. MVP reads the products, checks each one, ranks them and writes the whole post for you.
-        </p>
-        <div className="grid sm:grid-cols-3 gap-3 text-[12px]">
-          <div>
-            <p className="font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">1. Load a list</p>
-            <p className="text-[#4b4b4f] dark:text-[#b0b0b5] leading-snug"><strong>Paste a link</strong> (below) for a quick read of the first ~20 products, or <strong>choose from the list below</strong> (synced by SCOUT) to pull <em>every</em> product from your storefront.</p>
-          </div>
-          <div>
-            <p className="font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">2. MVP ranks it</p>
-            <p className="text-[#4b4b4f] dark:text-[#b0b0b5] leading-snug">MVP scores every product against its own ranking criteria (live price, rating, reviews, demand and current deals) and against your Creator Connections campaigns. Campaign products get priority; off-theme products are left out.</p>
-          </div>
-          <div>
-            <p className="font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">3. It writes the post</p>
-            <p className="text-[#4b4b4f] dark:text-[#b0b0b5] leading-snug">You pick the size (Top 10 to 20). MVP writes an SEO title, intro, a real blurb per product, a conclusion and a designed thumbnail: each pick with your affiliate link, plus a CTA to your full list.</p>
-          </div>
+      {teal ? (
+        <div className="mt-1">
+          <TealSteps className="mb-2" steps={[
+            ['Load a list', 'Paste a list link for a quick read, or choose a list SCOUT synced to pull every product.'],
+            ['MVP ranks it', 'Live price, rating, reviews, demand and deals, with your campaign products first.'],
+            ['It writes the post', 'Top 10 to 20, a blurb per product with your link, and a designed thumbnail.'],
+          ]} />
+          <p className="text-[12.5px]" style={{ color: 'var(--text-3)' }}>The guide publishes straight to your blog, and you can edit or delete it here. Each guide counts against your monthly limit.</p>
         </div>
-        <p className="text-[11px] text-[#86868b] mt-3 leading-snug">
-          <strong>What to expect:</strong> the guide publishes straight to your blog (editable and deletable right here). A synced list pulls its products the moment you hit Create (a tab opens, reads it, closes itself). Each guide counts against your monthly generation limit.
-        </p>
-      </div>
+      ) : (
+        <>
+          {/* How it works — explainer */}
+          <div className="rounded-xl border border-[#7C3AED]/25 bg-[#7C3AED]/[0.06] p-4 mt-4">
+            <p className="text-[13px] font-bold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">How it works</p>
+            <p className="text-[12px] text-[#4b4b4f] dark:text-[#b0b0b5] mb-3">
+              Turn any Amazon idea list into a ready-to-publish <strong>shopping guide</strong> on your blog. MVP reads the products, checks each one, ranks them and writes the whole post for you.
+            </p>
+            <div className="grid sm:grid-cols-3 gap-3 text-[12px]">
+              <div>
+                <p className="font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">1. Load a list</p>
+                <p className="text-[#4b4b4f] dark:text-[#b0b0b5] leading-snug"><strong>Paste a link</strong> (below) for a quick read of the first ~20 products, or <strong>choose from the list below</strong> (synced by SCOUT) to pull <em>every</em> product from your storefront.</p>
+              </div>
+              <div>
+                <p className="font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">2. MVP ranks it</p>
+                <p className="text-[#4b4b4f] dark:text-[#b0b0b5] leading-snug">MVP scores every product against its own ranking criteria (live price, rating, reviews, demand and current deals) and against your Creator Connections campaigns. Campaign products get priority; off-theme products are left out.</p>
+              </div>
+              <div>
+                <p className="font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">3. It writes the post</p>
+                <p className="text-[#4b4b4f] dark:text-[#b0b0b5] leading-snug">You pick the size (Top 10 to 20). MVP writes an SEO title, intro, a real blurb per product, a conclusion and a designed thumbnail: each pick with your affiliate link, plus a CTA to your full list.</p>
+              </div>
+            </div>
+            <p className="text-[11px] text-[#86868b] mt-3 leading-snug">
+              <strong>What to expect:</strong> the guide publishes straight to your blog (editable and deletable right here). A synced list pulls its products the moment you hit Create (a tab opens, reads it, closes itself). Each guide counts against your monthly generation limit.
+            </p>
+          </div>
+        </>
+      )}
 
       {/* Paste a list URL — primary path */}
       <div className="rounded-xl border border-black/5 dark:border-white/10 bg-white dark:bg-[#1c1c1e] p-4 mt-4">

@@ -83,9 +83,9 @@ export default function AffiliateSetup() {
         <span className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
           style={{ backgroundColor: active.style === 'passport' ? '#7C3AED1a' : '#d977061a' }}>
           {active.style === 'passport'
-            ? <Globe size={15} style={{ color: '#7C3AED' }} />
+            ? <Globe size={15} style={{ color: 'var(--accent)' }} />
             : active.style === 'geniuslink'
-              ? <Link2 size={15} style={{ color: '#7C3AED' }} />
+              ? <Link2 size={15} style={{ color: 'var(--accent)' }} />
               : <Tag size={15} style={{ color: '#d97706' }} />}
         </span>
         <div className="min-w-0 flex-1">
@@ -167,8 +167,8 @@ function SetupModal({ initial, onClose, onSaved }: { initial: Status; onClose: (
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
               <span className="text-xs font-bold flex items-center gap-1.5" style={{ color: 'var(--text)' }}>
-                <Globe size={13} style={{ color: '#7C3AED' }} /> {options[0].title}
-                {options[0].recommended && <span className="font-normal" style={{ color: '#7C3AED' }}>(recommended)</span>}
+                <Globe size={13} style={{ color: 'var(--accent)' }} /> {options[0].title}
+                {options[0].recommended && <span className="font-normal" style={{ color: 'var(--accent)' }}>(recommended)</span>}
               </span>
               <p className="text-[11.5px] leading-relaxed mt-1" style={{ color: 'var(--text-soft)' }}>{options[0].blurb}</p>
             </div>
@@ -185,7 +185,7 @@ function SetupModal({ initial, onClose, onSaved }: { initial: Status; onClose: (
                 <span className="absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all" style={{ left: passport ? '22px' : '2px' }} />
               </button>
             ) : (
-              <span className="text-[10px] font-semibold whitespace-nowrap px-2 py-1 rounded-full" style={{ background: 'rgb(var(--brand-rgb) / 0.10)', color: '#7C3AED' }}>Paid plans</span>
+              <span className="text-[10px] font-semibold whitespace-nowrap px-2 py-1 rounded-full" style={{ background: 'rgb(var(--brand-rgb) / 0.10)', color: 'var(--accent)' }}>Paid plans</span>
             )}
           </div>
           {passport && initial.passportCanUse && !amazonTag.trim() && (
@@ -210,7 +210,7 @@ function SetupModal({ initial, onClose, onSaved }: { initial: Status; onClose: (
           </button>
         ) : (
           <div className="flex flex-col gap-2 rounded-xl border border-gray-200 dark:border-white/10 p-3">
-            <span className="text-xs font-bold flex items-center gap-1.5" style={{ color: 'var(--text)' }}><Link2 size={13} style={{ color: '#7C3AED' }} /> {options[2].title}</span>
+            <span className="text-xs font-bold flex items-center gap-1.5" style={{ color: 'var(--text)' }}><Link2 size={13} style={{ color: 'var(--accent)' }} /> {options[2].title}</span>
             <p className="text-[11.5px] leading-relaxed" style={{ color: 'var(--text-soft)' }}>{options[2].blurb}</p>
             <label className="flex flex-col gap-1">
               <span className="text-[11px] font-medium" style={{ color: 'var(--text-soft)' }}>API key</span>
@@ -220,7 +220,7 @@ function SetupModal({ initial, onClose, onSaved }: { initial: Status; onClose: (
               <span className="text-[11px] font-medium" style={{ color: 'var(--text-soft)' }}>API secret {alreadyHasSecret && <span style={{ color: '#34c759' }}>: saved, leave blank to keep</span>}</span>
               <input type="password" value={geniuslinkSecret} onChange={e => setGeniuslinkSecret(e.target.value)} placeholder={alreadyHasSecret ? '••••••••' : 'Geniuslink API secret'} className={inputCls} />
             </label>
-            <a href="https://geni.us/account/api" target="_blank" rel="noreferrer" className="text-[11px] hover:underline" style={{ color: '#7C3AED' }}>Where do I find these?</a>
+            <a href="https://geni.us/account/api" target="_blank" rel="noreferrer" className="text-[11px] hover:underline" style={{ color: 'var(--accent)' }}>Where do I find these?</a>
           </div>
         )}
 

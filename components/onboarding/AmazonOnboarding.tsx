@@ -202,7 +202,7 @@ export default function AmazonOnboarding({
         {/* The other door, for anyone who took this one by mistake. */}
         <p className="mt-10 text-[13px] text-[#86868b] dark:text-[#8e8e93]">
           Have a YouTube channel or a blog as well?{' '}
-          <Link href="/onboarding?for=creator" className="font-semibold hover:underline" style={{ color: '#7C3AED' }}>
+          <Link href="/onboarding?for=creator" className="font-semibold hover:underline" style={{ color: 'var(--accent)' }}>
             Use the full setup instead
           </Link>
           . You keep everything you do here.

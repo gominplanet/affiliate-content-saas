@@ -14,6 +14,9 @@ import {
 } from 'lucide-react'
 import WaywardQuickPostModal from '@/components/wayward/WaywardQuickPostModal'
 import { fetchUnlessMade } from '@/lib/already-made-client'
+import { useLook } from '@/components/layout/shell-nav-context'
+import PageHero from '@/components/layout/PageHero'
+import { tealLine, tealLineStyle } from '@/components/layout/teal-ui'
 
 const PURPLE = 'var(--accent)'
 
@@ -37,6 +40,8 @@ async function readReply(res: Response, timedOut = 'Wayward took too long to ans
 }
 
 export default function WaywardPage() {
+  // The new look (lib/look, behind Labs).
+  const teal = useLook() === 'teal'
   const [loading, setLoading] = useState(true)
   const [needsToken, setNeedsToken] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -239,16 +244,26 @@ export default function WaywardPage() {
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-6">
-      <div className="flex items-center gap-2 mb-1 flex-wrap">
-        <ShoppingBag size={20} style={{ color: PURPLE }} />
-        <h1 className="text-xl font-bold text-[#1d1d1f] dark:text-[#f5f5f7]">MVP x Wayward</h1>
-        <Link href="/wayward/placement" className="ml-auto inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] font-semibold border border-[#7C3AED]/40 text-[#7C3AED] hover:bg-[#7C3AED]/5">
-          <ClipboardList size={13} /> Build a placement offer
-        </Link>
-      </div>
-      <p className="text-sm text-[#6e6e73] dark:text-[#a1a1a6] mb-4">
-        Browse Wayward&apos;s Amazon Attribution catalog, filter by brand, and mint an attributed Amazon link per product, measured and paid back to your Wayward account.
-      </p>
+      {teal ? (
+        <PageHero
+          title="MVP x Wayward"
+          subtitle="Browse Wayward's Amazon Attribution catalog, filter by brand, and make an attributed Amazon link for each product, measured and paid back to your Wayward account."
+          actions={<Link href="/wayward/placement" className={tealLine} style={tealLineStyle}><ClipboardList size={15} /> Build a placement offer</Link>}
+        />
+      ) : (
+        <>
+          <div className="flex items-center gap-2 mb-1 flex-wrap">
+            <ShoppingBag size={20} style={{ color: PURPLE }} />
+            <h1 className="text-xl font-bold text-[#1d1d1f] dark:text-[#f5f5f7]">MVP x Wayward</h1>
+            <Link href="/wayward/placement" className="ml-auto inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] font-semibold border border-[#7C3AED]/40 text-[#7C3AED] hover:bg-[#7C3AED]/5">
+              <ClipboardList size={13} /> Build a placement offer
+            </Link>
+          </div>
+          <p className="text-sm text-[#6e6e73] dark:text-[#a1a1a6] mb-4">
+            Browse Wayward&apos;s Amazon Attribution catalog, filter by brand, and mint an attributed Amazon link per product, measured and paid back to your Wayward account.
+          </p>
+        </>
+      )}
 
       {needsToken ? (
         <div className="rounded-xl border border-black/10 dark:border-white/10 p-6 text-center">

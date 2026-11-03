@@ -364,7 +364,7 @@ export default function SmartScanPanel({
       onClick={onClick}
       disabled={running}
       className="px-3 py-1.5 rounded-lg text-[12px] font-semibold transition-colors disabled:opacity-60"
-      style={on ? { background: '#7C3AED', color: '#fff' } : { background: 'rgb(var(--brand-rgb) / 0.08)', color: '#7C3AED' }}
+      style={on ? { background: 'var(--accent)', color: '#fff' } : { background: 'rgb(var(--brand-rgb) / 0.08)', color: 'var(--accent)' }}
     >
       {label}
     </button>
@@ -394,7 +394,7 @@ export default function SmartScanPanel({
                 ? <>Run a Smart Scan, then keep hitting <b>Scan again</b> for more. Each pass digs deeper into the catalog and never repeats a product you&apos;ve already seen, so re-scan as many times as you like to keep pulling fresh campaigns. <b>Save</b> the ones worth acting on, then <b>Message brand</b> or <b>Buy to review</b> when you&apos;re ready.</>
                 : <>Enter a keyword and pick how many results you want (each one is live-verified on Amazon, so larger counts take longer). Run the search again anytime for a fresh set of products. <b>Save</b> the winners and <b>Buy to review</b> when you&apos;re ready.</>}
             </p>
-            <a href="/collaborations" className="inline-flex items-center gap-1 text-[11px] font-semibold hover:underline mt-1.5" style={{ color: '#7C3AED' }}>
+            <a href="/collaborations" className="inline-flex items-center gap-1 text-[11px] font-semibold hover:underline mt-1.5" style={{ color: 'var(--accent)' }}>
               <SlidersHorizontal size={11} /> Customize how your brand messages are written
             </a>
           </div>
@@ -446,7 +446,7 @@ export default function SmartScanPanel({
             onClick={run}
             disabled={running}
             className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-[13px] font-semibold text-white disabled:opacity-70"
-            style={{ background: '#7C3AED' }}
+            style={{ background: 'var(--accent)' }}
           >
             {running ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
             {running
@@ -528,7 +528,7 @@ export default function SmartScanPanel({
                         brandLabel: m.brand || undefined,
                       })}
                       className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold border"
-                      style={{ borderColor: 'rgb(var(--brand-rgb) / 0.4)', color: '#7C3AED' }}
+                      style={{ borderColor: 'rgb(var(--brand-rgb) / 0.4)', color: 'var(--accent)' }}
                     >
                       <MessageCircle size={11} /> Message brand
                     </button>

@@ -61,7 +61,7 @@ export default function SocialLinkModeModal({ open, onClose }: { open: boolean; 
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.55)' }} onClick={onClose}>
       <div className="card w-full max-w-xl p-5 bg-white dark:bg-[#18181b]" onClick={e => e.stopPropagation()}>
         <div className="flex items-start justify-between mb-1">
-          <div className="flex items-center gap-2" style={{ color: '#7C3AED' }}>
+          <div className="flex items-center gap-2" style={{ color: 'var(--accent)' }}>
             <Link2 size={18} />
             <h2 className="text-[15px] font-bold" style={{ color: 'var(--text)' }}>Link settings</h2>
           </div>
@@ -122,7 +122,7 @@ export default function SocialLinkModeModal({ open, onClose }: { open: boolean; 
         <div className="flex items-center justify-end gap-2 mt-5">
           <button onClick={onClose} className="px-3 py-2 rounded-xl text-[13px] font-medium border" style={{ borderColor: 'var(--border)', color: 'var(--text-soft)' }}>Cancel</button>
           <button onClick={save} disabled={saving || loading}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-[13px] font-semibold text-white disabled:opacity-50" style={{ background: '#7C3AED' }}>
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-[13px] font-semibold text-white disabled:opacity-50" style={{ background: 'var(--accent)' }}>
             {saving ? <><Loader2 size={15} className="animate-spin" /> Saving…</> : <><Check size={15} /> Save</>}
           </button>
         </div>

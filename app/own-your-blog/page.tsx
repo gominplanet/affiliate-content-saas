@@ -251,7 +251,7 @@ export default function OwnYourBlogPage() {
       <section className="px-6 lg:px-8 py-16 sm:py-20 bg-white border-y border-black/5">
         <div className="max-w-5xl mx-auto">
           <div className="text-center max-w-2xl mx-auto">
-            <span className="text-[11px] font-bold uppercase tracking-[0.16em]" style={{ color: '#7C3AED' }}>
+            <span className="text-[11px] font-bold uppercase tracking-[0.16em]" style={{ color: 'var(--accent)' }}>
               The difference
             </span>
             <h2 className="mt-3 text-[30px] sm:text-[42px] font-extrabold tracking-[-0.03em] leading-[1.04]" style={{ color: '#1D1D1F' }}>
@@ -278,7 +278,7 @@ export default function OwnYourBlogPage() {
                 <div className="p-5 sm:p-6 flex gap-3" style={{ background: 'linear-gradient(135deg, rgb(var(--brand-rgb) / 0.07), rgba(192,38,211,0.04))' }}>
                   <Check size={17} className="mt-0.5 flex-shrink-0" style={{ color: '#34c759' }} />
                   <div>
-                    <p className="text-[10.5px] font-bold uppercase tracking-[0.14em] mb-1.5" style={{ color: '#7C3AED' }}>With MVP</p>
+                    <p className="text-[10.5px] font-bold uppercase tracking-[0.14em] mb-1.5" style={{ color: 'var(--accent)' }}>With MVP</p>
                     <p className="text-[15px] leading-relaxed font-medium" style={{ color: '#1D1D1F' }}>{r.mvp}</p>
                   </div>
                 </div>

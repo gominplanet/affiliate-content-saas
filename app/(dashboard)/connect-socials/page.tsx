@@ -24,6 +24,8 @@ import { IntegrationsPanel } from '@/app/(dashboard)/setup/_components'
 import SiteSocialRouting from '@/components/social/SiteSocialRouting'
 import InstagramPaidLabel from '@/components/instagram/InstagramPaidLabel'
 import VaConnections, { type WhoAmI } from '@/components/agency/VaConnections'
+import { ByLook } from '@/components/layout/teal-ui'
+import PageHero from '@/components/layout/PageHero'
 
 function ConnectSocialsInner() {
   // A Virtual Assistant sees the owner's connections, read only: they post
@@ -45,15 +47,24 @@ function ConnectSocialsInner() {
   )
   return (
     <div className="max-w-2xl mx-auto">
-      <div className="mb-6">
-        <h1 className="text-2xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] tracking-tight">
-          Connect Socials
-        </h1>
-        <p className="text-sm text-[#6e6e73] dark:text-[#ebebf0] mt-0.5">
-          Hook up YouTube, your video channels, and every social platform you publish to.
-          Connect once: fan-out posting works from anywhere in the app afterward.
-        </p>
-      </div>
+      <ByLook
+        teal={(
+          <PageHero title="Connect socials" subtitle="Hook up YouTube, your video channels and every social platform you publish to. Connect once, and posting works from anywhere in MVP." />
+        )}
+        classic={(
+          <>
+          <div className="mb-6">
+            <h1 className="text-2xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] tracking-tight">
+              Connect Socials
+            </h1>
+            <p className="text-sm text-[#6e6e73] dark:text-[#ebebf0] mt-0.5">
+              Hook up YouTube, your video channels, and every social platform you publish to.
+              Connect once: fan-out posting works from anywhere in the app afterward.
+            </p>
+          </div>
+          </>
+        )}
+      />
       {/* Same panel that lives at /setup?tab=integrations. Reused so OAuth
           callbacks, in-flight states, and DB writes stay consistent.
           mode="socials" hides the legacy WordPress OAuth section and

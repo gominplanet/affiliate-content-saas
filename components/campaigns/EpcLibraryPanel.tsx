@@ -441,13 +441,13 @@ export default function EpcLibraryPanel({ tier }: { tier?: Tier | null }) {
               <div className="flex flex-col gap-2 self-start">
                 <a href="https://affiliate-program.amazon.com/p/connect/requests" target="_blank" rel="noopener noreferrer"
                   className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-[13px] font-semibold border"
-                  style={{ borderColor: 'rgb(var(--brand-rgb) / 0.45)', color: '#7C3AED', background: 'var(--surface)' }}
+                  style={{ borderColor: 'rgb(var(--brand-rgb) / 0.45)', color: 'var(--accent)', background: 'var(--surface)' }}
                   title="Opens Creator Connections on Amazon. Sign in with the Amazon Associates account that holds your store ID, then accept your campaigns and open the Accepted tab.">
                   <ShoppingCart size={14} /> Open my EPC on Amazon <ExternalLink size={12} />
                 </a>
                 <button onClick={loadViaApi} disabled={apiLoading || scanning}
                   title="Load every EPC opportunity straight from Amazon's own API (paginated, exact count, no duplicates). Runs in the background and fills the library live."
-                  className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-[13px] font-semibold text-white disabled:opacity-70" style={{ background: '#7C3AED' }}>
+                  className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-[13px] font-semibold text-white disabled:opacity-70" style={{ background: 'var(--accent)' }}>
                   {apiLoading ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
                   {apiLoading
                     ? `Loading… ${(apiCount?.loaded ?? 0).toLocaleString()}${apiCount?.total ? ` / ${apiCount.total.toLocaleString()}` : ''}`
@@ -494,7 +494,7 @@ export default function EpcLibraryPanel({ tier }: { tier?: Tier | null }) {
                 </p>
               )}
               <div className="mt-2 rounded-lg px-3 py-2" style={{ background: 'rgb(var(--brand-rgb) / 0.08)', border: '1px solid rgb(var(--brand-rgb) / 0.30)' }}>
-                <p className="text-[12px] font-semibold" style={{ color: '#7C3AED' }}>Worth it for Gold &amp; Platinum creators</p>
+                <p className="text-[12px] font-semibold" style={{ color: 'var(--accent)' }}>Worth it for Gold &amp; Platinum creators</p>
                 <p className="text-[11px] leading-relaxed mt-0.5" style={{ color: 'var(--text-soft)' }}>
                   EPC pays on <b>qualified clicks</b> from offsite traffic (YouTube, socials, your blog), and Amazon only pays it to <b>Gold and Platinum</b> Creator Star tier creators. Below Gold, these clicks don&apos;t earn, so promoting EPC products isn&apos;t worth it yet. Use <b>Get link</b> on any card to drop one offsite, or make a blog / social post: with Passport Links on it hands you a geo-routing link that sends each visitor to their own country&apos;s Amazon, and either way the link earns EPC. Track it in Amazon&apos;s <b>Creator Connections → Sponsored Products for Creators</b> reporting tab.
                 </p>
@@ -524,7 +524,7 @@ export default function EpcLibraryPanel({ tier }: { tier?: Tier | null }) {
             </span>
             <button onClick={loadViaApi} disabled={apiLoading}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-semibold text-white disabled:opacity-70 shrink-0"
-              style={{ background: '#7C3AED' }}>
+              style={{ background: 'var(--accent)' }}>
               <Download size={13} /> Refresh now
             </button>
           </div>
@@ -650,7 +650,7 @@ export default function EpcLibraryPanel({ tier }: { tier?: Tier | null }) {
             inputMode="decimal" placeholder="price" className="input-field text-[12px] w-20 py-1.5" />
         </div>
         {activeFilterCount > 0 && (
-          <button onClick={() => setFilters(EMPTY_FILTERS)} className="text-[12px] font-medium" style={{ color: '#7C3AED' }}>
+          <button onClick={() => setFilters(EMPTY_FILTERS)} className="text-[12px] font-medium" style={{ color: 'var(--accent)' }}>
             Clear filters
           </button>
         )}
@@ -663,7 +663,7 @@ export default function EpcLibraryPanel({ tier }: { tier?: Tier | null }) {
           <p className="text-[13px] mt-1 mb-4" style={{ color: 'var(--text-soft)' }}>
             Upgrade to browse curated Sponsored Products opportunities and turn any one into a link, blog, or social post.
           </p>
-          <a href="/pricing" className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-[13px] font-semibold text-white" style={{ background: '#7C3AED' }}>
+          <a href="/pricing" className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-[13px] font-semibold text-white" style={{ background: 'var(--accent)' }}>
             See plans
           </a>
         </div>
@@ -777,7 +777,7 @@ function EpcCard({ p, canBlog, amazonTag, passportEnabled, canRemove, onQuickPos
           ? <img loading="lazy" decoding="async" src={p.image_url} alt="" className="w-16 h-16 rounded-lg object-contain flex-shrink-0 bg-white" />
           : <div className="w-16 h-16 rounded-lg flex-shrink-0" style={{ background: 'rgb(var(--brand-rgb) / 0.08)' }} />}
         <div className="flex-1 min-w-0">
-          {p.brand && <div className="text-[10px] font-semibold uppercase tracking-wide truncate" style={{ color: '#7C3AED' }}>{p.brand}</div>}
+          {p.brand && <div className="text-[10px] font-semibold uppercase tracking-wide truncate" style={{ color: 'var(--accent)' }}>{p.brand}</div>}
           <p className="text-[12.5px] font-medium leading-snug line-clamp-2" style={{ color: 'var(--text)' }}>{p.title || p.asin}</p>
           <p className="text-[11px] mt-0.5" style={{ color: 'var(--text-soft)' }}>
             {p.price_cents != null ? `$${(p.price_cents / 100).toFixed(2)}` : ''}
@@ -824,7 +824,7 @@ function EpcCard({ p, canBlog, amazonTag, passportEnabled, canRemove, onQuickPos
       <div className="px-3 pb-2">
         <button onClick={copyLink} disabled={linking}
           className="w-full inline-flex items-center justify-center gap-1.5 text-[11.5px] font-semibold rounded-lg py-1.5 border disabled:opacity-60"
-          style={{ borderColor: 'rgb(var(--brand-rgb) / 0.4)', color: '#7C3AED', background: 'rgb(var(--brand-rgb) / 0.06)' }}
+          style={{ borderColor: 'rgb(var(--brand-rgb) / 0.4)', color: 'var(--accent)', background: 'rgb(var(--brand-rgb) / 0.06)' }}
           title={passportEnabled
             ? 'Copy your Passport Link. Sends each visitor to their own country’s Amazon and tracks clicks'
             : 'Copy your affiliate link to drop offsite (YouTube, socials, blog). EPC pays on those clicks'}>
@@ -843,7 +843,7 @@ function EpcCard({ p, canBlog, amazonTag, passportEnabled, canRemove, onQuickPos
             </a>
           ) : (
             <button onClick={makePost} disabled={gen === 'working'}
-              className="flex-1 inline-flex items-center justify-center gap-1 text-[11px] font-semibold rounded-lg py-1.5 text-white disabled:opacity-60" style={{ background: '#7C3AED' }}>
+              className="flex-1 inline-flex items-center justify-center gap-1 text-[11px] font-semibold rounded-lg py-1.5 text-white disabled:opacity-60" style={{ background: 'var(--accent)' }}>
               {gen === 'working' ? <><Loader2 size={12} className="animate-spin" /> Writing…</> : <><FileText size={12} /> Blog post <ArrowRight size={11} /></>}
             </button>
           )

@@ -72,7 +72,7 @@ export default function VideoProducts({ refreshKey }: { refreshKey: number }) {
     return (
       <div className="card p-5">
         <h2 className="text-sm font-semibold mb-1 inline-flex items-center gap-1.5" style={label}>
-          <Link2 size={15} style={{ color: '#7C3AED' }} /> Which video sells what
+          <Link2 size={15} style={{ color: 'var(--accent)' }} /> Which video sells what
         </h2>
         <p className="text-[13px]" style={muted}>
           Your {cov.videos.toLocaleString()} videos carry no product yet, so they cannot be matched to what you earned.
@@ -95,7 +95,7 @@ export default function VideoProducts({ refreshKey }: { refreshKey: number }) {
     <div className="space-y-3">
       <div className="card p-5">
         <h2 className="text-sm font-semibold mb-1 inline-flex items-center gap-1.5" style={label}>
-          <Link2 size={15} style={{ color: '#7C3AED' }} /> Which video sells what
+          <Link2 size={15} style={{ color: 'var(--accent)' }} /> Which video sells what
         </h2>
         <p className="text-[12px]" style={muted}>
           {cov.videosRead.toLocaleString()} of {cov.videos.toLocaleString()} videos read for products.{' '}
@@ -205,7 +205,7 @@ export default function VideoProducts({ refreshKey }: { refreshKey: number }) {
       {topVideos.length > 0 && (
         <div className="card p-5">
           <p className="text-[12px] font-semibold mb-1 inline-flex items-center gap-1.5" style={label}>
-            <Target size={14} style={{ color: '#7C3AED' }} /> Your videos, by what their products earned
+            <Target size={14} style={{ color: 'var(--accent)' }} /> Your videos, by what their products earned
           </p>
           <div className="overflow-x-auto">
             <table className="w-full text-[13px]">

@@ -116,7 +116,7 @@ export default function PublicTourPage() {
             <Link
               href="/signup?tier=pro"
               className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-lg text-[13px] font-semibold text-white"
-              style={{ background: '#7C3AED' }}
+              style={{ background: 'var(--accent)' }}
             >
               {FREE_WEEK_CTA} <ArrowUpRight size={13} />
             </Link>

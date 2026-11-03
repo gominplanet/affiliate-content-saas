@@ -570,11 +570,11 @@ export default function CustomizePage() {
         {/* Connection only — the master "leave my design alone" switch. Pinned to
             the very top in an accent card so a creator who only wants MVP's
             posting/connection (not the blog restyle) can't miss it. */}
-        <div className="rounded-2xl border-2 p-5" style={{ borderColor: '#7C3AED', background: 'linear-gradient(160deg, rgb(var(--brand-rgb) / 0.10), rgb(var(--brand-rgb) / 0.02))' }}>
+        <div className="rounded-2xl border-2 p-5" style={{ borderColor: 'var(--accent)', background: 'linear-gradient(160deg, rgb(var(--brand-rgb) / 0.10), rgb(var(--brand-rgb) / 0.02))' }}>
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
               <div className="flex items-center gap-2 mb-1">
-                <span className="w-6 h-6 rounded-lg grid place-items-center flex-shrink-0 text-white" style={{ background: '#7C3AED' }}><Sparkles size={13} /></span>
+                <span className="w-6 h-6 rounded-lg grid place-items-center flex-shrink-0 text-white" style={{ background: 'var(--accent)' }}><Sparkles size={13} /></span>
                 <h2 className="text-[15px] font-bold text-[var(--text)]">Connection only (keep my blog design)</h2>
               </div>
               <p className="text-xs text-[var(--text-3)] leading-relaxed">
@@ -592,7 +592,7 @@ export default function CustomizePage() {
             </button>
           </div>
           {data.layout.connectionOnly && (
-            <p className="text-[11px] mt-3 font-medium" style={{ color: '#7C3AED' }}>
+            <p className="text-[11px] mt-3 font-medium" style={{ color: 'var(--accent)' }}>
               On: MVP is connected and posting, but making no changes to your blog layout.
             </p>
           )}

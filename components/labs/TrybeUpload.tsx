@@ -327,7 +327,7 @@ export default function TrybeUpload({ inbox = null, canChat = false, onOpenChat 
               onClick={() => void sendAll()}
               disabled={sending || !canSend}
               className="inline-flex items-center gap-1.5 rounded-xl px-4 py-2 text-[13px] font-semibold text-white disabled:opacity-50"
-              style={{ backgroundColor: '#7C3AED' }}
+              style={{ backgroundColor: 'var(--accent)' }}
             >
               {sending ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
               Send {ready} to TRYBE
@@ -363,7 +363,7 @@ export default function TrybeUpload({ inbox = null, canChat = false, onOpenChat 
             {v.stage === 'uploading' && (
               <div className="mt-3">
                 <div className="h-1.5 rounded-full overflow-hidden" style={{ background: 'var(--border)' }}>
-                  <div className="h-full" style={{ width: `${pct}%`, background: '#7C3AED' }} />
+                  <div className="h-full" style={{ width: `${pct}%`, background: 'var(--accent)' }} />
                 </div>
                 <p className="text-[12px] mt-1.5" style={soft}>Uploading {pct}%</p>
               </div>

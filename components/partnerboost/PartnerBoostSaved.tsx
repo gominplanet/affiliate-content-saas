@@ -131,7 +131,7 @@ export default function PartnerBoostSaved({ reloadKey }: { reloadKey: number }) 
                     )}
                     <button onClick={() => setMsg({ product: it.title || '', brand: it.brand || '', asin: it.asin, commissionPct: it.commission_pct, network: 'PartnerBoost', networkUrl: 'https://app.partnerboost.com/partner/brands/all' })}
                       className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold border"
-                      style={{ borderColor: 'rgb(var(--brand-rgb) / 0.4)', color: '#7C3AED' }}>
+                      style={{ borderColor: 'rgb(var(--brand-rgb) / 0.4)', color: 'var(--accent)' }}>
                       <MessageCircle size={11} /> Message brand
                     </button>
                     <button onClick={() => remove(it.id)} disabled={removing.has(it.id)}
