@@ -24,8 +24,9 @@ import { createServerClient } from '@/lib/supabase/server'
 import { canUsePreview } from '@/lib/labs-preview'
 import { cleanSettings, clock, keepName, linesOf, DEFAULT_SETTINGS, type Plan, type Word } from '@/lib/review-edit'
 import { promptChange } from '@/lib/review-edit-plan'
-import { moveQueue, deleteRaw, ownPath, hasUpload, serverJobs, finishMaking, takeFiles, MAX_TAKE_FILES, EDIT_BUCKET, type EditRow, type Src, type TakeFile, type ServerView, editDb } from '@/lib/review-edit-server'
+import { moveQueue, deleteRaw, ownPath, hasUpload, serverJobs, finishMaking, takeFiles, editAllowance, allowanceFullWords, lineOrder, MAX_TAKE_FILES, EDIT_BUCKET, type EditRow, type Src, type TakeFile, type ServerView, editDb } from '@/lib/review-edit-server'
 import { driveAccessToken, driveFile, isDriveId } from '@/lib/google-drive'
+import { placesInLine } from '@/lib/review-edit-queue'
 
 export const runtime = 'nodejs'
 export const maxDuration = 300
@@ -46,7 +47,7 @@ async function gate() {
 
 /** What the page shows for one video: never the whole transcript. server:
  *  what the video server says about it while it is being made. */
-function view(r: EditRow, server?: ServerView | null, dropAsin?: string | null) {
+function view(r: EditRow, server?: ServerView | null, dropAsin?: string | null, turn?: number | null) {
   const onServer = r.status === 'making' && server
     ? (server.progress[`edit-${r.id}`] ? { ...server.progress[`edit-${r.id}`], others: server.others } : { missing: true as const })
     : null
@@ -66,6 +67,8 @@ function view(r: EditRow, server?: ServerView | null, dropAsin?: string | null) 
     fromDrive: r.review_src?.kind === 'drive',
     /** The files each take is joined from, in order, when more than one. */
     files: { talk: takeFiles(r.review_src).map((f) => f.name || 'A file'), broll: takeFiles(r.broll_src).map((f) => f.name || 'A file') },
+    /** Waiting: how many videos go before it (turns between members), or null. */
+    turn: turn ?? null,
     /** What its file is called when downloaded: the product, and the ASIN when known. */
     keep: keepName({ product: r.product, heard: r.plan?.product ?? (r.info?.brollCheck?.talk || (cleanSettings(r.settings).kind === 'review' ? r.plan?.title : null) || null), name: r.name, files: takeFiles(r.review_src).map((f) => f.name || ''), dropAsin }),
     settings: cleanSettings(r.settings),
@@ -132,8 +135,20 @@ export async function GET() {
     for (const it of (items ?? []) as { source_url: string; asin: string }[]) dropAsin.set(it.source_url, it.asin)
   }
   const asinOf = (r: EditRow) => Object.values(r.outputs || {}).map((o) => dropAsin.get(o.url)).find(Boolean) ?? null
+  // WHERE EACH WAITING VIDEO STANDS (turns between members, lib/review-edit-queue):
+  // only counts are worked out from other members' videos, nothing of theirs is sent.
+  const turns: Record<string, number> = {}
+  const waitingMake = rows.filter((r) => r.status === 'ready_to_make').map((r) => r.id)
+  const waitingRead = rows.filter((r) => r.status === 'queued').map((r) => r.id)
+  if (waitingMake.length || waitingRead.length) {
+    const busy = async (status: string) => (await db.from('review_edits').select('id', { count: 'exact', head: true }).eq('status', status)).count ?? 0
+    if (waitingMake.length) Object.assign(turns, placesInLine(await lineOrder(db, 'make'), waitingMake, await busy('making')))
+    if (waitingRead.length) Object.assign(turns, placesInLine(await lineOrder(db, 'read'), waitingRead, await busy('reading')))
+  }
   return NextResponse.json({
-    edits: rows.map((r: EditRow) => view(r, server, asinOf(r))),
+    edits: rows.map((r: EditRow) => view(r, server, asinOf(r), turns[r.id] ?? null)),
+    /** The month's edited videos (100 a month on Pro, 25 in the first week). */
+    allowance: await editAllowance(db, g.userId, g.tier),
     defaults: lookRow ? cleanSettings(lookRow.settings) : last ? cleanSettings(last.settings) : DEFAULT_SETTINGS,
     lookSaved: !!lookRow, lookNeedsSql: lookMissing,
     pictures: await pictureLibrary(db, g.userId),
@@ -170,6 +185,10 @@ export async function POST(request: Request) {
   }
 
   if (action === 'add') {
+    // THE MONTH'S EDITED VIDEOS (lib/review-edit-server editAllowance): none
+    // added past what is left, said in words with when more come.
+    const allowance = await editAllowance(db, g.userId, g.tier)
+    if (allowance.left !== null && allowance.left <= 0) return NextResponse.json({ error: allowanceFullWords(allowance), allowanceFull: true, allowance }, { status: 429 })
     // A take picked in Google Drive is checked with Google first: MVP can
     // open it, and it is a video. An upload must be in this creator's folder.
     let token: string | null = null

@@ -23,10 +23,20 @@ import { drawTitle } from '@/lib/title-looks'
 import { cleanSettings, cleanWords, clock, linesOf, renderSpec, LOGO_WIDTH, PICTURE_WIDTH, type EditSettings, type PictureTime, type Plan, type Shot, type Word } from '@/lib/review-edit'
 import { brollFits, planEdit, readShots } from '@/lib/review-edit-plan'
 import { driveAccessToken, driveMediaUrl } from '@/lib/google-drive'
+import { recordUsage } from '@/lib/ai-usage'
+import { fairOrder, lastServedBy } from '@/lib/review-edit-queue'
+import { checkUsageCap, PRIMARY_FEATURE, reviewEditCapFor } from '@/lib/usage-cap'
+import { introCap, introNote } from '@/lib/intro-allowance'
+import { normalizeTier } from '@/lib/tier'
 
 export const EDIT_BUCKET = 'instagram-videos'
 /** Videos on the video server at once, across everyone. */
 export const MAKING_AT_ONCE = 1
+/** Videos being read at once, across everyone (2026-11-03): a batch of twenty
+ *  added at once used to start twenty reads on the video server together. */
+export const READ_AT_ONCE = 3
+/** How far back a member counts as served, for taking turns (review-edit-queue). */
+const SERVED_WINDOW_MS = 6 * 3600_000
 export const READ_STALE_MS = 12 * 60_000
 export const MAKE_STALE_MS = 90 * 60_000
 /** Raw uploads are kept this long after the video is made, for changes. */
@@ -90,7 +100,9 @@ export function mixedShapes(files: { name?: string }[], parts: { width: number; 
 export interface EditRow {
   id: string; user_id: string; name: string | null; status: string; note: string | null
   review_src: Src; broll_src: Src | null; product: string | null
-  settings: unknown; info: { review?: { duration: number; width: number; height: number; hasAudio: boolean; silences?: [number, number][] }; broll?: { duration: number }; placed?: Placed; brollCheck?: { fits: boolean; talk: string; shows: string } } | null
+  settings: unknown; info: { review?: { duration: number; width: number; height: number; hasAudio: boolean; silences?: [number, number][] }; broll?: { duration: number }; placed?: Placed; brollCheck?: { fits: boolean; talk: string; shows: string }
+    /** Counted as one of the member's edited videos (the first time it was read). */
+    counted?: boolean } | null
   words: Word[] | null; shots: Shot[] | null; plan: Plan | null; outputs: Record<string, { url: string; seconds: number }> | null
   attempts: number; made_at: string | null; raw_deleted_at: string | null; created_at: string; updated_at: string
 }
@@ -170,6 +182,8 @@ export async function readTakes(db: Db, row: EditRow): Promise<void> {
     const audio = await videoServer<{ url: string; silences?: [number, number][] }>('/stream-audio', { ...src.review, userId: row.user_id, silences: true }, 295_000)
     if (!audio.ok) return await fail(many && audio.status === 400 ? updating : `MVP could not take the sound from your review take: ${audio.error}.`)
     const cues = await transcribeToCues(audio.data.url)
+    // What it cost, every time it is written down (Whisper, lib/ai-usage).
+    recordUsage({ userId: row.user_id, tier: who.tier, feature: 'review_edit_transcribe', model: 'fal-whisper', images: 1 })
     const audioPath = ownPath(audio.data.url, row.user_id)
     if (audioPath) await db.storage.from(EDIT_BUCKET).remove([audioPath])
     const words = cleanWords(cues.map((c) => ({ start: c.start, end: c.end, text: c.text })))
@@ -200,11 +214,59 @@ export async function readTakes(db: Db, row: EditRow): Promise<void> {
     await set(db, row.id, {
       status: 'ready_to_make', attempts: 0,
       note: `Read: ${plan.cuts.length} ${plan.cuts.length === 1 ? 'cut' : 'cuts'}${shots.length ? `, ${plan.placements.length} B-roll ${plan.placements.length === 1 ? 'moment' : 'moments'}` : ''}. Waiting for its turn on the video server.${brollNote}`,
-      info: { review: { ...probe.data, silences: Array.isArray(audio.data.silences) ? audio.data.silences : undefined }, ...(brollInfo ? { broll: brollInfo } : {}), ...(check ? { brollCheck: check } : {}) }, words, shots, plan, settings,
+      info: { review: { ...probe.data, silences: Array.isArray(audio.data.silences) ? audio.data.silences : undefined }, ...(brollInfo ? { broll: brollInfo } : {}), ...(check ? { brollCheck: check } : {}), counted: true }, words, shots, plan, settings,
     })
+    // ONE OF THE MONTH'S EDITED VIDEOS, counted once: the first time it is
+    // read. Try again and Make it again never count it twice; removing it
+    // does not give it back (editAllowance).
+    if (!row.info?.counted) recordUsage({ userId: row.user_id, tier: who.tier, feature: PRIMARY_FEATURE.reviewEdit[0], model: 'counter', images: 0 })
   } catch (e) {
     await fail(`MVP stopped while reading your takes: ${e instanceof Error ? e.message.slice(0, 200) : 'unknown'}.`)
   }
+}
+
+// ── THE MONTH'S EDITED VIDEOS (Seb, 2026-11-03: "go with 100 and 25 for free
+// week"). Counted on the member's real billing month (lib/usage-cap), a
+// quarter in their first 7 days (lib/intro-allowance). Used: the videos
+// counted this month, plus the ones added and not read yet, so a batch never
+// adds more than is left. ────────────────────────────────────────────────────
+export interface EditAllowance { used: number; limit: number | null; left: number | null; resetLabel: string; introNote: string | null }
+export async function editAllowance(db: Db, userId: string, tier: unknown): Promise<EditAllowance> {
+  const { data: ig } = await db.from('integrations').select('*').eq('user_id', userId).maybeSingle()
+  const t = normalizeTier(tier)
+  const subscribedAt = (ig?.subscribed_at as string | null | undefined) ?? null
+  const limit = t === 'admin' ? null : introCap(reviewEditCapFor(t), subscribedAt)
+  const cap = await checkUsageCap(db, userId, PRIMARY_FEATURE.reviewEdit, limit, (ig?.subscription_period_start as string | null) ?? null, (ig?.subscription_period_end as string | null) ?? null)
+  const { count: pending } = await db.from('review_edits').select('id', { count: 'exact', head: true })
+    .eq('user_id', userId).in('status', ['queued', 'reading']).is('info->counted', null)
+  const used = (cap?.used ?? 0) + (pending ?? 0)
+  return { used, limit, left: limit === null ? null : Math.max(0, limit - used), resetLabel: cap?.resetLabel ?? '', introNote: limit === null ? null : introNote(subscribedAt) }
+}
+/** The words when the month's edited videos are used up. Pure. */
+export function allowanceFullWords(a: EditAllowance): string {
+  return `You have used all ${a.limit} edited videos for this month${a.resetLabel ? `. More on ${a.resetLabel}` : ''}.${a.introNote ? ` ${a.introNote}` : ''}`
+}
+
+/** The order a line is worked through: turns between members (lib/review-edit-queue). */
+export async function lineOrder(db: Db, line: 'make' | 'read'): Promise<string[]> {
+  const status = line === 'make' ? 'ready_to_make' : 'queued'
+  const { data: rows } = await db.from('review_edits').select('id,user_id,created_at,updated_at').eq('status', status)
+    .order(line === 'make' ? 'updated_at' : 'created_at', { ascending: true }).limit(300)
+  if (!rows?.length) return []
+  const since = new Date(Date.now() - SERVED_WINDOW_MS).toISOString()
+  const { data: served } = await db.from('review_edits').select('user_id,status,updated_at,made_at')
+    .in('status', line === 'make' ? ['making', 'done'] : ['reading', 'ready_to_make', 'making', 'done']).gte('updated_at', since).limit(2000)
+  const last = lastServedBy(((served ?? []) as { user_id: string; status: string; updated_at: string; made_at: string | null }[])
+    .map((x) => ({ user_id: x.user_id, at: line === 'make' && x.status === 'done' ? x.made_at : x.updated_at })))
+  return fairOrder((rows as { id: string; user_id: string; created_at: string; updated_at: string }[])
+    .map((r) => ({ id: r.id, user_id: r.user_id, at: line === 'make' ? r.updated_at : r.created_at })), last)
+}
+async function nextInLine(db: Db, line: 'make' | 'read'): Promise<EditRow | null> {
+  for (const id of (await lineOrder(db, line)).slice(0, 3)) {
+    const { data } = await db.from('review_edits').select('*').eq('id', id).eq('status', line === 'make' ? 'ready_to_make' : 'queued').maybeSingle()
+    if (data) return data as EditRow
+  }
+  return null
 }
 
 /** When each Drive file was filmed, read from the file itself by the video
@@ -402,19 +464,26 @@ export async function moveQueue(db: Db, o: { userId?: string; readBudget?: numbe
   let started = 0
   const { count: making } = await db.from('review_edits').select('id', { count: 'exact', head: true }).eq('status', 'making')
   if ((making ?? 0) < MAKING_AT_ONCE) {
-    const { data: next } = await db.from('review_edits').select('*').eq('status', 'ready_to_make').order('updated_at', { ascending: true }).limit(1)
-    if (next?.[0]) { await startMaking(db, next[0] as EditRow); started++ }
+    // In turns between members (lib/review-edit-queue), not in arrival order.
+    const next = await nextInLine(db, 'make')
+    if (next) { await startMaking(db, next); started++ }
   }
 
   // Read: the next queued video (this creator's first), as time allows.
   let read = 0
   const budget = o.readBudget ?? 1
   while (read < budget) {
-    let q = db.from('review_edits').select('*').eq('status', 'queued').order('created_at', { ascending: true }).limit(1)
-    if (o.userId && read === 0) q = q.eq('user_id', o.userId)
-    const { data } = await q
-    const row = data?.[0] as EditRow | undefined
-    if (!row) { if (o.userId && read === 0) { o = { ...o, userId: undefined }; continue } break }
+    // At most READ_AT_ONCE across everyone; the rest wait for the cron.
+    const { count: reading } = await db.from('review_edits').select('id', { count: 'exact', head: true }).eq('status', 'reading')
+    if ((reading ?? 0) >= READ_AT_ONCE) break
+    let row: EditRow | undefined
+    if (o.userId && read === 0) {
+      const { data } = await db.from('review_edits').select('*').eq('status', 'queued').eq('user_id', o.userId).order('created_at', { ascending: true }).limit(1)
+      row = data?.[0] as EditRow | undefined
+    }
+    // Then in turns between members.
+    if (!row) row = (await nextInLine(db, 'read')) ?? undefined
+    if (!row) break
     await readTakes(db, row)
     read++
     // Read and nothing on the server: start it now rather than next tick.

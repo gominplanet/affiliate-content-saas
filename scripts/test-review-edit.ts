@@ -185,7 +185,7 @@ check('B-roll switched off, or no B-roll take, sends none', renderSpec({ words, 
   const R = readFileSync('app/api/review-edit/route.ts', 'utf8')
   const U = readFileSync('components/review-editor/ReviewEditor.tsx', 'utf8')
   check('the planner writes down the product as it is said, never a guess, for reviews and ads', (P.match(/Write "product": the product as they name it/g) || []).length === 2 && /Never a guess/.test(P) && /\.\.\.\(product \? \{ product \} : \{\}\)/.test(P))
-  check('the page is told each video’s file name, with an ASIN set in Drop', /keep: keepName\(\{ product: r\.product, heard: r\.plan\?\.product/.test(R) && /from\('drop_items'\)\.select\('source_url,asin'\)/.test(R) && /view\(r, server, asinOf\(r\)\)/.test(R))
+  check('the page is told each video’s file name, with an ASIN set in Drop', /keep: keepName\(\{ product: r\.product, heard: r\.plan\?\.product/.test(R) && /from\('drop_items'\)\.select\('source_url,asin'\)/.test(R) && /view\(r, server, asinOf\(r\), turns\[r\.id\] \?\? null\)/.test(R))
   check('the ASIN can be added later without touching the edit', /if \(action === 'product'\)/.test(R) && /update\(\{ product \}\)\.eq\('id', row\.id\)/.test(R))
   check('the card says the name it saves as, and asks for the ASIN on an Amazon review that has none', /Saves as <b/.test(U) && /downloadLink\(o\.url, e\.keep\?\.base \?\? e\.name, f, outs\.length > 1\)/.test(U) && /No ASIN yet, so it is not in the name\./.test(U) && /normalizeAsinInput\(asinIn\)/.test(U))
   check('Drop is sent the ASIN itself when it is known', /asin: e\.keep\?\.asin \|\| e\.product \|\| undefined/.test(U))

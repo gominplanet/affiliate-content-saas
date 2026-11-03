@@ -57,6 +57,8 @@ interface EditView {
   rawInMvp: boolean; fromDrive: boolean
   /** The files each take is joined from, in order (one each, usually). */
   files?: { talk: string[]; broll: string[] }
+  /** Waiting: how many videos go before it (turns between members). */
+  turn?: number | null
   /** What its file is called when downloaded (lib/review-edit keepName). */
   keep?: { base: string; asin: string | null; product: string | null }
   settings: EditSettings
@@ -389,6 +391,8 @@ export default function ReviewEditor() {
   /** The look as last saved, to put back on Cancel and to tell a change. */
   const [savedLook, setSavedLook] = useState<EditSettings | null>(null)
   const [lookSaved, setLookSaved] = useState(false)
+  /** The month's edited videos (100 a month on Pro, 25 in the first week). */
+  const [allowance, setAllowance] = useState<{ used: number; limit: number | null; left: number | null; resetLabel: string; introNote: string | null } | null>(null)
   const [lookNeedsSql, setLookNeedsSql] = useState(false)
   const [lookOpen, setLookOpen] = useState(false)
   const [savingLook, setSavingLook] = useState(false)
@@ -453,6 +457,7 @@ export default function ReviewEditor() {
       if (!r.ok) { setNeedsSql(!!d.needsSql); setLoadError(d.error || 'Your videos could not be read.'); return }
       setLoadError(null); setNeedsSql(false)
       setEdits(d.edits || [])
+      if (d.allowance) setAllowance(d.allowance)
       if (Array.isArray(d.pictures)) setLibrary(d.pictures)
       setLookNeedsSql(!!d.lookNeedsSql)
       if (!seeded.current && d.defaults) { setSettings(d.defaults); setSavedLook(d.defaults); setLookSaved(!!d.lookSaved); seeded.current = true }
@@ -671,7 +676,18 @@ export default function ReviewEditor() {
       {/* 2. ADD VIDEOS: a batch from Google Drive, or one video. */}
       <section className={card} style={cardStyle} aria-label="Add videos">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <h2 className="text-[16px] font-bold">Add videos</h2>
+          <div>
+            <h2 className="text-[16px] font-bold">Add videos</h2>
+            {/* THE MONTH'S EDITED VIDEOS: what is used, and when more come. */}
+            {allowance && allowance.limit !== null && (
+              <p className="text-[12px] mt-0.5" style={{ color: allowance.left === 0 ? AMBER : 'var(--text-3)' }}>
+                {allowance.left === 0
+                  ? `All ${allowance.limit} edited videos used this month${allowance.resetLabel ? `. More on ${allowance.resetLabel}` : ''}.`
+                  : `${allowance.used} of ${allowance.limit} edited videos used this month${allowance.resetLabel ? `, resets ${allowance.resetLabel}` : ''}.`}
+                {allowance.introNote ? ` ${allowance.introNote}` : ''}
+              </p>
+            )}
+          </div>
           <div className="inline-flex rounded-lg border p-0.5" role="tablist" style={{ borderColor: 'var(--border-2)', background: 'var(--surface-2)' }}>
             {([['drive', 'A batch from Google Drive'], ['one', 'One video']] as const).map(([k, w]) => (
               <button key={k} type="button" role="tab" aria-selected={tab === k} onClick={() => setTab(k)}
@@ -695,7 +711,7 @@ export default function ReviewEditor() {
                   {!drive.needsSql && <a href="/api/auth/google-drive" className="inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-[13px] font-semibold text-white" style={{ background: BLUE }}>Connect Google Drive</a>}
                 </div>
               ) : null}
-            {drive?.connected && <DriveBatch drive={drive} loadDrive={loadDrive} settings={settings} onAdded={load} />}
+            {drive?.connected && <DriveBatch drive={drive} loadDrive={loadDrive} settings={settings} onAdded={load} left={allowance?.left ?? null} />}
             {drive?.connected && (
               <p className="text-[12px] mt-3" style={soft}>
                 Google Drive is connected{drive.email ? ` as ${drive.email}` : ''}. Your takes stay in your Drive.{' '}
@@ -826,7 +842,11 @@ function EditCard({ e, reload, uploadLogo, withLogo, logoBusy, lib }: {
   // ONE LINE FOR WHERE IT IS: the video server's own words while it is being
   // made, the step's note otherwise.
   const line = e.status === 'making' && e.onServer && !('missing' in e.onServer) ? serverWords(e.onServer) : e.note
-  const normal = e.status === 'reading' ? 'Reading takes 1 to 3 minutes.' : e.status === 'making' ? 'Making takes 2 to 10 minutes, longer for a long or 4K take.' : 'It starts when the videos before it are done.'
+  // WHERE IT STANDS IN LINE: MVP takes turns between members, one at a time.
+  const waitWords = typeof e.turn === 'number'
+    ? e.turn === 0 ? 'It is next.' : `${e.turn} ${e.turn === 1 ? 'video goes' : 'videos go'} before it. MVP takes turns between members, one video at a time.`
+    : 'It starts when the videos before it are done.'
+  const normal = e.status === 'reading' ? 'Reading takes 1 to 3 minutes.' : e.status === 'making' ? 'Making takes 2 to 10 minutes, longer for a long or 4K take.' : waitWords
   const footer = editable || e.status === 'failed'
   const remove = (
     <button type="button" onClick={() => { if (confirm('Remove this video, its takes and its finished files?')) void act('remove', { action: 'remove', id: e.id }, 'Removed.') }} disabled={!!work || e.status === 'making'} className="inline-flex items-center gap-1 text-[12px] underline disabled:opacity-40" style={soft}><Trash2 size={12} /> Remove</button>

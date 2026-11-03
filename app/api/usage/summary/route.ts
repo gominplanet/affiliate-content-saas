@@ -21,13 +21,14 @@
  * buckets are omitted so the meter stays clean. On any DB hiccup we return an
  * empty bucket list — the meter hides rather than showing a wrong number.
  */
-import { introNote } from '@/lib/intro-allowance'
+import { introNote, introCap } from '@/lib/intro-allowance'
+import { canUsePreview } from '@/lib/labs-preview'
 import { NextResponse } from 'next/server'
 import { NEWSLETTER_FOR_MEMBERS } from '@/lib/feature-flags'
 import {
   TIERS, billingWindow, effectivePostCap, effectiveCap, allowedNewsletterBroadcasts, normalizeTier, type Tier, type SteppedCap,
 } from '@/lib/tier'
-import { SHORTS_MONTHLY_CAP, X_MONTHLY_CAP, PRIMARY_FEATURE, shortsCapFor } from '@/lib/usage-cap'
+import { SHORTS_MONTHLY_CAP, X_MONTHLY_CAP, REVIEW_EDITS_MONTHLY_CAP, PRIMARY_FEATURE, shortsCapFor } from '@/lib/usage-cap'
 import { createServerClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getStripe } from '@/lib/stripe'
@@ -187,6 +188,9 @@ export async function GET() {
         const [shorts, x] = await Promise.all([countFeatures(['shorts_render']), countFeatures(['x_post'])])
         push('shorts', 'Shorts', shorts, SHORTS_MONTHLY_CAP)
         push('x', 'X posts', x, ec('xPostsPerMonth', X_MONTHLY_CAP))
+        // The review editor's month, once it is open to this member (Labs):
+        // the same count and the same first-week quarter as the editor's gate.
+        if (canUsePreview('review_edit', tier)) push('reviewEdits', 'Edited videos', await countFeatures(PRIMARY_FEATURE.reviewEdit), introCap(REVIEW_EDITS_MONTHLY_CAP, subscribedAt))
       }
       // Amazon-style designed social graphics — now finite + metered on Studio
       // and Pro too, so show their bars (Amazon renders these in the branch

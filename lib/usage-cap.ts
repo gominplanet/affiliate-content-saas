@@ -51,6 +51,19 @@ export const PRIMARY_FEATURE = {
    *  lib/dub-credits), not a row-count cap; standard OpenAI dubs are free and
    *  uncapped. Kept here so admin cost dashboards can still count premium dubs. */
   dub: ['global_sync_dub_cloned'] as string[],
+  /** Review editor: one row per edited video, the first time it is read
+   *  (lib/review-edit-server). Try again and Make it again never add one. */
+  reviewEdit: ['review_edit_video'] as string[],
+}
+
+/** Videos the review editor edits per billing period (Seb, 2026-11-03: "go
+ *  with 100 and 25 for free week"). About $0.15 each (Whisper about $0.10,
+ *  the plan and B-roll reads about $0.02 measured, the video server the
+ *  rest), so 100 is about $15 inside Pro's $130 AI ceiling. The first 7
+ *  days run at a quarter, 25 (lib/intro-allowance). Admin unlimited. */
+export const REVIEW_EDITS_MONTHLY_CAP = 100
+export function reviewEditCapFor(tier: string): number | null {
+  return tier === 'admin' ? null : REVIEW_EDITS_MONTHLY_CAP
 }
 
 /**

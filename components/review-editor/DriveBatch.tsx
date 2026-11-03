@@ -31,12 +31,14 @@ const shape = (t: DriveTake) => (t.width && t.height ? (t.height > t.width ? 'up
 /** One upright file and one sideways cannot be one video. */
 const mixed = (v: BatchVideo) => new Set(v.a.map(shape).filter(Boolean)).size > 1
 
-export default function DriveBatch({ drive, loadDrive, settings, onAdded }: {
+export default function DriveBatch({ drive, loadDrive, settings, onAdded, left = null }: {
   drive: DriveState
   loadDrive: () => Promise<DriveState | null>
   /** The look chosen above (logo, zooms, colour...), used for every video. */
   settings: EditSettings
   onAdded: () => Promise<void>
+  /** Edited videos left this month, or null for no limit. */
+  left?: number | null
 }) {
   const [busy, setBusy] = useState<string | null>(null)
   const [videos, setVideos] = useState<BatchVideo[] | null>(null)
@@ -46,7 +48,7 @@ export default function DriveBatch({ drive, loadDrive, settings, onAdded }: {
   const [skipped, setSkipped] = useState<string[]>([])
   /** False when the video server could not say when the takes were filmed. */
   const [filmedRead, setFilmedRead] = useState(true)
-  const [added, setAdded] = useState<{ ok: number; failed: string[] } | null>(null)
+  const [added, setAdded] = useState<{ ok: number; failed: string[]; stop?: string } | null>(null)
 
   const fresh = async () => {
     const st = await loadDrive()
@@ -109,6 +111,7 @@ export default function DriveBatch({ drive, loadDrive, settings, onAdded }: {
     setBusy('add')
     let ok = 0
     const failed: { id: string; why: string }[] = []
+    let stop: string | undefined
     for (let i = 0; i < videos.length; i++) {
       const v = videos[i]
       const label = `Video ${i + 1} (${v.a.map((f) => f.name).join(' + ')})`
@@ -123,10 +126,16 @@ export default function DriveBatch({ drive, loadDrive, settings, onAdded }: {
         })
         const d = await r.json().catch(() => ({}))
         if (r.ok) ok++
+        else if (d.allowanceFull) {
+          // The month's edited videos are used up: the rest are not tried, said once.
+          for (const rest of videos.slice(i)) failed.push({ id: rest.a[0].id, why: `Video ${videos.indexOf(rest) + 1}` })
+          stop = d.error
+          break
+        }
         else failed.push({ id: v.a[0].id, why: `${label}: ${d.error || 'not added'}` })
       } catch { failed.push({ id: v.a[0].id, why: `${label}: not added (no answer)` }) }
     }
-    setAdded({ ok, failed: failed.map((f) => f.why) })
+    setAdded({ ok, failed: failed.map((f) => f.why), stop })
     if (ok) { setVideos(failed.length ? videos.filter((v) => failed.some((f) => f.id === v.a[0].id)) : null); await onAdded() }
     setBusy(null)
   }
@@ -241,12 +250,13 @@ export default function DriveBatch({ drive, loadDrive, settings, onAdded }: {
             className="mt-3 inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-[13.5px] font-semibold text-white disabled:opacity-50" style={{ background: PURPLE }}>
             {busy?.startsWith('add') ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />} {busy?.startsWith('add:') ? `Adding ${busy.slice(4)} of ${videos.length}` : `Add all ${videos.length} to the queue`}
           </button>
-          <p className="text-[12px] mt-1" style={blocked ? { color: '#B45309' } : soft}>{blocked ? `${blocked === 1 ? 'One video mixes' : `${blocked} videos mix`} upright and sideways files: fix that first.` : 'They use your look above.'}</p>
+          <p className="text-[12px] mt-1" style={blocked || (left !== null && videos.length > left) ? { color: '#B45309' } : soft}>{blocked ? `${blocked === 1 ? 'One video mixes' : `${blocked} videos mix`} upright and sideways files: fix that first.`
+            : left !== null && videos.length > left ? `You have ${left} edited ${left === 1 ? 'video' : 'videos'} left this month, so only the first ${left} will be added.` : 'They use your look above.'}</p>
         </div>
       )}
       {added && (
         <p className="text-[12.5px] mt-2" style={{ color: added.failed.length ? '#B45309' : '#15803D' }}>
-          {added.ok} added to the queue{added.failed.length ? `; ${added.failed.length} not added: ${added.failed.join('; ')}` : '. MVP works through them in the background.'}
+          {added.ok} added to the queue{added.failed.length ? `; ${added.failed.length} not added: ${added.failed.join('; ')}` : '. MVP works through them in the background.'}{added.stop ? ` ${added.stop}` : ''}
         </p>
       )}
     </div>
