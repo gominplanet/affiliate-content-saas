@@ -14,7 +14,7 @@ import { toast } from 'sonner'
 import { Loader2, Film, Trash2, ExternalLink, AlertTriangle, RotateCcw, Check } from 'lucide-react'
 import type { ShortRow } from '@/lib/shorts-types'
 
-const PURPLE = '#7C3AED'
+const PURPLE = 'var(--accent)'
 
 export interface LibraryClip extends ShortRow {
   renderedAt: string | null

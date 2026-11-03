@@ -55,7 +55,7 @@ export default function LinkStyleNudge() {
   return (
     <div
       className="mb-4 rounded-xl border p-4 flex items-start gap-3"
-      style={{ borderColor: 'rgba(124,58,237,0.35)', background: 'linear-gradient(135deg, rgba(124,58,237,0.08), rgba(52,199,89,0.04))' }}
+      style={{ borderColor: 'rgb(var(--brand-rgb) / 0.35)', background: 'linear-gradient(135deg, rgb(var(--brand-rgb) / 0.08), rgba(52,199,89,0.04))' }}
     >
       <div
         className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0"

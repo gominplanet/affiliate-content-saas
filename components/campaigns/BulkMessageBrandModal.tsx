@@ -374,7 +374,7 @@ export default function BulkMessageBrandModal({ campaigns, alreadyMessaged, alre
   const stateChip = (s: SendState) => {
     const map: Record<SendState, { c: string; bg: string; t: string }> = {
       pending: { c: 'var(--text-faint)', bg: 'var(--surface-2)', t: 'Queued' },
-      sending: { c: '#7C3AED', bg: 'rgba(124,58,237,0.12)', t: 'Sending…' },
+      sending: { c: '#7C3AED', bg: 'rgb(var(--brand-rgb) / 0.12)', t: 'Sending…' },
       sent: { c: '#1c7a35', bg: 'rgba(52,199,89,0.15)', t: 'Sent' },
       failed: { c: '#b3261e', bg: 'rgba(255,59,48,0.12)', t: 'Failed' },
       skipped: { c: '#8a6d00', bg: 'rgba(255,204,0,0.15)', t: 'Skipped' },
@@ -425,7 +425,7 @@ export default function BulkMessageBrandModal({ campaigns, alreadyMessaged, alre
               {/* Two separate acts, and MVP used to perform both off one button.
                   Accepting commits you to a campaign's terms; messaging is a
                   conversation. Everyone gets messaged either way. */}
-              <div className="rounded-lg border p-2.5 mb-3 text-[12px] leading-relaxed" style={{ borderColor: joinNew ? 'rgba(124,58,237,0.4)' : 'var(--border)', background: joinNew ? 'rgba(124,58,237,0.07)' : 'transparent', color: 'var(--text)' }}>
+              <div className="rounded-lg border p-2.5 mb-3 text-[12px] leading-relaxed" style={{ borderColor: joinNew ? 'rgb(var(--brand-rgb) / 0.4)' : 'var(--border)', background: joinNew ? 'rgb(var(--brand-rgb) / 0.07)' : 'transparent', color: 'var(--text)' }}>
                 <label className="flex items-start gap-2 cursor-pointer">
                   <input
                     type="checkbox"
@@ -455,7 +455,7 @@ export default function BulkMessageBrandModal({ campaigns, alreadyMessaged, alre
                   <label key={c.key} className="flex items-center gap-2 text-[13px] cursor-pointer" style={{ color: 'var(--text)' }}>
                     <input type="checkbox" checked={opts[c.key]} onChange={() => toggle(c.key)} className="accent-[#7C3AED] w-4 h-4 flex-shrink-0" />
                     <span className="min-w-0">{c.label}</span>
-                    <span className="ml-auto text-[9px] font-bold uppercase tracking-wide px-1 py-[1px] rounded flex-shrink-0" style={{ background: 'rgba(124,58,237,0.10)', color: '#9D6BFF' }}>{c.msg}</span>
+                    <span className="ml-auto text-[9px] font-bold uppercase tracking-wide px-1 py-[1px] rounded flex-shrink-0" style={{ background: 'rgb(var(--brand-rgb) / 0.10)', color: '#9D6BFF' }}>{c.msg}</span>
                   </label>
                 ))}
               </div>
@@ -505,7 +505,7 @@ export default function BulkMessageBrandModal({ campaigns, alreadyMessaged, alre
                     return (
                       <div key={i} className="rounded-lg border" style={{ borderColor: over ? '#ff3b30' : 'var(--border)' }}>
                         <div className="flex items-center justify-between px-2.5 pt-1.5">
-                          <span className="text-[10px] font-bold uppercase tracking-wide px-1.5 py-[1px] rounded" style={{ background: 'rgba(124,58,237,0.12)', color: '#7C3AED' }}>Message {i + 1}</span>
+                          <span className="text-[10px] font-bold uppercase tracking-wide px-1.5 py-[1px] rounded" style={{ background: 'rgb(var(--brand-rgb) / 0.12)', color: '#7C3AED' }}>Message {i + 1}</span>
                           <div className="flex items-center gap-2">
                             <span className="text-[10px] tabular-nums" style={{ color: over ? '#ff3b30' : 'var(--text-faint)' }}>{seg.length}/1000</span>
                             {segments.length > 1 && (

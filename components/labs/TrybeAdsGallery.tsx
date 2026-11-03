@@ -15,7 +15,7 @@ import { galleryStats, sortAds, ranDays, closingLine, adUrl, nextToRead, LONG_RU
 import { readMetaAds, metaAdsWords } from '@/components/labs/metaAdsRead'
 import { SCOUT_META_CARDS_MIN_VERSION, SCOUT_META_LONGEST_MIN_VERSION, SCOUT_META_VIDEO_MIN_VERSION, scoutAtLeast } from '@/lib/scout-version'
 
-const PURPLE = '#7C3AED'
+const PURPLE = 'var(--accent)'
 const GREEN = '#16A34A'
 const AMBER = '#B45309'
 const RED = '#DC2626'
@@ -131,7 +131,7 @@ export default function TrybeAdsGallery({ isAdmin, scoutVersion, canRead, topBra
   }, [data])
 
   const soft = { color: 'var(--text-soft)' }
-  const chip = (on: boolean) => ({ className: 'rounded-full px-3 py-1 text-[12.5px] font-semibold border', style: on ? { background: 'rgba(124,58,237,0.10)', color: PURPLE, borderColor: 'transparent' } : { borderColor: 'var(--border)', color: 'var(--text)' } })
+  const chip = (on: boolean) => ({ className: 'rounded-full px-3 py-1 text-[12.5px] font-semibold border', style: on ? { background: 'rgb(var(--brand-rgb) / 0.10)', color: PURPLE, borderColor: 'transparent' } : { borderColor: 'var(--border)', color: 'var(--text)' } })
 
   return (
     <section id="ww-ads" className="space-y-3 scroll-mt-24" aria-label="TRYBE brands' longest running Meta ads">
@@ -232,7 +232,7 @@ function AdCard({ ad, now }: { ad: MetaAd; now: number }) {
           ? <img src={ad.preview!} alt="" loading="lazy" referrerPolicy="no-referrer" onError={() => setBad(true)} className="absolute inset-0 w-full h-full object-cover" />
           : (
             <div className="p-4 min-h-[11rem] flex flex-col justify-center">
-              <span className="w-10 h-10 rounded-xl inline-flex items-center justify-center text-[17px] font-bold mb-3" style={{ background: 'rgba(124,58,237,0.12)', color: PURPLE }}>{(ad.brand.trim()[0] || '?').toUpperCase()}</span>
+              <span className="w-10 h-10 rounded-xl inline-flex items-center justify-center text-[17px] font-bold mb-3" style={{ background: 'rgb(var(--brand-rgb) / 0.12)', color: PURPLE }}>{(ad.brand.trim()[0] || '?').toUpperCase()}</span>
               <p className="text-[12px] font-semibold" style={{ color: PINK }}>Caption</p>
               <p className="text-[15px] font-semibold leading-snug line-clamp-6" style={{ color: 'var(--text)' }}>{ad.opening ? `“${ad.opening}”` : 'Meta showed no words for this ad.'}</p>
             </div>

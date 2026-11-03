@@ -421,10 +421,10 @@ export default function EpcLibraryPanel({ tier }: { tier?: Tier | null }) {
   return (
     <div>
       {/* Header — two actions + a collapsible how-to. */}
-      <div className="card mb-5 overflow-hidden" style={{ borderWidth: 2, borderColor: 'rgba(124,58,237,0.45)', boxShadow: '0 14px 36px -16px rgba(124,58,237,0.45)' }}>
-        <div className="px-4 py-3" style={{ background: 'linear-gradient(180deg, rgba(124,58,237,0.10), transparent 85%)' }}>
+      <div className="card mb-5 overflow-hidden" style={{ borderWidth: 2, borderColor: 'rgb(var(--brand-rgb) / 0.45)', boxShadow: '0 14px 36px -16px rgb(var(--brand-rgb) / 0.45)' }}>
+        <div className="px-4 py-3" style={{ background: 'linear-gradient(180deg, rgb(var(--brand-rgb) / 0.10), transparent 85%)' }}>
           <div className="flex items-start gap-3 flex-wrap">
-            <span className="grid place-items-center w-7 h-7 rounded-lg flex-shrink-0 mt-0.5" style={{ background: 'rgba(124,58,237,0.12)' }}>
+            <span className="grid place-items-center w-7 h-7 rounded-lg flex-shrink-0 mt-0.5" style={{ background: 'rgb(var(--brand-rgb) / 0.12)' }}>
               <Radar size={14} className="text-[#7C3AED]" />
             </span>
             <div className="flex-1 min-w-[220px]">
@@ -441,7 +441,7 @@ export default function EpcLibraryPanel({ tier }: { tier?: Tier | null }) {
               <div className="flex flex-col gap-2 self-start">
                 <a href="https://affiliate-program.amazon.com/p/connect/requests" target="_blank" rel="noopener noreferrer"
                   className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-[13px] font-semibold border"
-                  style={{ borderColor: 'rgba(124,58,237,0.45)', color: '#7C3AED', background: 'var(--surface)' }}
+                  style={{ borderColor: 'rgb(var(--brand-rgb) / 0.45)', color: '#7C3AED', background: 'var(--surface)' }}
                   title="Opens Creator Connections on Amazon. Sign in with the Amazon Associates account that holds your store ID, then accept your campaigns and open the Accepted tab.">
                   <ShoppingCart size={14} /> Open my EPC on Amazon <ExternalLink size={12} />
                 </a>
@@ -493,7 +493,7 @@ export default function EpcLibraryPanel({ tier }: { tier?: Tier | null }) {
                   Operator note: the library is built centrally, so creators don&rsquo;t scan anything, they just accept and search. The Scan control above tops it up from your own Accepted grid when you want to.
                 </p>
               )}
-              <div className="mt-2 rounded-lg px-3 py-2" style={{ background: 'rgba(124,58,237,0.08)', border: '1px solid rgba(124,58,237,0.30)' }}>
+              <div className="mt-2 rounded-lg px-3 py-2" style={{ background: 'rgb(var(--brand-rgb) / 0.08)', border: '1px solid rgb(var(--brand-rgb) / 0.30)' }}>
                 <p className="text-[12px] font-semibold" style={{ color: '#7C3AED' }}>Worth it for Gold &amp; Platinum creators</p>
                 <p className="text-[11px] leading-relaxed mt-0.5" style={{ color: 'var(--text-soft)' }}>
                   EPC pays on <b>qualified clicks</b> from offsite traffic (YouTube, socials, your blog), and Amazon only pays it to <b>Gold and Platinum</b> Creator Star tier creators. Below Gold, these clicks don&apos;t earn, so promoting EPC products isn&apos;t worth it yet. Use <b>Get link</b> on any card to drop one offsite, or make a blog / social post: with Passport Links on it hands you a geo-routing link that sends each visitor to their own country&apos;s Amazon, and either way the link earns EPC. Track it in Amazon&apos;s <b>Creator Connections → Sponsored Products for Creators</b> reporting tab.
@@ -775,7 +775,7 @@ function EpcCard({ p, canBlog, amazonTag, passportEnabled, canRemove, onQuickPos
       <div className="flex gap-3 p-3">
         {p.image_url
           ? <img loading="lazy" decoding="async" src={p.image_url} alt="" className="w-16 h-16 rounded-lg object-contain flex-shrink-0 bg-white" />
-          : <div className="w-16 h-16 rounded-lg flex-shrink-0" style={{ background: 'rgba(124,58,237,0.08)' }} />}
+          : <div className="w-16 h-16 rounded-lg flex-shrink-0" style={{ background: 'rgb(var(--brand-rgb) / 0.08)' }} />}
         <div className="flex-1 min-w-0">
           {p.brand && <div className="text-[10px] font-semibold uppercase tracking-wide truncate" style={{ color: '#7C3AED' }}>{p.brand}</div>}
           <p className="text-[12.5px] font-medium leading-snug line-clamp-2" style={{ color: 'var(--text)' }}>{p.title || p.asin}</p>
@@ -824,7 +824,7 @@ function EpcCard({ p, canBlog, amazonTag, passportEnabled, canRemove, onQuickPos
       <div className="px-3 pb-2">
         <button onClick={copyLink} disabled={linking}
           className="w-full inline-flex items-center justify-center gap-1.5 text-[11.5px] font-semibold rounded-lg py-1.5 border disabled:opacity-60"
-          style={{ borderColor: 'rgba(124,58,237,0.4)', color: '#7C3AED', background: 'rgba(124,58,237,0.06)' }}
+          style={{ borderColor: 'rgb(var(--brand-rgb) / 0.4)', color: '#7C3AED', background: 'rgb(var(--brand-rgb) / 0.06)' }}
           title={passportEnabled
             ? 'Copy your Passport Link. Sends each visitor to their own country’s Amazon and tracks clicks'
             : 'Copy your affiliate link to drop offsite (YouTube, socials, blog). EPC pays on those clicks'}>

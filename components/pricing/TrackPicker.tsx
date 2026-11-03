@@ -22,7 +22,7 @@ import { Check, ArrowRight } from 'lucide-react'
 import { planCompareRows, trackCards } from '@/lib/plan-compare'
 
 const AMZ = '#C2410C'
-const LADDER = '#7C3AED'
+const LADDER = 'var(--accent)'
 
 /** "Which one am I?" — two doors, side by side, above everything else. */
 export function TrackPicker() {

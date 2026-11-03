@@ -21,7 +21,7 @@ interface SyncedList { id: string; title: string | null; url: string | null; ite
 interface RankedItem { asin: string; title: string; image: string | null; priceCents: number | null; rating: number | null; reviews: number | null; discountPct: number | null; hasCampaign: boolean; rank: number }
 // The active list to generate from: either a synced list (by id) or a pasted-URL scan.
 interface Active { source: 'synced' | 'url'; listId?: string; title: string | null; count: number | null; items: Item[]; url: string | null; partial: boolean }
-const PURPLE = '#7C3AED'
+const PURPLE = 'var(--accent)'
 const dollars = (c: number | null) => (c == null ? null : `$${(c / 100).toFixed(2)}`)
 
 export default function IdeaListsPage() {

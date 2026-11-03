@@ -89,7 +89,7 @@ export default function PassportGroups({
   }
 
   const rowStyle = (val: string) => active === val
-    ? { background: 'rgba(124,58,237,0.10)', boxShadow: 'inset 3px 0 0 #7C3AED' }
+    ? { background: 'rgb(var(--brand-rgb) / 0.10)', boxShadow: 'inset 3px 0 0 #7C3AED' }
     : undefined
 
   const Num = ({ children }: { children: React.ReactNode }) => (

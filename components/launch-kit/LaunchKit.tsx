@@ -251,7 +251,7 @@ function PlatformCard({
     <div id={`kit-${spec.id}`} className="card overflow-hidden scroll-mt-4">
       {/* Header */}
       <div className="px-4 py-3.5 flex items-start gap-3" style={{ borderBottom: kit ? '1px solid var(--border)' : undefined }}>
-        <span className="grid place-items-center w-9 h-9 rounded-xl text-[18px] flex-shrink-0" style={{ background: 'rgba(124,58,237,0.10)' }}>
+        <span className="grid place-items-center w-9 h-9 rounded-xl text-[18px] flex-shrink-0" style={{ background: 'rgb(var(--brand-rgb) / 0.10)' }}>
           {EMOJI[spec.id]}
         </span>
         <div className="flex-1 min-w-0">
@@ -452,7 +452,7 @@ function GroupNicheBar({ niche, onNiche, kits, usage }: { niche: string; onNiche
     </button>
   )
   return (
-    <div className="px-4 py-3 flex flex-col gap-2" style={{ borderBottom: '1px solid var(--border)', background: 'rgba(124,58,237,0.04)' }}>
+    <div className="px-4 py-3 flex flex-col gap-2" style={{ borderBottom: '1px solid var(--border)', background: 'rgb(var(--brand-rgb) / 0.04)' }}>
       <p className="text-[12.5px] font-semibold" style={{ color: 'var(--text)' }}>Which niche is this Group for?</p>
       <p className="text-[11.5px] leading-relaxed" style={{ color: 'var(--text-soft)' }}>
         One Page, one Group per niche. Pick the niche and MVP writes the name, web address, rules, welcome post and cover for that Group. Come back for each new niche.
@@ -539,7 +539,7 @@ function CopyChip({ text, copyText, ck, copied, onCopy, primary, muted }: {
     <button onClick={() => onCopy(copyText ?? text, ck)}
       className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[12px] font-medium transition-colors"
       style={primary
-        ? { background: 'rgba(124,58,237,0.10)', color: '#7C3AED', border: '1px solid rgba(124,58,237,0.35)' }
+        ? { background: 'rgb(var(--brand-rgb) / 0.10)', color: '#7C3AED', border: '1px solid rgb(var(--brand-rgb) / 0.35)' }
         : { background: muted ? 'var(--surface)' : 'var(--surface-2, rgba(0,0,0,0.03))', color: 'var(--text-soft)', border: '1px solid var(--border)' }}>
       {isCopied ? <Check size={11} className="text-[#34c759]" /> : <Copy size={11} />} {text}
     </button>
@@ -636,7 +636,7 @@ function ImageSlot({ label, imgKey, images, busyImg, isAdmin, refDataUrl, styleV
         <input ref={fileRef} type="file" accept="image/*" className="hidden"
           onChange={e => { onPickRef(e.target.files?.[0] ?? null); e.currentTarget.value = '' }} />
         {refDataUrl ? (
-          <span className="inline-flex items-center gap-1 pl-1 pr-1.5 py-1 rounded-lg text-[11px] font-semibold border" style={{ borderColor: 'rgba(124,58,237,0.4)', color: '#7C3AED' }}>
+          <span className="inline-flex items-center gap-1 pl-1 pr-1.5 py-1 rounded-lg text-[11px] font-semibold border" style={{ borderColor: 'rgb(var(--brand-rgb) / 0.4)', color: '#7C3AED' }}>
             <img src={refDataUrl} alt="" className="w-4 h-4 rounded object-cover" /> Reference
             <button onClick={onClearRef} title="Remove reference" className="ml-0.5"><X size={11} /></button>
           </span>

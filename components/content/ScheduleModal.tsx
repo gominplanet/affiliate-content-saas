@@ -586,7 +586,7 @@ export default function ScheduleModal({
                     className={`flex items-center gap-2 px-3 py-2 rounded-lg border transition-colors ${usable ? 'cursor-pointer' : 'opacity-60 cursor-not-allowed'}`}
                     style={{
                       borderColor: isChecked && usable ? '#7C3AED' : 'var(--border, rgba(255,255,255,0.08))',
-                      backgroundColor: isChecked && usable ? 'rgba(124,58,237,0.10)' : 'transparent',
+                      backgroundColor: isChecked && usable ? 'rgb(var(--brand-rgb) / 0.10)' : 'transparent',
                     }}
                     title={
                       usable ? ''
@@ -627,7 +627,7 @@ export default function ScheduleModal({
             </div>
             {/* Facebook-only affiliate CTA opt-in (mirrors immediate publish). */}
             {selectedChannels.has('facebook') && (
-              <label className="flex items-start gap-2 mt-2 px-3 py-2 rounded-lg border cursor-pointer" style={{ borderColor: 'rgba(124,58,237,0.30)', backgroundColor: 'rgba(124,58,237,0.06)' }}>
+              <label className="flex items-start gap-2 mt-2 px-3 py-2 rounded-lg border cursor-pointer" style={{ borderColor: 'rgb(var(--brand-rgb) / 0.30)', backgroundColor: 'rgb(var(--brand-rgb) / 0.06)' }}>
                 <input type="checkbox" checked={includeFbAffiliate} onChange={e => setIncludeFbAffiliate(e.target.checked)} className="w-3.5 h-3.5 rounded accent-[#7C3AED] mt-0.5" />
                 <span>
                   <span className="block text-sm">Also add my affiliate link to Facebook</span>
@@ -699,7 +699,7 @@ export default function ScheduleModal({
             className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium border transition-colors disabled:opacity-40"
             style={{
               borderColor: showAdvanced ? '#7C3AED' : 'var(--border-bright, rgba(255,255,255,0.14))',
-              backgroundColor: showAdvanced ? 'rgba(124,58,237,0.10)' : 'transparent',
+              backgroundColor: showAdvanced ? 'rgb(var(--brand-rgb) / 0.10)' : 'transparent',
               color: 'var(--text, #F5F5F7)',
             }}
           >

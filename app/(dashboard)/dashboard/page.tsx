@@ -250,7 +250,7 @@ export default async function DashboardPage() {
           style={{
             opacity: 'var(--hero-opacity)',
             background: `
-              radial-gradient(60% 80% at 15% 20%, rgba(124, 58, 237, 0.45), transparent 60%),
+              radial-gradient(60% 80% at 15% 20%, rgb(var(--brand-rgb) / 0.45), transparent 60%),
               radial-gradient(50% 70% at 85% 10%, rgba(192, 38, 211, 0.35), transparent 65%),
               radial-gradient(80% 60% at 50% 90%, rgba(99, 102, 241, 0.20), transparent 70%)
             `,

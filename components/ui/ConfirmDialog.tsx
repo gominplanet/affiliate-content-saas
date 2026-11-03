@@ -228,7 +228,7 @@ export function ConfirmDialog({
                 : 'linear-gradient(135deg, #7C3AED 0%, #C026D3 100%)',
               boxShadow: destructive
                 ? '0 4px 16px rgba(255,59,48,0.30)'
-                : '0 4px 16px rgba(124,58,237,0.30)',
+                : '0 4px 16px rgb(var(--brand-rgb) / 0.30)',
             }}
           >
             {confirmLabel}

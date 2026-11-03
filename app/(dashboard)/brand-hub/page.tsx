@@ -14,12 +14,12 @@ import {
 } from 'lucide-react'
 import type { BrandHubData, BrandEntity, BrandEvent, BrandChannel } from '@/lib/brand-hub-types'
 
-const PURPLE = '#7C3AED'
+const PURPLE = 'var(--accent)'
 
 const CHANNEL_META: Record<BrandChannel, { label: string; bg: string; fg: string }> = {
   inbound:  { label: 'Inbound', bg: 'rgba(52,199,89,0.12)', fg: '#248a3d' },
   pitch:    { label: 'Pitched', bg: 'rgba(0,122,255,0.12)', fg: '#0063cc' },
-  campaign: { label: 'Campaign', bg: 'rgba(124,58,237,0.12)', fg: PURPLE },
+  campaign: { label: 'Campaign', bg: 'rgb(var(--brand-rgb) / 0.12)', fg: PURPLE },
 }
 
 function statusColor(status: string): { bg: string; fg: string } {
@@ -138,7 +138,7 @@ export default function BrandHubPage() {
                 className="px-3 h-8 rounded-lg text-xs font-medium border transition"
                 style={{
                   borderColor: on ? PURPLE : 'var(--border)',
-                  background: on ? 'rgba(124,58,237,0.08)' : 'transparent',
+                  background: on ? 'rgb(var(--brand-rgb) / 0.08)' : 'transparent',
                   color: on ? PURPLE : 'var(--text-3)',
                 }}
               >{label}</button>
@@ -232,7 +232,7 @@ function BrandCard({ brand, open, onToggle }: { brand: BrandEntity; open: boolea
               <span className="text-sm font-semibold text-[var(--text)] truncate">{brand.name}</span>
               <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded" style={{ background: sc.bg, color: sc.fg }}>{brand.status}</span>
               {brand.unread > 0 && (
-                <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded" style={{ background: 'rgba(124,58,237,0.12)', color: PURPLE }}>{brand.unread} unread</span>
+                <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded" style={{ background: 'rgb(var(--brand-rgb) / 0.12)', color: PURPLE }}>{brand.unread} unread</span>
               )}
             </div>
             <div className="flex items-center gap-1.5 mt-1">
@@ -253,7 +253,7 @@ function BrandCard({ brand, open, onToggle }: { brand: BrandEntity; open: boolea
           <ol className="relative flex flex-col gap-3">
             {brand.events.map((e, i) => (
               <li key={i} className="flex items-start gap-3">
-                <span className="mt-0.5 flex h-6 w-6 items-center justify-center rounded-full shrink-0" style={{ background: 'rgba(124,58,237,0.08)', color: PURPLE }}>
+                <span className="mt-0.5 flex h-6 w-6 items-center justify-center rounded-full shrink-0" style={{ background: 'rgb(var(--brand-rgb) / 0.08)', color: PURPLE }}>
                   {eventIcon(e.type)}
                 </span>
                 <div className="min-w-0 flex-1">

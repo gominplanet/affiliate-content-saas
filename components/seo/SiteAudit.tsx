@@ -14,7 +14,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Loader2, ScanSearch, CheckCircle2, AlertTriangle, ExternalLink, ChevronDown, RefreshCw, Wrench, User } from 'lucide-react'
 import { readAudit, type Audit, type AuditStep } from '@/lib/seo-audit'
 
-const PURPLE = '#7C3AED'
+const PURPLE = 'var(--accent)'
 const GREEN = '#16A34A'
 const RED = '#DC2626'
 const AMBER = '#B45309'
@@ -116,7 +116,7 @@ export default function SiteAudit({ onGetFound, onChanged }: Props) {
   return (
     <section className="rounded-2xl border p-4 sm:p-5 mb-5" style={{ borderColor: 'var(--border-bright, var(--border))', background: 'var(--surface)' }} aria-label="Audit my site">
       <div className="flex flex-wrap items-start gap-3">
-        <span className="w-10 h-10 shrink-0 rounded-xl inline-flex items-center justify-center" style={{ background: 'rgba(124,58,237,0.12)', color: PURPLE }}><ScanSearch size={19} /></span>
+        <span className="w-10 h-10 shrink-0 rounded-xl inline-flex items-center justify-center" style={{ background: 'rgb(var(--brand-rgb) / 0.12)', color: PURPLE }}><ScanSearch size={19} /></span>
         <div className="min-w-[14rem] flex-1">
           <h2 className="text-[17px] font-bold leading-tight" style={{ color: 'var(--text)' }}>Audit my site</h2>
           <p className="text-[13px] mt-0.5" style={soft}>
@@ -132,7 +132,7 @@ export default function SiteAudit({ onGetFound, onChanged }: Props) {
       </div>
 
       {running && (
-        <p className="text-[13px] mt-3 rounded-lg px-3 py-2" style={{ background: 'rgba(124,58,237,0.07)', color: 'var(--text-2)' }}>
+        <p className="text-[13px] mt-3 rounded-lg px-3 py-2" style={{ background: 'rgb(var(--brand-rgb) / 0.07)', color: 'var(--text-2)' }}>
           Opening your site, your sitemap and your posts, and reading what Google says about each one. This usually takes under a minute.
         </p>
       )}

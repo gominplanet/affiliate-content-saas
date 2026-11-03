@@ -14,7 +14,7 @@ import TrybeLink from '@/components/labs/TrybeLink'
 import TrybeBrandPeek, { type PeekActions } from '@/components/labs/TrybeBrandPeek'
 import { BrandMark, PaidOutChip } from '@/components/labs/TrybeFinderControls'
 
-const PURPLE = '#7C3AED'
+const PURPLE = 'var(--accent)'
 const GREEN = '#16A34A'
 const AMBER = '#B45309'
 const SHOWN = 25
@@ -52,7 +52,7 @@ export default function TrybeActive({ scoutOpens, actions }: { scoutOpens: boole
 
   const shown = useMemo(() => (board?.brands || []).filter((b) => !cat || b.categories.some((c) => c.toLowerCase() === cat.toLowerCase())), [board, cat])
   const soft = { color: 'var(--text-soft)' }
-  const chip = (on: boolean) => ({ className: 'rounded-full px-3 py-1 text-[12.5px] font-semibold border whitespace-nowrap', style: on ? { background: 'rgba(124,58,237,0.10)', color: PURPLE, borderColor: 'transparent' } : { borderColor: 'var(--border)', color: 'var(--text)' } })
+  const chip = (on: boolean) => ({ className: 'rounded-full px-3 py-1 text-[12.5px] font-semibold border whitespace-nowrap', style: on ? { background: 'rgb(var(--brand-rgb) / 0.10)', color: PURPLE, borderColor: 'transparent' } : { borderColor: 'var(--border)', color: 'var(--text)' } })
 
   if (error) return <p className="text-[13px] inline-flex items-start gap-1.5" style={{ color: AMBER }}><AlertTriangle size={14} className="mt-0.5 shrink-0" /> {error}</p>
   if (!board) return <p className="text-[13px] inline-flex items-center gap-1.5" style={soft}><Loader2 size={13} className="animate-spin" /> Working out the most active brands from MVP&rsquo;s daily copies of TRYBE...</p>
@@ -64,7 +64,7 @@ export default function TrybeActive({ scoutOpens, actions }: { scoutOpens: boole
     <section className="space-y-3" aria-label="Most active brands">
       <div className="flex flex-wrap items-baseline gap-2">
         <h3 className="text-[20px] font-bold tracking-tight">Most active brands</h3>
-        {board.brands.length > 0 && <span className="text-[12px] font-semibold rounded-full px-2 py-0.5" style={{ background: 'rgba(124,58,237,0.10)', color: PURPLE }}>{board.brands.length} brands</span>}
+        {board.brands.length > 0 && <span className="text-[12px] font-semibold rounded-full px-2 py-0.5" style={{ background: 'rgb(var(--brand-rgb) / 0.10)', color: PURPLE }}>{board.brands.length} brands</span>}
         {board.latest && <span className="ml-auto text-[12px]" style={soft}>From MVP&rsquo;s copy of TRYBE&rsquo;s list on {day(board.latest)}</span>}
       </div>
       <p className="text-[13px]" style={soft}>
@@ -99,7 +99,7 @@ export default function TrybeActive({ scoutOpens, actions }: { scoutOpens: boole
                   <div className="min-w-[10rem] flex-1">
                     <p className="text-[14.5px] font-semibold leading-tight flex flex-wrap items-center gap-1.5">
                       {b.name}
-                      {b.status && STATUS_WORDS[b.status] && <span className="text-[10.5px] font-bold rounded-full px-1.5 py-0.5" style={{ background: 'rgba(124,58,237,0.10)', color: PURPLE }}>{STATUS_WORDS[b.status]}</span>}
+                      {b.status && STATUS_WORDS[b.status] && <span className="text-[10.5px] font-bold rounded-full px-1.5 py-0.5" style={{ background: 'rgb(var(--brand-rgb) / 0.10)', color: PURPLE }}>{STATUS_WORDS[b.status]}</span>}
                     </p>
                     {b.categories.length > 0 && <p className="text-[12px]" style={soft}>{b.categories.slice(0, 2).join(' · ')}</p>}
                     {b.pay_text && <p className="text-[12.5px] font-semibold mt-0.5" style={{ color: PURPLE }}>{b.pay_text}</p>}
@@ -116,7 +116,7 @@ export default function TrybeActive({ scoutOpens, actions }: { scoutOpens: boole
                 </div>
                 <div className="flex flex-wrap items-center gap-1.5 mt-2 sm:pl-11">
                   <PaidOutChip bucket={b.earnings_bucket} up={b.tier_up} />
-                  {b.top100_hits != null && b.top100_hits > 0 && <span className="text-[11px] font-semibold rounded-md px-2 py-0.5" style={{ background: 'rgba(124,58,237,0.08)', color: PURPLE }}>{b.top100_hits} in TRYBE&rsquo;s Top 100{b.top100_best_rank ? ` (best #${b.top100_best_rank})` : ''}</span>}
+                  {b.top100_hits != null && b.top100_hits > 0 && <span className="text-[11px] font-semibold rounded-md px-2 py-0.5" style={{ background: 'rgb(var(--brand-rgb) / 0.08)', color: PURPLE }}>{b.top100_hits} in TRYBE&rsquo;s Top 100{b.top100_best_rank ? ` (best #${b.top100_best_rank})` : ''}</span>}
                   {b.meta_ads != null && <span className="text-[11px] font-semibold rounded-md px-2 py-0.5" style={{ background: 'var(--surface-2)', color: 'var(--text-2)' }}>{b.meta_ads.toLocaleString()} Meta ad{b.meta_ads === 1 ? '' : 's'} running</span>}
                   <span className="ml-auto inline-flex items-center gap-3">
                     <TrybeLink brandId={b.brand_id} name={b.name} scout={scoutOpens} />

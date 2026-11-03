@@ -43,7 +43,7 @@ const InstagramBurnedModal = dynamic(
   { ssr: false },
 )
 
-const PURPLE = '#7C3AED'
+const PURPLE = 'var(--accent)'
 
 function fmt(sec: number): string {
   const m = Math.floor(sec / 60)
@@ -484,7 +484,7 @@ export function ShortsStudioModal({
                     className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold border transition-colors"
                     style={topOnly
                       ? { backgroundColor: PURPLE, color: '#fff', borderColor: PURPLE }
-                      : { borderColor: 'rgba(124,58,237,0.4)', color: PURPLE }}
+                      : { borderColor: 'rgb(var(--brand-rgb) / 0.4)', color: PURPLE }}
                     title={`Show only clips scoring ${TOP_SCORE} or higher`}
                   >
                     <Sparkles size={12} /> {topOnly ? `Top ${topCount} only` : 'Top clips only'}

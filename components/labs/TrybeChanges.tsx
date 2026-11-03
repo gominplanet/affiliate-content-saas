@@ -25,7 +25,7 @@ import { bucketDollars } from '@/lib/trybe-pick'
 import { readPay } from '@/lib/trybe-outreach'
 import { readJoinedBrandIds } from '@/lib/trybe-joined'
 
-const PURPLE = '#7C3AED'
+const PURPLE = 'var(--accent)'
 const GREEN = '#16A34A'
 const AMBER = '#B45309'
 const RED = '#DC2626'
@@ -119,7 +119,7 @@ export default function TrybeChanges({ scoutOpens, initial, onRead, onSeeNew, ac
 
   const soft = { color: 'var(--text-soft)' }
   const chip = (on: boolean) => `rounded-full px-3 py-1 text-[12.5px] font-semibold border ${on ? '' : 'hover:border-[#7C3AED]/50'}`
-  const chipStyle = (on: boolean) => (on ? { background: 'rgba(124,58,237,0.10)', color: PURPLE, borderColor: 'transparent' } : { borderColor: 'var(--border)', color: 'var(--text)' })
+  const chipStyle = (on: boolean) => (on ? { background: 'rgb(var(--brand-rgb) / 0.10)', color: PURPLE, borderColor: 'transparent' } : { borderColor: 'var(--border)', color: 'var(--text)' })
 
   if (error) {
     return (
@@ -140,7 +140,7 @@ export default function TrybeChanges({ scoutOpens, initial, onRead, onSeeNew, ac
     <div className="flex flex-wrap gap-1.5 rounded-2xl border p-1.5" role="tablist" aria-label="What changed views" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
       {VIEWS.map((v) => (
         <button key={v.id} role="tab" aria-selected={view === v.id} onClick={() => setView(v.id)}
-          className="flex-1 min-w-[9rem] rounded-xl px-3 py-2 text-left transition-colors hover:bg-[var(--surface-2)]" style={view === v.id ? { background: 'rgba(124,58,237,0.12)', color: PURPLE } : { color: 'var(--text)' }}>
+          className="flex-1 min-w-[9rem] rounded-xl px-3 py-2 text-left transition-colors hover:bg-[var(--surface-2)]" style={view === v.id ? { background: 'rgb(var(--brand-rgb) / 0.12)', color: PURPLE } : { color: 'var(--text)' }}>
           <span className="block text-[13.5px] font-semibold leading-tight">{v.label}</span>
           <span className="block text-[11.5px]" style={view === v.id ? undefined : soft}>{v.says}</span>
         </button>
@@ -219,7 +219,7 @@ export default function TrybeChanges({ scoutOpens, initial, onRead, onSeeNew, ac
                       <span className="w-2 h-2 rounded-full shrink-0" style={{ background: changeTone(c) }} aria-hidden />
                       <span className="min-w-0 flex-1">
                         <span className="text-[13.5px] font-semibold">{c.name || 'A brand MVP no longer lists'}</span>
-                        {c.yours && <span className="ml-2 text-[10.5px] font-bold rounded-full px-1.5 py-0.5 align-middle" style={{ background: 'rgba(124,58,237,0.10)', color: PURPLE }}>Yours</span>}
+                        {c.yours && <span className="ml-2 text-[10.5px] font-bold rounded-full px-1.5 py-0.5 align-middle" style={{ background: 'rgb(var(--brand-rgb) / 0.10)', color: PURPLE }}>Yours</span>}
                         <span className="block text-[12.5px]" style={{ color: c.kind === 'left' ? RED : 'var(--text-soft)' }}>{changeLine(c)}{c.categories?.length ? ` · ${c.categories.slice(0, 2).join(', ')}` : ''}</span>
                       </span>
                       {c.name && <TrybeLink brandId={c.brand_id} name={c.name} scout={scoutOpens} />}

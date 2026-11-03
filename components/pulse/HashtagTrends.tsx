@@ -208,7 +208,7 @@ export default function HashtagTrends() {
             <p className="text-[12px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">Checked on Instagram</p>
             <div className="flex flex-wrap gap-1.5">
               {info.instagramRecent.map((t) => (
-                <span key={t.tag} className="text-[12px] px-2 py-1 rounded-lg tabular-nums" style={t.standing === 'dead' ? { background: 'rgba(0,0,0,0.05)', color: '#86868b', textDecoration: 'line-through' } : { background: 'rgba(124,58,237,0.08)', color: '#5b21b6' }} title={t.standing === 'dead' ? 'Almost nobody posts with it: MVP will not use it' : t.standing === 'crowd' ? 'So many posts a new one is buried fast' : 'Active'}>
+                <span key={t.tag} className="text-[12px] px-2 py-1 rounded-lg tabular-nums" style={t.standing === 'dead' ? { background: 'rgba(0,0,0,0.05)', color: '#86868b', textDecoration: 'line-through' } : { background: 'rgb(var(--brand-rgb) / 0.08)', color: '#5b21b6' }} title={t.standing === 'dead' ? 'Almost nobody posts with it: MVP will not use it' : t.standing === 'crowd' ? 'So many posts a new one is buried fast' : 'Active'}>
                   {t.tag} · {short(t.posts)}{t.standing === 'dead' ? ' (not used)' : t.standing === 'crowd' ? ' (crowded)' : ''}
                 </span>
               ))}

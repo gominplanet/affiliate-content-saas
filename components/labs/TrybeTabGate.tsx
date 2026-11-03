@@ -25,7 +25,7 @@ import { ExternalLink, Handshake, X, Loader2, ShieldCheck } from 'lucide-react'
 import { requestTrybeTabOpen, requestTrybeAccess } from '@/lib/extension-frame'
 import { TRYBE_OPEN_URL, type TrybeTabState } from '@/lib/trybe-tab'
 
-const PURPLE = '#7C3AED'
+const PURPLE = 'var(--accent)'
 const SEEN_KEY = 'mvp.trybe.tabGate.shown'
 
 /** SCOUT's answer to Open TRYBE, in words. */
@@ -123,7 +123,7 @@ export default function TrybeTabGate({ state, inBackground, onCheck, onAllowed, 
 
   return (
     <>
-      <section className="rounded-2xl border-2 p-5 flex flex-col gap-3" style={{ borderColor: PURPLE, background: 'rgba(124,58,237,0.06)' }} role="alert">
+      <section className="rounded-2xl border-2 p-5 flex flex-col gap-3" style={{ borderColor: PURPLE, background: 'rgb(var(--brand-rgb) / 0.06)' }} role="alert">
         <p className="text-[18px] font-bold inline-flex items-center gap-2"><Handshake size={18} style={{ color: PURPLE }} /> {title}</p>
         <p className="text-[13.5px] max-w-3xl leading-relaxed" style={{ color: 'var(--text)' }}>{text}</p>
         {button}

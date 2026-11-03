@@ -140,7 +140,7 @@ export default function ProductDeepDiveModal({ asin, title, imageUrl, onClose }:
             // eslint-disable-next-line @next/next/no-img-element
             <img src={img} alt="" className="w-16 h-16 rounded-lg object-contain bg-white border flex-shrink-0" style={{ borderColor: 'var(--border)' }} />
           ) : (
-            <div className="w-16 h-16 rounded-lg flex-shrink-0" style={{ background: 'rgba(124,58,237,0.06)' }} />
+            <div className="w-16 h-16 rounded-lg flex-shrink-0" style={{ background: 'rgb(var(--brand-rgb) / 0.06)' }} />
           )}
           <div className="min-w-0 flex-1">
             <p className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: 'var(--text-faint)' }}>Product research</p>

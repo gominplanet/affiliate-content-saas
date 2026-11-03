@@ -44,7 +44,7 @@ export default function StartHere({ canDrop, videoTools, deals, encore }: StartH
         {/* Upload leads: Drop starts everything after the video is made. */}
         <Link href={upload.href}
           className="group rounded-2xl p-5 flex flex-col gap-3 transition-transform duration-200 hover:-translate-y-0.5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
-          style={{ background: 'linear-gradient(135deg, #7C3AED, #DB2777)', color: '#fff', boxShadow: '0 10px 30px rgba(124,58,237,0.28)', outlineColor: '#7C3AED' }}>
+          style={{ background: 'linear-gradient(135deg, #7C3AED, #DB2777)', color: '#fff', boxShadow: '0 10px 30px rgb(var(--brand-rgb) / 0.28)', outlineColor: '#7C3AED' }}>
           <span className="flex items-center gap-2.5">
             <span className="grid place-items-center w-10 h-10 rounded-xl" style={{ background: 'rgba(255,255,255,0.18)' }}><UploadCloud size={20} /></span>
             <span className="text-[18px] font-semibold leading-tight">Upload finished videos</span>

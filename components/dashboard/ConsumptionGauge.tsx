@@ -78,7 +78,7 @@ export default function ConsumptionGauge({ embedded = false }: { embedded?: bool
         <div className="flex items-center justify-between mb-1">
           <h3 className="text-sm font-semibold" style={{ color: 'var(--text, #1d1d1f)' }}>Monthly usage</h3>
           <span className="text-[11px] font-medium capitalize px-2 py-0.5 rounded-full"
-            style={{ background: 'rgba(124,58,237,0.10)', color: '#7C3AED' }}>
+            style={{ background: 'rgb(var(--brand-rgb) / 0.10)', color: '#7C3AED' }}>
             {usage.tier}
           </span>
         </div>

@@ -68,7 +68,7 @@ import type { SellsRead } from '@/lib/trybe-sells'
 /** A website link names where it goes: its address, not "Website". */
 const siteName = (url: string) => { try { return new URL(/^https?:\/\//i.test(url) ? url : `https://${url}`).hostname.replace(/^www\./, '') } catch { return 'Their website' } }
 
-const PURPLE = '#7C3AED'
+const PURPLE = 'var(--accent)'
 /** Where to join TRYBE, free (MVP's referral link). */
 const TRYBE_JOIN_URL = 'https://jointrybe.com/r/HTLEJE47'
 const GREEN = '#16A34A'
@@ -1859,7 +1859,7 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
         {/* Not on TRYBE yet: where to join, in plain sight (Seb, 2026-10-06).
             MVP's referral link, and it says so. */}
         <a href={TRYBE_JOIN_URL} target="_blank" rel="sponsored noopener noreferrer" title="MVP's referral link"
-          className="inline-flex items-center gap-1 text-[12.5px] font-semibold rounded-full border px-3 py-1.5" style={{ borderColor: 'rgba(124,58,237,0.35)', color: PURPLE }}>
+          className="inline-flex items-center gap-1 text-[12.5px] font-semibold rounded-full border px-3 py-1.5" style={{ borderColor: 'rgb(var(--brand-rgb) / 0.35)', color: PURPLE }}>
           {/* The referral is said on the link itself, not only on hover. */}
           New to TRYBE? Join free on TRYBE <span className="font-normal">(MVP&rsquo;s referral link)</span> <ExternalLink size={11} />
         </a>
@@ -1878,7 +1878,7 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
 
       {/* What the daily refresh is doing, or did last time. */}
       {isAdmin && !preview && daily && (
-        <section className="rounded-2xl border px-4 py-3 text-[13px] space-y-1.5 -mt-1" style={{ borderColor: 'rgba(124,58,237,0.35)', background: 'rgba(124,58,237,0.04)' }} aria-live="polite">
+        <section className="rounded-2xl border px-4 py-3 text-[13px] space-y-1.5 -mt-1" style={{ borderColor: 'rgb(var(--brand-rgb) / 0.35)', background: 'rgb(var(--brand-rgb) / 0.04)' }} aria-live="polite">
           <p className="font-semibold flex flex-wrap items-center gap-2">
             Daily refresh {daily.running ? 'running' : `last run ${new Date(daily.at).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}`}
             {!daily.running && Date.now() - Date.parse(daily.at) > 30 * 3600_000 && <span style={{ color: AMBER }}>More than a day ago.</span>}
@@ -1892,7 +1892,7 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
 
       {/* THE AMAZON PLAN'S PREVIEW: what is open, and what Pro adds. */}
       {preview && (
-        <section className="rounded-2xl border p-4 flex flex-wrap items-center gap-3" style={{ borderColor: 'rgba(124,58,237,0.35)', background: 'rgba(124,58,237,0.05)' }}>
+        <section className="rounded-2xl border p-4 flex flex-wrap items-center gap-3" style={{ borderColor: 'rgb(var(--brand-rgb) / 0.35)', background: 'rgb(var(--brand-rgb) / 0.05)' }}>
           <div className="flex-1 min-w-[16rem]">
             <p className="text-[15px] font-bold">TRYBE preview on your plan</p>
             <p className="text-[13px] mt-0.5" style={{ color: 'var(--text-2)' }}>Find brands is open: see which TRYBE brands you already filmed on Amazon, rank them by what matters to you, filter, star and pass. Pro writes and sends your messages, plans your videos from each brand&rsquo;s brief, reads your inbox and tracks what each brand pays you.</p>
@@ -1917,7 +1917,7 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
         if (queue.length) parts.push({ text: `${queue.length} message${queue.length === 1 ? '' : 's'} ready to send`, to: 'queue' })
         if (!parts.length) return null
         return (
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-full border px-5 py-2.5" style={{ borderColor: 'rgba(124,58,237,0.35)', background: 'rgba(124,58,237,0.05)' }}>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-full border px-5 py-2.5" style={{ borderColor: 'rgb(var(--brand-rgb) / 0.35)', background: 'rgb(var(--brand-rgb) / 0.05)' }}>
             <span className="inline-flex items-center gap-2 text-[14px] font-bold" style={{ color: PURPLE }}><span className="w-2 h-2 rounded-full" style={{ background: PURPLE }} aria-hidden /> Your week</span>
             {parts.map((x, i) => (
               <button key={i} onClick={() => setTab(x.to)} className="text-[14px] font-semibold hover:underline" style={{ color: 'var(--text)' }}>
@@ -1982,7 +1982,7 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
                   </span>
                   <div className="flex-1 min-w-0">
                     <p className="text-[14.5px] font-semibold flex flex-wrap items-center gap-2" style={!x.done && i !== next ? soft : undefined}>
-                      {x.title}{i === next && <span className="text-[11px] font-bold rounded-full px-2 py-0.5" style={{ background: 'rgba(124,58,237,0.10)', color: PURPLE }}>Next</span>}
+                      {x.title}{i === next && <span className="text-[11px] font-bold rounded-full px-2 py-0.5" style={{ background: 'rgb(var(--brand-rgb) / 0.10)', color: PURPLE }}>Next</span>}
                     </p>
                     <p className="text-[13px]" style={soft}>{x.done ? x.ok : x.todo}</p>
                     {i === next && x.action && <div className="mt-2">{x.action}</div>}
@@ -2005,7 +2005,7 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
       {alertsError && <p className="text-[12px] -mt-2 mb-3 inline-flex items-center gap-1" style={{ color: AMBER }}><AlertTriangle size={12} /> The inbox was read, but the reply alert for the menu and Today could not be saved: {alertsError}</p>}
 
       {finding && (
-        <p className="text-[12px] inline-flex items-center gap-1.5 rounded-lg px-3 py-2" style={{ background: 'rgba(124,58,237,0.08)', color: PURPLE }}>
+        <p className="text-[12px] inline-flex items-center gap-1.5 rounded-lg px-3 py-2" style={{ background: 'rgb(var(--brand-rgb) / 0.08)', color: PURPLE }}>
           <Loader2 size={12} className="animate-spin" /> {finding.stage}{finding.total ? ` (${finding.done ?? 0} of ${finding.total})` : '...'}
         </p>
       )}
@@ -2114,7 +2114,7 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
         <div className={card} style={cardStyle}>
           <p className="text-[14px] font-semibold">{preview ? '' : '2. '}Find brands for your channel</p>
 
-          <div className="mt-3 rounded-2xl border-2 p-4" style={{ borderColor: PURPLE, background: 'rgba(124,58,237,0.05)' }}>
+          <div className="mt-3 rounded-2xl border-2 p-4" style={{ borderColor: PURPLE, background: 'rgb(var(--brand-rgb) / 0.05)' }}>
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-[10px] font-bold uppercase tracking-wider rounded-full px-2 py-0.5" style={{ background: PURPLE, color: '#fff' }}>Best results</span>
               <p className="text-[15px] font-semibold">Search what you review</p>
@@ -2257,7 +2257,7 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
               )
             })()}
             {!preview && <TrybeSampleGuard onFilm={() => go('week')} />}
-            {live?.mix?.says && <p className="text-[12px] mb-2 rounded-lg px-2.5 py-1.5" style={{ background: 'rgba(124,58,237,0.06)' }}><b>Your mix:</b> {live.mix.says}</p>}
+            {live?.mix?.says && <p className="text-[12px] mb-2 rounded-lg px-2.5 py-1.5" style={{ background: 'rgb(var(--brand-rgb) / 0.06)' }}><b>Your mix:</b> {live.mix.says}</p>}
             {filters.onAmazon && live && (live.amazonVideos ?? 0) === 0 && (
               <p className="text-[12px] mb-3" style={{ color: AMBER }}>MVP has none of your Amazon videos yet, so On Amazon only finds brands in your storefront and on Creator Connections.{isAdmin && <> <a href="/earnings" className="font-semibold underline">Sync your Amazon videos on Earnings</a> to see which TRYBE brands you already filmed.</>}</p>
             )}
@@ -2331,7 +2331,7 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
                 daily run or a collection works on the list meanwhile, and its
                 progress used to show only in the status card at the top. */}
             {busy && (
-              <p className="text-[12px] mb-3 inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5" style={{ background: 'rgba(124,58,237,0.08)', color: PURPLE }}>
+              <p className="text-[12px] mb-3 inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5" style={{ background: 'rgb(var(--brand-rgb) / 0.08)', color: PURPLE }}>
                 <Loader2 size={12} className="animate-spin" />
                 {running
                   ? 'Send all is running. Write messages unlocks when it finishes.'
@@ -2355,7 +2355,7 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
             )}
             {/* A niche alone is the quick way; a keyword is the better one. */}
             {cats.length > 0 && !kws.length && (live?.brands.length ?? 0) > 0 && (
-              <div className="flex flex-wrap items-center gap-2 rounded-xl px-3 py-2.5 mb-3" style={{ background: 'rgba(124,58,237,0.08)' }}>
+              <div className="flex flex-wrap items-center gap-2 rounded-xl px-3 py-2.5 mb-3" style={{ background: 'rgb(var(--brand-rgb) / 0.08)' }}>
                 <Search size={14} style={{ color: PURPLE }} />
                 <span className="text-[12px] flex-1 min-w-[12rem]">Showing every brand in {cats.length === 1 ? cats[0] : `${cats.length} niches`}. Add a keyword for brands that sell what you review.</span>
                 <button onClick={() => { searchRef.current?.focus(); searchRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }) }}
@@ -2379,7 +2379,7 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
                 const where = b.status === 'drafted' ? 'Ready to send' : b.status === 'sent' ? 'Sent' : b.status === 'sending' ? 'Sending or not confirmed' : b.status === 'already' ? 'Already requested on TRYBE' : b.status === 'failed' ? 'Last send failed: queue it again in Sent' : b.status === 'skipped' ? 'You skipped it' : b.status === 'removed' ? 'You removed it' : b.status === 'not_fit' ? (b.fit_stale ? 'AI said not a fit for an earlier search' : 'AI said not a fit') : null
                 const hits = (p: string) => kws.some(k => p.toLowerCase().includes(k.toLowerCase()))
                 return (
-                  <label key={b.brand_id} className={`flex gap-3 rounded-xl border p-3.5 ${taken ? 'opacity-60' : 'cursor-pointer'}`} style={{ borderColor: on ? PURPLE : 'var(--border)', background: on ? 'rgba(124,58,237,0.04)' : undefined }}>
+                  <label key={b.brand_id} className={`flex gap-3 rounded-xl border p-3.5 ${taken ? 'opacity-60' : 'cursor-pointer'}`} style={{ borderColor: on ? PURPLE : 'var(--border)', background: on ? 'rgb(var(--brand-rgb) / 0.04)' : undefined }}>
                     {!preview && <input type="checkbox" className="mt-3 accent-[#7C3AED]" checked={on} disabled={taken} aria-label={`Pick ${b.name}`}
                       onChange={e => setLivePick(p => { const n = new Set(p); if (e.target.checked) n.add(b.brand_id); else n.delete(b.brand_id); return n })} />}
                     <BrandMark name={b.name} website={b.website} />
@@ -2388,7 +2388,7 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
                         <span className="text-[15px] font-semibold">{b.name}</span>
                         <StarButton on={!!b.starred} onClick={() => void star(b)} />
                         <CompareButton on={compare.some(x => x.brand_id === b.brand_id)} full={compare.length >= COMPARE_MAX} onClick={() => flipCompare(b)} />
-                        {where && <span className="text-[11px] font-semibold rounded-full px-2 py-0.5" style={{ background: 'rgba(124,58,237,0.10)', color: PURPLE }}>{where}</span>}
+                        {where && <span className="text-[11px] font-semibold rounded-full px-2 py-0.5" style={{ background: 'rgb(var(--brand-rgb) / 0.10)', color: PURPLE }}>{where}</span>}
                         <TrybeLink brandId={b.brand_id} name={b.name} scout={scoutOpens} />
                         <a href={adLibraryUrl(b.name)} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} className="text-[12px] inline-flex items-center gap-0.5" style={soft} title="Its ads in Meta's Ad Library">Meta ads <ExternalLink size={10} /></a>
                         {b.website && <a href={b.website} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} className="text-[12px] inline-flex items-center gap-0.5" style={soft}><Globe size={11} /> {siteName(b.website)} <ExternalLink size={10} /></a>}
@@ -2406,7 +2406,7 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
                         <ReviewChip review={b.review} />
                         <StaticsChip on={b.statics} />
                         <SellsChip sells={b.sells} />
-                        {b.trybe_score != null && <span className="text-[11px] font-semibold rounded-md px-2 py-0.5 inline-flex items-center gap-0.5 cursor-help" style={{ background: 'rgba(124,58,237,0.08)', color: PURPLE }} title="TRYBE's own rating of this brand, as shown on TRYBE."><Star size={10} /> TRYBE score {b.trybe_score}</span>}
+                        {b.trybe_score != null && <span className="text-[11px] font-semibold rounded-md px-2 py-0.5 inline-flex items-center gap-0.5 cursor-help" style={{ background: 'rgb(var(--brand-rgb) / 0.08)', color: PURPLE }} title="TRYBE's own rating of this brand, as shown on TRYBE."><Star size={10} /> TRYBE score {b.trybe_score}</span>}
                         {b.fit_score != null && <span className="text-[11px] font-semibold rounded-md px-2 py-0.5 cursor-help" style={b.fit_score >= FIT_STRONG ? { background: 'rgba(22,163,74,0.14)', color: GREEN } : { background: 'rgba(180,83,9,0.10)', color: AMBER }}
                           title={`Fit ${b.fit_score} of 100: MVP's AI check of how well what this brand sells matches your niches and keywords, from its TRYBE profile and website. ${FIT_STRONG}+ is a strong fit.`}>Fit {b.fit_score}</span>}
                         {b.total_creators != null && (b.total_creators > 0 || sortBy === 'creators') && <span className="text-[11px] rounded-md px-2 py-0.5" style={{ background: 'var(--surface-2, rgba(0,0,0,0.05))', color: 'var(--text-soft)' }}>{b.total_creators.toLocaleString()} creator{b.total_creators === 1 ? '' : 's'}</span>}
@@ -2427,7 +2427,7 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
                         <span className="flex flex-wrap gap-1.5 mt-2">
                           {b.products.map(pr => (
                             <span key={pr} className="text-[11px] rounded-md border px-2 py-0.5 max-w-[16rem] truncate"
-                              style={hits(pr) ? { borderColor: PURPLE, color: PURPLE, background: 'rgba(124,58,237,0.08)' } : { borderColor: 'var(--border)', color: 'var(--text-soft)' }}>{pr}</span>
+                              style={hits(pr) ? { borderColor: PURPLE, color: PURPLE, background: 'rgb(var(--brand-rgb) / 0.08)' } : { borderColor: 'var(--border)', color: 'var(--text-soft)' }}>{pr}</span>
                           ))}
                         </span>
                       )}
@@ -2687,7 +2687,7 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
             const n = (k: string) => states.filter(x => x === k).length
             if (!states.length) return null
             return (
-              <p className="text-[12px] mb-3 rounded-lg px-2.5 py-1.5" style={{ background: 'rgba(124,58,237,0.06)' }}>
+              <p className="text-[12px] mb-3 rounded-lg px-2.5 py-1.5" style={{ background: 'rgb(var(--brand-rgb) / 0.06)' }}>
                 <b>Next steps:</b>{' '}
                 {[n('send_first') && `${n('send_first')} accepted and waiting for your first message`, n('no_answer') && `${n('no_answer')} not answering (don't film for them yet)`, n('answered') && `${n('answered')} answered, safe to film 2 or 3`, n('waiting') && `${n('waiting')} waiting for an answer`, n('checking') && `${n('checking')} being read`, n('unknown') && `${n('unknown')} could not be read`].filter(Boolean).join(' · ')}.
               </p>
@@ -2775,7 +2775,7 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
                     <TrybeLink brandId={b.brand_id} name={b.name} scout={scoutOpens} />
                     {rq && <span className="text-[11px] font-semibold rounded-full px-2 py-0.5" style={{ background: REQUEST_WORDS[rq.state].bg, color: REQUEST_WORDS[rq.state].color }} title="Where this request stands in your TRYBE requests">{REQUEST_WORDS[rq.state].label}</span>}
                     {reply === 'replied' && <span className="text-[11px] font-semibold rounded-full px-2 py-0.5" style={{ background: 'rgba(22,163,74,0.12)', color: GREEN }}>Replied{b.replied_at ? ` ${new Date(b.replied_at).toLocaleDateString()}` : ''}</span>}
-                    {reply === 'replied' && lastMine === true && <span className="text-[11px] font-semibold rounded-full px-2 py-0.5" style={{ background: 'rgba(124,58,237,0.10)', color: PURPLE }}>You wrote last</span>}
+                    {reply === 'replied' && lastMine === true && <span className="text-[11px] font-semibold rounded-full px-2 py-0.5" style={{ background: 'rgb(var(--brand-rgb) / 0.10)', color: PURPLE }}>You wrote last</span>}
                     {reply === 'none' && (b.status === 'sent' || b.status === 'already') && <span className="text-[11px] font-semibold rounded-full px-2 py-0.5" style={{ background: 'var(--surface-2, rgba(0,0,0,0.05))', color: 'var(--text-soft)' }}>No reply yet</span>}
                     {c && c.unread > 0 && <span className="text-[11px] font-bold rounded-full px-1.5 text-white" style={{ background: PURPLE }}>{c.unread} new</span>}
                   </div>

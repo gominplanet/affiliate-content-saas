@@ -22,7 +22,7 @@ interface Bucket { key: string; label: string; used: number; limit: number | nul
 interface Summary { tier: string; buckets: Bucket[]; resetLabel: string | null; lifetime: boolean; introNote?: string | null }
 interface DailyBucket { key: string; label: string; used: number; limit: number; nextFreeAt: string | null }
 
-const ACCENT = '#7C3AED'
+const ACCENT = 'var(--accent)'
 
 /** What each limit counts, in the creator's words. */
 const WHAT: Record<string, string> = {
@@ -133,7 +133,7 @@ export default function YourUsage() {
   return (
     <div className="max-w-3xl mx-auto">
       <PageHero
-        accent="rgba(124,58,237,0.25)"
+        accent="rgb(var(--brand-rgb) / 0.25)"
         title="Your usage"
         subtitle="Everything your plan includes that has a limit, how much you have used, and when it resets."
       />
@@ -163,7 +163,7 @@ export default function YourUsage() {
           {/* THE FIRST WEEK, said up front: a quarter of each allowance until
               day 8 (lib/intro-allowance), so a low number reads as planned. */}
           {summary.introNote && (
-            <p className="rounded-xl border p-3 text-[12.5px]" style={{ borderColor: 'rgba(124,58,237,0.35)', background: 'rgba(124,58,237,0.06)', color: 'var(--text)' }}>
+            <p className="rounded-xl border p-3 text-[12.5px]" style={{ borderColor: 'rgb(var(--brand-rgb) / 0.35)', background: 'rgb(var(--brand-rgb) / 0.06)', color: 'var(--text)' }}>
               {summary.introNote}
             </p>
           )}

@@ -321,9 +321,9 @@ export default function CampaignBrowsePanel({
 
   if (locked) {
     return (
-      <div className="card mb-5 overflow-hidden" style={{ borderWidth: 2, borderColor: 'rgba(124,58,237,0.30)' }}>
+      <div className="card mb-5 overflow-hidden" style={{ borderWidth: 2, borderColor: 'rgb(var(--brand-rgb) / 0.30)' }}>
         <div className="px-6 py-12 text-center max-w-lg mx-auto">
-          <span className="grid place-items-center w-14 h-14 rounded-2xl mx-auto mb-4" style={{ background: 'rgba(124,58,237,0.10)' }}>
+          <span className="grid place-items-center w-14 h-14 rounded-2xl mx-auto mb-4" style={{ background: 'rgb(var(--brand-rgb) / 0.10)' }}>
             <Lock size={26} style={{ color: '#7C3AED' }} />
           </span>
           <h3 className="text-[16px] font-bold mb-2" style={{ color: 'var(--text)' }}>Creator Connections access required</h3>
@@ -347,9 +347,9 @@ export default function CampaignBrowsePanel({
   }
 
   return (
-    <div className="card mb-5 overflow-hidden" style={{ borderWidth: 2, borderColor: 'rgba(124,58,237,0.30)' }}>
+    <div className="card mb-5 overflow-hidden" style={{ borderWidth: 2, borderColor: 'rgb(var(--brand-rgb) / 0.30)' }}>
       {/* Filter bar */}
-      <div className="px-3.5 py-3 space-y-2.5" style={{ background: 'linear-gradient(180deg, rgba(124,58,237,0.06), transparent 85%)' }}>
+      <div className="px-3.5 py-3 space-y-2.5" style={{ background: 'linear-gradient(180deg, rgb(var(--brand-rgb) / 0.06), transparent 85%)' }}>
         <div className="flex items-center gap-2">
           <div className="relative flex-1">
             <Search className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 h-[18px] w-[18px]" style={{ color: 'var(--text-faint)' }} />
@@ -550,8 +550,8 @@ function BrowseCard({ c, saved, covered, onToggleSave, onMessageBrand, onDeepDiv
           // eslint-disable-next-line @next/next/no-img-element
           <img loading="lazy" decoding="async" src={c.imageUrl} alt="" className="absolute inset-0 w-full h-full object-contain p-3" />
         ) : (
-          <div className="w-full h-full grid place-items-center" style={{ background: 'rgba(124,58,237,0.04)' }} title="Preview appears once this product is scanned (Smart Scan)">
-            <ImageOff size={24} style={{ color: 'rgba(124,58,237,0.3)' }} />
+          <div className="w-full h-full grid place-items-center" style={{ background: 'rgb(var(--brand-rgb) / 0.04)' }} title="Preview appears once this product is scanned (Smart Scan)">
+            <ImageOff size={24} style={{ color: 'rgb(var(--brand-rgb) / 0.3)' }} />
           </div>
         )}
         {c.discountPct != null && c.discountPct > 0 && (
@@ -659,7 +659,7 @@ function BrowseCard({ c, saved, covered, onToggleSave, onMessageBrand, onDeepDiv
             </button>
             <button onClick={onMessageBrand} title="Message the brand"
               className="inline-flex items-center justify-center gap-1 text-[11px] font-semibold rounded-full px-2.5 py-1.5 border flex-1"
-              style={{ borderColor: 'rgba(124,58,237,0.4)', color: '#7C3AED' }}>
+              style={{ borderColor: 'rgb(var(--brand-rgb) / 0.4)', color: '#7C3AED' }}>
               <MessageCircle size={12} /> Message
             </button>
             <a href={amazonUrl} target="_blank" rel="noopener noreferrer" title="Buy to review on Amazon"

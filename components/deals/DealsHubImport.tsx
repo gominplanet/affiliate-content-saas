@@ -28,7 +28,7 @@ import { HUB_INTERVALS, HUB_MAX_BATCH } from '@/lib/deals-hub-socials'
 import { QUICK_PLATFORMS } from '@/components/deal/QuickPostModal'
 import { useConnectedPlatforms, useSelectedPlatforms } from '@/components/social/useConnectedPlatforms'
 
-const PURPLE = '#7C3AED'
+const PURPLE = 'var(--accent)'
 const RED = '#DC2626'
 const AMBER = '#B45309'
 const GREEN = '#047857'
@@ -357,7 +357,7 @@ export default function DealsHubImport({ onPosted, pinterestEnabled = false, ins
               const st = rows[d.asin]
               const upcoming = d.startsAt != null && d.startsAt > Date.now()
               return (
-                <li key={`${d.asin}-${d.startsAt}`} className="flex items-start gap-3 px-3 py-2.5" style={{ borderColor: 'var(--border)', background: on ? 'rgba(124,58,237,0.06)' : 'transparent' }}>
+                <li key={`${d.asin}-${d.startsAt}`} className="flex items-start gap-3 px-3 py-2.5" style={{ borderColor: 'var(--border)', background: on ? 'rgb(var(--brand-rgb) / 0.06)' : 'transparent' }}>
                   <input type="checkbox" checked={on} disabled={running || (!on && picked.size >= HUB_MAX_BATCH)} onChange={() => toggle(d.asin)} className="mt-1" aria-label={`Pick ${d.title}`} />
                   {d.image && <img src={d.image} alt="" loading="lazy" referrerPolicy="no-referrer" className="w-11 h-11 rounded-md object-contain bg-white flex-shrink-0" />}
                   <div className="min-w-0 flex-1">

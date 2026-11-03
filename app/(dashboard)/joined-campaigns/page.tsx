@@ -339,7 +339,7 @@ export default function JoinedCampaignsPage() {
                 <button key={k} onClick={() => setFilter(k as Filter)}
                   className="px-3 py-1.5 rounded-lg text-[12px] font-semibold border"
                   style={filter === k
-                    ? { borderColor: '#7C3AED', background: 'rgba(124,58,237,0.10)', color: '#7C3AED' }
+                    ? { borderColor: '#7C3AED', background: 'rgb(var(--brand-rgb) / 0.10)', color: '#7C3AED' }
                     : { borderColor: 'var(--border)', color: 'var(--text-soft)' }}>
                   {label}
                 </button>
@@ -367,7 +367,7 @@ export default function JoinedCampaignsPage() {
                   <button key={r.key} onClick={() => setRoute(r.key)} title={r.hint}
                     className="px-3 py-1.5 rounded-lg text-[12px] font-semibold border"
                     style={route === r.key
-                      ? { borderColor: '#7C3AED', background: 'rgba(124,58,237,0.10)', color: '#7C3AED' }
+                      ? { borderColor: '#7C3AED', background: 'rgb(var(--brand-rgb) / 0.10)', color: '#7C3AED' }
                       : { borderColor: 'var(--border)', color: 'var(--text-soft)' }}>
                     {r.label} <span className="tabular-nums opacity-70">{routeCount(r.key)}</span>
                   </button>
@@ -406,7 +406,7 @@ export default function JoinedCampaignsPage() {
                           {r.product || r.brand || r.asin}
                         </span>
                         {r.commissionPct != null && (
-                          <span className="text-[10px] font-bold px-1.5 py-[1px] rounded flex-shrink-0" style={{ background: 'rgba(124,58,237,0.12)', color: '#7C3AED' }}>
+                          <span className="text-[10px] font-bold px-1.5 py-[1px] rounded flex-shrink-0" style={{ background: 'rgb(var(--brand-rgb) / 0.12)', color: '#7C3AED' }}>
                             {r.commissionPct}%{r.perSaleCents != null ? ` · ${money(r.perSaleCents)} a sale` : ''}
                           </span>
                         )}

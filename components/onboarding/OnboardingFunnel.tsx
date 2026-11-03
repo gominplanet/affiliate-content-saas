@@ -99,7 +99,7 @@ const STEPS: StepDef[] = [
   { n: 8, key: 'face', title: 'Face Models', icon: <UserSquare size={16} />, done: (s) => s.faceReady },
 ]
 
-const ACCENT = '#7C3AED'
+const ACCENT = 'var(--accent)'
 
 /**
  * Navigation lock. Step 1 is always open and WordPress (2) never blocks
@@ -240,7 +240,7 @@ export default function OnboardingFunnel({
   const completedCount = setupSteps.filter((s) => s.done(status)).length
 
   return (
-    <div className="min-h-screen w-full text-[#f5f5f7]" style={{ background: 'radial-gradient(1200px 600px at 50% -10%, rgba(124,58,237,0.18), transparent), #0a0a0f' }}>
+    <div className="min-h-screen w-full text-[#f5f5f7]" style={{ background: 'radial-gradient(1200px 600px at 50% -10%, rgb(var(--brand-rgb) / 0.18), transparent), #0a0a0f' }}>
       <div className="mx-auto max-w-5xl px-5 py-8 md:py-12">
         {/* Header */}
         <div className="flex items-center justify-between mb-8">
@@ -325,7 +325,7 @@ export default function OnboardingFunnel({
             they're routed back here to connect WordPress + YouTube. */}
         {!status.ytConnected && !status.wpConnected && (
           <div className="mb-6 rounded-2xl border p-5 flex items-center justify-between gap-4 flex-wrap"
-            style={{ borderColor: 'rgba(124,58,237,0.45)', background: 'rgba(124,58,237,0.10)' }}>
+            style={{ borderColor: 'rgb(var(--brand-rgb) / 0.45)', background: 'rgb(var(--brand-rgb) / 0.10)' }}>
             <div className="min-w-0">
               <p className="font-semibold text-[15px]" style={{ color: '#f5f5f7' }}>Just want to look around first? Skip setup.</p>
               <p className="text-sm text-[#c7c7cc] mt-0.5">
@@ -360,7 +360,7 @@ export default function OnboardingFunnel({
                       onClick={() => { if (locked) { toast.error('Connect YouTube first.'); return } goToStep(s.n) }}
                       aria-disabled={locked}
                       className="w-full flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors"
-                      style={{ background: active ? 'rgba(124,58,237,0.16)' : 'transparent', cursor: locked ? 'not-allowed' : 'pointer', opacity: locked ? 0.4 : 1 }}
+                      style={{ background: active ? 'rgb(var(--brand-rgb) / 0.16)' : 'transparent', cursor: locked ? 'not-allowed' : 'pointer', opacity: locked ? 0.4 : 1 }}
                     >
                       <span
                         className="grid place-items-center w-6 h-6 rounded-full text-[11px] font-semibold shrink-0"
@@ -383,7 +383,7 @@ export default function OnboardingFunnel({
           <main>
             <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-6 md:p-8 min-h-[420px] flex flex-col">
               <div className="flex items-center gap-2.5 mb-1.5 text-[#a1a1a6]">
-                <span className="grid place-items-center w-7 h-7 rounded-lg" style={{ background: 'rgba(124,58,237,0.16)', color: ACCENT }}>{current.icon}</span>
+                <span className="grid place-items-center w-7 h-7 rounded-lg" style={{ background: 'rgb(var(--brand-rgb) / 0.16)', color: ACCENT }}>{current.icon}</span>
                 <span className="text-xs uppercase tracking-wider">
                   {current.n === 0 ? 'Welcome' : `Step ${current.n} of ${setupSteps.length}`}
                 </span>

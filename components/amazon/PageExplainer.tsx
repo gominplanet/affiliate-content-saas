@@ -1,3 +1,4 @@
+'use client'
 // © 2026 Gominplanet / MVP Affiliate — proprietary & confidential.
 //
 // PageExplainer — a friendly "here's how this works" block for the Amazon
@@ -7,6 +8,8 @@
 // into both server and client pages.
 
 import type { ReactNode } from 'react'
+import { useLook } from '@/components/layout/shell-nav-context'
+import { TealSteps, TealH2 } from '@/components/layout/teal-ui'
 
 export interface ExplainerStep {
   title: string
@@ -26,6 +29,16 @@ export default function PageExplainer({
   steps: ExplainerStep[]
   footnote?: ReactNode
 }) {
+  // The new look (lib/look): the heading and the same steps in the shared
+  // style, numbered in teal like every other page.
+  const teal = useLook() === 'teal'
+  if (teal) return (
+    <section className="mb-6">
+      <TealH2 note={intro}>{heading}</TealH2>
+      <TealSteps steps={steps.map((x) => [x.title, x.body] as [string, string])} className="mb-2" />
+      {footnote && <p className="text-[12.5px] leading-relaxed" style={{ color: 'var(--text-3)' }}>{footnote}</p>}
+    </section>
+  )
   return (
     <section
       className="mb-8 rounded-2xl border p-5 sm:p-6"

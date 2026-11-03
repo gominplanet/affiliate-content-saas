@@ -91,11 +91,11 @@ export default function SavedFinds({
             <div key={it.id} className="px-4 py-3 flex gap-3 items-start">
               {it.image_url
                 ? <img src={it.image_url} alt="" className="w-12 h-12 rounded-lg object-contain flex-shrink-0 bg-white" />
-                : <div className="w-12 h-12 rounded-lg flex-shrink-0" style={{ background: 'rgba(124,58,237,0.08)' }} />}
+                : <div className="w-12 h-12 rounded-lg flex-shrink-0" style={{ background: 'rgb(var(--brand-rgb) / 0.08)' }} />}
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="inline-flex items-center px-1.5 py-0.5 rounded-md text-[10px] font-bold"
-                    style={it.source === 'campaign' ? { background: 'rgba(124,58,237,0.12)', color: '#7C3AED' } : { background: 'rgba(10,132,255,0.12)', color: '#0a84ff' }}>
+                    style={it.source === 'campaign' ? { background: 'rgb(var(--brand-rgb) / 0.12)', color: '#7C3AED' } : { background: 'rgba(10,132,255,0.12)', color: '#0a84ff' }}>
                     {it.source === 'campaign' ? 'Affiliate+' : 'Onsite'}
                   </span>
                   <p className="text-[13px] font-semibold truncate" style={{ color: 'var(--text)' }}>
@@ -118,7 +118,7 @@ export default function SavedFinds({
                         brandLabel: it.brand || undefined,
                       })}
                       className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold border"
-                      style={{ borderColor: 'rgba(124,58,237,0.4)', color: '#7C3AED' }}>
+                      style={{ borderColor: 'rgb(var(--brand-rgb) / 0.4)', color: '#7C3AED' }}>
                       <MessageCircle size={11} /> Message brand
                     </button>
                   )}

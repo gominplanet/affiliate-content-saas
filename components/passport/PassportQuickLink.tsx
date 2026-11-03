@@ -69,7 +69,7 @@ export default function PassportQuickLink({ onCreated }: { onCreated?: () => voi
 
       {result && (
         <div className="mt-3 flex items-center gap-2 rounded-lg border p-2.5"
-          style={{ borderColor: 'rgba(124,58,237,0.35)', background: 'rgba(124,58,237,0.06)' }}>
+          style={{ borderColor: 'rgb(var(--brand-rgb) / 0.35)', background: 'rgb(var(--brand-rgb) / 0.06)' }}>
           <a href={result} target="_blank" rel="noopener noreferrer"
             className="flex-1 min-w-0 truncate text-[13px] font-semibold" style={{ color: '#7C3AED' }}>{result}</a>
           <button onClick={copy}

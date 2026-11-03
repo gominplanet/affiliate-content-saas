@@ -180,7 +180,7 @@ export default function AutoPilotModal({ onClose, onChange }: { onClose: () => v
                           disabled={saving}
                           onClick={() => setCadence(o.key)}
                           className="flex w-full items-center justify-between rounded-lg border px-3 py-2 text-sm transition disabled:opacity-60"
-                          style={{ borderColor: on ? '#7C3AED' : 'var(--border-2,#e5e5e7)', background: on ? 'rgba(124,58,237,0.08)' : 'transparent', color: 'var(--text,#1d1d1f)' }}
+                          style={{ borderColor: on ? '#7C3AED' : 'var(--border-2,#e5e5e7)', background: on ? 'rgb(var(--brand-rgb) / 0.08)' : 'transparent', color: 'var(--text,#1d1d1f)' }}
                         >
                           <span>{o.label}</span>
                           <span className="text-[10px] font-bold" style={{ color: on ? '#7C3AED' : '#c7c7cc' }}>{on ? 'ON' : ''}</span>
@@ -247,7 +247,7 @@ export default function AutoPilotModal({ onClose, onChange }: { onClose: () => v
                         className="flex items-center justify-between rounded-lg border px-3 py-2 text-sm transition disabled:cursor-not-allowed"
                         style={{
                           borderColor: on ? '#7C3AED' : 'var(--border-2,#e5e5e7)',
-                          background: on ? 'rgba(124,58,237,0.08)' : 'transparent',
+                          background: on ? 'rgb(var(--brand-rgb) / 0.08)' : 'transparent',
                           color: usable ? 'var(--text,#1d1d1f)' : '#a1a1a6',
                           opacity: usable ? 1 : 0.7,
                         }}

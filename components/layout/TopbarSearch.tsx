@@ -60,7 +60,7 @@ export default function TopbarSearch({ isAdmin = false, wide = false }: { isAdmi
         el.scrollIntoView({ behavior: 'smooth', block: 'start' })
         const prev = el.style.boxShadow
         el.style.transition = 'box-shadow 0.35s ease'
-        el.style.boxShadow = '0 0 0 3px rgba(124,58,237,0.55)'
+        el.style.boxShadow = '0 0 0 3px rgb(var(--brand-rgb) / 0.55)'
         setTimeout(() => { el.style.boxShadow = prev }, 1600)
       } else if (tries++ < 40) {
         setTimeout(tick, 60)

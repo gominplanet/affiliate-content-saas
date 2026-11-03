@@ -294,7 +294,7 @@ export default function ArticlesPage() {
       <div className="space-y-6">
         <div className="rounded-xl border p-8" style={{ background: 'var(--panel)', borderColor: 'var(--border)' }}>
           <div className="flex items-start gap-4">
-            <div className="p-3 rounded-xl" style={{ background: 'rgba(124,58,237,.12)' }}>
+            <div className="p-3 rounded-xl" style={{ background: 'rgb(var(--brand-rgb) / .12)' }}>
               <FlaskConical className="w-6 h-6" style={{ color: '#7C3AED' }} />
             </div>
             <div>
@@ -323,13 +323,13 @@ export default function ArticlesPage() {
       {/* ── Hero ─────────────────────────────────────────────────────── */}
       <div className="rounded-xl border p-6" style={{ background: 'var(--panel)', borderColor: 'var(--border)' }}>
         <div className="flex items-start gap-4">
-          <div className="p-3 rounded-xl" style={{ background: 'rgba(124,58,237,.12)' }}>
+          <div className="p-3 rounded-xl" style={{ background: 'rgb(var(--brand-rgb) / .12)' }}>
             <Newspaper className="w-6 h-6" style={{ color: '#7C3AED' }} />
           </div>
           <div className="flex-1">
             <div className="flex items-center gap-2.5 flex-wrap">
               <h1 className="text-2xl font-bold tracking-tight" style={{ color: 'var(--text)' }}>Articles</h1>
-              <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full" style={{ background: 'rgba(124,58,237,.12)', color: '#7C3AED' }}>
+              <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full" style={{ background: 'rgb(var(--brand-rgb) / .12)', color: '#7C3AED' }}>
                 New
               </span>
             </div>
@@ -419,7 +419,7 @@ export default function ArticlesPage() {
                   disabled={generating}
                   className="flex items-start gap-2.5 rounded-lg border p-3 text-left transition disabled:opacity-50"
                   style={{
-                    background: on ? 'rgba(124,58,237,.08)' : 'var(--bg)',
+                    background: on ? 'rgb(var(--brand-rgb) / .08)' : 'var(--bg)',
                     borderColor: on ? '#7C3AED' : 'var(--border)',
                   }}
                 >
@@ -442,9 +442,9 @@ export default function ArticlesPage() {
         {/* Voice: the creator's trained voice vs a generic tone preset. */}
         <div>
           <div className="flex items-start gap-3 rounded-xl border p-3.5"
-            style={{ borderColor: useMyVoice ? 'rgba(124,58,237,0.35)' : 'var(--border)', background: useMyVoice ? 'linear-gradient(135deg, rgba(124,58,237,0.07), rgba(52,199,89,0.04))' : 'var(--bg)' }}>
+            style={{ borderColor: useMyVoice ? 'rgb(var(--brand-rgb) / 0.35)' : 'var(--border)', background: useMyVoice ? 'linear-gradient(135deg, rgb(var(--brand-rgb) / 0.07), rgba(52,199,89,0.04))' : 'var(--bg)' }}>
             <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
-              style={{ background: useMyVoice ? 'linear-gradient(135deg,#7C3AED,#34c759)' : 'rgba(124,58,237,0.10)', color: useMyVoice ? '#fff' : '#7C3AED' }}>
+              style={{ background: useMyVoice ? 'linear-gradient(135deg,#7C3AED,#34c759)' : 'rgb(var(--brand-rgb) / 0.10)', color: useMyVoice ? '#fff' : '#7C3AED' }}>
               <Sparkles size={15} />
             </div>
             <div className="flex-1 min-w-0">
@@ -797,7 +797,7 @@ export default function ArticlesPage() {
                     onClick={() => setVoiceWhyOpen(o => !o)}
                     className="text-[11px] font-bold px-2 py-0.5 rounded-full inline-flex items-center gap-1 transition-opacity hover:opacity-80"
                     title="See why this sounds like you"
-                    style={{ background: 'rgba(124,58,237,.15)', color: '#6d28d9' }}
+                    style={{ background: 'rgb(var(--brand-rgb) / .15)', color: '#6d28d9' }}
                   >
                     <Sparkles size={11} /> In your voice
                     <ChevronDown size={11} style={{ transform: voiceWhyOpen ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }} />
@@ -805,16 +805,16 @@ export default function ArticlesPage() {
                 )}
               </div>
               {preview.voiceUsed && voiceWhyOpen && (
-                <div className="mt-2 rounded-lg border p-3 text-xs" style={{ borderColor: 'rgba(124,58,237,0.25)', background: 'rgba(124,58,237,0.05)', color: 'var(--text)' }}>
+                <div className="mt-2 rounded-lg border p-3 text-xs" style={{ borderColor: 'rgb(var(--brand-rgb) / 0.25)', background: 'rgb(var(--brand-rgb) / 0.05)', color: 'var(--text)' }}>
                   <p className="font-semibold mb-1" style={{ color: '#6d28d9' }}>Why this sounds like you</p>
                   {preview.voiceWhy?.fingerprint && (
                     <p className="leading-relaxed whitespace-pre-wrap" style={{ color: 'var(--text-2)' }}>{preview.voiceWhy.fingerprint}</p>
                   )}
                   <div className="flex flex-wrap gap-1.5 mt-2">
-                    {preview.voiceWhy?.fingerprint && <span className="px-1.5 py-0.5 rounded" style={{ background: 'rgba(124,58,237,0.12)', color: '#6d28d9' }}>Learned from your videos</span>}
-                    {preview.voiceWhy?.usedLearn && <span className="px-1.5 py-0.5 rounded" style={{ background: 'rgba(124,58,237,0.12)', color: '#6d28d9' }}>Your Voice Training answers</span>}
-                    {preview.voiceWhy?.usedSample && <span className="px-1.5 py-0.5 rounded" style={{ background: 'rgba(124,58,237,0.12)', color: '#6d28d9' }}>Your writing sample</span>}
-                    {!!preview.voiceWhy?.usedAvoid && <span className="px-1.5 py-0.5 rounded" style={{ background: 'rgba(124,58,237,0.12)', color: '#6d28d9' }}>{preview.voiceWhy.usedAvoid} words you avoid</span>}
+                    {preview.voiceWhy?.fingerprint && <span className="px-1.5 py-0.5 rounded" style={{ background: 'rgb(var(--brand-rgb) / 0.12)', color: '#6d28d9' }}>Learned from your videos</span>}
+                    {preview.voiceWhy?.usedLearn && <span className="px-1.5 py-0.5 rounded" style={{ background: 'rgb(var(--brand-rgb) / 0.12)', color: '#6d28d9' }}>Your Voice Training answers</span>}
+                    {preview.voiceWhy?.usedSample && <span className="px-1.5 py-0.5 rounded" style={{ background: 'rgb(var(--brand-rgb) / 0.12)', color: '#6d28d9' }}>Your writing sample</span>}
+                    {!!preview.voiceWhy?.usedAvoid && <span className="px-1.5 py-0.5 rounded" style={{ background: 'rgb(var(--brand-rgb) / 0.12)', color: '#6d28d9' }}>{preview.voiceWhy.usedAvoid} words you avoid</span>}
                   </div>
                   <p className="mt-2" style={{ color: 'var(--text-2)' }}>
                     Want to shape this? <a href="/learn" className="underline font-medium" style={{ color: '#7C3AED' }}>Edit your Voice Training</a>.

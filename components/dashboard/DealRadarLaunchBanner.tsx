@@ -45,7 +45,7 @@ export default function DealRadarLaunchBanner() {
       className="relative rounded-2xl border transition-transform hover:scale-[1.005]"
       style={{
         background: 'linear-gradient(135deg, #F97316 0%, #EA580C 42%, #7C3AED 100%)',
-        borderColor: 'rgba(124, 58, 237, 0.45)',
+        borderColor: 'rgb(var(--brand-rgb) / 0.45)',
         boxShadow: '0 8px 32px -8px rgba(234, 88, 12, 0.55)',
       }}
     >

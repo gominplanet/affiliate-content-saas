@@ -16,7 +16,7 @@ import { readBrandStats, judgeBrands } from '@/lib/trybe-mybrands'
 import { stageOf, roadWords, ROAD_GOAL, type StageRead } from '@/lib/trybe-finder'
 import { readAdWinners } from '@/components/labs/useTrybeAds'
 
-const PURPLE = '#7C3AED'
+const PURPLE = 'var(--accent)'
 const GREEN = '#16A34A'
 const AMBER = '#B45309'
 

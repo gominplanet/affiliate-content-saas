@@ -1090,7 +1090,7 @@ export default function CcCampaignsPage() {
       </div>
 
       {showHelp && (
-        <div className="card p-4 mb-4 relative" style={{ background: 'rgba(124,58,237,0.04)', borderColor: 'rgba(124,58,237,0.25)' }}>
+        <div className="card p-4 mb-4 relative" style={{ background: 'rgb(var(--brand-rgb) / 0.04)', borderColor: 'rgb(var(--brand-rgb) / 0.25)' }}>
           <button onClick={dismissHelp} aria-label="Dismiss" className="absolute top-2.5 right-2.5 p-1 rounded-md hover:bg-black/5" style={{ color: 'var(--text-3)' }}><X size={15} /></button>
           <div className="flex items-start gap-2.5 pr-6">
             <Info size={16} className="text-[#7C3AED] mt-0.5 flex-shrink-0" />

@@ -23,7 +23,7 @@ import { requestVideoTranscriptCues, requestStudioVideoFile } from '@/lib/extens
 import { SUBTITLE_STYLES, type SubtitleStyle, type ShortRow } from '@/lib/shorts-types'
 import { renderingInBackground, waitForBackgroundRender } from '@/lib/background-render'
 
-const PURPLE = '#7C3AED'
+const PURPLE = 'var(--accent)'
 const STYLE_LABEL: Record<SubtitleStyle, string> = { 'bold-white': 'Bold white', 'yellow-pop': 'Yellow pop', 'outline': 'Outline', 'hype': 'Hype', 'brand': 'Brand' }
 
 function fmt(sec: number): string {

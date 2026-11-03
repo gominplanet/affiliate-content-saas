@@ -1291,7 +1291,7 @@ export default function BrandPage() {
                     )}
                   </div>
                   {!(geniuslinkKey && geniuslinkSecret) && (
-                    <div className="mb-3 rounded-lg px-3 py-2.5" style={{ background: 'rgba(124,58,237,0.06)', border: '1px solid rgba(124,58,237,0.25)' }}>
+                    <div className="mb-3 rounded-lg px-3 py-2.5" style={{ background: 'rgb(var(--brand-rgb) / 0.06)', border: '1px solid rgb(var(--brand-rgb) / 0.25)' }}>
                       <p className="text-[12px] font-semibold text-[#7C3AED]">Don&apos;t have Geniuslink yet?</p>
                       <p className="text-[11px] text-[#6e6e73] dark:text-[#ebebf0] mt-0.5 leading-relaxed">{GENIUSLINK_PITCH}</p>
                       <a href={GENIUSLINK_SIGNUP_URL} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 mt-2 text-[11px] font-semibold px-3 py-1.5 rounded-md bg-[#7C3AED] text-white hover:bg-[#6D28D9]">

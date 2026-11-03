@@ -13,7 +13,7 @@ import { requestTrybeApi } from '@/lib/extension-frame'
 import { readBrandStats } from '@/lib/trybe-mybrands'
 import { goalOf, MONTHLY_GOAL, GOAL_CHOICES } from '@/lib/trybe-week'
 
-const PURPLE = '#7C3AED'
+const PURPLE = 'var(--accent)'
 const GREEN = '#16A34A'
 const AMBER = '#B45309'
 const KEY = 'mvp.trybe.monthlyGoal'

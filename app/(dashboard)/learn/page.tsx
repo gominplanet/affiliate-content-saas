@@ -223,7 +223,7 @@ export default function LearnPage() {
           once the learner has read at least one transcript. */}
       {learned && (
         <div className="max-w-3xl mb-4">
-          <div className="card p-5" style={{ background: 'linear-gradient(135deg, rgba(124,58,237,0.06), rgba(52,199,89,0.05))', borderColor: 'rgba(124,58,237,0.25)' }}>
+          <div className="card p-5" style={{ background: 'linear-gradient(135deg, rgb(var(--brand-rgb) / 0.06), rgba(52,199,89,0.05))', borderColor: 'rgb(var(--brand-rgb) / 0.25)' }}>
             <div className="flex items-start gap-3">
               <div className="w-8 h-8 rounded-full bg-[#7C3AED]/15 flex items-center justify-center flex-shrink-0">
                 <Sparkles size={16} className="text-[#7C3AED]" />
@@ -231,7 +231,7 @@ export default function LearnPage() {
               <div className="flex-1 min-w-0">
                 <div className="flex items-center justify-between gap-3 flex-wrap">
                   <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">What MVP has learned about your voice</p>
-                  <span className="text-[11px] font-medium px-2 py-0.5 rounded-full" style={{ background: 'rgba(124,58,237,0.12)', color: '#6d28d9' }}>
+                  <span className="text-[11px] font-medium px-2 py-0.5 rounded-full" style={{ background: 'rgb(var(--brand-rgb) / 0.12)', color: '#6d28d9' }}>
                     Learned from {learned.sources} {learned.sources === 1 ? 'video' : 'videos'}
                   </span>
                 </div>
@@ -277,7 +277,7 @@ export default function LearnPage() {
             {channelVoices.map(cv => {
               const open = openChannel === cv.channelId
               return (
-                <div key={cv.channelId} className="card overflow-hidden" style={{ borderColor: 'rgba(124,58,237,0.2)' }}>
+                <div key={cv.channelId} className="card overflow-hidden" style={{ borderColor: 'rgb(var(--brand-rgb) / 0.2)' }}>
                   <button
                     type="button"
                     onClick={() => setOpenChannel(open ? null : cv.channelId)}
@@ -286,7 +286,7 @@ export default function LearnPage() {
                     <div className="min-w-0 flex items-center gap-2">
                       <Sparkles size={14} className="text-[#7C3AED] flex-shrink-0" />
                       <span className="text-sm font-semibold truncate text-[#1d1d1f] dark:text-[#f5f5f7]">{cv.title}</span>
-                      <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full flex-shrink-0" style={{ background: 'rgba(124,58,237,0.12)', color: '#6d28d9' }}>
+                      <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full flex-shrink-0" style={{ background: 'rgb(var(--brand-rgb) / 0.12)', color: '#6d28d9' }}>
                         {cv.sources} {cv.sources === 1 ? 'video' : 'videos'}
                       </span>
                     </div>
@@ -313,7 +313,7 @@ export default function LearnPage() {
           creator's videos now instead of waiting for them to publish. */}
       {!learned && (
         <div className="max-w-3xl mb-4">
-          <div className="card p-4 flex items-start gap-3" style={{ background: 'linear-gradient(135deg, rgba(124,58,237,0.06), rgba(52,199,89,0.05))', borderColor: 'rgba(124,58,237,0.25)' }}>
+          <div className="card p-4 flex items-start gap-3" style={{ background: 'linear-gradient(135deg, rgb(var(--brand-rgb) / 0.06), rgba(52,199,89,0.05))', borderColor: 'rgb(var(--brand-rgb) / 0.25)' }}>
             <div className="w-8 h-8 rounded-full bg-[#7C3AED]/15 flex items-center justify-center flex-shrink-0">
               <Sparkles size={16} className="text-[#7C3AED]" />
             </div>

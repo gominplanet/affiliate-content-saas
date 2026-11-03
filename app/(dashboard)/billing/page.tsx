@@ -343,8 +343,8 @@ export default function BillingPage() {
             <div
               className="rounded-2xl p-5 border"
               style={{
-                background: 'linear-gradient(135deg, rgba(124,58,237,.10), rgba(124,58,237,.04))',
-                borderColor: 'rgba(124,58,237,.30)',
+                background: 'linear-gradient(135deg, rgb(var(--brand-rgb) / .10), rgb(var(--brand-rgb) / .04))',
+                borderColor: 'rgb(var(--brand-rgb) / .30)',
               }}
             >
               <div className="flex items-center justify-between gap-4">

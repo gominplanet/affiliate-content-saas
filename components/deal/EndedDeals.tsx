@@ -15,7 +15,7 @@ import PageHero from '@/components/layout/PageHero'
 import { EndedDealsGuide } from '@/components/guide/tool-guides'
 import type { DealPostRow, AftercareReport, ReviveReport } from '@/lib/deal-aftercare-server'
 
-const ACCENT = '#7C3AED'
+const ACCENT = 'var(--accent)'
 const fmt = (s: string | null) => (s ? new Date(s).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : '')
 
 export default function EndedDeals() {

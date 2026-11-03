@@ -80,7 +80,7 @@ export function DemoVideoSection() {
           aria-label="Play the introduction video"
           className="relative rounded-2xl overflow-hidden cursor-pointer group transition-transform duration-200 hover:scale-[1.005] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#7C3AED] focus-visible:ring-offset-2"
           style={{
-            boxShadow: '0 24px 80px -16px rgba(124,58,237,0.35), 0 8px 24px rgba(0,0,0,0.15), 0 0 0 1px var(--border)',
+            boxShadow: '0 24px 80px -16px rgb(var(--brand-rgb) / 0.35), 0 8px 24px rgba(0,0,0,0.15), 0 0 0 1px var(--border)',
           }}
           onClick={() => setOpen(true)}
           onKeyDown={(e) => {
@@ -98,7 +98,7 @@ export function DemoVideoSection() {
               className="absolute inset-0"
               style={{
                 background: `
-                  radial-gradient(45% 65% at 30% 30%, rgba(124,58,237,0.40), transparent 60%),
+                  radial-gradient(45% 65% at 30% 30%, rgb(var(--brand-rgb) / 0.40), transparent 60%),
                   radial-gradient(40% 60% at 75% 60%, rgba(192,38,211,0.32), transparent 65%),
                   radial-gradient(60% 50% at 50% 95%, rgba(99,102,241,0.25), transparent 70%),
                   linear-gradient(180deg, #0E0E11, #1A1A22)
@@ -143,7 +143,7 @@ export function DemoVideoSection() {
                 <span
                   className="absolute inset-0 rounded-full"
                   style={{
-                    backgroundColor: 'rgba(124,58,237,0.35)',
+                    backgroundColor: 'rgb(var(--brand-rgb) / 0.35)',
                     animation: 'mvp-play-pulse 2.5s ease-out infinite',
                   }}
                 />
@@ -152,7 +152,7 @@ export function DemoVideoSection() {
                   type="button"
                   aria-label="Play introduction video"
                   className="relative w-20 h-20 rounded-full bg-[#7C3AED] hover:bg-[#6D28D9] flex items-center justify-center text-white transition-all duration-200 group-hover:scale-105"
-                  style={{ boxShadow: '0 12px 32px rgba(124,58,237,0.55)' }}
+                  style={{ boxShadow: '0 12px 32px rgb(var(--brand-rgb) / 0.55)' }}
                 >
                   <Play size={28} fill="currentColor" className="ml-1" />
                 </button>
@@ -266,9 +266,9 @@ export function FAQSection() {
           <span
             className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-[10px] font-medium uppercase tracking-[0.18em] mb-5"
             style={{
-              backgroundColor: 'rgba(124,58,237,0.12)',
+              backgroundColor: 'rgb(var(--brand-rgb) / 0.12)',
               color: '#9D6BFF',
-              border: '1px solid rgba(124,58,237,0.25)',
+              border: '1px solid rgb(var(--brand-rgb) / 0.25)',
             }}
           >
             Questions you might be having
@@ -343,7 +343,7 @@ function FAQItem({ q, a, isOpen, onToggle }: { q: string; a: string; isOpen: boo
       className="rounded-xl border overflow-hidden transition-colors"
       style={{
         backgroundColor: 'var(--surface)',
-        borderColor: isOpen ? 'rgba(124,58,237,0.35)' : 'var(--border)',
+        borderColor: isOpen ? 'rgb(var(--brand-rgb) / 0.35)' : 'var(--border)',
         boxShadow: 'var(--card-shadow)',
       }}
     >
@@ -357,7 +357,7 @@ function FAQItem({ q, a, isOpen, onToggle }: { q: string; a: string; isOpen: boo
         <span
           className="flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center transition-transform"
           style={{
-            backgroundColor: isOpen ? 'rgba(124,58,237,0.15)' : 'rgba(255,255,255,0.05)',
+            backgroundColor: isOpen ? 'rgb(var(--brand-rgb) / 0.15)' : 'rgba(255,255,255,0.05)',
             color: isOpen ? '#9D6BFF' : 'var(--text-soft)',
           }}
         >
@@ -427,8 +427,8 @@ export function StickyBottomBar() {
           // Slightly translucent so the page peeks through and the bar
           // doesn't feel like a hard popup.
           backgroundColor: 'rgba(14,14,17,0.85)',
-          borderColor: 'rgba(124,58,237,0.30)',
-          boxShadow: '0 10px 40px rgba(0,0,0,0.4), 0 0 0 1px rgba(124,58,237,0.10)',
+          borderColor: 'rgb(var(--brand-rgb) / 0.30)',
+          boxShadow: '0 10px 40px rgba(0,0,0,0.4), 0 0 0 1px rgb(var(--brand-rgb) / 0.10)',
         }}
       >
         <span

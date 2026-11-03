@@ -17,7 +17,7 @@ import PageHero from '@/components/layout/PageHero'
 import { TERMS, JOURNEY, SECTIONS, TOOLS } from '@/lib/seo-glossary'
 import { LANES, REQUESTS_PER_DAY, type Lane } from '@/lib/post-doctor'
 
-const PURPLE = '#7C3AED'
+const PURPLE = 'var(--accent)'
 
 /** What to do with a post in each stage of the board. */
 const LANE_DO: Record<Lane, string> = {

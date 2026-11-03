@@ -31,7 +31,7 @@ import { fetchChanges } from '@/components/labs/TrybeChanges'
 import { readBrandStats, readSubmissions, withSubmissions, judgeBrands, stuckOf, nudgeText, keysOf, daysAgo, reviewOf, reviewWords, rateLockOf, RATE_LOCK_DAYS, STUCK_DAYS, FOCUS_COUNT,
   type MyBrand, type Submission, type Verdict } from '@/lib/trybe-mybrands'
 
-const PURPLE = '#7C3AED'
+const PURPLE = 'var(--accent)'
 const GREEN = '#16A34A'
 const AMBER = '#B45309'
 const RED = '#DC2626'
@@ -347,7 +347,7 @@ export default function TrybeMyBrands({ canRead, canSend, convos, me, myName, is
                   {b.logo
                     // eslint-disable-next-line @next/next/no-img-element
                     ? <img src={b.logo} alt="" className="w-9 h-9 rounded-lg object-contain border shrink-0" style={{ borderColor: 'var(--border)', background: '#fff' }} />
-                    : <span className="w-9 h-9 rounded-lg shrink-0 flex items-center justify-center text-[14px] font-bold" style={{ background: 'rgba(124,58,237,0.10)', color: PURPLE }}>{b.name.slice(0, 1).toUpperCase()}</span>}
+                    : <span className="w-9 h-9 rounded-lg shrink-0 flex items-center justify-center text-[14px] font-bold" style={{ background: 'rgb(var(--brand-rgb) / 0.10)', color: PURPLE }}>{b.name.slice(0, 1).toUpperCase()}</span>}
                   <div className="min-w-0 flex-1">
                     <p className="text-[14px] font-semibold flex flex-wrap items-center gap-2">
                       {b.name}
@@ -425,7 +425,7 @@ function AdsLine({ b, ads, loading, problem }: { b: MyBrand; ads: AdsRead | null
     : ran ? `Your videos for ${b.name} ran as ads in the last 30 days, none running now${numbers ? `: ${numbers}` : ''}.`
     : `TRYBE lists ${videos.length} of your videos for ${b.name}, none running as an ad in the last 30 days.`
   return (
-    <p className="mt-1.5 text-[12px] rounded-lg px-2.5 py-1.5" style={{ background: live.length || ran ? 'rgba(22,163,74,0.08)' : 'rgba(124,58,237,0.05)', color: live.length || ran ? GREEN : 'var(--text-soft)' }}>
+    <p className="mt-1.5 text-[12px] rounded-lg px-2.5 py-1.5" style={{ background: live.length || ran ? 'rgba(22,163,74,0.08)' : 'rgb(var(--brand-rgb) / 0.05)', color: live.length || ran ? GREEN : 'var(--text-soft)' }}>
       <b>Your videos as ads (TRYBE):</b> {text}
     </p>
   )
@@ -441,7 +441,7 @@ function MembersLine({ p, note, mine }: { p: Pooled | null | undefined; note: st
   }
   const diff = p.approvalRate != null && mine != null ? Math.round((mine - p.approvalRate) * 100) : null
   return (
-    <p className="mt-2 text-[12px] rounded-lg px-2.5 py-1.5" style={{ background: 'rgba(124,58,237,0.06)' }}>
+    <p className="mt-2 text-[12px] rounded-lg px-2.5 py-1.5" style={{ background: 'rgb(var(--brand-rgb) / 0.06)' }}>
       <b>MVP members ({p.members >= POOL_MIN ? `${POOL_MIN}+` : p.members}):</b>{' '}
       {p.approvalRate != null && <>approve {Math.round(p.approvalRate * 100)}% of videos{diff != null && diff !== 0 ? <span style={{ color: diff > 0 ? GREEN : AMBER }}> (you: {diff > 0 ? `${diff} points above` : `${-diff} points below`})</span> : null}</>}
       {p.approvalRate != null && p.payPerApproved != null && ' · '}

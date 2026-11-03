@@ -23,7 +23,7 @@ import {
   type BrandGroup, type ContentLink,
 } from '@/lib/brand-content'
 
-const ACCENT = '#7C3AED'
+const ACCENT = 'var(--accent)'
 
 interface Data {
   brands: BrandGroup[]

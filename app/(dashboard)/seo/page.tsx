@@ -659,7 +659,7 @@ export default function SeoPage() {
       <Link href="/seo/guide"
         className="mb-4 flex items-center gap-3 rounded-xl border px-4 py-3 transition-colors hover:border-[#7C3AED]/60"
         style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border-bright)' }}>
-        <span className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: 'rgba(124,58,237,0.12)', color: '#7C3AED' }}><BookOpen size={17} /></span>
+        <span className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: 'rgb(var(--brand-rgb) / 0.12)', color: '#7C3AED' }}><BookOpen size={17} /></span>
         <span className="min-w-0 flex-1">
           <span className="block text-[14px] font-semibold" style={{ color: 'var(--text)' }}>New here, or not sure what this page means? Read the SEO guide</span>
           <span className="block text-[12.5px]" style={{ color: 'var(--text-2)' }}>Your first 15 minutes, a 10 minute weekly routine, every section and stage, and every word in plain language.</span>

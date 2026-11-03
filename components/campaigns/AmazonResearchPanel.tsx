@@ -194,9 +194,9 @@ export default function AmazonResearchPanel({ canAct = true, onSavedChange }: { 
   }
 
   return (
-    <div className="card mb-5 overflow-hidden" style={{ borderWidth: 2, borderColor: 'rgba(124,58,237,0.30)' }}>
+    <div className="card mb-5 overflow-hidden" style={{ borderWidth: 2, borderColor: 'rgb(var(--brand-rgb) / 0.30)' }}>
       {/* Filter bar */}
-      <div className="px-3.5 py-3 space-y-2.5" style={{ background: 'linear-gradient(180deg, rgba(124,58,237,0.06), transparent 85%)' }}>
+      <div className="px-3.5 py-3 space-y-2.5" style={{ background: 'linear-gradient(180deg, rgb(var(--brand-rgb) / 0.06), transparent 85%)' }}>
         {/* Search row — the input is only as wide as it needs to be, with Search
             and Clear right beside it (reads more like a search box). */}
         <div className="flex items-center gap-2">
@@ -276,7 +276,7 @@ export default function AmazonResearchPanel({ canAct = true, onSavedChange }: { 
         <div className="text-center py-12 text-sm" style={{ color: 'var(--text-faint)' }}>{error}</div>
       ) : needsFilter && rows.length === 0 ? (
         <div className="text-center py-14 px-6" style={{ color: 'var(--text-faint)' }}>
-          <SlidersHorizontal size={26} className="mx-auto mb-3" style={{ color: 'rgba(124,58,237,0.4)' }} />
+          <SlidersHorizontal size={26} className="mx-auto mb-3" style={{ color: 'rgb(var(--brand-rgb) / 0.4)' }} />
           <p className="text-sm font-medium" style={{ color: 'var(--text-soft)' }}>Search the whole Amazon catalogue</p>
           <p className="text-[12px] mt-1 max-w-sm mx-auto leading-relaxed">Type a keyword or pick a category, rating, review or best-seller filter above and results appear here: every product links with your own Associates tag.</p>
         </div>

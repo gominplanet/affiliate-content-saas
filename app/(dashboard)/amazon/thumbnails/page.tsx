@@ -20,6 +20,8 @@ import WearProductToggle, { useWearProduct } from '@/components/thumbnails/WearP
 import ExpressionPicker, { useExpression } from '@/components/thumbnails/ExpressionPicker'
 import FramingPicker, { useFraming } from '@/components/thumbnails/FramingPicker'
 import { productFields, readProductList, comparisonNote } from '@/lib/product-list'
+import PageHero from '@/components/layout/PageHero'
+import { useLook } from '@/components/layout/shell-nav-context'
 
 interface FaceModel { id: string; name: string; outfit_pref?: string | null }
 
@@ -29,6 +31,10 @@ export default function AmazonThumbnailsPage() {
   /** What the creator thinks of it, in their words: the headline is written from this. */
   const [take, setTake] = useState('')
   const [mode, setMode] = useState<'face' | 'product'>('face')
+  // The new look (lib/look): the shared header card, and teal for what you
+  // press in place of the Amazon pages' amber.
+  const teal = useLook() === 'teal'
+  const picked = teal ? 'border-[color:var(--accent)] bg-[rgb(var(--brand-rgb)/0.10)] text-[color:var(--accent-text)]' : 'border-[#d97706] bg-[#d97706]/10 text-[#d97706]'
   const [faces, setFaces] = useState<FaceModel[]>([])
   const [faceId, setFaceId] = useState<string>('')
   const [outfit, setOutfit] = useState('')
@@ -187,21 +193,25 @@ export default function AmazonThumbnailsPage() {
   }, [product, headline, mode, faceId, question, wear, expression, framing, build, height, saveOutfitIfDirty])
 
   return (
-    <div className="max-w-3xl mx-auto">
-      <header className="mb-7">
-        <div className="flex items-center gap-2 mb-3">
-          <Sparkles size={14} className="text-[#d97706]" />
-          <span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: 'var(--text-soft)' }}>
-            Make videos · Thumbnails
-          </span>
-        </div>
-        <h1 className="text-2xl sm:text-3xl font-bold tracking-tight mb-2" style={{ color: 'var(--text)' }}>
-          MVP Art Director
-        </h1>
-        <p className="text-sm max-w-2xl" style={{ color: 'var(--text-soft)' }}>
-          Paste an Amazon product link or ASIN. The Art Director resolves the real product and designs a scroll-stopping 1280×720 thumbnail, with you in it or product-only.
-        </p>
-      </header>
+    <div className={teal ? 'max-w-5xl mx-auto' : 'max-w-3xl mx-auto'}>
+      {teal ? (
+        <PageHero title="MVP Art Director" subtitle="Paste an Amazon product link or ASIN. The Art Director finds the real product and designs a scroll-stopping 1280×720 thumbnail, with you in it or product only." />
+      ) : (
+        <header className="mb-7">
+          <div className="flex items-center gap-2 mb-3">
+            <Sparkles size={14} className="text-[#d97706]" />
+            <span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: 'var(--text-soft)' }}>
+              Make videos · Thumbnails
+            </span>
+          </div>
+          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight mb-2" style={{ color: 'var(--text)' }}>
+            MVP Art Director
+          </h1>
+          <p className="text-sm max-w-2xl" style={{ color: 'var(--text-soft)' }}>
+            Paste an Amazon product link or ASIN. The Art Director resolves the real product and designs a scroll-stopping 1280×720 thumbnail, with you in it or product-only.
+          </p>
+        </header>
+      )}
 
       <PageExplainer
         heading="Turn any product into a click-worthy thumbnail"
@@ -255,13 +265,13 @@ export default function AmazonThumbnailsPage() {
             <button
               onClick={() => setMode('face')}
               disabled={faces.length === 0}
-              className={`flex items-center gap-2 px-3 py-2.5 rounded-xl border text-sm font-medium transition disabled:opacity-40 ${mode === 'face' ? 'border-[#d97706] bg-[#d97706]/10 text-[#d97706]' : 'border-gray-200 dark:border-white/10 text-[#1d1d1f] dark:text-[#f5f5f7]'}`}
+              className={`flex items-center gap-2 px-3 py-2.5 rounded-xl border text-sm font-medium transition disabled:opacity-40 ${mode === 'face' ? picked : 'border-gray-200 dark:border-white/10 text-[#1d1d1f] dark:text-[#f5f5f7]'}`}
             >
               <User size={15} /> With my face
             </button>
             <button
               onClick={() => setMode('product')}
-              className={`flex items-center gap-2 px-3 py-2.5 rounded-xl border text-sm font-medium transition ${mode === 'product' ? 'border-[#d97706] bg-[#d97706]/10 text-[#d97706]' : 'border-gray-200 dark:border-white/10 text-[#1d1d1f] dark:text-[#f5f5f7]'}`}
+              className={`flex items-center gap-2 px-3 py-2.5 rounded-xl border text-sm font-medium transition ${mode === 'product' ? picked : 'border-gray-200 dark:border-white/10 text-[#1d1d1f] dark:text-[#f5f5f7]'}`}
             >
               <Package size={15} /> Product only
             </button>
@@ -359,7 +369,9 @@ export default function AmazonThumbnailsPage() {
         <button
           onClick={generate}
           disabled={busy}
-          className="flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-[#d97706] hover:bg-[#c2410c] text-white font-semibold text-sm transition disabled:opacity-60"
+          className={teal
+            ? 'flex items-center justify-center gap-2 px-5 py-3 rounded-full bg-[color:var(--accent)] hover:bg-[rgb(var(--brand-strong-rgb))] text-white font-extrabold text-[15px] transition disabled:opacity-60'
+            : 'flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-[#d97706] hover:bg-[#c2410c] text-white font-semibold text-sm transition disabled:opacity-60'}
         >
           {busy ? <><Loader2 size={16} className="animate-spin" /> {status || 'Working…'}</> : <><Wand2 size={16} /> Generate thumbnail</>}
         </button>

@@ -14,7 +14,7 @@ import { ExternalLink, Handshake, Loader2 } from 'lucide-react'
 import { requestTrybeOpenBrand } from '@/lib/extension-frame'
 import { sendUrl } from '@/lib/trybe-outreach'
 
-const PURPLE = '#7C3AED'
+const PURPLE = 'var(--accent)'
 
 const SAY: Record<string, string> = {
   'not-signed-in': 'TRYBE is signed out in this Chrome. Sign in, then try again.',

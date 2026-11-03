@@ -203,7 +203,7 @@ export default function CoverageBoard() {
         <div className="mt-4 grid gap-2 sm:grid-cols-2">
           {(markets ?? []).map((m) => (
             <div key={m.domain} className="rounded-xl border p-3 flex items-center justify-between gap-3"
-              style={{ borderColor: m.enabled ? '#7C3AED55' : 'var(--border)', background: m.enabled ? 'rgba(124,58,237,0.05)' : 'transparent' }}>
+              style={{ borderColor: m.enabled ? '#7C3AED55' : 'var(--border)', background: m.enabled ? 'rgb(var(--brand-rgb) / 0.05)' : 'transparent' }}>
               <label className="flex items-center gap-2.5 cursor-pointer min-w-0">
                 <input
                   type="checkbox" checked={m.enabled} disabled={busyDomain === m.domain}

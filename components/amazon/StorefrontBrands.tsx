@@ -24,7 +24,7 @@ interface Resp {
   totalProducts: number; uniqueBrands: number; unknown: number; ccCount?: number
 }
 
-const PURPLE = '#7C3AED'
+const PURPLE = 'var(--accent)'
 
 // The card already shows the brand as the group header, and scraped titles often
 // repeat it ("Kasa Smart Kasa Outdoor Smart Plug…"), so drop a leading brand
@@ -82,7 +82,7 @@ export default function StorefrontBrands() {
   return (
     <section className="rounded-2xl border overflow-hidden" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
       <button onClick={() => setOpen(o => !o)} className="w-full flex items-center gap-3 px-5 py-4 text-left">
-        <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: 'rgba(124,58,237,0.10)', color: PURPLE }}>
+        <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: 'rgb(var(--brand-rgb) / 0.10)', color: PURPLE }}>
           <Tag size={15} />
         </div>
         <div className="flex-1 min-w-0">
@@ -116,7 +116,7 @@ export default function StorefrontBrands() {
                       // eslint-disable-next-line @next/next/no-img-element
                       <img src={b.image} alt="" className="w-9 h-9 rounded-lg object-cover flex-shrink-0" style={{ background: 'var(--surface)' }} />
                     ) : (
-                      <div className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 text-[13px] font-bold" style={{ background: 'rgba(124,58,237,0.10)', color: PURPLE }}>
+                      <div className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 text-[13px] font-bold" style={{ background: 'rgb(var(--brand-rgb) / 0.10)', color: PURPLE }}>
                         {b.brand.slice(0, 1).toUpperCase()}
                       </div>
                     )}
@@ -124,7 +124,7 @@ export default function StorefrontBrands() {
                       <div className="flex items-center gap-1.5">
                         <p className="text-[13px] font-medium truncate" style={{ color: 'var(--text)' }}>{b.brand}</p>
                         {b.cc && (
-                          <span className="inline-flex items-center gap-0.5 rounded-full px-1.5 py-[1px] text-[9px] font-bold flex-shrink-0" style={{ background: 'rgba(124,58,237,0.12)', color: PURPLE }}>
+                          <span className="inline-flex items-center gap-0.5 rounded-full px-1.5 py-[1px] text-[9px] font-bold flex-shrink-0" style={{ background: 'rgb(var(--brand-rgb) / 0.12)', color: PURPLE }}>
                             <Handshake size={9} /> CC
                           </span>
                         )}

@@ -21,7 +21,7 @@ const TONE: Record<SizeTone, { color: string; bg: string; note?: string }> = {
   small: { color: '#8a5a00', bg: 'rgba(255,159,10,0.12)', note: 'small' },
   big: { color: '#8a5a00', bg: 'rgba(255,159,10,0.12)', note: 'big' },
   crowd: { color: '#c93400', bg: 'rgba(255,59,48,0.10)', note: 'crowded' },
-  trend: { color: '#5b21b6', bg: 'rgba(124,58,237,0.10)' },
+  trend: { color: '#5b21b6', bg: 'rgb(var(--brand-rgb) / 0.10)' },
   none: { color: '#86868b', bg: 'rgba(120,120,128,0.08)' },
 }
 

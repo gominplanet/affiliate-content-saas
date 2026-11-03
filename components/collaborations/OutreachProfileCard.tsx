@@ -104,7 +104,7 @@ export default function OutreachProfileCard({ defaultOpen = false }: { defaultOp
   return (
     <div className="rounded-2xl border" style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)' }}>
       <button onClick={() => setOpen(o => !o)} className="w-full flex items-center gap-2.5 p-4 text-left">
-        <span className="grid place-items-center w-9 h-9 rounded-xl shrink-0" style={{ background: 'rgba(124,58,237,0.12)', color: '#9D6BFF' }}>
+        <span className="grid place-items-center w-9 h-9 rounded-xl shrink-0" style={{ background: 'rgb(var(--brand-rgb) / 0.12)', color: '#9D6BFF' }}>
           <Send size={16} />
         </span>
         <div className="min-w-0 flex-1">
@@ -158,7 +158,7 @@ export default function OutreachProfileCard({ defaultOpen = false }: { defaultOp
                   {allCats.map(c => (
                     <button key={c} type="button" onClick={() => toggleCat(c)}
                       className="text-[11px] px-2 py-1 rounded-full border"
-                      style={{ borderColor: p.categories.includes(c) ? '#7C3AED' : 'var(--border)', background: p.categories.includes(c) ? 'rgba(124,58,237,0.12)' : 'transparent', color: p.categories.includes(c) ? '#9D6BFF' : 'var(--text-2)' }}>
+                      style={{ borderColor: p.categories.includes(c) ? '#7C3AED' : 'var(--border)', background: p.categories.includes(c) ? 'rgb(var(--brand-rgb) / 0.12)' : 'transparent', color: p.categories.includes(c) ? '#9D6BFF' : 'var(--text-2)' }}>
                       {c}
                     </button>
                   ))}

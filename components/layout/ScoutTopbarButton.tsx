@@ -42,7 +42,7 @@ export default function ScoutTopbarButton() {
         : 'Install the SCOUT browser extension from the Chrome Web Store: one click, auto-updating. Amazon Creator Connections scout, Co-Pilot frame capture, and the Amazon video finder for brand recaps.'}
       className="px-3 py-2 rounded-lg text-[12px] font-semibold inline-flex items-center gap-1.5 transition-transform hover:-translate-y-0.5"
       style={sideloaded
-        ? { color: '#fff', background: 'linear-gradient(135deg, #7C3AED 0%, #6D28D9 100%)', boxShadow: '0 2px 10px rgba(124,58,237,0.35)' }
+        ? { color: '#fff', background: 'linear-gradient(135deg, #7C3AED 0%, #6D28D9 100%)', boxShadow: '0 2px 10px rgb(var(--brand-rgb) / 0.35)' }
         : { color: 'var(--text-soft)', background: 'var(--surface)', border: '1px solid var(--border)' }}
     >
       {sideloaded ? <ArrowUpCircle size={13} /> : <Download size={13} />}<span className="hidden 2xl:inline">{label}</span><span className="2xl:hidden">SCOUT</span>

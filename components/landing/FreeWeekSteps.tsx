@@ -20,12 +20,12 @@ type Tone = 'auto' | 'light'
 
 const TONES: Record<Tone, { bg: string; border: string; tile: string; text: string; soft: string; faint: string; zero: string }> = {
   auto: {
-    bg: 'var(--surface)', border: 'var(--border)', tile: 'rgba(124,58,237,0.05)',
+    bg: 'var(--surface)', border: 'var(--border)', tile: 'rgb(var(--brand-rgb) / 0.05)',
     text: 'var(--text)', soft: 'var(--text-soft)', faint: 'var(--text-faint)',
     zero: 'text-[#047857] dark:text-[#34D399]',
   },
   light: {
-    bg: '#FFFFFF', border: 'rgba(0,0,0,0.08)', tile: 'rgba(124,58,237,0.05)',
+    bg: '#FFFFFF', border: 'rgba(0,0,0,0.08)', tile: 'rgb(var(--brand-rgb) / 0.05)',
     text: '#1D1D1F', soft: 'rgba(0,0,0,0.72)', faint: 'rgba(0,0,0,0.5)',
     zero: 'text-[#047857]',
   },
@@ -74,7 +74,7 @@ export default function FreeWeekSteps({
         {steps.map((s, i) => {
           const last = i === steps.length - 1
           return (
-            <li key={s.when} className="rounded-2xl border p-4 flex flex-col gap-2" style={{ borderColor: last ? 'rgba(124,58,237,0.35)' : t.border, background: t.tile }}>
+            <li key={s.when} className="rounded-2xl border p-4 flex flex-col gap-2" style={{ borderColor: last ? 'rgb(var(--brand-rgb) / 0.35)' : t.border, background: t.tile }}>
               <div className="flex items-baseline justify-between gap-2">
                 <span className="text-[11px] font-bold uppercase tracking-[0.1em]" style={{ color: t.faint }}>{s.when}</span>
                 <span className={`text-[20px] font-extrabold tabular-nums leading-none ${last ? '' : t.zero}`} style={last ? { color: t.text } : undefined}>
@@ -92,7 +92,7 @@ export default function FreeWeekSteps({
           <a
             href={href}
             className="inline-flex items-center justify-center gap-2 rounded-xl px-6 py-3.5 text-[15px] font-semibold text-white transition-transform hover:-translate-y-0.5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#7C3AED]"
-            style={{ background: 'linear-gradient(135deg, #7C3AED 0%, #C026D3 100%)', boxShadow: '0 6px 22px rgba(124,58,237,0.32)' }}
+            style={{ background: 'linear-gradient(135deg, #7C3AED 0%, #C026D3 100%)', boxShadow: '0 6px 22px rgb(var(--brand-rgb) / 0.32)' }}
           >
             {FREE_WEEK_CTA}
             <ArrowRight size={16} />

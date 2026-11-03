@@ -301,7 +301,7 @@ export default function BulkScheduleVideosModal({
                     className={`flex items-center gap-2 px-3 py-2 rounded-lg border transition-colors ${usable && !running ? 'cursor-pointer' : 'opacity-60 cursor-not-allowed'}`}
                     style={{
                       borderColor: isChecked && usable ? '#7C3AED' : 'var(--border, rgba(255,255,255,0.08))',
-                      backgroundColor: isChecked && usable ? 'rgba(124,58,237,0.10)' : 'transparent',
+                      backgroundColor: isChecked && usable ? 'rgb(var(--brand-rgb) / 0.10)' : 'transparent',
                     }}
                     title={
                       usable ? ''

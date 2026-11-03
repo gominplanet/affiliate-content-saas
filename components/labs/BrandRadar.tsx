@@ -13,7 +13,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Loader2, Radar, Store, Music2, Search, Check, AlertCircle, Sparkles, Tag, ShoppingBag } from 'lucide-react'
 import PageHero from '@/components/layout/PageHero'
 
-const ACCENT = '#7C3AED'
+const ACCENT = 'var(--accent)'
 
 interface Providers { apify: boolean; socialcrawl: boolean }
 interface WorkedBrand { key: string; brand: string; amazon: number; tiktok: number; confident: boolean; image: string | null }
@@ -109,7 +109,7 @@ export default function BrandRadar() {
       />
 
       {providers && !anyProvider && (
-        <div className="rounded-2xl border p-5 mb-5 flex items-start gap-3" style={{ borderColor: 'rgba(124,58,237,0.3)', background: 'linear-gradient(180deg, rgba(124,58,237,0.05), transparent)' }}>
+        <div className="rounded-2xl border p-5 mb-5 flex items-start gap-3" style={{ borderColor: 'rgb(var(--brand-rgb) / 0.3)', background: 'linear-gradient(180deg, rgb(var(--brand-rgb) / 0.05), transparent)' }}>
           <AlertCircle size={18} style={{ color: ACCENT }} className="flex-shrink-0 mt-0.5" />
           <div className="text-[13px]" style={{ color: 'var(--text-soft)' }}>
             <p className="font-semibold" style={{ color: 'var(--text)' }}>Connect a data provider to fill your brand list</p>
@@ -146,7 +146,7 @@ export default function BrandRadar() {
                 {b.image
                   // eslint-disable-next-line @next/next/no-img-element
                   ? <img src={b.image} alt="" className="w-8 h-8 rounded-lg object-cover flex-shrink-0" />
-                  : <div className="w-8 h-8 rounded-lg grid place-items-center flex-shrink-0 text-[12px] font-bold" style={{ background: 'rgba(124,58,237,0.10)', color: ACCENT }}>{b.brand.slice(0, 1).toUpperCase()}</div>}
+                  : <div className="w-8 h-8 rounded-lg grid place-items-center flex-shrink-0 text-[12px] font-bold" style={{ background: 'rgb(var(--brand-rgb) / 0.10)', color: ACCENT }}>{b.brand.slice(0, 1).toUpperCase()}</div>}
                 <div className="flex-1 min-w-0">
                   <p className="text-[13px] font-medium truncate" style={{ color: 'var(--text)' }}>{b.brand}</p>
                   <div className="flex items-center gap-1.5 mt-0.5">

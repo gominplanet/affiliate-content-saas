@@ -64,12 +64,12 @@ export default function LinkStyleTiles({
               borderWidth: on ? 2 : 1,
               // Compensate the 1px→2px border so tiles don't jump on select.
               margin: on ? 0 : 1,
-              background: on ? 'linear-gradient(135deg, rgba(124,58,237,0.08), rgba(52,199,89,0.05))' : 'transparent',
+              background: on ? 'linear-gradient(135deg, rgb(var(--brand-rgb) / 0.08), rgba(52,199,89,0.05))' : 'transparent',
             }}
           >
             <div className="flex items-start gap-2.5">
               <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
-                style={{ background: on ? 'linear-gradient(135deg,#7C3AED,#34c759)' : 'rgba(124,58,237,0.10)', color: on ? '#fff' : '#7C3AED' }}>
+                style={{ background: on ? 'linear-gradient(135deg,#7C3AED,#34c759)' : 'rgb(var(--brand-rgb) / 0.10)', color: on ? '#fff' : '#7C3AED' }}>
                 <Icon size={15} />
               </div>
               <div className="flex-1 min-w-0">
@@ -117,7 +117,7 @@ export default function LinkStyleTiles({
         onClick={() => onSelect('passport')}
         disabled={busy}
         className="mt-2.5 w-full text-left rounded-xl border p-3 flex items-start gap-2.5 disabled:opacity-70"
-        style={{ borderColor: 'rgba(124,58,237,0.35)', background: 'linear-gradient(135deg, rgba(124,58,237,0.08), rgba(52,199,89,0.04))' }}
+        style={{ borderColor: 'rgb(var(--brand-rgb) / 0.35)', background: 'linear-gradient(135deg, rgb(var(--brand-rgb) / 0.08), rgba(52,199,89,0.04))' }}
       >
         <Globe size={15} style={{ color: '#7C3AED' }} className="mt-0.5 flex-shrink-0" />
         <span className="text-[11.5px] text-[#3a3a3c] dark:text-[#d2d2d7] leading-snug">

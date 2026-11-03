@@ -994,7 +994,7 @@ function NewsletterComposeTool() {
                 className="px-4 py-2 rounded-lg text-[13px] font-semibold text-white inline-flex items-center gap-1.5 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
                 style={{
                   background: 'linear-gradient(135deg, #7C3AED 0%, #C026D3 100%)',
-                  boxShadow: '0 4px 16px rgba(124,58,237,0.30)',
+                  boxShadow: '0 4px 16px rgb(var(--brand-rgb) / 0.30)',
                 }}
               >
                 {scheduleEnabled && scheduledAt

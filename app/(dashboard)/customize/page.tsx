@@ -570,7 +570,7 @@ export default function CustomizePage() {
         {/* Connection only — the master "leave my design alone" switch. Pinned to
             the very top in an accent card so a creator who only wants MVP's
             posting/connection (not the blog restyle) can't miss it. */}
-        <div className="rounded-2xl border-2 p-5" style={{ borderColor: '#7C3AED', background: 'linear-gradient(160deg, rgba(124,58,237,0.10), rgba(124,58,237,0.02))' }}>
+        <div className="rounded-2xl border-2 p-5" style={{ borderColor: '#7C3AED', background: 'linear-gradient(160deg, rgb(var(--brand-rgb) / 0.10), rgb(var(--brand-rgb) / 0.02))' }}>
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
               <div className="flex items-center gap-2 mb-1">

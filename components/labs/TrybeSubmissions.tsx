@@ -17,7 +17,7 @@ import TrybeSubList from '@/components/labs/TrybeSubList'
 import { useTrybeAllSubs } from '@/components/labs/useTrybeSubmissions'
 import type { SubFilter } from '@/lib/trybe-sub-list'
 
-const PURPLE = '#7C3AED'
+const PURPLE = 'var(--accent)'
 const soft = { color: 'var(--text-3)' }
 const WINDOWS: { days: number | null; label: string }[] = [
   { days: null, label: 'All time' }, { days: 90, label: 'Last 90 days' }, { days: 30, label: 'Last 30 days' }, { days: 7, label: 'Last 7 days' },
@@ -47,7 +47,7 @@ export default function TrybeSubmissions({ canRead }: { canRead: boolean }) {
   return (
     <section className="rounded-xl border p-3.5 mb-4" style={{ borderColor: 'var(--border-2)', background: 'var(--surface)' }} aria-label="Submissions">
       <div className="flex flex-wrap items-center gap-2 mb-3">
-        <span className="w-8 h-8 shrink-0 rounded-lg inline-flex items-center justify-center" style={{ background: 'rgba(124,58,237,0.12)', color: PURPLE }}><ListChecks size={16} /></span>
+        <span className="w-8 h-8 shrink-0 rounded-lg inline-flex items-center justify-center" style={{ background: 'rgb(var(--brand-rgb) / 0.12)', color: PURPLE }}><ListChecks size={16} /></span>
         <div className="min-w-[12rem] flex-1">
           <p className="text-[14.5px] font-bold leading-tight">Your submissions</p>
           <p className="text-[12px]" style={soft}>Every video you sent to a TRYBE brand, and where it stands. Read from your TRYBE just now; MVP keeps none of it.</p>

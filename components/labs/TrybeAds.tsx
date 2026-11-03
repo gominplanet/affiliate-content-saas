@@ -31,7 +31,7 @@ import type { SubFilter } from '@/lib/trybe-sub-list'
 import { paceOf, adBrands, adWinners, bestVideos, notRunning, diagnose, remixOf, DIAGNOSIS_WORDS, AD_PERIODS, type AdPeriod, type AdTotals } from '@/lib/trybe-ads'
 import { approvalRateOf, brandAdTotals, sameBrand, NO_COUNTS } from '@/lib/trybe-analytics'
 
-const PURPLE = '#7C3AED'
+const PURPLE = 'var(--accent)'
 const GREEN = '#16A34A'
 const AMBER = '#B45309'
 const RED = '#DC2626'
@@ -106,7 +106,7 @@ export default function TrybeAds({ canRead, isAdmin, onPlan }: { canRead: boolea
   return (
     <section className="rounded-xl border p-3.5 mb-4" style={{ borderColor: 'var(--border-2)', background: 'var(--surface)' }} aria-label="Analytics">
       <div className="flex flex-wrap items-center gap-2 mb-3">
-        <span className="w-8 h-8 shrink-0 rounded-lg inline-flex items-center justify-center" style={{ background: 'rgba(124,58,237,0.12)', color: PURPLE }}><Megaphone size={16} /></span>
+        <span className="w-8 h-8 shrink-0 rounded-lg inline-flex items-center justify-center" style={{ background: 'rgb(var(--brand-rgb) / 0.12)', color: PURPLE }}><Megaphone size={16} /></span>
         <div className="min-w-[12rem] flex-1">
           <p className="text-[14.5px] font-bold leading-tight">Analytics</p>
           <p className="text-[12px]" style={soft}>Your submissions and how your videos do as ads, the same numbers as TRYBE&rsquo;s Analytics. Read from your TRYBE just now; MVP keeps none of it.</p>
@@ -129,7 +129,7 @@ export default function TrybeAds({ canRead, isAdmin, onPlan }: { canRead: boolea
             return (
               <button key={b.id ?? 'all'} onClick={() => setBrandId(b.id)} aria-pressed={on}
                 className="shrink-0 inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-[12.5px] font-semibold"
-                style={on ? { borderColor: PURPLE, background: 'rgba(124,58,237,0.10)', color: PURPLE } : { borderColor: 'var(--border-2)', color: 'var(--text-2)' }}>
+                style={on ? { borderColor: PURPLE, background: 'rgb(var(--brand-rgb) / 0.10)', color: PURPLE } : { borderColor: 'var(--border-2)', color: 'var(--text-2)' }}>
                 {b.logo && <img src={b.logo} alt="" className="w-4 h-4 rounded-full object-cover" referrerPolicy="no-referrer" />}
                 {b.name}
               </button>
@@ -153,7 +153,7 @@ export default function TrybeAds({ canRead, isAdmin, onPlan }: { canRead: boolea
               {SUB_ROWS.map((r) => (
                 <li key={r.key}>
                   <button type="button" onClick={() => setSubFilter(subFilter === r.key ? null : r.key)} aria-pressed={subFilter === r.key} title={`See your ${r.label.toLowerCase()} videos`}
-                    className="inline-flex items-center gap-1.5 text-[12.5px] rounded-md px-1 -mx-1" style={subFilter === r.key ? { background: 'rgba(124,58,237,0.12)' } : undefined}>
+                    className="inline-flex items-center gap-1.5 text-[12.5px] rounded-md px-1 -mx-1" style={subFilter === r.key ? { background: 'rgb(var(--brand-rgb) / 0.12)' } : undefined}>
                     <span className="w-1 h-4 rounded-full" style={{ background: r.color }} />
                     <b className="tabular-nums">{counts[r.key]}</b><span className="underline decoration-dotted underline-offset-2" style={soft}>{r.label}</span>
                   </button>
@@ -298,7 +298,7 @@ export default function TrybeAds({ canRead, isAdmin, onPlan }: { canRead: boolea
       )}
 
       {remix && (
-        <p className="text-[12.5px] mt-2 rounded-lg px-2.5 py-1.5" style={{ background: 'rgba(124,58,237,0.07)' }}>
+        <p className="text-[12.5px] mt-2 rounded-lg px-2.5 py-1.5" style={{ background: 'rgb(var(--brand-rgb) / 0.07)' }}>
           <b style={{ color: PURPLE }}>Try this remix.</b> {remix.says.replace(/^Remix: /, '')}
         </p>
       )}

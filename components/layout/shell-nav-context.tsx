@@ -7,7 +7,7 @@
 // in the menu alone, and a feature can never be listed for someone who cannot
 // open it, or left off for someone who can.
 
-import { createContext, useContext } from 'react'
+import { createContext, useContext, type ReactNode } from 'react'
 
 export type ShellNavItem = {
   href: string
@@ -43,4 +43,16 @@ export function useLook(): 'teal' | 'classic' {
 /** One job section of the menu by its label (its colour and wash), or null. */
 export function useSection(label: string): ShellNavGroup | null {
   return useShellNav()?.find((g) => g.label === label) ?? null
+}
+
+/** The menu row the page you are on belongs to: its section (with the
+ *  section's colour and wash), its name and its icon. The new look's page
+ *  header (PageHero, teal-ui TealHeader) reads it, so every page says which
+ *  part of MVP it is without saying so itself. Null outside the shell, or on
+ *  a page that is not in the menu. */
+export type ShellActive = { section: string | null; color?: string; tint?: string; label: string; icon: ReactNode } | null
+export const ShellActiveContext = createContext<ShellActive>(null)
+
+export function useActiveNav(): ShellActive {
+  return useContext(ShellActiveContext)
 }

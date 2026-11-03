@@ -12,7 +12,7 @@
 import { useState } from 'react'
 import { Loader2, Handshake, Check, ChevronDown, ExternalLink } from 'lucide-react'
 
-const PURPLE = '#7C3AED'
+const PURPLE = 'var(--accent)'
 
 interface Match {
   name: string
@@ -50,7 +50,7 @@ export default function TrybeCrossCheck() {
   return (
     <section className="rounded-2xl border overflow-hidden" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
       <button onClick={() => setOpen(o => !o)} className="w-full flex items-center gap-3 px-5 py-4 text-left">
-        <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: 'rgba(124,58,237,0.10)', color: PURPLE }}>
+        <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: 'rgb(var(--brand-rgb) / 0.10)', color: PURPLE }}>
           <Handshake size={15} />
         </div>
         <div className="flex-1 min-w-0">
@@ -99,7 +99,7 @@ export default function TrybeCrossCheck() {
               <p className="text-[11px] font-semibold uppercase tracking-wide mb-2" style={{ color: 'var(--text-faint)' }}>You already feature these: warm pitch</p>
               <div className="flex flex-wrap gap-2">
                 {worked.map(m => (
-                  <span key={m.name} className="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[12px]" style={{ borderColor: PURPLE, background: 'rgba(124,58,237,0.06)', color: 'var(--text)' }}>
+                  <span key={m.name} className="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[12px]" style={{ borderColor: PURPLE, background: 'rgb(var(--brand-rgb) / 0.06)', color: 'var(--text)' }}>
                     <Check size={12} style={{ color: PURPLE }} />
                     <span className="font-medium">{m.brand || m.name}</span>
                     <span className="text-[10px]" style={{ color: 'var(--text-soft)' }}>

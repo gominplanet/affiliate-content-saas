@@ -12,7 +12,7 @@ import { X, ArrowLeftRight, Check } from 'lucide-react'
 import { compareRows, COMPARE_MAX, type CompareBrand } from '@/lib/trybe-compare'
 import { BrandMark } from '@/components/labs/TrybeFinderControls'
 
-const PURPLE = '#7C3AED'
+const PURPLE = 'var(--accent)'
 const GREEN = '#16A34A'
 
 export default function TrybeCompare({ brands, onRemove, onClear }: { brands: Array<CompareBrand & { website?: string | null }>; onRemove: (id: string) => void; onClear: () => void }) {
@@ -30,11 +30,11 @@ export default function TrybeCompare({ brands, onRemove, onClear }: { brands: Ar
 
   return (
     <>
-      <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-40 w-[min(40rem,calc(100vw-2rem))] rounded-2xl border shadow-lg px-3 py-2.5 flex flex-wrap items-center gap-2" style={{ borderColor: 'rgba(124,58,237,0.35)', background: 'var(--surface)' }} role="region" aria-label="Brands to compare">
+      <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-40 w-[min(40rem,calc(100vw-2rem))] rounded-2xl border shadow-lg px-3 py-2.5 flex flex-wrap items-center gap-2" style={{ borderColor: 'rgb(var(--brand-rgb) / 0.35)', background: 'var(--surface)' }} role="region" aria-label="Brands to compare">
         <ArrowLeftRight size={15} style={{ color: PURPLE }} />
         <div className="flex flex-wrap items-center gap-1.5 flex-1 min-w-0">
           {brands.map((b) => (
-            <span key={b.brand_id} className="inline-flex items-center gap-1 rounded-full pl-2.5 pr-1.5 py-0.5 text-[12.5px] font-semibold max-w-[12rem]" style={{ background: 'rgba(124,58,237,0.10)', color: PURPLE }}>
+            <span key={b.brand_id} className="inline-flex items-center gap-1 rounded-full pl-2.5 pr-1.5 py-0.5 text-[12.5px] font-semibold max-w-[12rem]" style={{ background: 'rgb(var(--brand-rgb) / 0.10)', color: PURPLE }}>
               <span className="truncate">{b.name}</span>
               <button onClick={() => onRemove(b.brand_id)} aria-label={`Take ${b.name} out of the comparison`}><X size={12} /></button>
             </span>

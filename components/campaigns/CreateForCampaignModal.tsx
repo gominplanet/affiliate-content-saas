@@ -198,7 +198,7 @@ export default function CreateForCampaignModal({ row, onClose, onWrite, writing 
                 {products.map(p => (
                   <button key={p.asin} type="button" onClick={() => { setAsin(p.asin); setPicking(false) }}
                     className="flex items-center gap-2.5 rounded-lg border p-2 text-left"
-                    style={{ borderColor: p.asin === asin ? '#7C3AED' : 'var(--border)', background: p.asin === asin ? 'rgba(124,58,237,0.06)' : 'transparent' }}>
+                    style={{ borderColor: p.asin === asin ? '#7C3AED' : 'var(--border)', background: p.asin === asin ? 'rgb(var(--brand-rgb) / 0.06)' : 'transparent' }}>
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     {p.imageUrl
                       ? <img src={p.imageUrl} alt="" className="w-9 h-9 rounded object-contain flex-shrink-0" style={{ background: 'var(--surface-2)' }} />

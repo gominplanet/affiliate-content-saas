@@ -451,7 +451,7 @@ export default function AdminUsersPage() {
               </button>
             </div>
             {linkResult && (
-              <div className="mt-2 rounded-lg px-2.5 py-1.5" style={{ background: 'rgba(124,58,237,0.08)', color: 'var(--text-2,#1d1d1f)' }}>
+              <div className="mt-2 rounded-lg px-2.5 py-1.5" style={{ background: 'rgb(var(--brand-rgb) / 0.08)', color: 'var(--text-2,#1d1d1f)' }}>
                 {/* What is on the pages, first and in the heavier weight,
                     because it is the thing the creator can check by looking. */}
                 {linkResult.headline && (

@@ -97,7 +97,7 @@ export default function TrybeUploadTell({ brandId, brandName, videos, chat, chat
   }
 
   return (
-    <div className="rounded-2xl border p-4" style={{ borderColor: '#C4B5FD', background: 'rgba(124,58,237,0.05)' }}>
+    <div className="rounded-2xl border p-4" style={{ borderColor: '#C4B5FD', background: 'rgb(var(--brand-rgb) / 0.05)' }}>
       <p className="text-[14px] font-semibold inline-flex items-center gap-1.5"><MessageCircle size={15} /> Tell {brandName} about {videos.length === 1 ? 'it' : `your ${videos.length} videos`}</p>
 
       {told && !again ? (

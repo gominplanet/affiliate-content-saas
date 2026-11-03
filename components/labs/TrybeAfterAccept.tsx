@@ -27,7 +27,7 @@ import { useTrybeAmazon } from '@/components/labs/useTrybeAmazon'
 import { AmazonFilmedList } from '@/components/labs/TrybeFinderControls'
 import { readVoice, rememberMvpText } from '@/components/labs/useTrybeVoice'
 
-const PURPLE = '#7C3AED'
+const PURPLE = 'var(--accent)'
 const GREEN = '#16A34A'
 const AMBER = '#B45309'
 const RED = '#DC2626'

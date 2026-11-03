@@ -163,7 +163,7 @@ function SetupModal({ initial, onClose, onSaved }: { initial: Status; onClose: (
         </p>
 
         {/* ── Passport, first ─────────────────────────────────────────────── */}
-        <div className="flex flex-col gap-2 rounded-xl border p-3" style={{ borderColor: initial.passportCanUse ? 'rgba(124,58,237,0.35)' : undefined }}>
+        <div className="flex flex-col gap-2 rounded-xl border p-3" style={{ borderColor: initial.passportCanUse ? 'rgb(var(--brand-rgb) / 0.35)' : undefined }}>
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
               <span className="text-xs font-bold flex items-center gap-1.5" style={{ color: 'var(--text)' }}>
@@ -185,7 +185,7 @@ function SetupModal({ initial, onClose, onSaved }: { initial: Status; onClose: (
                 <span className="absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all" style={{ left: passport ? '22px' : '2px' }} />
               </button>
             ) : (
-              <span className="text-[10px] font-semibold whitespace-nowrap px-2 py-1 rounded-full" style={{ background: 'rgba(124,58,237,0.10)', color: '#7C3AED' }}>Paid plans</span>
+              <span className="text-[10px] font-semibold whitespace-nowrap px-2 py-1 rounded-full" style={{ background: 'rgb(var(--brand-rgb) / 0.10)', color: '#7C3AED' }}>Paid plans</span>
             )}
           </div>
           {passport && initial.passportCanUse && !amazonTag.trim() && (

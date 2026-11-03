@@ -24,7 +24,7 @@ export default function TutorialCard() {
   return (
     <section
       className="rounded-2xl border overflow-hidden"
-      style={{ borderColor: 'rgba(124,58,237,0.25)', backgroundColor: 'var(--surface)' }}
+      style={{ borderColor: 'rgb(var(--brand-rgb) / 0.25)', backgroundColor: 'var(--surface)' }}
     >
       <div className="flex items-center justify-between px-5 py-3.5 border-b" style={{ borderColor: 'var(--border)' }}>
         <div className="flex items-center gap-2">

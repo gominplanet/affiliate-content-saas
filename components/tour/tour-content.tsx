@@ -718,8 +718,8 @@ export function TourBody({ ctaMode }: { ctaMode: TourCtaMode }) {
         <section
           className="rounded-2xl border p-7 sm:p-8"
           style={{
-            background: 'linear-gradient(135deg, rgba(124, 58, 237, 0.10), rgba(168, 85, 247, 0.06))',
-            borderColor: 'rgba(124, 58, 237, 0.30)',
+            background: 'linear-gradient(135deg, rgb(var(--brand-rgb) / 0.10), rgba(168, 85, 247, 0.06))',
+            borderColor: 'rgb(var(--brand-rgb) / 0.30)',
           }}
         >
           <h2 className="text-xl font-bold mb-3" style={{ color: 'var(--text)' }}>
@@ -822,7 +822,7 @@ function Section({
       <div className="flex items-center gap-3 mb-4 flex-wrap">
         <div
           className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
-          style={{ background: 'rgba(124, 58, 237, 0.12)', color: '#7C3AED' }}
+          style={{ background: 'rgb(var(--brand-rgb) / 0.12)', color: '#7C3AED' }}
         >
           {icon}
         </div>

@@ -50,7 +50,7 @@ const FORCE_PARAMS = ['whatsnew', 'scoutnews']
 const SCOUT = '#FF9500'
 /** SCOUT orange dark enough for white words on it. */
 const SCOUT_BUTTON = '#C2410C'
-const ACCENT = '#7C3AED'
+const ACCENT = 'var(--accent)'
 /** Purple and orange words that stay readable on both themes. */
 const LINK = 'text-[#7C3AED] dark:text-[#B9A2FF]'
 const EYEBROW = 'text-[#C2410C] dark:text-[#FFB347]'
@@ -190,7 +190,7 @@ export default function MvpNews({ tier }: { tier: string }) {
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={later} />
       <div
         className="relative w-full max-w-xl md:max-w-5xl max-h-[92vh] overflow-y-auto rounded-2xl border shadow-2xl bg-white dark:bg-[#141418]"
-        style={{ borderColor: 'rgba(124,58,237,0.30)' }}
+        style={{ borderColor: 'rgb(var(--brand-rgb) / 0.30)' }}
       >
         <div className="flex items-start gap-3 px-5 pt-5 pb-3">
           <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 shadow-sm" style={{ background: 'linear-gradient(135deg, #7C3AED 0%, #bc1888 100%)' }}>

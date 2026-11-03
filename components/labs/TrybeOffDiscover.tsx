@@ -14,7 +14,7 @@ import TrybeLink from '@/components/labs/TrybeLink'
 import { BrandMark } from '@/components/labs/TrybeFinderControls'
 import { readJoinedBrandIds } from '@/lib/trybe-joined'
 
-const PURPLE = '#7C3AED'
+const PURPLE = 'var(--accent)'
 const AMBER = '#B45309'
 const RED = '#DC2626'
 const SHOWN = 40
@@ -49,7 +49,7 @@ export default function TrybeOffDiscover({ scoutOpens }: { scoutOpens: boolean }
   const mine = useMemo(() => (data?.brands || []).filter((b) => b.status && b.status !== 'removed'), [data])
   const shown = useMemo(() => (data?.brands || []).filter((b) => show === 'all' || (show === 'mine' ? !!b.status && b.status !== 'removed' : b.reason === show)), [data, show])
   const soft = { color: 'var(--text-soft)' }
-  const chip = (on: boolean) => ({ className: 'rounded-full px-3 py-1 text-[12.5px] font-semibold border', style: on ? { background: 'rgba(124,58,237,0.10)', color: PURPLE, borderColor: 'transparent' } : { borderColor: 'var(--border)', color: 'var(--text)' } })
+  const chip = (on: boolean) => ({ className: 'rounded-full px-3 py-1 text-[12.5px] font-semibold border', style: on ? { background: 'rgb(var(--brand-rgb) / 0.10)', color: PURPLE, borderColor: 'transparent' } : { borderColor: 'var(--border)', color: 'var(--text)' } })
 
   if (error) return <p className="text-[13px] inline-flex items-start gap-1.5" style={{ color: AMBER }}><AlertTriangle size={14} className="mt-0.5 shrink-0" /> {error}</p>
   if (!data) return <p className="text-[13px] inline-flex items-center gap-1.5" style={soft}><Loader2 size={13} className="animate-spin" /> Reading the brands off TRYBE&rsquo;s Discover list...</p>
@@ -88,7 +88,7 @@ export default function TrybeOffDiscover({ scoutOpens }: { scoutOpens: boolean }
               <BrandMark name={b.name} website={b.website} size={32} />
               <span className="min-w-0 flex-1">
                 <span className="text-[13.5px] font-semibold">{b.name}</span>
-                {b.status && STATUS_WORDS[b.status] && <span className="ml-2 text-[10.5px] font-bold rounded-full px-1.5 py-0.5 align-middle" style={{ background: 'rgba(124,58,237,0.10)', color: PURPLE }}>{STATUS_WORDS[b.status]}</span>}
+                {b.status && STATUS_WORDS[b.status] && <span className="ml-2 text-[10.5px] font-bold rounded-full px-1.5 py-0.5 align-middle" style={{ background: 'rgb(var(--brand-rgb) / 0.10)', color: PURPLE }}>{STATUS_WORDS[b.status]}</span>}
                 <span className="block text-[12.5px]" style={{ color: b.reason === 'left' ? RED : AMBER }}>
                   {b.reason === 'left' ? `Gone from TRYBE's list since ${when(b.left_at)}` : 'TRYBE marks it as not listed on Discover'}
                   <span style={soft}>{[b.pay_text, b.categories?.slice(0, 2).join(', ')].filter(Boolean).map((x) => ` · ${x}`).join('')}</span>

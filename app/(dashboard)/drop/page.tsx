@@ -11,9 +11,13 @@ import ProUpgradePanel from '@/components/upgrade/ProUpgradePanel'
 import { canUsePreview } from '@/lib/labs-preview'
 import PageHero from '@/components/layout/PageHero'
 import DropBoard from '@/components/labs/DropBoard'
+import { useLook } from '@/components/layout/shell-nav-context'
+import { TealSteps } from '@/components/layout/teal-ui'
 
 export default function DropPage() {
   const tier = useEffectiveTier()
+  // The new look (lib/look): the steps under the header card.
+  const teal = useLook() === 'teal'
 
   if (tier !== null && canUsePreview('drop', tier)) {
     return (
@@ -22,6 +26,13 @@ export default function DropPage() {
           title="Drop"
           subtitle="Drop your finished videos, say once where each one goes, and press Launch. Long videos go to YouTube, Amazon and your blog with your usual Liftoff choices. Vertical videos go to the TRYBE brand you pick."
         />
+        {teal && (
+          <TealSteps steps={[
+            ['Set up once', 'Where long and vertical videos go, and your YouTube and Amazon choices.'],
+            ['Drop your videos', 'Each one is prepared while you check it: product, thumbnail, title and time.'],
+            ['Press Launch', 'MVP sends each one where it belongs. Only a TRYBE send needs this page left open.'],
+          ]} />
+        )}
         <div className="pb-28">
           <DropBoard />
         </div>

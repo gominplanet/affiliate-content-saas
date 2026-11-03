@@ -844,7 +844,7 @@ create index if not exists blog_posts_deal_meta_gin
 
         {/* ── Preview card (review mode, after server returned data) ── */}
         {preview && (
-          <div className="card p-6 border" style={{ borderColor: 'rgba(124,58,237,.3)' }}>
+          <div className="card p-6 border" style={{ borderColor: 'rgb(var(--brand-rgb) / .3)' }}>
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-sm font-semibold flex items-center gap-2" style={{ color: 'var(--text)' }}>
                 <CheckCircle2 size={16} className="text-[#34c759]" />

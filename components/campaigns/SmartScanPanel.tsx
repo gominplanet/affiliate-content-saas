@@ -364,7 +364,7 @@ export default function SmartScanPanel({
       onClick={onClick}
       disabled={running}
       className="px-3 py-1.5 rounded-lg text-[12px] font-semibold transition-colors disabled:opacity-60"
-      style={on ? { background: '#7C3AED', color: '#fff' } : { background: 'rgba(124,58,237,0.08)', color: '#7C3AED' }}
+      style={on ? { background: '#7C3AED', color: '#fff' } : { background: 'rgb(var(--brand-rgb) / 0.08)', color: '#7C3AED' }}
     >
       {label}
     </button>
@@ -373,10 +373,10 @@ export default function SmartScanPanel({
   return (
     <div
       className="card mb-5 overflow-hidden"
-      style={{ borderWidth: 2, borderColor: 'rgba(124,58,237,0.45)', boxShadow: '0 14px 36px -16px rgba(124,58,237,0.45)' }}>
-      <div className="px-4 py-3" style={{ background: 'linear-gradient(180deg, rgba(124,58,237,0.10), transparent 85%)' }}>
+      style={{ borderWidth: 2, borderColor: 'rgb(var(--brand-rgb) / 0.45)', boxShadow: '0 14px 36px -16px rgb(var(--brand-rgb) / 0.45)' }}>
+      <div className="px-4 py-3" style={{ background: 'linear-gradient(180deg, rgb(var(--brand-rgb) / 0.10), transparent 85%)' }}>
         <div className="flex items-start gap-3 flex-wrap">
-          <span className="grid place-items-center w-7 h-7 rounded-lg flex-shrink-0 mt-0.5" style={{ background: 'rgba(124,58,237,0.12)' }}>
+          <span className="grid place-items-center w-7 h-7 rounded-lg flex-shrink-0 mt-0.5" style={{ background: 'rgb(var(--brand-rgb) / 0.12)' }}>
             <Sparkles size={14} className="text-[#7C3AED]" />
           </span>
           <div className="flex-1 min-w-[240px]">
@@ -388,7 +388,7 @@ export default function SmartScanPanel({
                 ? <>SCOUT sweeps your Affiliate+ opportunities and MVP keeps only the campaigns worth your time: vetted for real commission, runway, demand, product quality and review visibility, and ranked with the buy-to-review math. Products already in your queue or saved for later are skipped.</>
                 : <>SCOUT searches Amazon directly and live-verifies each product on its page: price, demand, reviews, rating and an open video carousel. Slower by design, but every result is <b>MVP-approved</b>: a product you can confidently invest in, review, and earn from onsite.</>}
             </p>
-            <p className="text-[11px] leading-relaxed mt-2 rounded-lg px-2.5 py-2" style={{ color: 'var(--text-faint)', background: 'rgba(124,58,237,0.06)' }}>
+            <p className="text-[11px] leading-relaxed mt-2 rounded-lg px-2.5 py-2" style={{ color: 'var(--text-faint)', background: 'rgb(var(--brand-rgb) / 0.06)' }}>
               <b style={{ color: 'var(--text-soft)' }}>How to use it:</b>{' '}
               {mode === 'campaigns'
                 ? <>Run a Smart Scan, then keep hitting <b>Scan again</b> for more. Each pass digs deeper into the catalog and never repeats a product you&apos;ve already seen, so re-scan as many times as you like to keep pulling fresh campaigns. <b>Save</b> the ones worth acting on, then <b>Message brand</b> or <b>Buy to review</b> when you&apos;re ready.</>
@@ -403,7 +403,7 @@ export default function SmartScanPanel({
         <div className="flex items-center gap-2 flex-wrap mt-3">
           {/* Focus vs Wide — how strict MVP's picks are. */}
           {mode === 'campaigns' && (
-            <div className="inline-flex items-center gap-1 p-1 rounded-xl" style={{ background: 'rgba(124,58,237,0.06)' }}
+            <div className="inline-flex items-center gap-1 p-1 rounded-xl" style={{ background: 'rgb(var(--brand-rgb) / 0.06)' }}
               title="MVP Focus: the tightest picks, following MVP's Profitability Rules, for the best results. Wide: casts a broader net (more campaigns, less focused). Both are solid; Focus is stronger.">
               <Chip on={ruleMode === 'focus'} label="MVP Focus" onClick={() => { setRuleMode('focus'); restartSearch() }} />
               <Chip on={ruleMode === 'wide'} label="Wide" onClick={() => { setRuleMode('wide'); restartSearch() }} />
@@ -491,7 +491,7 @@ export default function SmartScanPanel({
               <div key={`${m.asin || m.detailsUrl}`} className="px-4 py-3 flex gap-3 items-start">
                 {m.image
                   ? <img src={m.image} alt="" className="w-12 h-12 rounded-lg object-cover flex-shrink-0 bg-gray-100" />
-                  : <div className="w-12 h-12 rounded-lg flex-shrink-0" style={{ background: 'rgba(124,58,237,0.08)' }} />}
+                  : <div className="w-12 h-12 rounded-lg flex-shrink-0" style={{ background: 'rgb(var(--brand-rgb) / 0.08)' }} />}
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="inline-flex items-center justify-center min-w-[38px] px-1.5 py-0.5 rounded-md text-[12px] font-bold text-white"
@@ -528,7 +528,7 @@ export default function SmartScanPanel({
                         brandLabel: m.brand || undefined,
                       })}
                       className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold border"
-                      style={{ borderColor: 'rgba(124,58,237,0.4)', color: '#7C3AED' }}
+                      style={{ borderColor: 'rgb(var(--brand-rgb) / 0.4)', color: '#7C3AED' }}
                     >
                       <MessageCircle size={11} /> Message brand
                     </button>
@@ -573,7 +573,7 @@ export default function SmartScanPanel({
               <div key={p.asin} className="px-4 py-3 flex gap-3 items-start">
                 {p.image
                   ? <img src={p.image} alt="" className="w-12 h-12 rounded-lg object-contain flex-shrink-0 bg-white" />
-                  : <div className="w-12 h-12 rounded-lg flex-shrink-0" style={{ background: 'rgba(124,58,237,0.08)' }} />}
+                  : <div className="w-12 h-12 rounded-lg flex-shrink-0" style={{ background: 'rgb(var(--brand-rgb) / 0.08)' }} />}
                 <div className="flex-1 min-w-0">
                   <p className="text-[13px] font-semibold leading-snug line-clamp-2" style={{ color: 'var(--text)' }}>{p.title}</p>
                   <p className="text-[11px] mt-1" style={{ color: 'var(--text-soft)' }}>

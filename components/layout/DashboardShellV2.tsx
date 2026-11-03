@@ -49,7 +49,7 @@ import {
   Inbox, PackageSearch, Rocket, Database, History, Globe, Radio, Gauge, Repeat, Star, Pin, Menu, X, Scissors, ClipboardList, ListChecks, UploadCloud, Clapperboard } from 'lucide-react'
 import { useNavFavorites, MAX_NAV_FAVORITES } from '@/lib/nav-favorites'
 import { lookCookie, type Look } from '@/lib/look'
-import { ShellNavContext, ShellLookContext, type ShellNavGroup } from './shell-nav-context'
+import { ShellNavContext, ShellLookContext, ShellActiveContext, type ShellNavGroup, type ShellActive } from './shell-nav-context'
 import { cn } from '@/lib/utils'
 // Deals Hub runs only while Amazon has a real sale event on (Prime Day, Big
 // Deal Days, Black Friday and so on) and is deliberately off between them. The
@@ -215,7 +215,7 @@ const DARK_VARS: React.CSSProperties = {
   ['--surface' as string]: 'rgba(255,255,255,0.03)',
   ['--surface-hover' as string]: 'rgba(255,255,255,0.06)',
   ['--surface-bright' as string]: 'rgba(255,255,255,0.09)',
-  ['--surface-selected' as string]: 'rgba(124,58,237,0.10)',
+  ['--surface-selected' as string]: 'rgb(var(--brand-rgb) / 0.10)',
   ['--border' as string]: 'rgba(255,255,255,0.08)',
   ['--border-bright' as string]: 'rgba(255,255,255,0.14)',
   ['--text' as string]: '#F5F5F7',
@@ -234,7 +234,7 @@ const DARK_VARS: React.CSSProperties = {
   ['--card-shadow' as string]: 'inset 0 1px 0 rgba(255,255,255,0.04), 0 1px 2px rgba(0,0,0,0.2)',
   ['--kbd-bg' as string]: 'rgba(255,255,255,0.06)',
   ['--hero-opacity' as string]: '0.35',
-  ['--nav-active-bg' as string]: 'rgba(124,58,237,0.20)',
+  ['--nav-active-bg' as string]: 'rgb(var(--brand-rgb) / 0.20)',
   ['--nav-active-text' as string]: '#D4C4FF',
 }
 
@@ -244,7 +244,7 @@ const LIGHT_VARS: React.CSSProperties = {
   ['--surface' as string]: '#FFFFFF',
   ['--surface-hover' as string]: 'rgba(0,0,0,0.04)',
   ['--surface-bright' as string]: 'rgba(0,0,0,0.06)',
-  ['--surface-selected' as string]: 'rgba(124,58,237,0.08)',
+  ['--surface-selected' as string]: 'rgb(var(--brand-rgb) / 0.08)',
   ['--border' as string]: 'rgba(0,0,0,0.10)',
   ['--border-bright' as string]: 'rgba(0,0,0,0.18)',
   ['--text' as string]: '#1D1D1F',
@@ -259,7 +259,7 @@ const LIGHT_VARS: React.CSSProperties = {
   ['--card-shadow' as string]: '0 1px 3px rgba(0,0,0,0.04), 0 0 0 1px rgba(0,0,0,0.02)',
   ['--kbd-bg' as string]: 'rgba(0,0,0,0.05)',
   ['--hero-opacity' as string]: '0.18',
-  ['--nav-active-bg' as string]: 'rgba(124,58,237,0.10)',
+  ['--nav-active-bg' as string]: 'rgb(var(--brand-rgb) / 0.10)',
   ['--nav-active-text' as string]: '#7C3AED',
 }
 
@@ -1010,6 +1010,17 @@ export default function DashboardShellV2({
     })
     .filter((g) => g.items.length > 0)
 
+  // The row the page you are on belongs to, for the new look's page header.
+  const activeNav: ShellActive = (() => {
+    for (const g of orderedGroups) for (const it of g.items) {
+      if (it.gate === false || !itemActive(it)) continue
+      const palette = g.label ? SECTION_ACCENTS[g.label] : undefined
+      const color = palette ? (isDark ? palette.dark : palette.light) : undefined
+      return { section: g.label || null, color, tint: color ? hexToRgba(color, isDark ? 0.14 : 0.10) : undefined, label: it.label, icon: it.icon }
+    }
+    return null
+  })()
+
   async function handleLogout() {
     await supabase.auth.signOut()
     router.push('/login')
@@ -1021,6 +1032,7 @@ export default function DashboardShellV2({
   return (
     <ShellLookContext.Provider value={look}>
     <ShellNavContext.Provider value={jobGroups}>
+    <ShellActiveContext.Provider value={activeNav}>
     <div
       data-look={teal ? 'teal' : undefined}
       style={{
@@ -1588,12 +1600,13 @@ export default function DashboardShellV2({
           <MvpNews tier={String(effectiveTier)} />
           <ReconnectCheckup />
           <div className="max-w-7xl px-4 sm:px-6 lg:px-8 pt-6 pb-12">
-            {!amazonLocked && tabbedItem && <SectionTabs item={tabbedItem} isActive={isActive} />}
+            {!amazonLocked && tabbedItem && <SectionTabs item={tabbedItem} isActive={isActive} teal={teal} />}
             {amazonLocked ? <AmazonUpgradeGate feature={amazonLocked.label} redirect={amazonLocked.redirect} /> : children}
           </div>
         </main>
       </div>
     </div>
+    </ShellActiveContext.Provider>
     </ShellNavContext.Provider>
     </ShellLookContext.Provider>
   )
@@ -1692,7 +1705,7 @@ function NavItem({ item, active, collapsed, starSpace = false, tint, teal = fals
               backgroundColor: active ? 'rgba(255,255,255,0.22)' : 'var(--new-bg)',
               color: active ? 'var(--nav-active-text)' : 'var(--new-text)',
             } : {
-              backgroundColor: active ? 'rgba(124,58,237,0.22)' : 'var(--surface-bright)',
+              backgroundColor: active ? 'rgb(var(--brand-rgb) / 0.22)' : 'var(--surface-bright)',
               color: active ? 'var(--nav-active-text)' : 'var(--text-soft)',
             }}
           >
@@ -1738,8 +1751,26 @@ function NavItem({ item, active, collapsed, starSpace = false, tint, teal = fals
 // The tab bar of a merged row (Brand campaigns, Connections, Brand inbox...),
 // drawn above each of its pages so the pages read as one tool. Only the tabs
 // this account can open are shown; the current page is underlined.
-function SectionTabs({ item, isActive }: { item: NavItemDef; isActive: (href: string) => boolean }) {
+function SectionTabs({ item, isActive, teal = false }: { item: NavItemDef; isActive: (href: string) => boolean; teal?: boolean }) {
   const tabs = (item.tabs ?? []).filter((t) => t.gate !== false)
+  // The new look: the same pages as round tabs, the one you are on in teal.
+  if (teal) return (
+    <nav aria-label={item.label} className="mb-5 flex flex-wrap gap-2">
+      {tabs.map((t) => {
+        const on = isActive(t.href)
+        return (
+          <Link key={t.href} href={t.href} aria-current={on ? 'page' : undefined}
+            className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border-[1.5px] px-4 py-2 text-[14px] font-bold transition-colors hover:border-[color:var(--accent)]"
+            style={on ? { background: 'var(--accent)', borderColor: 'var(--accent)', color: '#fff' } : { borderColor: 'var(--border)', background: 'var(--surface)', color: 'var(--text)' }}>
+            {t.label}
+            {typeof t.badge === 'number' && t.badge > 0 && (
+              <span className="rounded-full px-1.5 text-[10px] font-bold text-white" style={{ backgroundColor: '#ff3b30' }}>{t.badge}</span>
+            )}
+          </Link>
+        )
+      })}
+    </nav>
+  )
   return (
     <nav aria-label={item.label} className="mb-5 flex gap-1 overflow-x-auto border-b" style={{ borderColor: 'var(--border)' }}>
       {tabs.map((t) => {

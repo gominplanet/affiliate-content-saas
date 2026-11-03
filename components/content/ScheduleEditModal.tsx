@@ -175,7 +175,7 @@ export default function ScheduleEditModal({
               {PLATFORMS.map(p => {
                 const on = selected.has(p.key)
                 return (
-                  <div key={p.key} className="rounded-lg border" style={{ borderColor: on ? '#7C3AED' : 'var(--border-2,#e5e5e7)', background: on ? 'rgba(124,58,237,0.06)' : 'transparent' }}>
+                  <div key={p.key} className="rounded-lg border" style={{ borderColor: on ? '#7C3AED' : 'var(--border-2,#e5e5e7)', background: on ? 'rgb(var(--brand-rgb) / 0.06)' : 'transparent' }}>
                     <button
                       type="button"
                       onClick={() => toggle(p.key)}

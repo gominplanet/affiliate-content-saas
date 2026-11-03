@@ -51,7 +51,7 @@ export default function SocialLaunchKitPage() {
       />
 
       <div className="flex items-start gap-2.5 rounded-xl px-3 py-2.5 mt-4 mb-5"
-        style={{ background: 'rgba(124,58,237,0.06)', border: '1px solid var(--border)' }}>
+        style={{ background: 'rgb(var(--brand-rgb) / 0.06)', border: '1px solid var(--border)' }}>
         <Rocket size={16} className="text-[#7C3AED] flex-shrink-0 mt-0.5" />
         <p className="text-[12px] leading-relaxed" style={{ color: 'var(--text-soft)' }}>
           Everything is generated from your <a href="/brand" className="font-semibold hover:underline" style={{ color: '#7C3AED' }}>Brand Profile</a> and voice, so it sounds like you.

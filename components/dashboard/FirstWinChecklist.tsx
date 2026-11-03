@@ -63,7 +63,7 @@ export default function FirstWinChecklist(p: Props) {
   }
 
   return (
-    <div className="rounded-2xl border overflow-hidden" style={{ borderColor: 'rgba(124,58,237,0.25)', background: 'rgba(124,58,237,0.05)' }}>
+    <div className="rounded-2xl border overflow-hidden" style={{ borderColor: 'rgb(var(--brand-rgb) / 0.25)', background: 'rgb(var(--brand-rgb) / 0.05)' }}>
       <div className="flex items-center justify-between px-5 py-4">
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 rounded-full flex items-center justify-center text-[12px] font-bold bg-[#7C3AED]/12 text-[#7C3AED]">

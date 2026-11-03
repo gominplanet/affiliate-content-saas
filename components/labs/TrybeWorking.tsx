@@ -28,7 +28,7 @@ import { topCreators } from '@/lib/trybe-creators'
 import { BrandMark } from '@/components/labs/TrybeFinderControls'
 import TrybeAdsGallery from '@/components/labs/TrybeAdsGallery'
 
-const PURPLE = '#7C3AED'
+const PURPLE = 'var(--accent)'
 const AMBER = '#B45309'
 // v3: entries carry every video link, the whole video first (2026-10-24).
 const CACHE_KEY = 'mvp.trybe.working.v3'
@@ -194,7 +194,7 @@ export default function TrybeWorking({ canRead, isAdmin, newToTop, scoutVersion 
       <section id="ww-hooks" className="scroll-mt-24">
         <div className="flex flex-wrap items-baseline gap-2">
           <h2 className="text-[22px] font-bold tracking-tight">How the top videos open</h2>
-          <span className="text-[12px] font-semibold rounded-full px-2 py-0.5" style={{ background: 'rgba(124,58,237,0.10)', color: PURPLE }}>{lineList.length} openings</span>
+          <span className="text-[12px] font-semibold rounded-full px-2 py-0.5" style={{ background: 'rgb(var(--brand-rgb) / 0.10)', color: PURPLE }}>{lineList.length} openings</span>
         </div>
         <p className="text-[13px] mt-0.5" style={soft}>The first line of the videos TRYBE picked for its Top 100. Press a kind to see examples of it.</p>
         {lineList.length === 0 ? (
@@ -235,7 +235,7 @@ export default function TrybeWorking({ canRead, isAdmin, newToTop, scoutVersion 
                   <p className="text-[14.5px] font-semibold leading-snug">&ldquo;{data.lines[e.id as string]}&rdquo;</p>
                   <p className="mt-1.5 text-[12.5px] flex flex-wrap items-center gap-1.5">
                     <b>{e.brandName || 'A brand'}</b>
-                    {e.rank != null && <span className="text-[11px] font-bold rounded-full px-1.5 py-0.5" style={{ background: 'rgba(124,58,237,0.10)', color: PURPLE }}>TRYBE #{e.rank}</span>}
+                    {e.rank != null && <span className="text-[11px] font-bold rounded-full px-1.5 py-0.5" style={{ background: 'rgb(var(--brand-rgb) / 0.10)', color: PURPLE }}>TRYBE #{e.rank}</span>}
                   </p>
                   <p className="text-[12px]" style={soft}>{[e.category, e.creator ? `Creator: ${e.creator}` : null].filter(Boolean).join(' · ')}</p>
                   {e.video && <button type="button" onClick={() => setPlaying(e)} className="mt-auto pt-1.5 inline-flex items-center gap-1 text-[12.5px] font-semibold self-start" style={{ color: PURPLE }}><Play size={12} /> Watch this example</button>}
@@ -254,7 +254,7 @@ export default function TrybeWorking({ canRead, isAdmin, newToTop, scoutVersion 
             <table className="w-full text-[13px]">
               <tbody>
                 {byCategory.map(({ cat: c, mid }) => (
-                  <tr key={c} className="border-t first:border-t-0" style={{ borderColor: 'var(--border)', ...(cat && c.toLowerCase() === cat.toLowerCase() ? { background: 'rgba(124,58,237,0.06)' } : {}) }}>
+                  <tr key={c} className="border-t first:border-t-0" style={{ borderColor: 'var(--border)', ...(cat && c.toLowerCase() === cat.toLowerCase() ? { background: 'rgb(var(--brand-rgb) / 0.06)' } : {}) }}>
                     <td className="px-4 py-2.5 font-semibold w-[34%]">{c}</td>
                     <td className="py-2.5 w-[42%]"><span className="block relative h-2 rounded-full" style={{ background: 'var(--border)' }}><span className="absolute h-2 rounded-full" style={{ left: `${Math.min(100, (mid!.low / 75) * 100)}%`, width: `${Math.max(2, Math.min(100, ((mid!.high - mid!.low) / 75) * 100))}%`, background: PURPLE }} /></span></td>
                     <td className="px-4 py-2.5 text-right font-bold tabular-nums">{mid!.low} to {mid!.high}s</td>
@@ -270,7 +270,7 @@ export default function TrybeWorking({ canRead, isAdmin, newToTop, scoutVersion 
       <section id="ww-creators" className="scroll-mt-24">
         <div className="flex flex-wrap items-baseline gap-2">
           <h2 className="text-[22px] font-bold tracking-tight">Top creators in TRYBE&rsquo;s Top 100</h2>
-          {creators.length > 0 && <span className="text-[12px] font-semibold rounded-full px-2 py-0.5" style={{ background: 'rgba(124,58,237,0.10)', color: PURPLE }}>{creators.length} creators</span>}
+          {creators.length > 0 && <span className="text-[12px] font-semibold rounded-full px-2 py-0.5" style={{ background: 'rgb(var(--brand-rgb) / 0.10)', color: PURPLE }}>{creators.length} creators</span>}
         </div>
         <p className="text-[13px] mt-0.5" style={soft}>The creators with the most videos TRYBE picked for its Top 100 right now{cat ? ` in ${cat}` : ''}, their best place, the brands, and the videos to watch.{creators.some((c) => c.sales) ? ' Sales ranges are TRYBE’s own.' : ''}</p>
         {creators.length === 0 ? (
@@ -283,7 +283,7 @@ export default function TrybeWorking({ canRead, isAdmin, newToTop, scoutVersion 
                 {c.avatar
                   // eslint-disable-next-line @next/next/no-img-element
                   ? <img src={c.avatar} alt="" loading="lazy" className="w-10 h-10 rounded-full object-cover border shrink-0" style={{ borderColor: 'var(--border)' }} />
-                  : <span className="w-10 h-10 rounded-full inline-flex items-center justify-center shrink-0" style={{ background: 'rgba(124,58,237,0.12)', color: PURPLE }}><Users size={16} /></span>}
+                  : <span className="w-10 h-10 rounded-full inline-flex items-center justify-center shrink-0" style={{ background: 'rgb(var(--brand-rgb) / 0.12)', color: PURPLE }}><Users size={16} /></span>}
                 <div className="min-w-[9rem] flex-1">
                   <p className="text-[14.5px] font-semibold leading-tight">{c.name}</p>
                   {c.handle && c.handle.toLowerCase() !== c.name.toLowerCase() && <p className="text-[12.5px]" style={soft}>@{c.handle}</p>}

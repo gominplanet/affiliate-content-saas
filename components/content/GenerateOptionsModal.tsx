@@ -35,7 +35,7 @@ function Seg<T extends string>({ value, onChange, options }: { value: T; onChang
         return (
           <button key={o.v} type="button" onClick={() => onChange(o.v)}
             className="rounded-lg border px-2.5 py-2 text-left transition"
-            style={{ borderColor: on ? '#7C3AED' : 'var(--border-2,#e5e5e7)', background: on ? 'rgba(124,58,237,0.08)' : 'transparent' }}>
+            style={{ borderColor: on ? '#7C3AED' : 'var(--border-2,#e5e5e7)', background: on ? 'rgb(var(--brand-rgb) / 0.08)' : 'transparent' }}>
             <div className="text-[12.5px] font-semibold" style={{ color: on ? '#7C3AED' : 'var(--text,#1d1d1f)' }}>{o.label}</div>
             {o.hint && <div className="text-[10.5px] mt-0.5" style={{ color: 'var(--text-faint,#86868b)' }}>{o.hint}</div>}
           </button>
@@ -130,7 +130,7 @@ export default function GenerateOptionsModal({
                   return (
                     <button key={s} type="button" onClick={() => toggleSocial(s)}
                       className="rounded-lg border px-2 py-1.5 text-[12px] font-medium transition"
-                      style={{ borderColor: on ? '#7C3AED' : 'var(--border-2,#e5e5e7)', background: on ? 'rgba(124,58,237,0.08)' : 'transparent', color: on ? '#7C3AED' : 'var(--text-soft,#6e6e73)' }}>
+                      style={{ borderColor: on ? '#7C3AED' : 'var(--border-2,#e5e5e7)', background: on ? 'rgb(var(--brand-rgb) / 0.08)' : 'transparent', color: on ? '#7C3AED' : 'var(--text-soft,#6e6e73)' }}>
                       {SOCIAL_LABELS[s] || s}
                     </button>
                   )

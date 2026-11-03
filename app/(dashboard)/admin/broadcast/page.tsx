@@ -132,7 +132,7 @@ export default function BroadcastPage() {
             <button key={a.id} onClick={() => setAudience(a.id)}
               className="text-left rounded-lg px-3 py-2 border transition-colors"
               style={audience === a.id
-                ? { borderColor: '#7C3AED', background: 'rgba(124,58,237,0.08)' }
+                ? { borderColor: '#7C3AED', background: 'rgb(var(--brand-rgb) / 0.08)' }
                 : { borderColor: 'var(--border)', background: 'var(--surface)' }}>
               <span className="block text-[13px] font-semibold" style={{ color: 'var(--text)' }}>{a.label}</span>
               <span className="block text-[11px]" style={{ color: 'var(--text-faint)' }}>{a.hint}</span>

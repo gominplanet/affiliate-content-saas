@@ -439,7 +439,7 @@ export default function BuyingGuidesPage() {
       <div className="space-y-6">
         <div className="rounded-xl border p-8" style={{ background: 'var(--panel)', borderColor: 'var(--border)' }}>
           <div className="flex items-start gap-4">
-            <div className="p-3 rounded-xl" style={{ background: 'rgba(124,58,237,.12)' }}>
+            <div className="p-3 rounded-xl" style={{ background: 'rgb(var(--brand-rgb) / .12)' }}>
               <Lock className="w-6 h-6" style={{ color: '#7C3AED' }} />
             </div>
             <div className="flex-1">
@@ -521,7 +521,7 @@ export default function BuyingGuidesPage() {
       {/* ── Hero + topic input ─────────────────────────────────────── */}
       <div className="rounded-xl border p-6" style={{ background: 'var(--panel)', borderColor: 'var(--border)' }}>
         <div className="flex items-start gap-4 mb-5">
-          <div className="p-3 rounded-xl" style={{ background: 'rgba(124,58,237,.12)' }}>
+          <div className="p-3 rounded-xl" style={{ background: 'rgb(var(--brand-rgb) / .12)' }}>
             <BookOpen className="w-6 h-6" style={{ color: '#7C3AED' }} />
           </div>
           <div className="flex-1">
@@ -765,7 +765,7 @@ export default function BuyingGuidesPage() {
                 }} />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2 mb-1">
-                    <span className="inline-flex items-center justify-center w-5 h-5 rounded-full text-xs font-bold" style={{ background: 'rgba(124,58,237,.12)', color: '#7C3AED' }}>
+                    <span className="inline-flex items-center justify-center w-5 h-5 rounded-full text-xs font-bold" style={{ background: 'rgb(var(--brand-rgb) / .12)', color: '#7C3AED' }}>
                       {i + 1}
                     </span>
                     <input
@@ -823,7 +823,7 @@ export default function BuyingGuidesPage() {
                 style={{ background: 'var(--panel)', color: 'var(--text)', borderColor: 'var(--border)' }}
               >
                 <span className="capitalize">{s.topic}</span>
-                <span className="text-xs font-semibold px-1.5 py-0.5 rounded-full" style={{ background: 'rgba(124,58,237,.12)', color: '#7C3AED' }}>
+                <span className="text-xs font-semibold px-1.5 py-0.5 rounded-full" style={{ background: 'rgb(var(--brand-rgb) / .12)', color: '#7C3AED' }}>
                   {s.count}
                 </span>
                 <ArrowRight className="w-3.5 h-3.5 opacity-50" />

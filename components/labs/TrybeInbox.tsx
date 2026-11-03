@@ -26,7 +26,7 @@ import { useTrybeVoice, readVoice, rememberMvpText } from '@/components/labs/use
 import { SCOUT_TRYBE_INBOX_MIN_VERSION, SCOUT_TRYBE_PLAYBOOK_MIN_VERSION, SCOUT_TRYBE_MYBRANDS_MIN_VERSION, scoutAtLeast } from '@/lib/scout-version'
 import { seenCovers, seenUpTo, rememberSeen } from '@/lib/trybe-read'
 
-const PURPLE = '#7C3AED'
+const PURPLE = 'var(--accent)'
 const RED = '#DC2626'
 const AMBER = '#B45309'
 
@@ -444,7 +444,7 @@ export default function TrybeInbox({ scoutVersion, allowed, openRequest, onOpene
           {listNote && <p className="p-4 text-[12px]" style={{ color: convos?.length ? 'inherit' : AMBER }}>{listNote}</p>}
           {(convos || []).map(c => (
             <button key={c.id} onClick={() => void open(c)} className="w-full text-left px-4 py-3 border-b block"
-              style={{ borderColor: 'var(--border)', background: c.id === openId ? 'rgba(124,58,237,0.08)' : 'transparent' }}>
+              style={{ borderColor: 'var(--border)', background: c.id === openId ? 'rgb(var(--brand-rgb) / 0.08)' : 'transparent' }}>
               <span className="flex items-center gap-2">
                 <span className="font-semibold text-[13px] truncate">{c.name}</span>
                 {c.unread > 0 && <span className="ml-auto text-[10px] font-bold rounded-full px-1.5 py-0.5 text-white" style={{ background: PURPLE }}>{c.unread}</span>}

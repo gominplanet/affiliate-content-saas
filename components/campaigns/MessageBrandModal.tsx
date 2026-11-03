@@ -305,7 +305,7 @@ export default function MessageBrandModal({ campaign, onClose, onSent, onFindCam
               <label key={c.key} className="flex items-center gap-2 text-[13px] cursor-pointer" style={{ color: 'var(--text)' }}>
                 <input type="checkbox" checked={opts[c.key]} onChange={() => toggle(c.key)} className="accent-[#7C3AED] w-4 h-4 flex-shrink-0" />
                 <span className="min-w-0">{c.label}</span>
-                <span className="ml-auto text-[9px] font-bold uppercase tracking-wide px-1 py-[1px] rounded flex-shrink-0" style={{ background: 'rgba(124,58,237,0.10)', color: '#9D6BFF' }}>{c.msg}</span>
+                <span className="ml-auto text-[9px] font-bold uppercase tracking-wide px-1 py-[1px] rounded flex-shrink-0" style={{ background: 'rgb(var(--brand-rgb) / 0.10)', color: '#9D6BFF' }}>{c.msg}</span>
               </label>
             ))}
           </div>
@@ -349,7 +349,7 @@ export default function MessageBrandModal({ campaign, onClose, onSent, onFindCam
                 return (
                   <div key={i} className="rounded-lg border" style={{ borderColor: over ? '#ff3b30' : 'var(--border)' }}>
                     <div className="flex items-center justify-between px-2.5 pt-1.5">
-                      <span className="text-[10px] font-bold uppercase tracking-wide px-1.5 py-[1px] rounded" style={{ background: 'rgba(124,58,237,0.12)', color: '#7C3AED' }}>
+                      <span className="text-[10px] font-bold uppercase tracking-wide px-1.5 py-[1px] rounded" style={{ background: 'rgb(var(--brand-rgb) / 0.12)', color: '#7C3AED' }}>
                         Message {i + 1}
                       </span>
                       <div className="flex items-center gap-2">
@@ -403,7 +403,7 @@ export default function MessageBrandModal({ campaign, onClose, onSent, onFindCam
               <>
                 <button onClick={() => runFind()} disabled={finding || sending}
                   className="w-full inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-[12px] font-semibold border disabled:opacity-60"
-                  style={{ color: '#7C3AED', borderColor: '#d6c6fb', background: 'rgba(124,58,237,0.05)' }}>
+                  style={{ color: '#7C3AED', borderColor: '#d6c6fb', background: 'rgb(var(--brand-rgb) / 0.05)' }}>
                   {finding ? <Loader2 size={13} className="animate-spin" /> : <Radar size={13} />}
                   {finding ? 'Searching Creator Connections…' : 'Search Creator Connections. Can I auto-send this?'}
                 </button>

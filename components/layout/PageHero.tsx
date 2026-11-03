@@ -1,4 +1,10 @@
+'use client'
 // © 2026 Gominplanet / MVP Affiliate — proprietary & confidential. No copying, redistribution, reverse-engineering, or reuse. See LICENSE.
+//
+// IN THE NEW LOOK (lib/look) this draws the shared header card instead
+// (components/layout/teal-ui TealHeader): the page's menu section in its
+// colour, the title, the subtitle as its line, the actions as its buttons,
+// and the page's menu icon as the art. Every page using PageHero gets it.
 //
 // PageHero — the V2 page-header used across the dashboard routes.
 //
@@ -12,6 +18,8 @@
 // shell's edges so the gradient bleeds full-width.
 
 import type { ReactNode } from 'react'
+import { useLook, useActiveNav } from './shell-nav-context'
+import { TealHeader } from './teal-ui'
 
 interface PageHeroProps {
   title: string
@@ -34,6 +42,23 @@ interface PageHeroProps {
 }
 
 export default function PageHero({ title, subtitle, actions, accent, media, guide }: PageHeroProps) {
+  const look = useLook()
+  const active = useActiveNav()
+  if (look === 'teal') {
+    return (
+      <TealHeader
+        eyebrow={active?.section}
+        color={active?.color}
+        tint={active?.tint}
+        icon={active?.icon}
+        title={title}
+        line={subtitle}
+        actions={actions}
+        guide={guide}
+        art={media ? <div className="flex-[1_1_300px] max-w-[420px] min-w-0">{media}</div> : undefined}
+      />
+    )
+  }
   return (
     <div
       // mvp-page-hero: the new look (globals.css [data-look="teal"]) draws this
@@ -49,7 +74,7 @@ export default function PageHero({ title, subtitle, actions, accent, media, guid
         style={{
           opacity: 'var(--hero-opacity)',
           background: `
-            radial-gradient(50% 80% at 20% 30%, rgba(124, 58, 237, 0.45), transparent 60%),
+            radial-gradient(50% 80% at 20% 30%, rgb(var(--brand-rgb) / 0.45), transparent 60%),
             radial-gradient(50% 70% at 85% 20%, rgba(192, 38, 211, 0.30), transparent 65%)
             ${accent ? `, radial-gradient(60% 60% at 50% 90%, ${accent}, transparent 70%)` : ''}
           `,

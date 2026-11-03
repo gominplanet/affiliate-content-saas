@@ -875,10 +875,10 @@ export function IntegrationsPanel({ onLoad, mode = 'all' }: { onLoad: () => void
       {!isUnlocked('tiktok') && (
         <div
           className="card p-5"
-          style={{ background: 'linear-gradient(135deg, rgba(124,58,237,0.07) 0%, rgba(124,58,237,0.02) 100%)', borderColor: 'rgba(124,58,237,0.25)' }}
+          style={{ background: 'linear-gradient(135deg, rgb(var(--brand-rgb) / 0.07) 0%, rgb(var(--brand-rgb) / 0.02) 100%)', borderColor: 'rgb(var(--brand-rgb) / 0.25)' }}
         >
           <div className="flex items-start gap-3">
-            <div className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: 'rgba(124,58,237,0.15)' }}>
+            <div className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: 'rgb(var(--brand-rgb) / 0.15)' }}>
               <Clock size={16} style={{ color: '#7C3AED' }} />
             </div>
             <div className="flex-1 min-w-0">

@@ -150,7 +150,7 @@ export default function DuplicatesPage() {
 
         {groups.length > 0 && (
           <>
-            <div className="flex items-start gap-2 text-[12px] mb-4 p-3 rounded-lg" style={{ background: 'rgba(124,58,237,0.06)', color: 'var(--text-2)' }}>
+            <div className="flex items-start gap-2 text-[12px] mb-4 p-3 rounded-lg" style={{ background: 'rgb(var(--brand-rgb) / 0.06)', color: 'var(--text-2)' }}>
               <Info size={14} className="mt-0.5 flex-shrink-0 text-[#7C3AED]" />
               <div>
                 Each group is the same product published more than once. Click a post to pick the <span className="font-semibold text-[#248a3d]">Keep</span> (defaults to the indexed / original one). <span className="font-semibold">Merge</span> 301-redirects the extras to it and moves them to WordPress Trash. Recoverable from WP → Posts → Trash.
@@ -306,7 +306,7 @@ function DuplicateCategoriesCard() {
       {groups.length > 0 && (
         <div className="mt-4 space-y-2">
           {groups.map((g) => (
-            <div key={g.keep.id} className="flex items-start gap-2 text-[13px] p-3 rounded-lg" style={{ background: 'rgba(124,58,237,0.06)', color: 'var(--text-2)' }}>
+            <div key={g.keep.id} className="flex items-start gap-2 text-[13px] p-3 rounded-lg" style={{ background: 'rgb(var(--brand-rgb) / 0.06)', color: 'var(--text-2)' }}>
               <Info size={14} className="mt-0.5 flex-shrink-0 text-[#7C3AED]" />
               <div>
                 Keep <span className="font-semibold text-[#248a3d]">{g.name}</span> ({g.keep.count} post{g.keep.count === 1 ? '' : 's'}) · remove {g.remove.length} duplicate{g.remove.length === 1 ? '' : 's'}

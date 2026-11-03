@@ -37,8 +37,8 @@ export default function YouTubeVerifiedNudge({ show }: { show: boolean }) {
     <div
       className="card mb-6 p-4 relative"
       style={{
-        background: 'linear-gradient(135deg, rgba(124,58,237,0.06) 0%, rgba(52,199,89,0.06) 100%)',
-        borderColor: 'rgba(124,58,237,0.25)',
+        background: 'linear-gradient(135deg, rgb(var(--brand-rgb) / 0.06) 0%, rgba(52,199,89,0.06) 100%)',
+        borderColor: 'rgb(var(--brand-rgb) / 0.25)',
       }}
     >
       <button

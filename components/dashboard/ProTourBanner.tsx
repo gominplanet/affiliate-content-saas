@@ -58,8 +58,8 @@ export default function ProTourBanner({ compact = false }: { compact?: boolean }
         className="relative rounded-2xl border"
         style={{
           background: 'linear-gradient(135deg, #7C3AED 0%, #9D6BFF 55%, #C084FC 100%)',
-          borderColor: 'rgba(124, 58, 237, 0.45)',
-          boxShadow: '0 8px 32px -8px rgba(124, 58, 237, 0.55)',
+          borderColor: 'rgb(var(--brand-rgb) / 0.45)',
+          boxShadow: '0 8px 32px -8px rgb(var(--brand-rgb) / 0.55)',
         }}
       >
         <button
@@ -92,8 +92,8 @@ export default function ProTourBanner({ compact = false }: { compact?: boolean }
       className="relative rounded-2xl border transition-transform hover:scale-[1.005]"
       style={{
         background: 'linear-gradient(135deg, #7C3AED 0%, #9D6BFF 55%, #C084FC 100%)',
-        borderColor: 'rgba(124, 58, 237, 0.45)',
-        boxShadow: '0 8px 32px -8px rgba(124, 58, 237, 0.55)',
+        borderColor: 'rgb(var(--brand-rgb) / 0.45)',
+        boxShadow: '0 8px 32px -8px rgb(var(--brand-rgb) / 0.55)',
       }}
     >
       {/* The dismiss control: top-right pill with icon + label so the

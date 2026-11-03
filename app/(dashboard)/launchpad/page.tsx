@@ -95,7 +95,7 @@ function StepRow({ n, title, icon, state, actions, hint, last, children }: {
             background: done ? '#10B981' : active ? '#7C3AED' : 'transparent',
             color: done || active ? '#fff' : 'var(--text-3)',
             border: locked ? '1.5px solid var(--border-2)' : 'none',
-            boxShadow: active ? '0 0 0 4px rgba(124,58,237,0.14)' : 'none',
+            boxShadow: active ? '0 0 0 4px rgb(var(--brand-rgb) / 0.14)' : 'none',
           }}>
           {done ? <Check size={16} /> : locked ? <Lock size={13} /> : n}
         </div>
@@ -1058,7 +1058,7 @@ export default function LaunchpadPage() {
             {/* The headline is written from the title, so this step waits on it.
                 Say so plainly, with a count, instead of showing dead controls. */}
             {!meta && preparing && (
-              <p className="text-[12px] mb-3 inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5" style={{ color: '#7C3AED', background: 'rgba(124,58,237,0.07)' }}>
+              <p className="text-[12px] mb-3 inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5" style={{ color: '#7C3AED', background: 'rgb(var(--brand-rgb) / 0.07)' }}>
                 <Loader2 size={13} className="animate-spin" />
                 Writing your title first… {prepElapsed}s <span style={muted}>Usually about 10 seconds. Pick your face and style now, they are ready to use.</span>
               </p>

@@ -18,7 +18,7 @@ import { rememberMvpText } from '@/components/labs/useTrybeVoice'
 import TrybeLink from '@/components/labs/TrybeLink'
 import { retainerReady, suggestAmount, retainerAsk, trackRetainer, type Brand30, type Retainer, type RetainerKind } from '@/lib/trybe-retainer'
 
-const PURPLE = '#7C3AED'
+const PURPLE = 'var(--accent)'
 const GREEN = '#16A34A'
 const AMBER = '#B45309'
 

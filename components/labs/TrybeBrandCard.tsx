@@ -19,7 +19,7 @@ import { adLibraryUrl } from '@/lib/trybe-pick'
 import { AmazonLine, AmazonFilmedList } from '@/components/labs/TrybeFinderControls'
 import { useTrybeAmazon } from '@/components/labs/useTrybeAmazon'
 
-const PURPLE = '#7C3AED'
+const PURPLE = 'var(--accent)'
 
 // Read once per page visit: the brands joined on TRYBE, and each brand's details.
 let joinedCache: Promise<Array<{ id: string; name: string }>> | null = null
@@ -106,7 +106,7 @@ export default function TrybeBrandCard({ chatName, chatRaw, directory, canStats,
   const page = brandPageUrl(brand.id)
   const link = 'inline-flex items-center gap-1 text-[12px] font-semibold'
   return (
-    <div className="w-full mt-1 rounded-lg border px-3 py-2.5" style={{ borderColor: 'var(--border)', background: 'rgba(124,58,237,0.05)' }}>
+    <div className="w-full mt-1 rounded-lg border px-3 py-2.5" style={{ borderColor: 'var(--border)', background: 'rgb(var(--brand-rgb) / 0.05)' }}>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         {card?.logo && <img src={card.logo} alt="" className="w-7 h-7 rounded-full object-cover bg-white" />}

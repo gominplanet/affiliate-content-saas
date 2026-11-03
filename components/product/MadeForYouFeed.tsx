@@ -54,7 +54,7 @@ export default function MadeForYouFeed() {
       <button
         onClick={() => setOpen(o => !o)}
         className="w-full flex items-center justify-between gap-3 rounded-2xl border p-3.5 transition-colors hover:brightness-[1.03]"
-        style={{ borderColor: open ? '#7C3AED' : 'rgba(124,58,237,0.35)', background: 'linear-gradient(160deg, rgba(124,58,237,0.10), rgba(124,58,237,0.02))' }}
+        style={{ borderColor: open ? '#7C3AED' : 'rgb(var(--brand-rgb) / 0.35)', background: 'linear-gradient(160deg, rgb(var(--brand-rgb) / 0.10), rgb(var(--brand-rgb) / 0.02))' }}
       >
         <span className="inline-flex items-center gap-2.5 min-w-0">
           <span className="w-8 h-8 rounded-lg grid place-items-center flex-shrink-0 text-white" style={{ background: '#7C3AED' }}><Sparkles size={16} /></span>
@@ -66,7 +66,7 @@ export default function MadeForYouFeed() {
           </span>
         </span>
         <span className="inline-flex items-center gap-2 flex-shrink-0">
-          <span className="text-[11px] font-bold rounded-full px-2 py-0.5 hidden sm:inline" style={{ background: 'rgba(124,58,237,0.14)', color: '#7C3AED' }}>{picks.length} pick{picks.length === 1 ? '' : 's'}</span>
+          <span className="text-[11px] font-bold rounded-full px-2 py-0.5 hidden sm:inline" style={{ background: 'rgb(var(--brand-rgb) / 0.14)', color: '#7C3AED' }}>{picks.length} pick{picks.length === 1 ? '' : 's'}</span>
           <span onClick={(e) => { e.stopPropagation(); refresh() }} title="Recompute from your latest earnings"
             className="p-1 rounded-md cursor-pointer" style={{ color: 'var(--text-faint)' }}>
             {refreshing ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}

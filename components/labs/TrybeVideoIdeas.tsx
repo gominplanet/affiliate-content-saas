@@ -21,7 +21,7 @@ import { readBrandCard, readPromotedProducts, mergeProducts, readSampleRequests,
 import { readTopVideos, readScript, keysOf, type TopVideo } from '@/lib/trybe-mybrands'
 import { withTeamWords, type WinnerVideo } from '@/lib/trybe-scripts'
 
-const PURPLE = '#7C3AED'
+const PURPLE = 'var(--accent)'
 const GREEN = '#16A34A'
 const AMBER = '#B45309'
 
@@ -422,11 +422,11 @@ export default function TrybeVideoIdeas({ brandId, name, plan: initial, canRead,
                     const on = chosen === pr.name
                     return (
                       <button key={pr.id || pr.name} onClick={() => { setChosen(pr.name); setOther('') }} aria-pressed={on}
-                        className="text-left rounded-xl border p-2 flex items-center gap-2" style={{ borderColor: on ? PURPLE : 'var(--border)', background: on ? 'rgba(124,58,237,0.06)' : 'transparent' }}>
+                        className="text-left rounded-xl border p-2 flex items-center gap-2" style={{ borderColor: on ? PURPLE : 'var(--border)', background: on ? 'rgb(var(--brand-rgb) / 0.06)' : 'transparent' }}>
                         {pr.image
                           // eslint-disable-next-line @next/next/no-img-element
                           ? <img src={pr.image} alt="" className="w-10 h-10 rounded-lg object-cover shrink-0 border" style={{ borderColor: 'var(--border)' }} />
-                          : <span className="w-10 h-10 rounded-lg shrink-0" style={{ background: 'rgba(124,58,237,0.08)' }} />}
+                          : <span className="w-10 h-10 rounded-lg shrink-0" style={{ background: 'rgb(var(--brand-rgb) / 0.08)' }} />}
                         <span className="min-w-0">
                           <span className="block text-[12.5px] font-semibold leading-snug">{pr.name}</span>
                           {pr.price && <span className="block text-[11.5px]" style={soft}>{pr.price}</span>}
@@ -461,7 +461,7 @@ export default function TrybeVideoIdeas({ brandId, name, plan: initial, canRead,
             const on = plan === k.plan
             return (
               <button key={k.id} onClick={() => { setPlan(k.plan); setPlanOpen(true) }} aria-pressed={on} className="rounded-full border px-2.5 py-0.5 text-[12px] font-semibold"
-                style={on ? { background: 'rgba(124,58,237,0.10)', color: PURPLE, borderColor: 'transparent' } : { borderColor: 'var(--border)' }}>
+                style={on ? { background: 'rgb(var(--brand-rgb) / 0.10)', color: PURPLE, borderColor: 'transparent' } : { borderColor: 'var(--border)' }}>
                 {k.product || 'The whole brand'} <span className="font-normal" style={soft}>{new Date(k.created_at).toLocaleDateString([], { month: 'short', day: 'numeric' })}</span>
               </button>
             )
@@ -502,7 +502,7 @@ export default function TrybeVideoIdeas({ brandId, name, plan: initial, canRead,
                       <span className="flex-1 min-w-0">
                         <span className="flex flex-wrap items-center gap-1.5">
                           <span className="text-[13px] font-semibold">{v.angle || HOOK_STYLE_WORDS[v.style]}</span>
-                          <span className="text-[10px] font-bold rounded-full px-1.5 py-0.5" style={{ background: 'rgba(124,58,237,0.10)', color: PURPLE }}>{HOOK_STYLE_WORDS[v.style]}</span>
+                          <span className="text-[10px] font-bold rounded-full px-1.5 py-0.5" style={{ background: 'rgb(var(--brand-rgb) / 0.10)', color: PURPLE }}>{HOOK_STYLE_WORDS[v.style]}</span>
                         </span>
                         {v.say?.length ? (<>
                           {/* THE WORDS TO SAY (Seb, 2026-10-22): one short line at a
@@ -511,7 +511,7 @@ export default function TrybeVideoIdeas({ brandId, name, plan: initial, canRead,
                           <ol className="mt-1 space-y-1">
                             {v.say.map((l, j) => (
                               <li key={j} className="flex items-start gap-2">
-                                <span className="shrink-0 w-5 h-5 rounded-full inline-flex items-center justify-center text-[10.5px] font-bold" style={{ background: 'rgba(124,58,237,0.10)', color: PURPLE }}>{j + 1}</span>
+                                <span className="shrink-0 w-5 h-5 rounded-full inline-flex items-center justify-center text-[10.5px] font-bold" style={{ background: 'rgb(var(--brand-rgb) / 0.10)', color: PURPLE }}>{j + 1}</span>
                                 <span className="text-[14px] leading-snug font-medium">&ldquo;{l}&rdquo;</span>
                               </li>
                             ))}
@@ -553,7 +553,7 @@ export default function TrybeVideoIdeas({ brandId, name, plan: initial, canRead,
             <ol className="mt-1 space-y-1.5">
               {plan.hooks.map((h, i) => (
                 <li key={i} className="flex items-start gap-2 rounded-lg border px-2.5 py-1.5" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
-                  <span className="shrink-0 text-[10px] font-bold rounded-full px-1.5 py-0.5 mt-0.5" style={{ background: 'rgba(124,58,237,0.10)', color: PURPLE }}>{HOOK_STYLE_WORDS[h.style]}</span>
+                  <span className="shrink-0 text-[10px] font-bold rounded-full px-1.5 py-0.5 mt-0.5" style={{ background: 'rgb(var(--brand-rgb) / 0.10)', color: PURPLE }}>{HOOK_STYLE_WORDS[h.style]}</span>
                   <span className="flex-1 min-w-0">
                     <span className="block text-[13px] font-semibold">{h.line}</span>
                     {h.shot && <span className="block" style={soft}>{h.shot}</span>}

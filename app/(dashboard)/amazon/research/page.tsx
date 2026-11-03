@@ -8,6 +8,8 @@ import Link from 'next/link'
 import { PackageSearch, Radar, BadgePercent, Bookmark, ArrowRight } from 'lucide-react'
 import PageExplainer from '@/components/amazon/PageExplainer'
 import ScoutInfoCard from '@/components/amazon/ScoutInfoCard'
+import PageHero from '@/components/layout/PageHero'
+import { ByLook } from '@/components/layout/teal-ui'
 
 export const metadata: Metadata = {
   title: 'Research: Amazon Influencer',
@@ -44,20 +46,26 @@ const TOOLS = [
 export default function AmazonResearchPage() {
   return (
     <div className="max-w-5xl mx-auto">
-      <header className="mb-8">
-        <div className="flex items-center gap-2 mb-3">
-          <PackageSearch size={14} className="text-[#d97706]" />
-          <span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: 'var(--text-soft)' }}>
-            Amazon Influencer · Research
-          </span>
-        </div>
-        <h1 className="text-2xl sm:text-3xl font-bold tracking-tight mb-2" style={{ color: 'var(--text)' }}>
-          Find what to review next
-        </h1>
-        <p className="text-sm max-w-2xl" style={{ color: 'var(--text-soft)' }}>
-          Everything you need to source products and brand deals worth making content about, in one place.
-        </p>
-      </header>
+      {/* The new look draws the shared header card; the old one is as it was. */}
+      <ByLook
+        teal={<PageHero title="Find what to review next" subtitle="Everything you need to source products and brand deals worth making content about, in one place." />}
+        classic={(
+        <header className="mb-8">
+          <div className="flex items-center gap-2 mb-3">
+            <PackageSearch size={14} className="text-[#d97706]" />
+            <span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: 'var(--text-soft)' }}>
+              Amazon Influencer · Research
+            </span>
+          </div>
+          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight mb-2" style={{ color: 'var(--text)' }}>
+            Find what to review next
+          </h1>
+          <p className="text-sm max-w-2xl" style={{ color: 'var(--text-soft)' }}>
+            Everything you need to source products and brand deals worth making content about, in one place.
+          </p>
+        </header>
+        )}
+      />
 
       <PageExplainer
         eyebrow="New here? Start with what to post"

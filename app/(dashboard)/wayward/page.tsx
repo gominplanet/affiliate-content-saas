@@ -15,7 +15,7 @@ import {
 import WaywardQuickPostModal from '@/components/wayward/WaywardQuickPostModal'
 import { fetchUnlessMade } from '@/lib/already-made-client'
 
-const PURPLE = '#7C3AED'
+const PURPLE = 'var(--accent)'
 
 interface Product {
   productId: string; asin: string; name: string; brandName: string | null

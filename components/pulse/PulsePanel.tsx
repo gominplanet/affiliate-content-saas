@@ -89,8 +89,8 @@ export default function PulsePanel({ alwaysShow = false }: { alwaysShow?: boolea
   if (!alwaysShow && data.collecting && !hasAnything && data.sampleCount === 0) return null
 
   return (
-    <div className="rounded-2xl border overflow-hidden" style={{ borderColor: 'rgba(124,58,237,0.25)', background: 'rgba(124,58,237,0.04)' }}>
-      <div className="flex items-center gap-2 px-5 py-3.5 border-b" style={{ borderColor: 'rgba(124,58,237,0.15)' }}>
+    <div className="rounded-2xl border overflow-hidden" style={{ borderColor: 'rgb(var(--brand-rgb) / 0.25)', background: 'rgb(var(--brand-rgb) / 0.04)' }}>
+      <div className="flex items-center gap-2 px-5 py-3.5 border-b" style={{ borderColor: 'rgb(var(--brand-rgb) / 0.15)' }}>
         <span className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-[#7C3AED]/12 text-[#7C3AED]"><Activity size={15} /></span>
         <div>
           <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Pulse</p>

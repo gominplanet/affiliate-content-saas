@@ -20,7 +20,7 @@ import TrybeVideoIdeas, { loadBrandPage, type BrandPage } from '@/components/lab
 import { AmazonLine, ProductAmazon, AmazonFilmedList } from '@/components/labs/TrybeFinderControls'
 import { useTrybeAmazon } from '@/components/labs/useTrybeAmazon'
 
-const PURPLE = '#7C3AED'
+const PURPLE = 'var(--accent)'
 const GREEN = '#16A34A'
 const AMBER = '#B45309'
 
@@ -143,7 +143,7 @@ export default function TrybeCreate({ canRead, isAdmin, onFind }: { canRead: boo
                     {b.logo
                       // eslint-disable-next-line @next/next/no-img-element
                       ? <img src={b.logo} alt="" className="w-16 h-16 rounded-xl object-contain border" style={{ borderColor: 'var(--border)', background: '#fff' }} />
-                      : <span className="w-16 h-16 rounded-xl inline-flex items-center justify-center text-[22px] font-bold" style={{ background: 'rgba(124,58,237,0.10)', color: PURPLE }}>{b.name.slice(0, 1).toUpperCase()}</span>}
+                      : <span className="w-16 h-16 rounded-xl inline-flex items-center justify-center text-[22px] font-bold" style={{ background: 'rgb(var(--brand-rgb) / 0.10)', color: PURPLE }}>{b.name.slice(0, 1).toUpperCase()}</span>}
                     <span className="text-[14px] font-semibold leading-tight">{b.name}</span>
                     {b.earnings != null && b.earnings > 0 && <span className="text-[12px]" style={{ color: GREEN }}>${b.earnings.toLocaleString()} earned</span>}
                     <AmazonLine amazon={amz.brand(b.id)} links={false} className="justify-center" />
@@ -172,12 +172,12 @@ export default function TrybeCreate({ canRead, isAdmin, onFind }: { canRead: boo
                   {p.image
                     // eslint-disable-next-line @next/next/no-img-element
                     ? <img src={p.image} alt="" className="w-20 h-20 rounded-xl object-contain border shrink-0 bg-white" style={{ borderColor: 'var(--border)' }} />
-                    : <span className="w-20 h-20 rounded-xl shrink-0" style={{ background: 'rgba(124,58,237,0.08)' }} />}
+                    : <span className="w-20 h-20 rounded-xl shrink-0" style={{ background: 'rgb(var(--brand-rgb) / 0.08)' }} />}
                   <span className="min-w-0">
                     <span className="block text-[14px] font-semibold leading-snug">{p.name}</span>
                     {p.price && <span className="block text-[12.5px]" style={soft}>{p.price}</span>}
                     {p.sample && <span className="inline-block mt-1 text-[11px] font-bold rounded-full px-2 py-0.5" style={{ background: 'rgba(22,163,74,0.10)', color: GREEN }}>Your sample: {p.sample.status.replace(/_/g, ' ')}{p.sample.at ? `, ${new Date(p.sample.at).toLocaleDateString([], { month: 'short', day: 'numeric' })}` : ''}</span>}
-                    {!p.sample && p.promoted && <span className="inline-block mt-1 text-[11px] font-bold rounded-full px-2 py-0.5" style={{ background: 'rgba(124,58,237,0.10)', color: PURPLE }}>TRYBE asks for this</span>}
+                    {!p.sample && p.promoted && <span className="inline-block mt-1 text-[11px] font-bold rounded-full px-2 py-0.5" style={{ background: 'rgb(var(--brand-rgb) / 0.10)', color: PURPLE }}>TRYBE asks for this</span>}
                     <ProductAmazon match={amz.product(brand.name, p.name)} links={false} />
                   </span>
                 </button>

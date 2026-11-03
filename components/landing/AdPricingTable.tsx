@@ -102,7 +102,7 @@ function PlanCard({
       style={{
         borderColor: highlight ? '#7C3AED' : 'rgba(0,0,0,0.10)',
         borderWidth: highlight ? 2 : 1,
-        boxShadow: highlight ? '0 16px 50px rgba(124,58,237,0.16)' : 'none',
+        boxShadow: highlight ? '0 16px 50px rgb(var(--brand-rgb) / 0.16)' : 'none',
       }}
     >
       {ribbon && (
@@ -143,7 +143,7 @@ function PlanCard({
           href={ctaHref}
           className="inline-flex w-full items-center justify-center gap-2 rounded-xl px-5 py-3.5 text-[15px] font-semibold transition-colors"
           style={highlight
-            ? { background: '#7C3AED', color: '#fff', boxShadow: '0 4px 18px rgba(124,58,237,0.32)' }
+            ? { background: '#7C3AED', color: '#fff', boxShadow: '0 4px 18px rgb(var(--brand-rgb) / 0.32)' }
             : { border: '1.5px solid rgba(0,0,0,0.14)', color: '#1D1D1F' }}
         >
           {ctaLabel}

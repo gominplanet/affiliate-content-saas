@@ -16,7 +16,7 @@ import type { PayBasis } from '@/lib/trybe-pay'
 import { SELLS, SELLS_WORDS, type SellsRead } from '@/lib/trybe-sells'
 import { webRankWords, googleWords, adsPerCreatorWords, adsPerReviewWords, type Said } from '@/lib/brand-popularity'
 
-const PURPLE = '#7C3AED'
+const PURPLE = 'var(--accent)'
 const GREEN = '#16A34A'
 const AMBER = '#B45309'
 const soft = { color: 'var(--text-3)' }
@@ -187,7 +187,7 @@ export function FinderToolbar({ filters, onFilters, name, onName, sort, sorts, o
       {on.length > 0 && (
         <div className="flex flex-wrap items-center gap-1.5" aria-label="What is on">
           {on.map((o) => (
-            <button key={o.key} onClick={o.off} className={`${chip} ${ON_TEXT} focus-visible:ring-2 focus-visible:ring-[#7C3AED]/40 outline-none`} style={{ borderColor: 'rgba(124,58,237,0.35)', background: 'rgba(124,58,237,0.08)' }} aria-label={`Remove: ${o.text}`}>
+            <button key={o.key} onClick={o.off} className={`${chip} ${ON_TEXT} focus-visible:ring-2 focus-visible:ring-[#7C3AED]/40 outline-none`} style={{ borderColor: 'rgb(var(--brand-rgb) / 0.35)', background: 'rgb(var(--brand-rgb) / 0.08)' }} aria-label={`Remove: ${o.text}`}>
               {o.text}<X size={11} />
             </button>
           ))}
@@ -431,7 +431,7 @@ export function BrandMark({ name, website, size = 40 }: { name: string; website:
   try { host = website ? new URL(/^https?:/i.test(website) ? website : `https://${website}`).hostname : '' } catch { host = '' }
   const box = { width: size, height: size }
   if (!host || bad) {
-    return <span className="shrink-0 rounded-lg inline-flex items-center justify-center font-bold" style={{ ...box, background: 'rgba(124,58,237,0.12)', color: PURPLE, fontSize: size * 0.42 }} aria-hidden="true">{(name.trim()[0] || '?').toUpperCase()}</span>
+    return <span className="shrink-0 rounded-lg inline-flex items-center justify-center font-bold" style={{ ...box, background: 'rgb(var(--brand-rgb) / 0.12)', color: PURPLE, fontSize: size * 0.42 }} aria-hidden="true">{(name.trim()[0] || '?').toUpperCase()}</span>
   }
   // eslint-disable-next-line @next/next/no-img-element
   return <img src={`https://www.google.com/s2/favicons?domain=${encodeURIComponent(host)}&sz=64`} alt="" loading="lazy" onError={() => setBad(true)}
@@ -462,7 +462,7 @@ export function CompareButton({ on, full, onClick }: { on: boolean; full: boolea
   return (
     <button onClick={(e) => { e.preventDefault(); e.stopPropagation(); onClick() }} aria-pressed={on} disabled={!on && full}
       title={on ? 'In your comparison: press to take it out' : full ? 'Three brands are already in your comparison' : 'Compare it side by side with another brand'}
-      className={`inline-flex items-center gap-0.5 text-[12px] font-semibold rounded-md px-1.5 py-0.5 disabled:opacity-40 ${on ? ON_TEXT : ''}`} style={on ? { background: 'rgba(124,58,237,0.10)' } : { color: 'var(--text-3)' }}>
+      className={`inline-flex items-center gap-0.5 text-[12px] font-semibold rounded-md px-1.5 py-0.5 disabled:opacity-40 ${on ? ON_TEXT : ''}`} style={on ? { background: 'rgb(var(--brand-rgb) / 0.10)' } : { color: 'var(--text-3)' }}>
       <ArrowLeftRight size={12} />{on ? 'Comparing' : 'Compare'}
     </button>
   )
@@ -681,7 +681,7 @@ export function FinderPresets({ filters, sort, onPick, noCreators = false }: { f
 
 const VERDICT_STYLE = {
   strong: { background: 'rgba(22,163,74,0.14)', color: GREEN },
-  look: { background: 'rgba(124,58,237,0.10)', color: PURPLE },
+  look: { background: 'rgb(var(--brand-rgb) / 0.10)', color: PURPLE },
   skip: { background: 'var(--surface-2)', color: 'var(--text-3)' },
   unknown: { background: 'var(--surface-2)', color: 'var(--text-3)' },
 } as const

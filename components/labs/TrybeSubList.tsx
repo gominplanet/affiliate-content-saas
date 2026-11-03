@@ -12,7 +12,7 @@ import { filterSubs, statusTally, STATUS_WORDS, FILTER_ORDER, type SubFilter } f
 import { MAX_LIST_BRANDS, ALL_TIME_BRANDS, type SubList } from '@/components/labs/useTrybeSubmissions'
 import { brandPageUrl } from '@/lib/trybe-brand-page'
 
-const PURPLE = '#7C3AED'
+const PURPLE = 'var(--accent)'
 const soft = { color: 'var(--text-3)' }
 const COLORS: Record<string, string> = { approved: '#16A34A', pending: '#3B82F6', revision: '#CA8A04', rejected: '#DC2626', other: '#6B7280' }
 /** Whole days since a video was sent. */

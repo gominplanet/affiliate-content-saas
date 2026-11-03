@@ -15,7 +15,7 @@ import { VerdictChip, CrowdChip, PayChip, type LivePayEst } from '@/components/l
 import type { CrowdRead } from '@/lib/trybe-finder'
 import type { PickReason } from '@/lib/trybe-pick'
 
-const PURPLE = '#7C3AED'
+const PURPLE = 'var(--accent)'
 const AMBER = '#B45309'
 
 interface NewBrand { brand_id: string; name: string; pick?: number; pick_read?: number; pick_reasons?: PickReason[]; crowd?: CrowdRead | null; pay_est?: LivePayEst | null; pay_text?: string | null; categories?: string[] }

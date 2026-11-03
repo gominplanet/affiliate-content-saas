@@ -67,7 +67,7 @@ check('a merged row is shown only when one of its tabs is open to this account',
 check('a merged row is lit on any of its tabs', /const itemActive = useCallback\([\s\S]{0,200}\(item\.tabs \?\? \[\]\)\.some\(\(t\) => t\.gate !== false && isActive\(t\.href\)\)/.test(S))
 check('the sidebar uses it', /active=\{itemActive\(item\)\}/.test(S) && /visibleItems\.some\(\(it\) => itemActive\(it\)\)/.test(S))
 check('the tab bar is drawn above the page, never over the upgrade panel',
-  /\{!amazonLocked && tabbedItem && <SectionTabs item=\{tabbedItem\} isActive=\{isActive\} \/>\}/.test(S))
+  /\{!amazonLocked && tabbedItem && <SectionTabs item=\{tabbedItem\} isActive=\{isActive\}( teal=\{teal\})? \/>\}/.test(S))
 check('the tab bar shows only the tabs this account can open', /const tabs = \(item\.tabs \?\? \[\]\)\.filter\(\(t\) => t\.gate !== false\)/.test(S))
 check('a route lights only its own row, not every row it is a prefix of (/brand vs /brand-hub)',
   /return pathname === href \|\| pathname\.startsWith\(`\$\{href\}\/`\)/.test(S))

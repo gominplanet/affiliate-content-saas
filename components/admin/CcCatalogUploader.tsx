@@ -255,7 +255,7 @@ export default function CcCatalogUploader({ onDone, addOnly = true }: {
         onDrop={e => { e.preventDefault(); setDragOver(false); pick(e.dataTransfer.files) }}
         onClick={() => phase !== 'uploading' && !unzipping && inputRef.current?.click()}
         className="rounded-xl border-2 border-dashed p-6 text-center cursor-pointer transition-colors"
-        style={{ borderColor: dragOver ? '#7C3AED' : 'var(--border)', background: dragOver ? 'rgba(124,58,237,0.05)' : 'transparent' }}>
+        style={{ borderColor: dragOver ? '#7C3AED' : 'var(--border)', background: dragOver ? 'rgb(var(--brand-rgb) / 0.05)' : 'transparent' }}>
         <input ref={inputRef} type="file" accept=".zip,application/zip,.csv,text/csv" multiple className="hidden"
           onChange={e => pick(e.target.files)} />
         {unzipping ? (

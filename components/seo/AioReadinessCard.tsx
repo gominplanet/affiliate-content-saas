@@ -15,7 +15,7 @@ interface Fix { label: string; hint: string; count: number; share: number }
 interface Worst { id: string; title: string | null; url: string | null; score: number; grade: string }
 interface Summary { ok?: boolean; failed?: string; scored?: number; avgScore?: number; grades?: Record<string, number>; topFixes?: Fix[]; worst?: Worst[] }
 
-const AIO = '#7C3AED'
+const AIO = 'var(--accent)'
 /** What the number actually means, for someone who has never seen it before. A
  *  bare 80 out of an unstated maximum tells nobody anything. */
 function reading(s: number): string {
@@ -48,7 +48,7 @@ export default function AioReadinessCard() {
   if (!data || !data.scored) {
     return (
       <div className="rounded-2xl border p-4 mb-5 flex items-start gap-2.5" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
-        <div className="w-8 h-8 rounded-lg grid place-items-center flex-shrink-0" style={{ background: 'rgba(124,58,237,0.12)' }}><Bot size={17} style={{ color: AIO }} /></div>
+        <div className="w-8 h-8 rounded-lg grid place-items-center flex-shrink-0" style={{ background: 'rgb(var(--brand-rgb) / 0.12)' }}><Bot size={17} style={{ color: AIO }} /></div>
         <div>
           <p className="text-[14px] font-bold" style={{ color: 'var(--text)' }}>AI-answer readiness</p>
           <p className="text-[12.5px] mt-0.5" style={{ color: 'var(--text-soft)' }}>{data?.failed

@@ -10,7 +10,7 @@ import Link from 'next/link'
 import { toast } from 'sonner'
 import { ClipboardList, Loader2, Copy, ArrowLeft, Sparkles, ExternalLink, Check } from 'lucide-react'
 
-const PURPLE = '#7C3AED'
+const PURPLE = 'var(--accent)'
 
 interface Placement {
   title: string
@@ -335,7 +335,7 @@ export default function PlacementBuilderPage() {
             <p className="text-[11px] text-[#86868b] mb-2">Tick these in: Retailers → Supported retailers</p>
             <div className="flex gap-2 flex-wrap">
               {result.retailers.map(r => (
-                <span key={r} className="text-[12px] font-medium px-2.5 py-1 rounded-full" style={{ background: 'rgba(124,58,237,0.1)', color: PURPLE }}>{r}</span>
+                <span key={r} className="text-[12px] font-medium px-2.5 py-1 rounded-full" style={{ background: 'rgb(var(--brand-rgb) / 0.1)', color: PURPLE }}>{r}</span>
               ))}
             </div>
           </div>

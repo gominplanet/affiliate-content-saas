@@ -22,7 +22,7 @@ import type { DirStats, CrowdRead } from '@/lib/trybe-finder'
 /** A website link names where it goes: its address, not "Website". */
 const siteName = (url: string) => { try { return new URL(/^https?:\/\//i.test(url) ? url : `https://${url}`).hostname.replace(/^www\./, '') } catch { return 'Their website' } }
 
-const PURPLE = '#7C3AED'
+const PURPLE = 'var(--accent)'
 const GREEN = '#16A34A'
 const AMBER = '#B45309'
 const RED = '#DC2626'
@@ -99,7 +99,7 @@ export default function TrybeBrandPeek({ brandId, name, actions }: { brandId: st
 
   const soft = { color: 'var(--text-soft)' }
   const box = 'mt-2 rounded-xl border px-3.5 py-3 space-y-2'
-  const boxStyle = { borderColor: 'var(--border)', background: 'rgba(124,58,237,0.03)' }
+  const boxStyle = { borderColor: 'var(--border)', background: 'rgb(var(--brand-rgb) / 0.03)' }
   if (error) return <div className={box} style={boxStyle}><p className="text-[12.5px] inline-flex items-start gap-1.5" style={{ color: AMBER }}><AlertTriangle size={13} className="mt-0.5 shrink-0" /> Could not read {name}: {error}</p></div>
   if (brand === undefined) return <div className={box} style={boxStyle}><p className="text-[12.5px] inline-flex items-center gap-1.5" style={soft}><Loader2 size={12} className="animate-spin" /> Reading {name}&rsquo;s details...</p></div>
   if (!brand) {
@@ -132,7 +132,7 @@ export default function TrybeBrandPeek({ brandId, name, actions }: { brandId: st
         <ReviewChip review={brand.review} />
         <StaticsChip on={brand.statics} />
         <SellsChip sells={brand.sells} />
-        {brand.trybe_score != null && <span className="text-[11px] font-semibold rounded-md px-2 py-0.5" style={{ background: 'rgba(124,58,237,0.08)', color: PURPLE }} title="TRYBE's own rating of this brand, as shown on TRYBE.">TRYBE score {brand.trybe_score}</span>}
+        {brand.trybe_score != null && <span className="text-[11px] font-semibold rounded-md px-2 py-0.5" style={{ background: 'rgb(var(--brand-rgb) / 0.08)', color: PURPLE }} title="TRYBE's own rating of this brand, as shown on TRYBE.">TRYBE score {brand.trybe_score}</span>}
         {brand.total_creators != null && <span className="text-[11px] rounded-md px-2 py-0.5" style={{ background: 'var(--surface-2, rgba(0,0,0,0.05))', color: 'var(--text-soft)' }}>{brand.total_creators.toLocaleString()} creator{brand.total_creators === 1 ? '' : 's'}</span>}
       </div>
       <BrandExtras amazon={brand.amazon} stats={brand.stats} />

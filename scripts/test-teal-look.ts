@@ -146,6 +146,24 @@ async function main() {
   check('Sync is not shown twice in the new look', /\{!teal && <ToolButton tint="green" icon=\{<RefreshCw size=\{18\} \/>\} label="Sync videos"/.test(CT))
   check('Blog posts colours set inline follow the brand', !/'#7C3AED'/.test(CT) && !/'rgba\(124,58,237/.test(CT))
 
+  // ── Shared parts for every page ──
+  const HERO2 = read('components/layout/PageHero.tsx')
+  const UI = read('components/layout/teal-ui.tsx')
+  check('the shared page header draws the header card in the new look, with the page\'s section and icon from the menu', /if \(look === 'teal'\) \{[\s\S]*?<TealHeader\s+eyebrow=\{active\?\.section\}/.test(HERO2) && /<ShellActiveContext\.Provider value=\{activeNav\}>/.test(SHELL))
+  check('and the old page header stays as it was', /className="mvp-page-hero -mx-4/.test(HERO2))
+  check('tab bars shared by a menu row become round tabs in the new look', /function SectionTabs\(\{ item, isActive, teal = false \}/.test(SHELL) && /<SectionTabs item=\{tabbedItem\} isActive=\{isActive\} teal=\{teal\} \/>/.test(SHELL))
+  check('a tab count shows only once read', /typeof t\.count === 'number' &&/.test(UI))
+  check('a server page can pick its header by look', /export function ByLook\(/.test(UI) && /<ByLook\s+teal=\{<PageHero title="Find what to review next"/.test(read('app/(dashboard)/amazon/research/page.tsx')))
+  check('the Amazon pages\' explainer uses the shared steps in the new look', /if \(teal\) return \(\s*<section className="mb-6">\s*<TealH2/.test(read('components/amazon/PageExplainer.tsx')))
+  check('Drop, Product research and Thumbnails have their steps or header in the new look', /\{teal && \(\s*<TealSteps/.test(read('app/(dashboard)/drop/page.tsx')) && /\{teal && \(\s*<TealSteps/.test(read('app/(dashboard)/amz-finder/page.tsx')) && /\{teal \? \(\s*<PageHero title="MVP Art Director"/.test(read('app/(dashboard)/amazon/thumbnails/page.tsx')))
+  // Purple written into a page's own code follows the brand too, except where
+  // it is drawn into an image (a canvas or a server-made picture cannot read a
+  // CSS variable).
+  const inlineLeft: string[] = []
+  const walk = (dir: string) => { for (const f of require('node:fs').readdirSync(path.join(ROOT, dir), { withFileTypes: true })) { const rel = `${dir}/${f.name}`; if (f.isDirectory()) walk(rel); else if (rel.endsWith('.tsx')) { const t = read(rel); if (/ImageResponse|getContext\(|fillStyle|strokeStyle/.test(t) || rel.includes('/api/') || rel.includes('opengraph')) continue; if (/const [A-Z_]+ = '#7[cC]3[aA][eE][dD]'/.test(t)) inlineLeft.push(rel) } } }
+  walk('components'); walk('app')
+  check('no page keeps a purple constant of its own (except ones mixed with an opacity in code)', inlineLeft.every((f) => /ProUpgradePanel|ShortsQuotaBadge/.test(f)), inlineLeft)
+
   // ── The search box's new question ──
   check('filler words drop and plurals fold', requestWords('Edit a review') .join() === 'edit,review' && requestWords('find deals').join() === 'find,deal')
   const first = (q: string) => searchApp(q)[0]?.href

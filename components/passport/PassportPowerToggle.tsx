@@ -46,7 +46,7 @@ export default function PassportPowerToggle({ onChange }: { onChange?: (enabled:
     <div
       className="rounded-2xl border p-5 flex items-center gap-4 transition-colors"
       style={enabled
-        ? { borderColor: 'rgba(124,58,237,0.55)', background: 'linear-gradient(120deg, rgba(124,58,237,0.16) 0%, rgba(52,199,89,0.12) 100%)', boxShadow: '0 0 0 1px rgba(124,58,237,0.25), 0 12px 32px -18px rgba(124,58,237,0.65)' }
+        ? { borderColor: 'rgb(var(--brand-rgb) / 0.55)', background: 'linear-gradient(120deg, rgb(var(--brand-rgb) / 0.16) 0%, rgba(52,199,89,0.12) 100%)', boxShadow: '0 0 0 1px rgb(var(--brand-rgb) / 0.25), 0 12px 32px -18px rgb(var(--brand-rgb) / 0.65)' }
         : { borderColor: 'var(--border)', background: 'var(--surface)' }}
     >
       <div className="w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0"

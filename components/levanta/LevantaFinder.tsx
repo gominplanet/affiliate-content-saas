@@ -262,7 +262,7 @@ export default function LevantaFinder({ onSavedChange }: { onSavedChange?: () =>
                   <div className="flex items-center gap-2 mt-2 flex-wrap">
                     <button onClick={() => setMsg({ product: m.title || m.asin, brand: m.brandName || '', asin: m.asin, commissionPct: m.commission, network: 'Levanta', networkUrl: `https://app.levanta.io/creator/partners?filters=${encodeURIComponent(JSON.stringify({ search: m.brandName || '', marketplaces: [], amazonCategoryIds: [] }))}` })}
                       className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold border"
-                      style={{ borderColor: 'rgba(124,58,237,0.4)', color: '#7C3AED' }}>
+                      style={{ borderColor: 'rgb(var(--brand-rgb) / 0.4)', color: '#7C3AED' }}>
                       <MessageCircle size={11} /> Message brand
                     </button>
                     <a href={`https://www.${m.marketplace}/dp/${m.asin}`} target="_blank" rel="noopener noreferrer"

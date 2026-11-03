@@ -331,7 +331,7 @@ export default function AdminCcImportPage() {
 
       {/* One-click auto-load — SCOUT downloads Amazon's exports itself. The
           primary path; the manual ZIP upload below stays as a fallback. */}
-      <div className="card p-5 mb-5" style={{ borderColor: 'rgba(124,58,237,0.35)', background: 'rgba(124,58,237,0.04)' }}>
+      <div className="card p-5 mb-5" style={{ borderColor: 'rgb(var(--brand-rgb) / 0.35)', background: 'rgb(var(--brand-rgb) / 0.04)' }}>
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div className="min-w-[240px] flex-1">
             <p className="text-[14px] font-semibold" style={{ color: 'var(--text)' }}>Load all from Amazon (one click)</p>
@@ -421,7 +421,7 @@ export default function AdminCcImportPage() {
           merging, draining: !!drain?.active, merged: !!result || counts?.hasUnmerged === false, addOnly,
         })
         return (
-          <div className="card p-4 mb-3" style={{ borderColor: step.waiting ? 'var(--border)' : 'rgba(124,58,237,0.45)' }}>
+          <div className="card p-4 mb-3" style={{ borderColor: step.waiting ? 'var(--border)' : 'rgb(var(--brand-rgb) / 0.45)' }}>
             <div className="flex items-baseline gap-2 flex-wrap">
               <span className="text-[11px] font-semibold uppercase tracking-wide"
                 style={{ color: step.waiting ? 'var(--text-faint)' : '#7C3AED' }}>
@@ -486,7 +486,7 @@ export default function AdminCcImportPage() {
 
       {/* Background-drain status — the cron owns the work; the tab can be closed. */}
       {drain?.active && (
-        <div className="card p-4 mb-5 flex items-start gap-2.5" style={{ borderColor: 'rgba(124,58,237,0.4)' }}>
+        <div className="card p-4 mb-5 flex items-start gap-2.5" style={{ borderColor: 'rgb(var(--brand-rgb) / 0.4)' }}>
           <Loader2 size={16} className="flex-shrink-0 mt-0.5 animate-spin" style={{ color: '#7C3AED' }} />
           <div className="flex-1">
             <p className="text-[13px] font-semibold" style={{ color: 'var(--text)' }}>

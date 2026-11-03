@@ -273,9 +273,9 @@ export default function OwnYourBlogPage() {
                   </div>
                 </div>
                 <div className="hidden md:flex items-center justify-center px-2 bg-[#FAFAF8]">
-                  <ArrowRight size={18} style={{ color: 'rgba(124,58,237,0.5)' }} />
+                  <ArrowRight size={18} style={{ color: 'rgb(var(--brand-rgb) / 0.5)' }} />
                 </div>
-                <div className="p-5 sm:p-6 flex gap-3" style={{ background: 'linear-gradient(135deg, rgba(124,58,237,0.07), rgba(192,38,211,0.04))' }}>
+                <div className="p-5 sm:p-6 flex gap-3" style={{ background: 'linear-gradient(135deg, rgb(var(--brand-rgb) / 0.07), rgba(192,38,211,0.04))' }}>
                   <Check size={17} className="mt-0.5 flex-shrink-0" style={{ color: '#34c759' }} />
                   <div>
                     <p className="text-[10.5px] font-bold uppercase tracking-[0.14em] mb-1.5" style={{ color: '#7C3AED' }}>With MVP</p>

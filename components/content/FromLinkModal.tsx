@@ -119,7 +119,7 @@ export function FromLinkModal({ onClose, onDone, initialLink, initialName, initi
       <div className="w-full max-w-lg rounded-2xl border shadow-xl" style={{ backgroundColor: 'var(--bg, #0E0E11)', borderColor: 'var(--border)' }}>
         <div className="flex items-start justify-between gap-3 p-5 border-b" style={{ borderColor: 'var(--border)' }}>
           <div className="flex items-start gap-2.5">
-            <span className="grid place-items-center w-9 h-9 rounded-xl shrink-0" style={{ background: 'rgba(124,58,237,0.12)', color: '#9D6BFF' }}>
+            <span className="grid place-items-center w-9 h-9 rounded-xl shrink-0" style={{ background: 'rgb(var(--brand-rgb) / 0.12)', color: '#9D6BFF' }}>
               <Link2 size={17} />
             </span>
             <div>

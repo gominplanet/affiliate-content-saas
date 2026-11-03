@@ -17,7 +17,7 @@ import { requestTrybeApi } from '@/lib/extension-frame'
 import { readTopVideos, type MyBrand } from '@/lib/trybe-mybrands'
 import { wordsFrom, scriptCounts, BRAND_SCRIPTS_MAX_BRANDS, BRAND_SCRIPTS_PER_BRAND, type ScriptRow } from '@/lib/trybe-brand-scripts'
 
-const PURPLE = '#7C3AED'
+const PURPLE = 'var(--accent)'
 const GREEN = '#16A34A'
 const AMBER = '#B45309'
 const DAY_KEY = 'mvp.trybe.brandScripts.readOn'

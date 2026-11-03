@@ -31,6 +31,8 @@ import SavedFinds from '@/components/campaigns/SavedFinds'
 import MadeForYouFeed from '@/components/product/MadeForYouFeed'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { effectiveTier, VIEW_AS_EVENT } from '@/lib/view-as'
+import { useLook } from '@/components/layout/shell-nav-context'
+import { TealSteps } from '@/components/layout/teal-ui'
 
 export default function AmzFinderPage() {
   const [msgModal, setMsgModal] = useState<MessageBrandCampaign | null>(null)
@@ -59,6 +61,8 @@ export default function AmzFinderPage() {
     return () => { cancelled = true; window.removeEventListener(VIEW_AS_EVENT, apply) }
   }, [])
   const canUseFinder = tier !== 'trial' // gates PAID actions (canAct)
+  // The new look (lib/look): the steps under the header card.
+  const teal = useLook() === 'teal'
 
   return (
     <>
@@ -67,6 +71,13 @@ export default function AmzFinderPage() {
         title="Amazon Product Research"
         subtitle="Search the whole Amazon catalogue with MVP filters: keyword, price, rating, reviews, best-sellers. Every link carries your own Associates tag. Find products worth buying to review, then save the winners."
       />
+      {teal && (
+        <TealSteps steps={[
+          ['Search the catalogue', 'By keyword, price, rating, reviews and best-sellers, with MVP filters.'],
+          ['Save the winners', 'Products worth reviewing go to your saved shelf below.'],
+          ['Buy it or write it', 'Buy to review on Amazon, message the brand, or write the review.'],
+        ]} />
+      )}
 
       {tier !== undefined && (
       <>
@@ -78,8 +89,8 @@ export default function AmzFinderPage() {
              research on every tier; paid actions gated by canUseFinder. ── */}
       <div className="mb-2">
         <div className="flex items-center gap-2 mb-2 flex-wrap">
-          <ShoppingBag size={16} style={{ color: '#7C3AED' }} />
-          <p className="text-[13px] font-bold uppercase tracking-wide" style={{ color: '#7C3AED' }}>Amazon Product Research</p>
+          <ShoppingBag size={16} style={{ color: 'var(--accent)' }} />
+          <p className="text-[13px] font-bold uppercase tracking-wide" style={{ color: 'var(--accent)' }}>Amazon Product Research</p>
           <span className="text-[11px] font-medium" style={{ color: 'var(--text-faint)' }}>: the whole catalogue, filterable. Buy to review or write a review in one click.</span>
         </div>
         <AmazonResearchPanel canAct={canUseFinder} onSavedChange={() => setSavedReloadKey(k => k + 1)} />
