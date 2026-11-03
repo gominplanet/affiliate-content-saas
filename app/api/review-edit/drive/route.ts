@@ -27,7 +27,7 @@ async function gate() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: NextResponse.json({ error: 'Sign in again.' }, { status: 401 }) }
   const { data: intg } = await supabase.from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
-  if (!canUsePreview('review_edit', intg?.tier)) return { error: NextResponse.json({ error: 'The review editor is still being tested.' }, { status: 403 }) }
+  if (!canUsePreview('review_edit', intg?.tier)) return { error: NextResponse.json({ error: 'The review editor comes with MVP Pro.' }, { status: 403 }) }
   return { userId: user.id }
 }
 

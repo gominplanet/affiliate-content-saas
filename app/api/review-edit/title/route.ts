@@ -18,7 +18,7 @@ export async function GET(request: Request) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Sign in again.' }, { status: 401 })
   const { data: intg } = await supabase.from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
-  if (!canUsePreview('review_edit', intg?.tier)) return NextResponse.json({ error: 'The review editor is still being tested.' }, { status: 403 })
+  if (!canUsePreview('review_edit', intg?.tier)) return NextResponse.json({ error: 'The review editor comes with MVP Pro.' }, { status: 403 })
   const q = new URL(request.url).searchParams
   // Cleaned the same way the saved settings are.
   const t = cleanSettings({ title: { text: q.get('text') || 'Your title here', look: q.get('look'), color: q.get('color'), size: q.get('size'), position: q.get('position') } }).title

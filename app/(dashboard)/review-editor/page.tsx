@@ -1,5 +1,5 @@
 /**
- * /review-editor — the review editor (LABS, admin while it is tested). A
+ * /review-editor — the review editor (LABS, open to Pro since 2026-11-03). A
  * review take and a B-roll take in, a finished video out; see
  * lib/review-edit-server.ts.
  */

@@ -54,9 +54,10 @@ const OPEN_TO: Record<PreviewFeature, 'admin' | 'labs'> = {
   // plan. Admin only while it is tested (Seb, 2026-10-01: "behind labs first").
   video_plan: 'admin',
   // Review editor: a review take and a B-roll take in, a finished video out,
-  // worked through in the background. Admin only while it is tested (Seb,
-  // 2026-10-30).
-  review_edit: 'admin',
+  // worked through in the background. Admin only while it was tested (Seb,
+  // 2026-10-30); open to Pro 2026-11-03 (Seb: "open to pro"), with 100 edited
+  // videos a month, 25 in the first week, and turns between members.
+  review_edit: 'labs',
   // The Creator thumbnail look (lib/visual-presets 'creator'): in the look
   // picker for admin only while it is tested (Seb, 2026-11-02).
   creator_look: 'admin',
