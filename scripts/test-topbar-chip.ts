@@ -14,6 +14,9 @@ const T = readFileSync('components/layout/TopbarSearch.tsx', 'utf8')
 const failures: string[] = []
 if (!/<div className="hidden sm:block flex-shrink-0"><SiteSwitcherChip/.test(S)) failures.push('the site chip wrapper must not shrink')
 if (/min-w-0"><SiteSwitcherChip/.test(S)) failures.push('the site chip wrapper is shrinkable again')
-if (!/className="relative hidden md:block w-full max-w-72"/.test(T)) failures.push('the search box must be the one that narrows')
+if (!/['"]relative hidden md:block w-full max-w-72['"]/.test(T)) failures.push('the search box must be the one that narrows')
+// The new look's wide box (lib/look) has no cap of its own; its wrapper is the
+// part that shrinks (min-w-0 flex-1), so the chip still never gives way.
+if (!/wide \? 'relative hidden md:block w-full' :/.test(T) || !/<div className=\{cn\('min-w-0 flex-1', teal \? 'md:max-w-xl'/.test(S)) failures.push('the new look\'s wide search box must shrink, never the chip')
 if (failures.length) { console.error('❌ topbar-chip guard failed:\n  - ' + failures.join('\n  - ')); process.exit(1) }
 console.log('✓ topbar-chip guard passed (the blog switcher is never covered by the search box)')

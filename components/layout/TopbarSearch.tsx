@@ -14,7 +14,9 @@ import { useRouter } from 'next/navigation'
 import { Search, CornerDownLeft } from 'lucide-react'
 import { searchApp, type AppSearchEntry } from '@/lib/app-search-index'
 
-export default function TopbarSearch({ isAdmin = false }: { isAdmin?: boolean }) {
+// `wide` is the new look (lib/look): a bigger box that asks "What do you want
+// to do?", with the search glass in the brand colour so it reads as the way in.
+export default function TopbarSearch({ isAdmin = false, wide = false }: { isAdmin?: boolean; wide?: boolean }) {
   const router = useRouter()
   const [query, setQuery] = useState('')
   const [open, setOpen] = useState(false)
@@ -86,19 +88,21 @@ export default function TopbarSearch({ isAdmin = false }: { isAdmin?: boolean })
   }
 
   return (
-    <div ref={boxRef} className="relative hidden md:block w-full max-w-72">
+    <div ref={boxRef} className={wide ? 'relative hidden md:block w-full' : 'relative hidden md:block w-full max-w-72'}>
       <div
-        className="flex items-center gap-2 px-3 py-2 rounded-lg border text-[13px] transition-colors"
+        className={wide
+          ? 'flex items-center gap-2.5 px-4 py-2.5 rounded-xl border text-[14px] transition-colors focus-within:border-[color:var(--accent)]'
+          : 'flex items-center gap-2 px-3 py-2 rounded-lg border text-[13px] transition-colors'}
         style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)' }}
       >
-        <Search size={14} style={{ color: 'var(--text-faint)' }} />
+        <Search size={wide ? 16 : 14} strokeWidth={wide ? 2.4 : 2} style={{ color: wide ? 'var(--accent)' : 'var(--text-faint)' }} />
         <input
           ref={inputRef}
           value={query}
           onChange={e => { setQuery(e.target.value); setOpen(true) }}
           onFocus={() => setOpen(true)}
           onKeyDown={onKeyDown}
-          placeholder="Search MVP…"
+          placeholder={wide ? 'What do you want to do? Try: edit a review, find deals, write a post' : 'Search MVP…'}
           aria-label="Search MVP for a page or section"
           className="flex-1 bg-transparent outline-none placeholder:text-[var(--text-faint)]"
           style={{ color: 'var(--text)' }}

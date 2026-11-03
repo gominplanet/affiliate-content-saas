@@ -18,7 +18,7 @@ interface Summary { tier: string; buckets: Bucket[]; resetLabel: string | null; 
 function toneFor(ratio: number): string {
   if (ratio >= 1) return '#FF3B30'
   if (ratio >= 0.75) return '#FF9500'
-  return '#7C3AED'
+  return 'var(--accent)' // the brand colour, in every look
 }
 
 export default function UsageBar() {
@@ -45,7 +45,7 @@ export default function UsageBar() {
         <span className="flex items-center gap-2 text-[10px]" style={{ color: 'var(--text-faint)' }}>
           {data?.resetLabel && <span>resets {data.resetLabel}</span>}
           <Link href="/usage" className="underline" style={{ color: 'var(--text-soft)' }}>Details</Link>
-          <Link href="/billing" className="rounded-md px-2 py-0.5 font-semibold text-white" style={{ background: '#7C3AED' }}>
+          <Link href="/billing" className="rounded-md px-2 py-0.5 font-semibold text-white" style={{ background: 'var(--accent)' }}>
             Upgrade
           </Link>
         </span>

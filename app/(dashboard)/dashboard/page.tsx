@@ -48,6 +48,9 @@ import PriceAlertsPanel from '@/components/dashboard/PriceAlertsPanel'
 import DailyCcDigest from '@/components/dashboard/DailyCcDigest'
 import TrialResearchRow from '@/components/dashboard/TrialResearchRow'
 import StartHere from '@/components/dashboard/StartHere'
+import TealDashboard from '@/components/dashboard/TealDashboard'
+import { cookies } from 'next/headers'
+import { lookFor, LOOK_COOKIE } from '@/lib/look'
 import { canUsePreview } from '@/lib/labs-preview'
 import { hasVideoTools } from '@/lib/amazon-plan'
 import {
@@ -174,6 +177,64 @@ export default async function DashboardPage() {
   // through DashboardTierGate wrapping the default return below.
   if (tier === 'amazon') {
     return <AmazonDashboard firstName={firstName} today={todayLabel} />
+  }
+
+  // THE NEW LOOK (Labs, lib/look): the same widgets, laid out as Teal Pop.
+  if (lookFor(tier, (await cookies()).get(LOOK_COOKIE)?.value) === 'teal') {
+    // The two biggest jobs, as the banner's buttons: start a video (the
+    // editor, else the upload tool this plan has), then find what to review.
+    const primary = canUsePreview('review_edit', tier) ? { href: '/review-editor', label: 'Start a video edit' }
+      : canUsePreview('drop', tier) ? { href: '/drop', label: 'Upload finished videos' }
+        : { href: '/co-pilot', label: 'Open YouTube Co-Pilot' }
+    return (
+      <DashboardTierGate isAdmin={tier === 'admin'} amazon={<AmazonDashboard firstName={firstName} today={todayLabel} />}>
+        <TealDashboard
+          firstName={firstName}
+          today={todayLabel}
+          meta={heroMetaParts}
+          primary={primary}
+          secondary={{ href: '/amz-finder', label: 'Find products to review' }}
+          hasToday={isPro}
+          alerts={(
+            <>
+              <FirstWinChecklist
+                brandReady={brandReady}
+                wpConnected={wpConnected}
+                youtubeConnected={youtubeConnected}
+                hasContent={hasContent}
+                socialConnected={socialConnected}
+              />
+              <div className="flex items-center gap-3 flex-wrap empty:hidden">
+                <WpUpdatePill />
+                <ScoutUpdatePill />
+                {!isNewUser && <WhatsNewCard tier={tier} />}
+              </div>
+              <ReconnectBanner />
+              <LinkStyleNudge />
+              <YouTubeVerifiedNudge show={youtubeConnected} />
+              {showMetaNudge && <MetaLiveBanner platforms={metaNudgePlatforms} />}
+              {canUseDealRadar(tier) && <DealRadarLaunchBanner />}
+              <NewsBanner />
+              <WpUpdateBanner />
+              {int?.wordpress_url ? <AmazonSitesReminder siteUrl={int.wordpress_url as string} /> : null}
+            </>
+          )}
+          below={(
+            <>
+              <div id="price-alerts" className="scroll-mt-20"><PriceAlertsPanel /></div>
+              <div id="cc-digest" className="scroll-mt-20"><DailyCcDigest /></div>
+              {!isNewUser && (
+                <div className="rounded-2xl p-5 sm:p-6" style={{ background: 'rgba(16, 185, 129, 0.08)', border: '1px solid rgba(16, 185, 129, 0.18)' }}>
+                  <RecommendedToolsCard />
+                </div>
+              )}
+              <ReferralBanner />
+              <ChannelStats />
+            </>
+          )}
+        />
+      </DashboardTierGate>
+    )
   }
 
   return (

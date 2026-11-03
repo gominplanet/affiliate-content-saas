@@ -48,6 +48,8 @@ import {
   Share2, UserSquare, LifeBuoy, Link2, FlaskConical, Store, Send, ShoppingBag, Megaphone,
   Inbox, PackageSearch, Rocket, Database, History, Globe, Radio, Gauge, Repeat, Star, Pin, Menu, X, Scissors, ClipboardList, ListChecks, UploadCloud, Clapperboard } from 'lucide-react'
 import { useNavFavorites, MAX_NAV_FAVORITES } from '@/lib/nav-favorites'
+import { lookCookie, type Look } from '@/lib/look'
+import { ShellNavContext, type ShellNavGroup } from './shell-nav-context'
 import { cn } from '@/lib/utils'
 // Deals Hub runs only while Amazon has a real sale event on (Prime Day, Big
 // Deal Days, Black Friday and so on) and is deliberately off between them. The
@@ -261,6 +263,81 @@ const LIGHT_VARS: React.CSSProperties = {
   ['--nav-active-text' as string]: '#7C3AED',
 }
 
+// THE TEAL POP LOOK (lib/look; Seb, 2026-11-03: "I like A"). A white menu with
+// each section in its own colour, a solid teal row for the page you are on,
+// cool greys, and orange for "New". The brand colour itself comes from
+// globals.css [data-look="teal"], which every violet class follows.
+const TEAL_LIGHT_VARS: React.CSSProperties = {
+  ['--bg' as string]: '#F2F6F6',
+  ['--bg-sidebar' as string]: '#FFFFFF',
+  ['--surface' as string]: '#FFFFFF',
+  ['--surface-hover' as string]: '#E6F0EF',
+  ['--surface-bright' as string]: '#DCE9E8',
+  ['--surface-selected' as string]: 'rgba(11,122,110,0.08)',
+  ['--border' as string]: '#DCE6E6',
+  ['--border-bright' as string]: '#C5D6D6',
+  ['--text' as string]: '#0F1E1F',
+  ['--text-muted' as string]: 'rgba(15,30,31,0.88)',
+  ['--text-soft' as string]: '#2A3B3D',
+  ['--text-subtle' as string]: '#3B4E50',
+  ['--text-faint' as string]: '#4B5F61',
+  ['--text-dim' as string]: '#748A8C',
+  ['--card-shadow' as string]: '0 1px 2px rgba(15,42,43,0.05)',
+  ['--kbd-bg' as string]: '#EAF1F1',
+  ['--hero-opacity' as string]: '0.18',
+  ['--nav-active-bg' as string]: '#0B7A6E',
+  ['--nav-active-text' as string]: '#FFFFFF',
+  ['--topbar-bg' as string]: 'rgba(242,246,246,0.88)',
+  ['--hero-bg' as string]: '#0F2A2B',
+  ['--hero-border' as string]: 'transparent',
+  ['--new-bg' as string]: '#FFEDD5',
+  ['--new-text' as string]: '#9A3412',
+  // What a Dashboard "Needs you" tile asks: fix something, earn, or tidy up.
+  ['--fix' as string]: '#B91C1C',
+  ['--fix-bg' as string]: '#FEE2E2',
+  ['--earn' as string]: '#15803D',
+  ['--earn-bg' as string]: '#DCFCE7',
+  ['--tidy' as string]: '#1D4ED8',
+  ['--tidy-bg' as string]: '#DBEAFE',
+}
+
+const TEAL_DARK_VARS: React.CSSProperties = {
+  ['--bg' as string]: '#0B1516',
+  ['--bg-sidebar' as string]: '#0E1A1B',
+  ['--surface' as string]: 'rgba(255,255,255,0.035)',
+  ['--surface-hover' as string]: 'rgba(255,255,255,0.06)',
+  ['--surface-bright' as string]: 'rgba(255,255,255,0.09)',
+  ['--surface-selected' as string]: 'rgba(45,212,191,0.10)',
+  ['--border' as string]: 'rgba(255,255,255,0.08)',
+  ['--border-bright' as string]: 'rgba(255,255,255,0.14)',
+  ['--text' as string]: '#ECF4F4',
+  ['--text-muted' as string]: 'rgba(236,244,244,0.92)',
+  ['--text-soft' as string]: 'rgba(236,244,244,0.86)',
+  ['--text-subtle' as string]: 'rgba(236,244,244,0.78)',
+  ['--text-faint' as string]: 'rgba(236,244,244,0.65)',
+  ['--text-dim' as string]: 'rgba(236,244,244,0.50)',
+  ['--card-shadow' as string]: 'inset 0 1px 0 rgba(255,255,255,0.04), 0 1px 2px rgba(0,0,0,0.25)',
+  ['--kbd-bg' as string]: 'rgba(255,255,255,0.06)',
+  ['--hero-opacity' as string]: '0.35',
+  ['--nav-active-bg' as string]: '#14B8A6',
+  ['--nav-active-text' as string]: '#04201D',
+  ['--topbar-bg' as string]: 'rgba(11,21,22,0.86)',
+  ['--hero-bg' as string]: '#0F2526',
+  ['--hero-border' as string]: 'rgba(45,212,191,0.18)',
+  ['--new-bg' as string]: 'rgba(251,146,60,0.16)',
+  ['--new-text' as string]: '#FDBA74',
+  ['--fix' as string]: '#F87171',
+  ['--fix-bg' as string]: 'rgba(248,113,113,0.14)',
+  ['--earn' as string]: '#4ADE80',
+  ['--earn-bg' as string]: 'rgba(74,222,128,0.14)',
+  ['--tidy' as string]: '#60A5FA',
+  ['--tidy-bg' as string]: 'rgba(96,165,250,0.14)',
+}
+
+// The menu sections the Dashboard lists under "Everything MVP does": the jobs,
+// not setup, help, Labs or admin.
+const JOB_SECTIONS = ['Find products', 'Make videos', 'Blog', 'Share', 'Work with brands']
+
 interface DashboardShellV2Props {
   email?: string
   wpSiteUrl: string | null
@@ -271,6 +348,11 @@ interface DashboardShellV2Props {
   /** Content-only ("bring your own theme") user — hide MVP-theme-only nav
    *  items like Customize Blog. Defaults false. */
   contentOnly?: boolean
+  /** The look to draw (lib/look). The server decides it from the cookie, so
+   *  the first paint is already right. */
+  look?: Look
+  /** This account may try the new look: show the switch between the two. */
+  canTryLook?: boolean
   children: React.ReactNode
 }
 
@@ -282,6 +364,8 @@ export default function DashboardShellV2({
   showDeals,
   showBurner,
   contentOnly = false,
+  look = 'classic',
+  canTryLook = false,
   children,
 }: DashboardShellV2Props) {
   const pathname = usePathname() || ''
@@ -290,6 +374,20 @@ export default function DashboardShellV2({
   const { theme, setTheme } = useTheme()
   const supabase = createBrowserClient()
   const isDark = theme !== 'light' // default to dark when unset
+  const teal = look === 'teal'
+  // The same look on <html>, so a popup drawn on <body> (outside this shell)
+  // matches the page it opened from. Taken off again on the way out.
+  useEffect(() => {
+    const root = document.documentElement
+    if (teal) root.setAttribute('data-look', 'teal')
+    else root.removeAttribute('data-look')
+    return () => root.removeAttribute('data-look')
+  }, [teal])
+  // Switch looks: the cookie, then a fresh load so the server draws the other one.
+  const switchLook = () => {
+    document.cookie = lookCookie(teal ? 'classic' : 'teal')
+    window.location.reload()
+  }
 
   // Some pages mutate the query string with raw history.replaceState (e.g.
   // /content switching to the Social-Push/Published tab). That doesn't change
@@ -894,6 +992,24 @@ export default function DashboardShellV2({
     .find((it) => it.gate !== false && (it.tabs ?? []).filter((t) => t.gate !== false).length > 1
       && (it.tabs ?? []).some((t) => t.gate !== false && isActive(t.href)))
 
+  // The job sections as this member sees them, for the Dashboard's list of
+  // everything MVP does (components/layout/shell-nav-context).
+  const jobGroups: ShellNavGroup[] = orderedGroups
+    .filter((g) => JOB_SECTIONS.includes(g.label))
+    .map((g) => {
+      const palette = SECTION_ACCENTS[g.label]
+      const color = palette ? (isDark ? palette.dark : palette.light) : '#64748B'
+      return {
+        label: g.label,
+        color,
+        tint: hexToRgba(color, isDark ? 0.14 : 0.10),
+        items: g.items
+          .filter((it) => it.gate !== false && !it.external)
+          .map((it) => ({ href: it.href, label: it.label, badge: it.badge })),
+      }
+    })
+    .filter((g) => g.items.length > 0)
+
   async function handleLogout() {
     await supabase.auth.signOut()
     router.push('/login')
@@ -903,13 +1019,16 @@ export default function DashboardShellV2({
   const wpHostname = wpSiteUrl ? wpSiteUrl.replace(/^https?:\/\//, '').replace(/\/+$/, '').slice(0, 24) : null
 
   return (
+    <ShellNavContext.Provider value={jobGroups}>
     <div
+      data-look={teal ? 'teal' : undefined}
       style={{
-        ...(isDark ? DARK_VARS : LIGHT_VARS),
+        ...(teal ? (isDark ? TEAL_DARK_VARS : TEAL_LIGHT_VARS) : (isDark ? DARK_VARS : LIGHT_VARS)),
         backgroundColor: 'var(--bg)',
         color: 'var(--text)',
       }}
-      className="min-h-screen font-[Inter,system-ui,sans-serif] flex"
+      // The new look takes its fonts from globals.css [data-look="teal"].
+      className={cn('min-h-screen flex', !teal && 'font-[Inter,system-ui,sans-serif]')}
     >
       {/* ── Sidebar ───────────────────────────────────────────────────── */}
       {mobileOpen && (
@@ -923,7 +1042,30 @@ export default function DashboardShellV2({
             artwork already contains the "MVP Affiliate" wordmark, so it stands
             in for BOTH the mark and the title. The purple "M" + title branch is
             a fallback for any tier whose art is missing. */}
-        {brandBadge ? (
+        {teal ? (
+          // The new look's mark: a teal square and the name, small, so the menu
+          // starts right under it. The plan is said under the email at the foot.
+          <div className={cn('flex items-center', railCollapsed ? 'justify-center px-3 pt-5 pb-3' : 'justify-between px-4 pt-5 pb-4')}>
+            <Link href="/dashboard" className="flex items-center gap-2.5" title="MVP Affiliate">
+              <span
+                className="w-9 h-9 rounded-[10px] flex items-center justify-center text-white text-[15px] font-extrabold flex-shrink-0"
+                style={{ background: 'var(--accent)', fontFamily: 'var(--font-sora), sans-serif' }}
+              >
+                M
+              </span>
+              {!railCollapsed && (
+                <span className="text-[19px] font-extrabold tracking-tight leading-none" style={{ color: 'var(--text)', fontFamily: 'var(--font-sora), sans-serif' }}>
+                  MVP <span className="font-semibold" style={{ color: 'var(--text-faint)' }}>Affiliate</span>
+                </span>
+              )}
+            </Link>
+            {!railCollapsed && (
+              <button onClick={() => (isNarrow ? setMobileOpen(false) : setCollapsed(true))} className="opacity-50 hover:opacity-100 transition-opacity" title={isNarrow ? 'Close the menu' : 'Collapse sidebar'} aria-label={isNarrow ? 'Close the menu' : 'Collapse sidebar'}>
+                {isNarrow ? <X size={18} /> : <ChevronsLeft size={14} />}
+              </button>
+            )}
+          </div>
+        ) : brandBadge ? (
           <div className={`relative ${railCollapsed ? 'px-3 pt-4 pb-2' : 'px-4 pt-4 pb-3'}`}>
             <Link href="/dashboard" className="block" title={`MVP Affiliate ${brandBadge.label}`}>
               {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -977,7 +1119,7 @@ export default function DashboardShellV2({
               className={`inline-flex items-center justify-center gap-1 rounded-full font-semibold transition-opacity hover:opacity-80 ${
                 railCollapsed ? 'p-1.5' : 'px-2.5 py-1 text-[11px]'
               }`}
-              style={{ color: '#7C3AED', background: 'rgba(124,58,237,0.10)' }}
+              style={{ color: 'var(--accent)', background: 'rgb(var(--brand-rgb) / 0.10)' }}
             >
               <Sparkles size={railCollapsed ? 15 : 12} />
               {!railCollapsed && 'Upgrade'}
@@ -1023,7 +1165,10 @@ export default function DashboardShellV2({
             // own colour-coded card — a faint wash + border in the section's
             // accent hue, like Source & Earn's green. Derived from headerAccent so
             // the card tint always tracks the header colour (see SECTION_ACCENTS).
+            // The new look draws sections on the plain white menu, each told
+            // apart by its coloured header and icons instead of a tinted card.
             const isCard =
+              !teal &&
               !!group.label &&
               group.label !== 'Account' &&
               group.label !== 'Admin' &&
@@ -1102,6 +1247,8 @@ export default function DashboardShellV2({
                             active={itemActive(item)}
                             collapsed={railCollapsed}
                             starSpace={editingFavorites && !item.external}
+                            tint={teal ? headerAccent : undefined}
+                            teal={teal}
                           />
                           {/* THE STAR: pins a feature to My features, or takes it
                               out. Shown on hover, and always while editing, so
@@ -1185,6 +1332,28 @@ export default function DashboardShellV2({
         </nav>
 
 
+        {/* THE LOOK SWITCH, for an account trying the new look (Labs): one
+            press between the new look and the old, kept in a cookie. */}
+        {canTryLook && !railCollapsed && (
+          <div className="px-3 pt-2">
+            <button
+              type="button"
+              onClick={switchLook}
+              className="w-full flex items-center justify-between gap-2 rounded-lg border px-2.5 py-2 text-[12px] font-semibold transition-colors"
+              style={{ borderColor: 'var(--border)', color: 'var(--text-soft)', backgroundColor: 'var(--surface)' }}
+              title={teal ? 'Go back to the old look. Only you see the new one for now.' : 'Try the new look. Only you see it for now.'}
+            >
+              <span className="flex items-center gap-1.5"><FlaskConical size={13} /> New look</span>
+              <span
+                className="rounded-full px-2 py-0.5 text-[11px] font-bold"
+                style={teal ? { background: 'var(--accent)', color: '#fff' } : { background: 'var(--surface-bright)', color: 'var(--text-soft)' }}
+              >
+                {teal ? 'On' : 'Off'}
+              </span>
+            </button>
+          </div>
+        )}
+
         {/* User pill */}
         <div className="border-t p-3" style={{ borderColor: 'var(--border)' }}>
           <div
@@ -1224,7 +1393,7 @@ export default function DashboardShellV2({
           className="border-b px-3 sm:px-5 md:px-8 py-3 flex items-center gap-2 sm:gap-3 backdrop-blur-md sticky top-0 z-20"
           style={{
             borderColor: 'var(--border)',
-            backgroundColor: isDark ? 'rgba(14,14,17,0.85)' : 'rgba(250,250,248,0.85)',
+            backgroundColor: teal ? 'var(--topbar-bg)' : isDark ? 'rgba(14,14,17,0.85)' : 'rgba(250,250,248,0.85)',
           }}
         >
           {/* Site chip — shows the connected WordPress hostname. For single-site
@@ -1251,7 +1420,9 @@ export default function DashboardShellV2({
 
           {/* Search MVP — jump to any page or section (Geniuslink, upload
               brand logo, AdSense…). ⌘K focuses it from anywhere. */}
-          <div className="min-w-0 flex-1 md:flex-initial md:basis-72 md:min-w-[11rem]"><TopbarSearch isAdmin={isAdmin} /></div>
+          {/* The new look asks the question the menu answers: a wide box that
+              says "What do you want to do?". */}
+          <div className={cn('min-w-0 flex-1', teal ? 'md:max-w-xl' : 'md:flex-initial md:basis-72 md:min-w-[11rem]')}><TopbarSearch isAdmin={isAdmin} wide={teal} /></div>
 
           <div className="ml-auto flex items-center gap-2 sm:gap-3 flex-shrink-0">
             {/* Week recap: flashes until this week's recap is opened. */}
@@ -1382,7 +1553,8 @@ export default function DashboardShellV2({
             unlimited plans. */}
         {/* A payment that did not go through, or a plan that ended for it (lib/billing-alert). */}
         <BillingAlert />
-        <UsageBar />
+        {/* The new look's Dashboard shows this month's usage in its own strip. */}
+        {!(teal && pathname === '/dashboard') && <UsageBar />}
         {/* Proactive nudge when a limit is 80%+ this period. Dismissible per
             period; self-hides otherwise. */}
         <UsageNudge />
@@ -1421,12 +1593,13 @@ export default function DashboardShellV2({
         </main>
       </div>
     </div>
+    </ShellNavContext.Provider>
   )
 }
 
 // ── Sub-components ──────────────────────────────────────────────────────
 
-function NavItem({ item, active, collapsed, starSpace = false }: { item: NavItemDef; active: boolean; collapsed: boolean; starSpace?: boolean }) {
+function NavItem({ item, active, collapsed, starSpace = false, tint, teal = false }: { item: NavItemDef; active: boolean; collapsed: boolean; starSpace?: boolean; tint?: string; teal?: boolean }) {
   // External items (Recommended tools) open in a new tab via a plain <a>
   // — Next.js Link's prefetcher is wasted on offsite URLs, and we want
   // target="_blank" + rel="noopener" for safety on partner links.
@@ -1468,8 +1641,11 @@ function NavItem({ item, active, collapsed, starSpace = false }: { item: NavItem
     <>
       {/* Left indicator bar — only for active internal items. External
           tools never get the bar even on hover. */}
-      {active && <span className="absolute -left-2 top-2 bottom-2 w-[3px] rounded-r-full" style={{ background: hl || '#7C3AED' }} />}
-      <span className="relative flex-shrink-0">
+      {/* The new look marks the page you are on with a solid teal row instead. */}
+      {active && !teal && <span className="absolute -left-2 top-2 bottom-2 w-[3px] rounded-r-full" style={{ background: hl || '#7C3AED' }} />}
+      {/* In the new look each icon wears its section's colour, so a section
+          reads as one block at a glance. */}
+      <span className="relative flex-shrink-0" style={teal && tint && !active && !hl ? { color: tint } : undefined}>
         {item.icon}
         {/* Collapsed sidebar has no room for the count pill, so an unread count
             shows as a red dot on the icon instead — otherwise a new brand
@@ -1509,7 +1685,11 @@ function NavItem({ item, active, collapsed, starSpace = false }: { item: NavItem
           // the row in 11px sentence case.
           <span
             className="flex-shrink-0 text-[9.5px] uppercase tracking-[0.06em] leading-none px-[5px] py-[3px] rounded-md font-bold"
-            style={{
+            style={teal ? {
+              // Orange, so what is new stands out from what is teal to press.
+              backgroundColor: active ? 'rgba(255,255,255,0.22)' : 'var(--new-bg)',
+              color: active ? 'var(--nav-active-text)' : 'var(--new-text)',
+            } : {
               backgroundColor: active ? 'rgba(124,58,237,0.22)' : 'var(--surface-bright)',
               color: active ? 'var(--nav-active-text)' : 'var(--text-soft)',
             }}
@@ -1568,7 +1748,7 @@ function SectionTabs({ item, isActive }: { item: NavItemDef; isActive: (href: st
             href={t.href}
             aria-current={on ? 'page' : undefined}
             className="-mb-px flex items-center gap-1.5 whitespace-nowrap border-b-2 px-3 py-2.5 text-[13.5px] font-semibold transition-colors"
-            style={{ color: on ? 'var(--text)' : 'var(--text-faint)', borderColor: on ? '#7C3AED' : 'transparent' }}
+            style={{ color: on ? 'var(--text)' : 'var(--text-faint)', borderColor: on ? 'var(--accent)' : 'transparent' }}
           >
             {t.label}
             {typeof t.badge === 'number' && t.badge > 0 && (

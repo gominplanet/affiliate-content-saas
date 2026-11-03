@@ -12,6 +12,7 @@
 // routes; this adds the section-level shortcuts nav can't express.
 
 import { NEWSLETTER_FOR_MEMBERS } from './feature-flags'
+import { featureLine } from './feature-lines'
 
 export interface AppSearchEntry {
   /** Display name shown in the results list. */
@@ -46,9 +47,12 @@ export const APP_SEARCH_INDEX: AppSearchEntry[] = [
   { label: 'PartnerBoost and Walmart', href: '/partnerboost', group: 'Partner programs', keywords: 'mvp x partnerboost walmart deals offers catalog amazon dtc brands commission deep link' },
   { label: 'Wayward', href: '/wayward', group: 'Partner programs', keywords: 'mvp x wayward amazon attribution catalog commission' },
   { label: 'LTK', href: '/ltk', group: 'Partner programs', keywords: 'mvp x ltk liketoknowit shopltk rewardstyle link post' },
+  { label: 'TRYBE', href: '/trybe', group: 'Find products', keywords: 'trybe brands brand deals ad videos ugc join requests outreach inbox paid' },
   { label: 'Idea lists', href: '/idea-lists', group: 'Find products', keywords: 'idea list amazon storefront shopping guide list to blog roundup shoppable list top picks curated products' },
 
   // ── Make videos ──────────────────────────────────────────────────────────
+  { label: 'Drop', href: '/drop', group: 'Make videos', keywords: 'drop upload finished videos send everywhere launch youtube amazon blog' },
+  { label: 'Review Editor', href: '/review-editor', group: 'Make videos', keywords: 'review editor edit my review video editing cut takes b-roll broll captions talking head' },
   { label: 'YouTube Co-Pilot', href: '/co-pilot', group: 'Make videos', keywords: 'co-pilot copilot youtube drafts calendar metadata titles descriptions chapters' },
   { label: 'Thumbnails', href: '/amazon/thumbnails', group: 'Make videos', keywords: 'thumbnail generator art director youtube amazon video thumbnail' },
   { label: 'Scriptwriter', href: '/script', group: 'Make videos', keywords: 'script video script write scriptwriter' },
@@ -56,6 +60,7 @@ export const APP_SEARCH_INDEX: AppSearchEntry[] = [
   { label: 'Bulk Amazon upload', href: '/liftoff', group: 'Make videos', keywords: 'liftoff launch batch upload videos amazon storefront countries youtube' },
   { label: 'Pinned comments', href: '/first-comments', group: 'YouTube comments', keywords: 'first comment pinned comment product link youtube comments' },
   { label: 'On sale comments', href: '/encore', group: 'YouTube comments', keywords: 'encore on sale now sale comment youtube comments price drop' },
+  { label: 'Instagram Auto-DM', href: '/instagram-dm', group: 'Make videos', keywords: 'instagram auto dm direct message comment keyword link reels' },
   { label: 'Amazon Live', href: '/amazon-live', group: 'Make videos', keywords: 'amazon live prep livestream show lineup teleprompter' },
   { label: 'Live follow-up', href: '/live-followup', group: 'Amazon Live', keywords: 'live follow up replay clips roundup after the live' },
 
@@ -85,6 +90,7 @@ export const APP_SEARCH_INDEX: AppSearchEntry[] = [
   { label: 'Social designs', href: '/amazon/social', group: 'Share', keywords: 'social influencer pins pinterest instagram story designs amazon product' },
   { label: 'Social Launch Kit', href: '/social-launch-kit', group: 'Share', keywords: 'social launch kit name bio banner avatar setup guide new accounts' },
   { label: 'Meta Hub', href: '/meta', group: 'Share', keywords: 'facebook page group meta hub' },
+  { label: 'Group Post Queue', href: '/group-queue', group: 'Share', keywords: 'facebook group post queue batch sponsored products page post' },
   { label: 'Hashtag insights', href: '/pulse', group: 'Share', keywords: 'pulse hashtags reach instagram reels tags', admin: true },
   { label: 'Link in Bio', href: '/link-in-bio', group: 'Share', keywords: 'link in bio shop grid profile link storefront page' },
   { label: 'Passport links', href: '/passport', group: 'Share', keywords: 'passport links geo country amazon short links clicks geniuslink' },
@@ -141,8 +147,11 @@ export const APP_SEARCH_INDEX: AppSearchEntry[] = [
 /**
  * Rank entries against a query. Scoring, best → worst:
  *   4 exact label · 3 label starts-with · 2 word in label starts-with ·
- *   1 label contains · 0.5 keyword contains. Ties keep index order (which
- *   mirrors the sidebar's funnel order, so the more "primary" entry wins).
+ *   1 label contains · 0.5 keyword contains · below that, every word of a
+ *   plain request ("edit a review", "find deals", "write a post") found in
+ *   the entry's label, section, keywords or one-line description. Ties keep
+ *   index order (which mirrors the sidebar's funnel order, so the more
+ *   "primary" entry wins).
  */
 export function searchApp(
   rawQuery: string,
@@ -151,6 +160,7 @@ export function searchApp(
   const q = rawQuery.trim().toLowerCase()
   if (!q) return []
   const limit = opts.limit ?? 8
+  const words = requestWords(q)
 
   const scored: Array<{ e: AppSearchEntry; score: number; i: number }> = []
   APP_SEARCH_INDEX.forEach((e, i) => {
@@ -163,9 +173,26 @@ export function searchApp(
     else if (label.split(/\s+/).some(w => w.startsWith(q))) score = 2
     else if (label.includes(q)) score = 1
     else if (kw.includes(q)) score = 0.5
+    else if (words.length) {
+      const line = (featureLine(e.href.split('#')[0]) ?? featureLine(e.href.split(/[?#]/)[0]) ?? '').toLowerCase()
+      const hay = `${label} ${e.group.toLowerCase()} ${kw} ${line}`
+      // Every word must be there; words in the label itself rank it higher.
+      if (words.every(w => hay.includes(w))) score = 0.2 + 0.05 * words.filter(w => label.includes(w)).length
+    }
     if (score > 0) scored.push({ e, score, i })
   })
 
   scored.sort((a, b) => (b.score - a.score) || (a.i - b.i))
   return scored.slice(0, limit).map(s => s.e)
+}
+
+// Words that say nothing about where to go ("I want to make a new post").
+const FILLER = new Set(['a', 'an', 'the', 'to', 'my', 'me', 'i', 'for', 'of', 'and', 'or', 'on', 'in', 'is', 'it', 'with', 'from', 'some', 'want', 'need', 'can', 'how', 'do', 'please', 'new', 'where', 'what'])
+
+/** The words of a plain request that can find a page: filler dropped, a plural
+ *  made singular ("deals" finds "deal"). Pure, exported for the test. */
+export function requestWords(q: string): string[] {
+  return q.toLowerCase().split(/[^a-z0-9]+/)
+    .filter(w => w && !FILLER.has(w))
+    .map(w => (w.length > 3 && w.endsWith('s') && !w.endsWith('ss') ? w.slice(0, -1) : w))
 }

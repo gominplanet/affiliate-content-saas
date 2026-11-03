@@ -129,7 +129,10 @@ check('no dash punctuation in menu names', labels.every((l) => !/[—–]| - /.t
 {
   const D = readFileSync('app/(dashboard)/dashboard/page.tsx', 'utf8')
   const H = readFileSync('components/dashboard/StartHere.tsx', 'utf8')
-  check('the dashboard asks what you want to do right under the welcome', D.indexOf('<StartHere ') > D.indexOf('Welcome back, {firstName}.') && D.indexOf('<StartHere ') < D.indexOf('<FirstWinChecklist'))
+  // The old look's layout (the new look, lib/look, comes first in the page and
+  // asks the question in its search box and banner buttons instead).
+  const C = D.slice(D.indexOf('<div className="-mx-4 sm:-mx-6 lg:-mx-8 -mt-6">'))
+  check('the dashboard asks what you want to do right under the welcome', C.indexOf('<StartHere ') > C.indexOf('Welcome back, {firstName}.') && C.indexOf('<StartHere ') < C.indexOf('<FirstWinChecklist'))
   check('Upload with Drop leads, then make and promote', H.indexOf('Upload finished videos') < H.indexOf('Make a video') && H.indexOf('Make a video') < H.indexOf('Promote a product') && /canDrop \? \{ href: '\/drop', label: 'Start with Drop' \}/.test(H))
   check('each choice shows only what the plan opens', /canDrop=\{canUsePreview\('drop', tier\)\}/.test(D) && /videoTools=\{hasVideoTools\(tier\)\}/.test(D) && /deals=\{canSeeNav\('deals', tier\)\}/.test(D))
   check('the question is asked once', (D.match(/What do you want to do\?<\/p>/g) || []).length === 0 && /More ways to start/.test(D))
