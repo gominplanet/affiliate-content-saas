@@ -31,3 +31,16 @@ export const ShellNavContext = createContext<ShellNavGroup[] | null>(null)
 export function useShellNav(): ShellNavGroup[] | null {
   return useContext(ShellNavContext)
 }
+
+/** The look the shell is drawn in (lib/look), for a page that lays itself
+ *  out differently in the new look. 'classic' outside the shell. */
+export const ShellLookContext = createContext<'teal' | 'classic'>('classic')
+
+export function useLook(): 'teal' | 'classic' {
+  return useContext(ShellLookContext)
+}
+
+/** One job section of the menu by its label (its colour and wash), or null. */
+export function useSection(label: string): ShellNavGroup | null {
+  return useShellNav()?.find((g) => g.label === label) ?? null
+}

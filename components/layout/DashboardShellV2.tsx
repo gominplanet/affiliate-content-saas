@@ -49,7 +49,7 @@ import {
   Inbox, PackageSearch, Rocket, Database, History, Globe, Radio, Gauge, Repeat, Star, Pin, Menu, X, Scissors, ClipboardList, ListChecks, UploadCloud, Clapperboard } from 'lucide-react'
 import { useNavFavorites, MAX_NAV_FAVORITES } from '@/lib/nav-favorites'
 import { lookCookie, type Look } from '@/lib/look'
-import { ShellNavContext, type ShellNavGroup } from './shell-nav-context'
+import { ShellNavContext, ShellLookContext, type ShellNavGroup } from './shell-nav-context'
 import { cn } from '@/lib/utils'
 // Deals Hub runs only while Amazon has a real sale event on (Prime Day, Big
 // Deal Days, Black Friday and so on) and is deliberately off between them. The
@@ -1019,6 +1019,7 @@ export default function DashboardShellV2({
   const wpHostname = wpSiteUrl ? wpSiteUrl.replace(/^https?:\/\//, '').replace(/\/+$/, '').slice(0, 24) : null
 
   return (
+    <ShellLookContext.Provider value={look}>
     <ShellNavContext.Provider value={jobGroups}>
     <div
       data-look={teal ? 'teal' : undefined}
@@ -1594,6 +1595,7 @@ export default function DashboardShellV2({
       </div>
     </div>
     </ShellNavContext.Provider>
+    </ShellLookContext.Provider>
   )
 }
 

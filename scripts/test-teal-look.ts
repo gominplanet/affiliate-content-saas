@@ -119,6 +119,18 @@ async function main() {
   ])
   check('This month shows four allowances, edited videos first', b.length === 4 && b.map((x) => x.key).join() === 'reviewEdits,shorts,thumbnails,pins', b.map((x) => x.key))
 
+  // ── Pages in the new look ──
+  const HERO = read('components/layout/PageHero.tsx')
+  check('the shared page header (74 pages) follows the look as a card', /className="mvp-page-hero /.test(HERO) && /className="mvp-page-hero-glow /.test(HERO) && /\[data-look="teal"\] \.mvp-page-hero \{/.test(CSS) && /\[data-look="teal"\] \.mvp-page-hero-glow \{ display: none; \}/.test(CSS))
+  check('pages ask the shell which look they are in', /<ShellLookContext\.Provider value=\{look\}>/.test(SHELL) && /export function useLook\(\)/.test(read('components/layout/shell-nav-context.tsx')))
+  const RE = read('components/review-editor/ReviewEditor.tsx')
+  check('the Review Editor draws its new header only in the new look, and the old one as it was', /const teal = useLook\(\) === 'teal'/.test(RE) && /\{teal \? \(\s*<>\s*\{\/\* THE HEADER CARD/.test(RE) && /<Clapperboard size=\{20\} \/> Review editor/.test(RE))
+  check('its Add videos button goes to Add videos', /const goAdd = \(\) => \{ addRef\.current\?\.scrollIntoView/.test(RE) && /ref=\{addRef\} id="add-videos"/.test(RE))
+  check('a filter with nothing left in it falls back to All, so no video is hidden by an empty filter', /const showing = show !== 'all' && counts\[show\] === 0 \? 'all' : show/.test(RE) && /\.filter\(\(\[k, , n\]\) => k === 'all' \|\| n > 0\)/.test(RE))
+  check('the month count in the header is the one read, used up said in red', /allowance\.left === 0 \? `All \$\{allowance\.limit\} edits used this month`/.test(RE))
+  check('the editor colour follows the brand in both looks', /const PURPLE = 'var\(--accent\)'/.test(RE) && /const PURPLE = 'var\(--accent\)'/.test(read('components/review-editor/DriveBatch.tsx')) && !/rgba\(124,\s*58,\s*237/.test(RE))
+  check('the upgrade panel no longer calls the editor a test', !/still being tested/.test(read('app/(dashboard)/review-editor/page.tsx')))
+
   // ── The search box's new question ──
   check('filler words drop and plurals fold', requestWords('Edit a review') .join() === 'edit,review' && requestWords('find deals').join() === 'find,deal')
   const first = (q: string) => searchApp(q)[0]?.href

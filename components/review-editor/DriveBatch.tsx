@@ -23,7 +23,8 @@ import { pickFolder, pickMany, type DriveState, type DriveFolderRef } from '@/co
 import { batchVideos, moveFile, moveUp, unusedBroll, talkSeconds, addBody, type BatchVideo, type DriveTake, type Pair } from '@/lib/review-edit-batch'
 import { cleanSettings, clock, KIND_WORDS, type EditSettings, type VideoKind } from '@/lib/review-edit'
 
-const PURPLE = '#7C3AED'
+// The brand colour: violet in the old look, teal in the new one (globals.css).
+const PURPLE = 'var(--accent)'
 const BLUE = '#1a73e8'
 const soft = { color: 'var(--text-3)' }
 const HOW: Record<Pair['how'], string> = { name: 'Paired by name', filmed: 'Paired by when they were filmed', order: 'Paired by file order', you: 'Picked by you', none: 'No B-roll found for it' }

@@ -36,14 +36,16 @@ interface PageHeroProps {
 export default function PageHero({ title, subtitle, actions, accent, media, guide }: PageHeroProps) {
   return (
     <div
-      className="-mx-4 sm:-mx-6 lg:-mx-8 -mt-6 mb-8 relative overflow-hidden border-b"
+      // mvp-page-hero: the new look (globals.css [data-look="teal"]) draws this
+      // as a white card with a bold heading instead of a full-width glow.
+      className="mvp-page-hero -mx-4 sm:-mx-6 lg:-mx-8 -mt-6 mb-8 relative overflow-hidden border-b"
       style={{ borderColor: 'var(--border)' }}
     >
       {guide && (
         <div className="absolute top-3 right-4 sm:right-6 z-10">{guide}</div>
       )}
       <div
-        className="absolute inset-0 pointer-events-none"
+        className="mvp-page-hero-glow absolute inset-0 pointer-events-none"
         style={{
           opacity: 'var(--hero-opacity)',
           background: `

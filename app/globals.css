@@ -424,3 +424,20 @@ html:not(.dark) :is(.bg-black, .bg-gray-900, .bg-zinc-900, .bg-neutral-900):not(
 }
 [data-look="teal"] .btn-primary:hover { background-color: rgb(var(--brand-strong-rgb)); }
 [data-look="teal"] .btn-secondary { @apply rounded-xl font-semibold; }
+/* The shared page header (components/layout/PageHero) in the new look: a white
+   card with a big bold title, like the Review Editor's, in place of the
+   full-width violet glow. 74 pages use it, so they all follow. */
+[data-look="teal"] .mvp-page-hero {
+  margin: 0 0 1.75rem;
+  border-width: 1px;
+  border-radius: 22px;
+  background-color: var(--surface);
+}
+[data-look="teal"] .mvp-page-hero-glow { display: none; }
+[data-look="teal"] .mvp-page-hero > div:last-child { padding: 1.75rem 2rem; }
+[data-look="teal"] .mvp-page-hero h1 {
+  font-size: clamp(28px, 3.2vw, 40px);
+  font-weight: 800;
+  line-height: 1.08;
+}
+[data-look="teal"] .mvp-page-hero h1 + p { font-size: 15.5px; color: var(--text-2); }

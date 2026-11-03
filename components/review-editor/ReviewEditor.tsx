@@ -15,10 +15,18 @@
 //   2. Add videos: a batch from Google Drive, or one video.
 //   3. Your videos: one card each, its state in one line, the finished video
 //      with Send to Drop beside it, and everything to change folded away.
+//
+// THE NEW LOOK (lib/look, behind Labs; Seb, 2026-11-03: "I like the new
+// design... We can continue with that"): a header card that says what the
+// editor does with Add videos and How to shoot it as buttons, the three steps,
+// filters over Your videos, coloured status tags, a progress bar while a video
+// is made, and round teal buttons. The old look is drawn as it was.
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
-import { Loader2, UploadCloud, Check, AlertTriangle, Film, Scissors, Clapperboard, Download, Send, Trash2, RotateCcw, Wand2, ImagePlus, HardDrive, Pencil, ChevronDown, Layers } from 'lucide-react'
+import { Loader2, UploadCloud, Check, AlertTriangle, Film, Scissors, Clapperboard, Download, Send, Trash2, RotateCcw, Wand2, ImagePlus, HardDrive, Pencil, ChevronDown, Layers, Plus } from 'lucide-react'
+import { cn } from '@/lib/utils'
+import { useLook, useSection } from '@/components/layout/shell-nav-context'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { uploadResumable, ResumableUnavailable } from '@/lib/upload-resumable'
 import { uploadWithProgress } from '@/lib/upload-progress'
@@ -34,7 +42,8 @@ import {
   type EditSettings, type Format, type LogoSize, type LogoWhen, type Picture, type PictureTime, type PictureWhen, type Position, type Spot, type TitleColor, type VideoKind,
 } from '@/lib/review-edit'
 
-const PURPLE = '#7C3AED'
+// The brand colour: violet in the old look, teal in the new one (globals.css).
+const PURPLE = 'var(--accent)'
 const GREEN = '#15803D'
 const AMBER = '#B45309'
 const RED = '#B91C1C'
@@ -71,6 +80,22 @@ interface EditView {
   placed: { title: { from: number; to: number } | { missed: string } | null; pictures: PictureTime[] } | null
   brollCheck: { fits: boolean; talk: string; shows: string } | null
 }
+
+/** The new look's status tag colours: teal while it moves, green when ready,
+ *  red when it stopped, grey while it waits its turn. */
+const TAG: Record<string, { ink: string; bg: string }> = {
+  queued: { ink: 'var(--text-3)', bg: 'var(--surface-2)' },
+  reading: { ink: 'var(--accent-text)', bg: 'rgb(var(--brand-rgb) / 0.12)' },
+  ready_to_make: { ink: 'var(--accent-text)', bg: 'rgb(var(--brand-rgb) / 0.12)' },
+  making: { ink: 'var(--accent-text)', bg: 'rgb(var(--brand-rgb) / 0.12)' },
+  done: { ink: 'var(--earn)', bg: 'var(--earn-bg)' },
+  failed: { ink: 'var(--fix)', bg: 'var(--fix-bg)' },
+}
+
+/** A button in the new look: round, teal and bold for the main one, outlined
+ *  for the rest. Added after a button's own classes, which it overrides. */
+const PILL = 'rounded-full px-5 font-extrabold'
+const PILL_LINE = 'rounded-full px-4 border-[1.5px] font-bold'
 
 const STATUS: Record<string, { words: string; color: string; busy?: boolean }> = {
   queued: { words: 'In line', color: 'var(--text-3)', busy: true },
@@ -409,6 +434,11 @@ export default function ReviewEditor() {
   const [drive, setDrive] = useState<DriveState | null>(null)
   const [picking, setPicking] = useState<'review' | 'broll' | null>(null)
   const seeded = useRef(false)
+  // The new look (lib/look): the header card, steps and filters below.
+  const teal = useLook() === 'teal'
+  const section = useSection('Make videos')
+  const [show, setShow] = useState<'all' | 'ready' | 'moving' | 'stopped'>('all')
+  const addRef = useRef<HTMLElement>(null)
 
   // GOOGLE DRIVE (Seb, 2026-10-30): the takes stay in the creator's Drive.
   const loadDrive = useCallback(async (): Promise<DriveState | null> => {
@@ -605,9 +635,76 @@ export default function ReviewEditor() {
     moving: list.filter((e) => STATUS[e.status]?.busy).length,
     stopped: list.filter((e) => e.status === 'failed').length,
   }
+  // The filter in force: back to All once nothing is left in the one picked.
+  const showing = show !== 'all' && counts[show] === 0 ? 'all' : show
+  const shown = showing === 'all' ? list
+    : list.filter((e) => (showing === 'ready' ? e.status === 'done' : showing === 'stopped' ? e.status === 'failed' : !!STATUS[e.status]?.busy))
+  const h2 = teal ? 'text-[20px] font-extrabold' : 'text-[16px] font-bold'
+  const tips = showTips && (
+    <ul className="text-[13px] flex flex-col gap-1.5 list-disc rounded-xl border p-3 pl-8" style={{ color: 'var(--text-2)', borderColor: 'var(--border-2)', background: 'var(--surface)' }}>
+      <li><b>Talk it through in one go.</b> Prop up your phone or camera. Made a mistake? Pause, and say the sentence again. MVP keeps the last good try.</li>
+      <li><b>The B-roll:</b> a second take of just the product, without stopping. Hold each shot three to five seconds: the front, the details, it in use.</li>
+      <li><b>An Amazon and YouTube review</b> is filmed sideways (landscape). Its Shorts, TikTok and Reels come from the finished review later, through Drop.</li>
+      <li><b>A TRYBE ad</b> is filmed upright (portrait). It is an ad the brand runs, not a review: open on the hook, keep it tight, and film the B-roll upright too.</li>
+      <li>1080p is plenty. Each file can be up to {mb(BULK_VIDEO_MAX_BYTES)}.</li>
+    </ul>
+  )
+  const goAdd = () => { addRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }) }
 
   return (
     <div className="max-w-5xl mx-auto px-1 sm:px-4 py-4 flex flex-col gap-5">
+      {teal ? (
+        <>
+          {/* THE HEADER CARD: what it does, and the two ways in, as buttons. */}
+          <header className="rounded-[22px] border p-6 sm:p-8 flex flex-wrap items-center gap-6" style={{ background: 'var(--surface)', borderColor: 'var(--border-2)' }}>
+            <div className="flex-[1_1_380px] min-w-0 flex flex-col gap-3">
+              <p className="text-[12.5px] font-bold uppercase tracking-[0.08em]" style={{ color: section?.color ?? 'var(--text-3)' }}>Make videos</p>
+              <h1 className="text-[32px] sm:text-[42px] font-extrabold leading-[1.05]">Review Editor</h1>
+              <p className="text-[16px] leading-relaxed max-w-[560px]" style={{ color: 'var(--text-2)' }}>
+                Your talking take and your B-roll in, an edited review out. MVP cuts the mistakes and dead air, puts your B-roll where you talk about it, and adds your look. Add a batch tonight; it is ready in the morning.
+              </p>
+              <div className="mt-1 flex flex-wrap gap-2.5">
+                <button type="button" onClick={goAdd} className="inline-flex items-center gap-2 rounded-full px-5 py-3 text-[15px] font-extrabold text-white transition-colors bg-[color:var(--accent)] hover:bg-[rgb(var(--brand-strong-rgb))]">
+                  <Plus size={16} strokeWidth={2.6} /> Add videos
+                </button>
+                <button type="button" onClick={() => setShowTips((v) => !v)} aria-expanded={showTips} className="inline-flex items-center rounded-full border-[1.5px] px-5 py-3 text-[15px] font-bold transition-colors hover:border-[color:var(--accent)]" style={{ borderColor: 'var(--border-2)', color: 'var(--text)' }}>
+                  How to shoot it
+                </button>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {/* What is true now: the month's count as read, Drive only once connected. */}
+                {allowance && (
+                  <span className="rounded-full px-3 py-1 text-[12.5px] font-bold" style={allowance.left === 0 ? { background: 'var(--fix-bg)', color: 'var(--fix)' } : { background: 'rgb(var(--brand-rgb) / 0.12)', color: 'var(--accent-text)' }}>
+                    {allowance.limit === null ? `${allowance.used} edited this month` : allowance.left === 0 ? `All ${allowance.limit} edits used this month` : `${allowance.used} of ${allowance.limit} edited this month`}
+                  </span>
+                )}
+                {drive?.connected && <span className="rounded-full px-3 py-1 text-[12.5px] font-bold" style={{ background: 'var(--surface-2)', color: 'var(--text-2)' }}>Takes stay in your Google Drive</span>}
+              </div>
+            </div>
+            {/* Room for the banner art: a timeline with its cuts until it comes. */}
+            <div aria-hidden="true" className="hidden sm:block relative flex-[1_1_260px] min-h-[190px] rounded-[18px] overflow-hidden" style={{ background: section?.tint ?? 'var(--surface-2)' }}>
+              <div className="absolute left-[10%] right-[10%] top-[38%] h-11 rounded-[10px] flex gap-1.5 p-1.5" style={{ background: 'var(--bg-sidebar, #fff)' }}>
+                {[3, 1, 2, 1, 2].map((f, i) => <span key={i} className="rounded-md" style={{ flex: f, background: i % 2 ? '#FB923C' : '#14B8A6' }} />)}
+              </div>
+              <Scissors size={22} className="absolute left-[44%] top-[22%]" style={{ color: section?.color ?? 'var(--text-3)' }} />
+            </div>
+          </header>
+          {tips}
+          {/* THE THREE STEPS, in the order they happen. */}
+          <section aria-label="How it works" className="grid sm:grid-cols-3 gap-3">
+            {[
+              ['Film two takes', 'You talking about the product, then the product on its own.'],
+              ['Add them', 'A batch from Google Drive, or one video. MVP pairs each talk with its B-roll.'],
+              ['Get your edit', 'Watch it, change anything, then send it to Drop or download it.'],
+            ].map(([t, d], i) => (
+              <div key={t} className="flex items-start gap-3 rounded-2xl border p-4" style={{ background: 'var(--surface)', borderColor: 'var(--border-2)' }}>
+                <span className="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-white font-extrabold" style={{ background: 'var(--accent)', fontFamily: 'var(--font-sora), sans-serif' }}>{i + 1}</span>
+                <span><span className="block font-extrabold">{t}</span><span className="block text-[13.5px]" style={{ color: 'var(--text-3)' }}>{d}</span></span>
+              </div>
+            ))}
+          </section>
+        </>
+      ) : (
       <header>
         <h1 className="text-[22px] font-bold flex items-center gap-2"><Clapperboard size={20} /> Review editor
           <span className="text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded" style={{ background: 'var(--surface-2)', color: 'var(--text-3)' }}>Labs</span></h1>
@@ -615,16 +712,9 @@ export default function ReviewEditor() {
           Your talking take and your B-roll in, a finished review out. MVP cuts the mistakes and dead air, puts your B-roll where you talk about it, and adds your look. Add a batch tonight; it is ready in the morning.{' '}
           <button type="button" onClick={() => setShowTips((v) => !v)} className="underline font-semibold" style={{ color: PURPLE }} aria-expanded={showTips}>How to shoot it</button>
         </p>
-        {showTips && (
-          <ul className="text-[13px] mt-3 flex flex-col gap-1.5 list-disc pl-5 rounded-xl border p-3 pl-8" style={{ color: 'var(--text-2)', borderColor: 'var(--border-2)', background: 'var(--surface)' }}>
-            <li><b>Talk it through in one go.</b> Prop up your phone or camera. Made a mistake? Pause, and say the sentence again. MVP keeps the last good try.</li>
-            <li><b>The B-roll:</b> a second take of just the product, without stopping. Hold each shot three to five seconds: the front, the details, it in use.</li>
-            <li><b>An Amazon and YouTube review</b> is filmed sideways (landscape). Its Shorts, TikTok and Reels come from the finished review later, through Drop.</li>
-            <li><b>A TRYBE ad</b> is filmed upright (portrait). It is an ad the brand runs, not a review: open on the hook, keep it tight, and film the B-roll upright too.</li>
-            <li>1080p is plenty. Each file can be up to {mb(BULK_VIDEO_MAX_BYTES)}.</li>
-          </ul>
-        )}
+        {tips && <div className="mt-3">{tips}</div>}
       </header>
+      )}
 
       {needsSql && <p className="text-[13px] rounded-xl border p-3" style={{ borderColor: AMBER, color: AMBER }}>{loadError}</p>}
 
@@ -632,11 +722,11 @@ export default function ReviewEditor() {
       <section className={card} style={cardStyle} aria-label="Your look">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h2 className="text-[16px] font-bold">Your look</h2>
+            <h2 className={h2}>Your look</h2>
             <p className="text-[12.5px] mt-0.5" style={soft}>Every new video starts with this. You can still change any one video after it is made.</p>
           </div>
           {!lookOpen && (
-            <button type="button" onClick={() => setLookOpen(true)} className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[13px] font-semibold" style={{ borderColor: 'var(--border-2)' }}>
+            <button type="button" onClick={() => setLookOpen(true)} className={cn('inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[13px] font-semibold', teal && PILL_LINE)} style={{ borderColor: 'var(--border-2)' }}>
               <Pencil size={13} /> Edit your look
             </button>
           )}
@@ -663,7 +753,7 @@ export default function ReviewEditor() {
             <Choices s={settings} set={setSettings} lib={lib} kind={null} logoBusy={logoBusy} onLogo={(f) => void uploadLogo(f, (url) => setSettings((s) => withLogo(s, url)))} />
             <div className="mt-4 pt-4 border-t flex flex-wrap items-center gap-2" style={{ borderColor: 'var(--border-2)' }}>
               <button type="button" onClick={() => void saveLook()} disabled={savingLook}
-                className="inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-[13.5px] font-semibold text-white disabled:opacity-50" style={{ background: PURPLE }}>
+                className={cn('inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-[13.5px] font-semibold text-white disabled:opacity-50', teal && PILL)} style={{ background: PURPLE }}>
                 {savingLook ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />} Save my look
               </button>
               <button type="button" onClick={cancelLook} className="rounded-lg border px-3 py-2 text-[13px] font-semibold" style={{ borderColor: 'var(--border-2)' }}>Cancel</button>
@@ -674,10 +764,10 @@ export default function ReviewEditor() {
       </section>
 
       {/* 2. ADD VIDEOS: a batch from Google Drive, or one video. */}
-      <section className={card} style={cardStyle} aria-label="Add videos">
+      <section ref={addRef} id="add-videos" className={cn(card, 'scroll-mt-20')} style={cardStyle} aria-label="Add videos">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h2 className="text-[16px] font-bold">Add videos</h2>
+            <h2 className={h2}>Add videos</h2>
             {/* THE MONTH'S EDITED VIDEOS: what is used, and when more come. */}
             {allowance && allowance.limit !== null && (
               <p className="text-[12px] mt-0.5" style={{ color: allowance.left === 0 ? AMBER : 'var(--text-3)' }}>
@@ -728,7 +818,7 @@ export default function ReviewEditor() {
               <div className="grid sm:grid-cols-2 gap-2 mt-1.5" role="group" aria-label="What this video is for">
                 {(['review', 'trybe'] as VideoKind[]).map((k) => (
                   <button key={k} type="button" onClick={() => setKind(k)} aria-pressed={kind === k}
-                    className="text-left rounded-xl border p-3" style={kind === k ? { borderColor: PURPLE, background: 'rgba(124,58,237,0.07)' } : { borderColor: 'var(--border-2)' }}>
+                    className="text-left rounded-xl border p-3" style={kind === k ? { borderColor: PURPLE, background: 'rgb(var(--brand-rgb) / 0.07)' } : { borderColor: 'var(--border-2)' }}>
                     <p className="text-[13.5px] font-bold" style={kind === k ? { color: PURPLE } : undefined}>{KIND_WORDS[k].name}</p>
                     <p className="text-[12px] mt-0.5" style={soft}>{KIND_WORDS[k].line}</p>
                   </button>
@@ -745,7 +835,7 @@ export default function ReviewEditor() {
             </label>
             <div className="flex flex-wrap items-center gap-2">
               <button type="button" onClick={() => void add()} disabled={!ready(review) || !!uploading || adding}
-                className="inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-[13.5px] font-semibold text-white disabled:opacity-50" style={{ background: PURPLE }}>
+                className={cn('inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-[13.5px] font-semibold text-white disabled:opacity-50', teal && PILL)} style={{ background: PURPLE }}>
                 {adding ? <Loader2 size={14} className="animate-spin" /> : <Scissors size={14} />} Add to the queue
               </button>
               <span className="text-[12.5px]" style={soft}>{!review ? 'Add your talking take first.' : uploading ? 'Waiting for the upload to finish.' : 'It uses your look above.'}</span>
@@ -756,18 +846,31 @@ export default function ReviewEditor() {
 
       {/* 3. YOUR VIDEOS */}
       <section aria-label="Your videos" className="flex flex-col gap-3">
-        <div className="flex flex-wrap items-baseline justify-between gap-2">
-          <h2 className="text-[16px] font-bold">Your videos</h2>
-          {list.length > 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className={h2}>Your videos</h2>
+          {list.length > 0 && (teal ? (
+            // FILTERS, each with its count; a stage with nothing in it is not offered.
+            <div role="group" aria-label="Show" className="flex flex-wrap gap-2">
+              {([['all', 'All', list.length], ['ready', 'Ready', counts.ready], ['moving', 'In progress', counts.moving], ['stopped', 'Stopped', counts.stopped]] as const)
+                .filter(([k, , n]) => k === 'all' || n > 0)
+                .map(([k, w, n]) => (
+                  <button key={k} type="button" onClick={() => setShow(k)} aria-pressed={showing === k}
+                    className="rounded-full border-[1.5px] px-3.5 py-1.5 text-[13.5px] font-bold transition-colors hover:border-[color:var(--accent)]"
+                    style={showing === k ? { background: 'var(--accent)', borderColor: 'var(--accent)', color: '#fff' } : { borderColor: 'var(--border-2)', background: 'var(--surface)', color: 'var(--text)' }}>
+                    {w} {n}
+                  </button>
+                ))}
+            </div>
+          ) : (
             <p className="text-[12.5px]" style={soft}>
               {[counts.ready && `${counts.ready} ready`, counts.moving && `${counts.moving} in progress`, counts.stopped && `${counts.stopped} stopped`].filter(Boolean).join(', ')}
             </p>
-          )}
+          ))}
         </div>
         {loadError && !needsSql && <p className="text-[13px]" style={{ color: RED }}>{loadError}</p>}
         {edits === null && !loadError && <p className="text-[13px] inline-flex items-center gap-1.5" style={soft}><Loader2 size={13} className="animate-spin" /> Reading your videos</p>}
         {edits?.length === 0 && <p className="text-[13px] rounded-2xl border border-dashed p-6 text-center" style={{ ...soft, borderColor: 'var(--border-2)' }}>None yet. Add your first one above.</p>}
-        {list.map((e) => <EditCard key={e.id} e={e} reload={load} uploadLogo={uploadLogo} withLogo={withLogo} logoBusy={logoBusy} lib={lib} />)}
+        {(teal ? shown : list).map((e) => <EditCard key={e.id} e={e} reload={load} uploadLogo={uploadLogo} withLogo={withLogo} logoBusy={logoBusy} lib={lib} teal={teal} />)}
       </section>
     </div>
   )
@@ -779,9 +882,9 @@ function LookThumb({ s }: { s: EditSettings }) {
   return <FramePreview s={s} titleUrl={titleUrl} vertical={false} />
 }
 
-function EditCard({ e, reload, uploadLogo, withLogo, logoBusy, lib }: {
+function EditCard({ e, reload, uploadLogo, withLogo, logoBusy, lib, teal = false }: {
   e: EditView; reload: () => Promise<void>; uploadLogo: (f: File, then: (url: string) => void) => Promise<void>
-  withLogo: (x: EditSettings, url: string) => EditSettings; logoBusy: boolean; lib: Library
+  withLogo: (x: EditSettings, url: string) => EditSettings; logoBusy: boolean; lib: Library; teal?: boolean
 }) {
   const st = STATUS[e.status] || { words: e.status, color: 'var(--text-3)' }
   const [s, setS] = useState<EditSettings>(e.settings)
@@ -859,10 +962,10 @@ function EditCard({ e, reload, uploadLogo, withLogo, logoBusy, lib }: {
   ].filter(Boolean).join(', ')
 
   return (
-    <article className={card} style={cardStyle}>
+    <article className={cn(card, teal && 'rounded-[18px] transition-shadow hover:shadow-[0_8px_22px_rgba(15,30,31,0.08)]')} style={cardStyle}>
       <div className="flex flex-wrap items-center gap-2">
         <p className="text-[15px] font-bold mr-1">{e.name || 'Review'}</p>
-        <span className="text-[11.5px] font-semibold px-2 py-0.5 rounded-full inline-flex items-center gap-1" style={{ color: st.color, background: 'var(--surface-2)' }}>
+        <span className={cn('text-[11.5px] font-semibold px-2 py-0.5 rounded-full inline-flex items-center gap-1', teal && 'text-[12px] font-extrabold px-2.5')} style={teal && TAG[e.status] ? { color: TAG[e.status].ink, background: TAG[e.status].bg } : { color: st.color, background: 'var(--surface-2)' }}>
           {st.busy && <Loader2 size={11} className="animate-spin" />}{e.status === 'done' && <Check size={11} />}{e.status === 'failed' && <AlertTriangle size={11} />} {st.words}
         </span>
         <span className="text-[11.5px] px-2 py-0.5 rounded-full" style={{ background: 'var(--surface-2)', color: 'var(--text-3)' }}>{KIND_WORDS[e.settings.kind].name}</span>
@@ -884,6 +987,12 @@ function EditCard({ e, reload, uploadLogo, withLogo, logoBusy, lib }: {
           a way to start it again once it is far too long. */}
       {e.status !== 'done' && line && <p className="text-[13px] mt-1.5" style={{ color: e.status === 'failed' ? RED : e.status === 'making' && !missing ? PURPLE : 'var(--text-2)' }}>{line}</p>}
       {e.status === 'done' && e.note && !outs.length && <p className="text-[13px] mt-1.5" style={{ color: 'var(--text-2)' }}>{e.note}</p>}
+      {/* How far along, when the video server says (new look). */}
+      {teal && e.status === 'making' && e.onServer && !('missing' in e.onServer) && e.onServer.pct != null && (
+        <div className="mt-2 h-2 max-w-md rounded-full overflow-hidden" style={{ background: 'var(--surface-2)' }} role="progressbar" aria-valuenow={e.onServer.pct} aria-valuemin={0} aria-valuemax={100} aria-label="How far along">
+          <div className="h-full rounded-full transition-[width] duration-500" style={{ width: `${Math.min(100, Math.max(2, e.onServer.pct))}%`, background: '#14B8A6' }} />
+        </div>
+      )}
       {missing && <p className="mt-1 text-[12.5px] font-semibold" style={{ color: AMBER }}>The video server does not have this one right now. MVP sends it again within a few minutes.</p>}
       {st.busy && (
         <p className="mt-0.5 text-[12px]" style={{ color: stuck ? AMBER : 'var(--text-3)' }}>
@@ -912,15 +1021,15 @@ function EditCard({ e, reload, uploadLogo, withLogo, logoBusy, lib }: {
           </div>
           <div className="flex flex-col gap-2.5">
             <div className="flex flex-wrap items-center gap-2">
-              <button type="button" onClick={() => void sendToDrop()} disabled={!!work} className="inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-[13.5px] font-semibold text-white disabled:opacity-50" style={{ background: PURPLE }}>
+              <button type="button" onClick={() => void sendToDrop()} disabled={!!work} className={cn('inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-[13.5px] font-semibold text-white disabled:opacity-50', teal && PILL)} style={{ background: PURPLE }}>
                 {work === 'drop' ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />} Send to Drop
               </button>
               {/* A real download: saved as a file under the video's name, not played in a new tab. */}
               {outs.map(([f, o]) => {
                 const d = downloadLink(o.url, e.keep?.base ?? e.name, f, outs.length > 1)
                 return (
-                  <a key={f} href={d.href} download={d.file} className="inline-flex items-center gap-1.5 rounded-lg border px-4 py-2 text-[13.5px] font-semibold"
-                    style={{ borderColor: PURPLE, color: PURPLE }}><Download size={14} /> Download{outs.length > 1 ? ` ${f === 'wide' ? 'wide' : 'vertical'}` : ''}</a>
+                  <a key={f} href={d.href} download={d.file} className={cn('inline-flex items-center gap-1.5 rounded-lg border px-4 py-2 text-[13.5px] font-semibold', teal && PILL_LINE)}
+                    style={teal ? { borderColor: 'var(--border-2)', color: 'var(--text)' } : { borderColor: PURPLE, color: PURPLE }}><Download size={14} /> Download{outs.length > 1 ? ` ${f === 'wide' ? 'wide' : 'vertical'}` : ''}</a>
                 )
               })}
             </div>
@@ -968,10 +1077,10 @@ function EditCard({ e, reload, uploadLogo, withLogo, logoBusy, lib }: {
 
       {footer && <div className="mt-3 pt-3 border-t flex flex-wrap items-center gap-2" style={{ borderColor: 'var(--border-2)' }}>
         {e.status === 'failed' && (
-          <button type="button" onClick={() => void act('retry', { action: 'retry', id: e.id }, 'Trying again.')} disabled={!!work || e.rawDeleted} className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[12.5px] font-semibold" style={{ borderColor: 'var(--border-2)' }}><RotateCcw size={13} /> Try again</button>
+          <button type="button" onClick={() => void act('retry', { action: 'retry', id: e.id }, 'Trying again.')} disabled={!!work || e.rawDeleted} className={cn('inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[12.5px] font-semibold', teal && 'rounded-full px-4 border-0 font-extrabold text-white')} style={teal ? { background: 'var(--accent)' } : { borderColor: 'var(--border-2)' }}><RotateCcw size={13} /> Try again</button>
         )}
         {editable && (
-          <button type="button" onClick={() => setOpen((v) => !v)} aria-expanded={open} className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[12.5px] font-semibold" style={{ borderColor: 'var(--border-2)' }}>
+          <button type="button" onClick={() => setOpen((v) => !v)} aria-expanded={open} className={cn('inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[12.5px] font-semibold', teal && PILL_LINE)} style={{ borderColor: 'var(--border-2)' }}>
             <Pencil size={13} /> Edit this video <ChevronDown size={13} style={{ transform: open ? 'rotate(180deg)' : undefined }} />
           </button>
         )}
@@ -1018,7 +1127,7 @@ function EditCard({ e, reload, uploadLogo, withLogo, logoBusy, lib }: {
             {said && <p className="text-[12.5px] mt-1" style={{ color: 'var(--text-2)' }}>MVP: {said}</p>}
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <button type="button" onClick={() => void makeAgain()} disabled={!!work} className="inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-[13px] font-semibold text-white disabled:opacity-50" style={{ background: PURPLE }}>
+            <button type="button" onClick={() => void makeAgain()} disabled={!!work} className={cn('inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-[13px] font-semibold text-white disabled:opacity-50', teal && PILL)} style={{ background: PURPLE }}>
               {work === 'make' || work === 'save' ? <Loader2 size={13} className="animate-spin" /> : <Layers size={13} />} Make it again{changed ? ' with your changes' : ''}
             </button>
             <span className="text-[12px]" style={soft}>Changes here show once you press Make it again.</span>

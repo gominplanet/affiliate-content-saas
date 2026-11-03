@@ -16,7 +16,7 @@ export default function ReviewEditorPage() {
 
   if (tier !== null && canUsePreview('review_edit', tier)) return <ReviewEditor />
   // Not on this plan: say so, never a silent bounce.
-  if (tier !== null) return <ProUpgradePanel feature="Review editor" body="The review editor turns a review take and a B-roll take into a finished video for Amazon, YouTube, TRYBE and TikTok. It is still being tested." />
+  if (tier !== null) return <ProUpgradePanel feature="Review editor" body="The review editor turns your talking take and your B-roll into a finished, edited video for Amazon, YouTube, TRYBE and TikTok." />
 
   return (
     <div className="flex items-center justify-center py-24 text-sm text-[#86868b] dark:text-[#8e8e93]">
