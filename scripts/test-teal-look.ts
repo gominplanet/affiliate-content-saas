@@ -131,6 +131,14 @@ async function main() {
   check('the editor colour follows the brand in both looks', /const PURPLE = 'var\(--accent\)'/.test(RE) && /const PURPLE = 'var\(--accent\)'/.test(read('components/review-editor/DriveBatch.tsx')) && !/rgba\(124,\s*58,\s*237/.test(RE))
   check('the upgrade panel no longer calls the editor a test', !/still being tested/.test(read('app/(dashboard)/review-editor/page.tsx')))
 
+  const CP = read('app/(dashboard)/co-pilot/page.tsx')
+  check('Co-Pilot draws its header card only in the new look, and the old page header as it was', /const teal = useLook\(\) === 'teal'/.test(CP) && /\{teal \? \(\s*<>\s*\{\/\* THE HEADER CARD/.test(CP) && /<PageHero\s+guide=\{<CoPilotGuide \/>\}\s+title="YouTube Co-Pilot"/.test(CP))
+  check('Co-Pilot says which channel it reads and offers Connect when YouTube is not connected', /Showing videos from \{active\?\.channelTitle \|\| 'your connected channel'\}/.test(CP) && /\{needsAuth \? \(\s*<a href="\/api\/auth\/youtube"/.test(CP))
+  check('its count of videos needing metadata is shown only once the list has loaded', /\{!loading && !error && drafts\.length > 0 && \(/.test(CP))
+  check('Refresh and the channel picker are not shown twice in the new look', /\{!teal && <button\s+onClick=\{refresh\}/.test(CP) && /\{!teal && channels\.length > 0 && \(\(\) => \{/.test(CP))
+  check('its tabs carry icons, not emoji, in the new look', /label: 'Needs metadata', icon: <Wand2/.test(CP) && /\{!teal && !activeQuery && drafts\.length > 0 && \(/.test(CP))
+  check('Co-Pilot colours set inline follow the brand', !/'#7C3AED'/.test(CP) && /const PURPLE = 'var\(--accent\)', GREEN/.test(CP))
+
   // ── The search box's new question ──
   check('filler words drop and plurals fold', requestWords('Edit a review') .join() === 'edit,review' && requestWords('find deals').join() === 'find,deal')
   const first = (q: string) => searchApp(q)[0]?.href

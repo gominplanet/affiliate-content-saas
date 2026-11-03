@@ -12,6 +12,7 @@ import { asinFromAmazonUrl } from '@/lib/asin'
 import SavedProductImage, { saveProductImage, useSavedProductImage } from '@/components/product/SavedProductImage'
 import { detectLineEdit, LINE_META, type LineKey } from '@/lib/yt-description-lines'
 import PageHero from '@/components/layout/PageHero'
+import { useLook, useSection } from '@/components/layout/shell-nav-context'
 import { CoPilotGuide } from '@/components/guide/tool-guides'
 import HeroVideo from '@/components/layout/HeroVideo'
 import { walkthroughId } from '@/lib/tutorial-videos'
@@ -31,7 +32,7 @@ import { readComparisonSlots, productLinksInText, type ComparisonSlotInput } fro
 import {
   Youtube, Wand2, CheckCircle, AlertCircle, Loader2, ExternalLink,
   Copy, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, RefreshCw, Link2, Tag, Lock, Eye, Globe,
-  Image, Download, Sparkles, Upload, X, Search, Calendar, Camera, Package, Plus, EyeOff,
+  Image, Download, Sparkles, Upload, X, Search, Calendar, Camera, Package, Plus, EyeOff, Play,
 } from 'lucide-react'
 
 /** Walkthrough shown beside the page title. */
@@ -405,7 +406,8 @@ function ContentCalendar({ channelId, refreshNonce }: { channelId: string | null
     return () => { cancelled = true }
   }, [channelId, refreshNonce, enabled])
 
-  const PURPLE = '#7C3AED', GREEN = '#34C759'
+  // The brand colour: violet in the old look, teal in the new one (globals.css).
+  const PURPLE = 'var(--accent)', GREEN = '#34C759'
   const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
   const pad = (n: number) => String(n).padStart(2, '0')
   // Bucket by LOCAL date so a dot lands on the day the creator sees it go live.
@@ -2741,8 +2743,10 @@ function VideoStudioCardImpl({ video, userTier, playlists, playlistsNote = null,
 
   const ytUrl = `https://www.youtube.com/watch?v=${video.youtubeVideoId}`
 
+  // The new look (lib/look): a solid teal Generate and no emoji on the agents.
+  const teal = useLook() === 'teal'
   return (
-    <div id={`copilot-vid-${video.youtubeVideoId}`} className="card overflow-hidden scroll-mt-24 transition-shadow">
+    <div id={`copilot-vid-${video.youtubeVideoId}`} className={`card overflow-hidden scroll-mt-24 transition-shadow${teal ? ' rounded-[18px] hover:shadow-[0_8px_22px_rgba(15,30,31,0.08)]' : ''}`}>
       {/* Video header */}
       <div className="flex gap-4 p-5">
         {/* Icon placeholder sits BEHIND the thumbnail. PRIVATE YouTube videos
@@ -2864,7 +2868,7 @@ function VideoStudioCardImpl({ video, userTier, playlists, playlistsNote = null,
                     ? ['🔬 Product Analyst', '🎯 Title Strategist', '🔍 SEO Researcher', '✍️ Content Writer', '💬 Engagement Agent']
                     : ['🔬 Video Analyst', '🎯 Title Strategist', '🔍 SEO Researcher', '✍️ Description Writer', '💬 Engagement Agent']
                   ).map(a => (
-                    <span key={a} className="text-[9px] px-1.5 py-0.5 rounded-full bg-[#7C3AED]/10 text-[#7C3AED] animate-pulse">{a}</span>
+                    <span key={a} className="text-[9px] px-1.5 py-0.5 rounded-full bg-[#7C3AED]/10 text-[#7C3AED] animate-pulse">{teal ? a.replace(/^\S+\s/, '') : a}</span>
                   ))}
                 </div>
               </div>
@@ -2873,10 +2877,12 @@ function VideoStudioCardImpl({ video, userTier, playlists, playlistsNote = null,
                 onClick={() => generate()}
                 disabled={applying || finishRunning}
                 title={applying || finishRunning ? 'Wait for the push to YouTube to finish' : undefined}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50${teal ? ' rounded-full px-4 py-2 text-[13px] font-extrabold' : ''}`}
+                // An Amazon product found stays orange (it matches the ASIN tag);
+                // without one it is the brand colour.
                 style={{ background: cardAsin
                   ? 'linear-gradient(135deg, #ff9500 0%, #ff3b30 100%)'
-                  : 'linear-gradient(135deg, #7C3AED 0%, #5856d6 100%)' }}
+                  : teal ? 'var(--accent)' : 'linear-gradient(135deg, #7C3AED 0%, #5856d6 100%)' }}
               >
                 <Wand2 size={12} />
                 {generated
@@ -3101,7 +3107,7 @@ function VideoStudioCardImpl({ video, userTier, playlists, playlistsNote = null,
                       onClick={() => void saveLineAsDefault()}
                       disabled={savingLine}
                       className="shrink-0 px-2.5 py-1 rounded-md text-[11px] font-semibold text-white disabled:opacity-50"
-                      style={{ background: '#7C3AED' }}
+                      style={{ background: 'var(--accent)' }}
                     >
                       {savingLine ? 'Saving…' : 'Save as default'}
                     </button>
@@ -3301,7 +3307,7 @@ function VideoStudioCardImpl({ video, userTier, playlists, playlistsNote = null,
                           <img src={styleReferenceUrl} alt="Style reference" className="h-8 w-14 object-cover rounded-md border border-gray-200 dark:border-white/10" />
                           {!loadedPresetId && (
                             <button type="button" disabled={savingPreset || generatingThumbnail} onClick={() => void saveCurrentAsPreset()}
-                              className="text-[12px] font-semibold px-3 py-1.5 rounded-full text-white disabled:opacity-60" style={{ background: '#7C3AED' }}>
+                              className="text-[12px] font-semibold px-3 py-1.5 rounded-full text-white disabled:opacity-60" style={{ background: 'var(--accent)' }}>
                               {savingPreset ? 'Saving…' : 'Save look'}
                             </button>
                           )}
@@ -4360,6 +4366,11 @@ const VideoStudioCard = React.memo(VideoStudioCardImpl)
 
 export default function StudioPage() {
   const supabase = createBrowserClient()
+  // THE NEW LOOK (lib/look, behind Labs; Seb, 2026-11-03: "go ahead with
+  // Copilot"): a header card with Refresh and the channel, the three steps,
+  // round tabs with their counts. The old look is drawn as it was.
+  const teal = useLook() === 'teal'
+  const section = useSection('Make videos')
   const [drafts, setDrafts] = useState<DraftVideo[]>([])
   // HIDDEN FROM CO-PILOT (migration 443): videos the creator took off the
   // list. Kept on the server so they stay off on every device and reload.
@@ -4901,12 +4912,93 @@ export default function StudioPage() {
 
   return (
     <div>
-      <PageHero
-        guide={<CoPilotGuide />}
-        title="YouTube Co-Pilot"
-        subtitle="Generate titles, descriptions, tags, hashtags and thumbnails for any video, then push it all back to YouTube in one click."
-        media={walkthroughId(WALKTHROUGH_ID) ? <HeroVideo videoId={WALKTHROUGH_ID!} title="YouTube Co-Pilot walkthrough" /> : undefined}
-      />
+      {teal ? (
+        <>
+          {/* THE HEADER CARD: what it does, the way in (Refresh, or Connect
+              while YouTube is not connected), and which channel it reads. */}
+          <header className="relative rounded-[22px] border p-6 sm:p-8 mb-4 flex flex-wrap items-center gap-6" style={{ background: 'var(--surface)', borderColor: 'var(--border-2)' }}>
+            <div className="absolute top-4 right-4 z-10"><CoPilotGuide /></div>
+            <div className="flex-[1_1_380px] min-w-0 flex flex-col gap-3">
+              <p className="text-[12.5px] font-bold uppercase tracking-[0.08em]" style={{ color: section?.color ?? 'var(--text-3)' }}>Make videos</p>
+              <h1 className="text-[32px] sm:text-[42px] font-extrabold leading-[1.05]">YouTube Co-Pilot</h1>
+              <p className="text-[16px] leading-relaxed max-w-[560px]" style={{ color: 'var(--text-2)' }}>
+                Titles, descriptions, tags, hashtags and thumbnails for your YouTube videos, with your product link written in. Then one press puts it all back on YouTube.
+              </p>
+              <div className="mt-1 flex flex-wrap gap-2.5">
+                {needsAuth ? (
+                  <a href="/api/auth/youtube" className="inline-flex items-center gap-2 rounded-full px-5 py-3 text-[15px] font-extrabold text-white" style={{ background: '#ff0000' }}>
+                    <Youtube size={16} /> Connect YouTube
+                  </a>
+                ) : (
+                  <button type="button" onClick={refresh} disabled={loading} title="Pull your newest uploaded and drafted videos straight from YouTube"
+                    className="inline-flex items-center gap-2 rounded-full px-5 py-3 text-[15px] font-extrabold text-white transition-colors bg-[color:var(--accent)] hover:bg-[rgb(var(--brand-strong-rgb))] disabled:opacity-60">
+                    <RefreshCw size={16} className={loading ? 'animate-spin' : ''} /> {loading ? 'Refreshing…' : 'Refresh from YouTube'}
+                  </button>
+                )}
+                <Link href="/connect-youtube" className="inline-flex items-center rounded-full border-[1.5px] px-5 py-3 text-[15px] font-bold transition-colors hover:border-[color:var(--accent)]" style={{ borderColor: 'var(--border-2)', color: 'var(--text)' }}>
+                  {channels.length > 1 ? 'Manage channels' : 'Your YouTube connection'}
+                </Link>
+              </div>
+              {!needsAuth && (
+                <div className="flex flex-wrap items-center gap-2">
+                  {/* Counts only once the list has loaded, never a guess. */}
+                  {!loading && !error && drafts.length > 0 && (
+                    <span className="rounded-full px-3 py-1 text-[12.5px] font-bold" style={tabbed.todo.length ? { background: 'rgb(var(--brand-rgb) / 0.12)', color: 'var(--accent-text)' } : { background: 'var(--earn-bg)', color: 'var(--earn)' }}>
+                      {tabbed.todo.length ? `${tabbed.todo.length} ${tabbed.todo.length === 1 ? 'video needs' : 'videos need'} metadata` : 'Every draft has its metadata'}
+                    </span>
+                  )}
+                  {channels.length > 0 && (() => {
+                    // WHICH CHANNEL IT READS, always said: the top support
+                    // confusion is a Google login that owns several.
+                    const activeId = selectedChannelId ?? (channels.find(c => c.isDefault)?.channelId ?? channels[0].channelId)
+                    const active = channels.find(c => c.channelId === activeId) ?? channels[0]
+                    return channels.length > 1 ? (
+                      <label className="inline-flex items-center gap-1.5 rounded-full pl-3 pr-1 py-0.5 text-[12.5px] font-bold" style={{ background: 'var(--surface-2)', color: 'var(--text-2)' }}>
+                        Showing videos from
+                        <select value={activeId} onChange={(e) => switchChannel(e.target.value)} className="rounded-full border px-2 py-0.5 text-[12.5px] font-bold" style={{ borderColor: 'var(--border-2)', background: 'var(--surface)', color: 'var(--text)' }}>
+                          {channels.map(c => <option key={c.channelId} value={c.channelId}>{c.channelTitle}{c.isDefault ? ' (default)' : ''}</option>)}
+                        </select>
+                      </label>
+                    ) : (
+                      <span className="rounded-full px-3 py-1 text-[12.5px] font-bold truncate max-w-[22rem]" style={{ background: 'var(--surface-2)', color: 'var(--text-2)' }} title={active?.channelTitle || undefined}>
+                        Showing videos from {active?.channelTitle || 'your connected channel'}
+                      </span>
+                    )
+                  })()}
+                </div>
+              )}
+            </div>
+            {/* Room for the banner art: a video with its title being written. */}
+            <div aria-hidden="true" className="hidden sm:block relative flex-[1_1_260px] min-h-[190px] rounded-[18px] overflow-hidden" style={{ background: section?.tint ?? 'var(--surface-2)' }}>
+              <div className="absolute left-[12%] right-[12%] top-[14%] bottom-[34%] rounded-[12px] flex items-center justify-center" style={{ background: '#0F2A2B' }}>
+                <span className="w-11 h-8 rounded-[9px] flex items-center justify-center" style={{ background: '#ff0000' }}><Play size={16} fill="#fff" color="#fff" /></span>
+              </div>
+              <div className="absolute left-[12%] bottom-[20%] h-2.5 w-[60%] rounded-full" style={{ background: '#14B8A6' }} />
+              <div className="absolute left-[12%] bottom-[10%] h-2.5 w-[38%] rounded-full" style={{ background: '#FB923C' }} />
+            </div>
+          </header>
+          {/* THE THREE STEPS, in the order they happen. */}
+          <section aria-label="How it works" className="grid sm:grid-cols-3 gap-3 mb-5">
+            {[
+              ['Upload it as a draft', 'Private or unlisted in YouTube Studio, then press Refresh here.'],
+              ['Press Generate', 'MVP writes the title, description, tags and thumbnail, with your link.'],
+              ['Push to YouTube', 'One press puts it all on the video. Change anything first if you like.'],
+            ].map(([t, d], i) => (
+              <div key={t} className="flex items-start gap-3 rounded-2xl border p-4" style={{ background: 'var(--surface)', borderColor: 'var(--border-2)' }}>
+                <span className="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-white font-extrabold" style={{ background: 'var(--accent)', fontFamily: 'var(--font-sora), sans-serif' }}>{i + 1}</span>
+                <span><span className="block font-extrabold">{t}</span><span className="block text-[13.5px]" style={{ color: 'var(--text-3)' }}>{d}</span></span>
+              </div>
+            ))}
+          </section>
+        </>
+      ) : (
+        <PageHero
+          guide={<CoPilotGuide />}
+          title="YouTube Co-Pilot"
+          subtitle="Generate titles, descriptions, tags, hashtags and thumbnails for any video, then push it all back to YouTube in one click."
+          media={walkthroughId(WALKTHROUGH_ID) ? <HeroVideo videoId={WALKTHROUGH_ID!} title="YouTube Co-Pilot walkthrough" /> : undefined}
+        />
+      )}
 
       {canUsePreview('first_comment', userTier) && <FirstCommentsToPin />}
 
@@ -4976,9 +5068,10 @@ export default function StudioPage() {
             <ContentCalendar channelId={selectedChannelId} refreshNonce={calRefreshNonce} />
           </div>
 
-          {/* Right 1/3 — Refresh + channel picker stacked over the explainer */}
+          {/* Right 1/3 — Refresh + channel picker stacked over the explainer
+              (the new look has both in its header card). */}
           <div className="flex flex-col gap-3">
-            <button
+            {!teal && <button
               onClick={refresh}
               disabled={loading}
               title="Pull your newest uploaded and drafted videos straight from YouTube"
@@ -4986,8 +5079,8 @@ export default function StudioPage() {
             >
               <RefreshCw size={15} className={loading ? 'animate-spin' : ''} />
               {loading ? 'Refreshing…' : 'Refresh from YouTube'}
-            </button>
-            {channels.length > 0 && (() => {
+            </button>}
+            {!teal && channels.length > 0 && (() => {
               // Always show WHICH channel Co-Pilot is reading — the #1 support
               // confusion is videos from the wrong channel when a Google login
               // owns several. With >1 channel it's a switcher; with exactly one
@@ -5106,7 +5199,10 @@ export default function StudioPage() {
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search your YouTube videos by title…"
-              className="w-full text-sm pl-8 pr-3 py-2 rounded-lg border border-gray-200 dark:border-white/10 bg-white dark:bg-[#1c1c1e] text-[#1d1d1f] dark:text-[#f5f5f7]"
+              className={teal
+                ? 'w-full text-[14px] pl-9 pr-3 py-2.5 rounded-xl border focus:outline-none focus:border-[color:var(--accent)]'
+                : 'w-full text-sm pl-8 pr-3 py-2 rounded-lg border border-gray-200 dark:border-white/10 bg-white dark:bg-[#1c1c1e] text-[#1d1d1f] dark:text-[#f5f5f7]'}
+              style={teal ? { background: 'var(--surface)', borderColor: 'var(--border-2)', color: 'var(--text)' } : undefined}
             />
           </div>
       )}
@@ -5117,7 +5213,26 @@ export default function StudioPage() {
           {/* Workflow tabs — hidden during search since search results
               span all categories. Tab counts update live as drafts load
               via the "Load more" button. */}
-          {!activeQuery && drafts.length > 0 && (
+          {/* The new look: round tabs with an icon and the count. */}
+          {teal && !activeQuery && drafts.length > 0 && (
+            <div role="tablist" aria-label="Which videos" className="flex flex-wrap items-center gap-2 mb-3">
+              {([
+                { id: 'todo' as const, label: 'Needs metadata', icon: <Wand2 size={14} />, sub: 'Drafts that still need their title, description, tags and thumbnail generated (the orange ASIN tag marks the ones with a detected product)' },
+                { id: 'shipped' as const, label: 'Metadata sent', icon: <CheckCircle size={14} />, sub: 'Handled: MVP generated or pushed the metadata, or the video is already scheduled or live. Generate any of it again anytime.' },
+              ]).map(t => {
+                const on = activeTab === t.id
+                return (
+                  <button key={t.id} type="button" role="tab" aria-selected={on} title={t.sub}
+                    onClick={() => { autoTabPicked.current = true; setActiveTab(t.id) }}
+                    className="inline-flex items-center gap-1.5 rounded-full border-[1.5px] px-4 py-2 text-[14px] font-bold transition-colors hover:border-[color:var(--accent)]"
+                    style={on ? { background: 'var(--accent)', borderColor: 'var(--accent)', color: '#fff' } : { borderColor: 'var(--border-2)', background: 'var(--surface)', color: 'var(--text)' }}>
+                    {t.icon} {t.label} <span className="tabular-nums" style={{ opacity: on ? 0.9 : 0.6 }}>{tabbed[t.id].length}</span>
+                  </button>
+                )
+              })}
+            </div>
+          )}
+          {!teal && !activeQuery && drafts.length > 0 && (
             <div className="flex items-center gap-1 mb-3 border-b border-gray-200 dark:border-white/10">
               {([
                 { id: 'todo' as const, label: '📝 Needs metadata', sub: 'Drafts that still need their title, description, tags and thumbnail generated (the orange ASIN pill marks the ones with a detected product)' },
@@ -5260,7 +5375,7 @@ export default function StudioPage() {
                   <button
                     onClick={() => void loadAll()}
                     disabled={loadingMore}
-                    className="flex items-center gap-1.5 px-5 py-2.5 text-sm font-semibold rounded-xl bg-[#7C3AED] text-white hover:bg-[#6D28D9] disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm"
+                    className={`flex items-center gap-1.5 px-5 py-2.5 text-sm font-semibold rounded-xl bg-[#7C3AED] text-white hover:bg-[#6D28D9] disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm${teal ? ' rounded-full font-extrabold' : ''}`}
                   >
                     {loadingMore
                       ? <><Loader2 size={14} className="animate-spin" /> Loaded {drafts.length} so far: still scanning YouTube…</>
