@@ -391,6 +391,7 @@ export default function PhotoboothPage() {
   return (
     <>
       <PageHero
+        steps={[['Upload your selfies', 'A few clear photos of your face, once.'], ['MVP learns your face', 'Done once, then used every time you ask for your face.'], ['You are in every design', 'Thumbnails, posts and studio headshots, with the real you.']]}
         guide={<FaceModelsGuide />}
         title="Face Models"
         subtitle="Teach MVP your face once, then put the real you in every thumbnail, post, and studio-quality headshot."

@@ -214,7 +214,7 @@ export default function PostToAll({ presetProduct, defaultOpen = false, hideProd
       <div className="mb-4">
         <button onClick={() => setOpen(true)}
           className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-dashed border-gray-300 dark:border-white/15 text-sm font-semibold transition hover:bg-gray-50 dark:hover:bg-white/5" style={{ color: 'var(--text)' }}>
-          <Rocket size={15} className="text-[#d97706]" /> Post to your socials at once
+          <Rocket size={15} className="text-[color:var(--hub)]" /> Post to your socials at once
         </button>
       </div>
     )
@@ -224,7 +224,7 @@ export default function PostToAll({ presetProduct, defaultOpen = false, hideProd
     <div className="mb-4 rounded-2xl border border-gray-200 dark:border-white/10 bg-white dark:bg-white/[0.03] p-5 flex flex-col gap-4">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <Rocket size={16} className="text-[#d97706]" />
+          <Rocket size={16} className="text-[color:var(--hub)]" />
           <h2 className="text-base font-bold" style={{ color: 'var(--text)' }}>Post to your socials at once</h2>
         </div>
         {!defaultOpen && <button onClick={() => setOpen(false)} className="text-[11px] hover:underline" style={{ color: 'var(--text-soft)' }}>Hide</button>}
@@ -240,11 +240,11 @@ export default function PostToAll({ presetProduct, defaultOpen = false, hideProd
       {!hideProductInput && <p className="text-[11.5px]" style={{ color: 'var(--text-2)' }}>{productBoxHint(product, true)}</p>}
       <div className="grid grid-cols-2 gap-2">
         <button onClick={() => setMode('face')} disabled={faces.length === 0}
-          className={`flex items-center justify-center gap-2 px-3 py-2 rounded-xl border text-sm font-medium transition disabled:opacity-40 ${mode === 'face' ? 'border-[#d97706] text-[#d97706] bg-[#d97706]/5' : 'border-gray-200 dark:border-white/10'}`} style={mode !== 'face' ? { color: 'var(--text)' } : undefined}>
+          className={`flex items-center justify-center gap-2 px-3 py-2 rounded-xl border text-sm font-medium transition disabled:opacity-40 ${mode === 'face' ? 'border-[color:var(--hub)] text-[color:var(--hub)] bg-[rgb(var(--hub-rgb)/0.05)]' : 'border-gray-200 dark:border-white/10'}`} style={mode !== 'face' ? { color: 'var(--text)' } : undefined}>
           <User size={15} /> With my face
         </button>
         <button onClick={() => setMode('product')}
-          className={`flex items-center justify-center gap-2 px-3 py-2 rounded-xl border text-sm font-medium transition ${mode === 'product' ? 'border-[#d97706] text-[#d97706] bg-[#d97706]/5' : 'border-gray-200 dark:border-white/10'}`} style={mode !== 'product' ? { color: 'var(--text)' } : undefined}>
+          className={`flex items-center justify-center gap-2 px-3 py-2 rounded-xl border text-sm font-medium transition ${mode === 'product' ? 'border-[color:var(--hub)] text-[color:var(--hub)] bg-[rgb(var(--hub-rgb)/0.05)]' : 'border-gray-200 dark:border-white/10'}`} style={mode !== 'product' ? { color: 'var(--text)' } : undefined}>
           <Package size={15} /> Product only
         </button>
       </div>
@@ -281,14 +281,14 @@ export default function PostToAll({ presetProduct, defaultOpen = false, hideProd
               title={!st.connected ? `${n.label} is not connected` : on ? `Don't post to ${n.label}` : `Post to ${n.label}`}
               className={`flex items-center gap-2 rounded-xl border p-2.5 text-left transition ${
                 !st.connected ? 'border-gray-100 dark:border-white/5 opacity-50 cursor-not-allowed'
-                : on ? 'border-[#d97706] bg-[#d97706]/5'
+                : on ? 'border-[color:var(--hub)] bg-[rgb(var(--hub-rgb)/0.05)]'
                 : 'border-gray-200 dark:border-white/10 opacity-60 hover:opacity-100'}`}>
               <input
                 type="checkbox"
                 checked={on}
                 onChange={() => {}}
                 disabled={!st.connected || busy}
-                className="h-3.5 w-3.5 flex-shrink-0 accent-[#d97706] pointer-events-none"
+                className="h-3.5 w-3.5 flex-shrink-0 accent-[color:var(--hub)] pointer-events-none"
               />
               <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: n.accent }} />
               <span className="text-[13px] font-semibold flex-1" style={{ color: 'var(--text)' }}>{n.label}</span>
@@ -318,7 +318,7 @@ export default function PostToAll({ presetProduct, defaultOpen = false, hideProd
           creator's account rather than about this post, so the button could not
           be read as a description of what the click does. */}
       <button onClick={run} disabled={busy || !product.trim() || chosen.length === 0}
-        className="flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-white font-semibold text-sm transition disabled:opacity-60" style={{ backgroundColor: '#d97706' }}>
+        className="flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-white font-semibold text-sm transition disabled:opacity-60" style={{ backgroundColor: 'var(--hub)' }}>
         {busy
           ? <><Loader2 size={16} className="animate-spin" /> Designing + posting…</>
           : <><Rocket size={16} /> {chosen.length === 0 ? 'Pick a network above' : `Generate & post to ${chosen.map(n => n.label).join(' + ')}`}</>}

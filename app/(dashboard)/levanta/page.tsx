@@ -160,6 +160,7 @@ export default function LevantaPage() {
       </div>
 
       <PageHero
+        steps={[['Connect Levanta', 'Your Levanta key, once, under Other tools.'], ['Pick a product', 'From the Levanta brands you work with.'], ['Publish the review', 'Written in your voice with a commissionable Levanta link.']]}
         guide={<LevantaGuide />}
         title="MVP x Levanta"
         subtitle="Browse your Levanta brands and turn any Amazon product into a published review, with a real commissionable Levanta tracking link, written in your voice."

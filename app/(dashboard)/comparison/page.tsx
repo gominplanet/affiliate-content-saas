@@ -104,6 +104,7 @@ export default function ComparisonPage() {
   return (
     <>
       <PageHero
+        steps={[['Paste your videos', 'The YouTube reviews of the products to compare.'], ['MVP ranks them', 'Head to head, with a named winner and why.'], ['It publishes', 'Straight to your blog, every product linked.']]}
         guide={<ComparisonGuide />}
         title="Compare products"
         subtitle="Paste the YouTube videos for the products you've reviewed. Get a ranked head-to-head comparison with a named winner, published straight to your blog."

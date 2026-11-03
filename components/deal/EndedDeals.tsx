@@ -135,7 +135,8 @@ export default function EndedDeals() {
 
   return (
     <div className="max-w-5xl mx-auto">
-      <PageHero guide={<EndedDealsGuide />} title="Ended Deals" subtitle="Deal posts whose sale is over. Turn each into a lasting review at the same address, so it keeps ranking and keeps earning." />
+      <PageHero
+        steps={[['See the ended deals', 'Your deal posts whose sale has ended.'], ['Turn one into a review', 'MVP rewrites it as a lasting review at the same address.'], ['It keeps earning', 'Same link, same ranking, no sale needed.']]} guide={<EndedDealsGuide />} title="Ended Deals" subtitle="Deal posts whose sale is over. Turn each into a lasting review at the same address, so it keeps ranking and keeps earning." />
 
       <div className="card p-4 mb-4 text-[13px] leading-relaxed text-[#3a3a3c] dark:text-[#d1d1d6]">
         When a deal ends, its post still says &quot;Save 27%&quot; and &quot;Active deal&quot;. Making it a lasting review marks the deal

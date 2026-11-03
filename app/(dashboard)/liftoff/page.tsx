@@ -29,6 +29,7 @@ export default async function LiftoffPage({ searchParams }: { searchParams: Prom
   return (
     <>
       <PageHero
+        steps={[['Choose your look once', 'Your call to action and thumbnail look, for every video in the batch.'], ['Give each video its product', 'Up to ten videos, each with the Amazon product it reviews.'], ['Press Launch', 'YouTube is scheduled first, then each video goes to your US Amazon storefront.']]}
         guide={<LiftoffGuide />}
         title="Bulk Amazon upload"
         subtitle={<>Up to ten videos, one press. Choose your CTA and thumbnail look once, give each video its product, then press Launch. MVP burns the CTA, builds every thumbnail, schedules YouTube with paid promotion and AI use set, then sends each video to your US Amazon storefront, and shows you where each one landed.<span className="block mt-1 text-[12px]">Formerly Liftoff.</span></>}

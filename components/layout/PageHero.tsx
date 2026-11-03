@@ -19,7 +19,7 @@
 
 import type { ReactNode } from 'react'
 import { useLook, useActiveNav } from './shell-nav-context'
-import { TealHeader } from './teal-ui'
+import { TealHeader, TealSteps } from './teal-ui'
 
 interface PageHeroProps {
   title: string
@@ -39,13 +39,18 @@ interface PageHeroProps {
    *  top-right of the hero so it never competes with the title, subtitle, or
    *  actions row. This is where the "Full guide" link lives, one per tool. */
   guide?: ReactNode
+  /** The job's steps, in the order they happen: drawn under the header card
+   *  in the new look only (lib/look). A plain list, so a page drawn on the
+   *  server can pass it too. */
+  steps?: Array<[string, string]>
 }
 
-export default function PageHero({ title, subtitle, actions, accent, media, guide }: PageHeroProps) {
+export default function PageHero({ title, subtitle, actions, accent, media, guide, steps }: PageHeroProps) {
   const look = useLook()
   const active = useActiveNav()
   if (look === 'teal') {
     return (
+      <>
       <TealHeader
         eyebrow={active?.section}
         color={active?.color}
@@ -57,6 +62,8 @@ export default function PageHero({ title, subtitle, actions, accent, media, guid
         guide={guide}
         art={media ? <div className="flex-[1_1_300px] max-w-[420px] min-w-0">{media}</div> : undefined}
       />
+      {steps && steps.length > 0 && <TealSteps steps={steps} />}
+      </>
     )
   }
   return (

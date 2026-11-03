@@ -81,7 +81,7 @@ export default function SocialComposer() {
       <div className="order-last rounded-2xl border border-gray-200 dark:border-white/10 bg-white dark:bg-white/[0.03] p-5">
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2">
-            <Bookmark size={15} className="text-[#d97706]" />
+            <Bookmark size={15} className="text-[color:var(--hub)]" />
             <h2 className="text-sm font-bold" style={{ color: 'var(--text)' }}>Saved products</h2>
             {items.length > 0 && <span className="text-[11px]" style={{ color: 'var(--text-soft)' }}>({items.length})</span>}
           </div>
@@ -96,7 +96,7 @@ export default function SocialComposer() {
           </div>
         ) : items.length === 0 ? (
           <p className="text-[13px] leading-relaxed py-2" style={{ color: 'var(--text-soft)' }}>
-            No saved products yet. In <Link href="/amazon/research" className="font-semibold hover:underline" style={{ color: '#d97706' }}>Research</Link> (AMZ Finder, Deal Radar, Brand campaigns), tap <span className="font-semibold">Save</span> on a product and it shows up here, ready to turn into a Pin or post.
+            No saved products yet. In <Link href="/amazon/research" className="font-semibold hover:underline" style={{ color: 'var(--hub)' }}>Research</Link> (AMZ Finder, Deal Radar, Brand campaigns), tap <span className="font-semibold">Save</span> on a product and it shows up here, ready to turn into a Pin or post.
           </p>
         ) : (
           <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 gap-2.5">
@@ -115,7 +115,7 @@ export default function SocialComposer() {
                 <div className="p-2 flex flex-col gap-1.5 flex-1">
                   <p className="text-[11px] leading-tight line-clamp-2 flex-1" style={{ color: 'var(--text)' }}>{it.title || it.asin}</p>
                   <button onClick={() => use(it)}
-                    className="inline-flex items-center justify-center gap-1 text-[11px] font-semibold px-2 py-1.5 rounded-lg text-white transition hover:opacity-90" style={{ backgroundColor: '#d97706' }}>
+                    className="inline-flex items-center justify-center gap-1 text-[11px] font-semibold px-2 py-1.5 rounded-lg text-white transition hover:opacity-90" style={{ backgroundColor: 'var(--hub)' }}>
                     <Wand2 size={12} /> Make post
                   </button>
                 </div>
@@ -129,7 +129,7 @@ export default function SocialComposer() {
           <div className="flex flex-wrap items-center gap-1.5 mt-3">
             {Array.from({ length: totalPages }, (_, i) => (
               <button key={i} onClick={() => setPage(i)}
-                className={`min-w-[28px] h-7 px-2 rounded-lg text-[12px] font-semibold transition ${i === page ? 'bg-[#d97706] text-white' : 'bg-gray-100 dark:bg-white/10 hover:bg-gray-200 dark:hover:bg-white/20'}`}
+                className={`min-w-[28px] h-7 px-2 rounded-lg text-[12px] font-semibold transition ${i === page ? 'bg-[color:var(--hub)] text-white' : 'bg-gray-100 dark:bg-white/10 hover:bg-gray-200 dark:hover:bg-white/20'}`}
                 style={i === page ? undefined : { color: 'var(--text-soft)' }}>
                 {i + 1}
               </button>

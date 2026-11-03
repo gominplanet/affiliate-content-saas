@@ -255,7 +255,7 @@ export default function PinterestComposer({ presetProduct }: { presetProduct?: {
           <span className="text-xs font-semibold" style={{ color: 'var(--text)' }}>Amazon product link or ASIN</span>
           <input value={product} onChange={e => setProduct(e.target.value)} placeholder="https://www.amazon.com/dp/B0…  or  B0D5H9M72G" className={inputCls} />
           <span className="text-[11.5px]" style={{ color: 'var(--text-2)' }}>{productBoxHint(product, true)}</span>
-          {cmpNote && <span className="text-[11.5px] text-[#d97706]">{cmpNote}</span>}
+          {cmpNote && <span className="text-[11.5px] text-[color:var(--hub)]">{cmpNote}</span>}
         </label>
         <div className="grid grid-cols-2 gap-2">
           <button onClick={() => setMode('face')} disabled={faces.length === 0}

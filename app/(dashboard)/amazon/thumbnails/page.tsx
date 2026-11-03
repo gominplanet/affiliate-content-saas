@@ -34,7 +34,7 @@ export default function AmazonThumbnailsPage() {
   // The new look (lib/look): the shared header card, and teal for what you
   // press in place of the Amazon pages' amber.
   const teal = useLook() === 'teal'
-  const picked = teal ? 'border-[color:var(--accent)] bg-[rgb(var(--brand-rgb)/0.10)] text-[color:var(--accent-text)]' : 'border-[#d97706] bg-[#d97706]/10 text-[#d97706]'
+  const picked = teal ? 'border-[color:var(--accent)] bg-[rgb(var(--brand-rgb)/0.10)] text-[color:var(--accent-text)]' : 'border-[color:var(--hub)] bg-[rgb(var(--hub-rgb)/0.10)] text-[color:var(--hub)]'
   const [faces, setFaces] = useState<FaceModel[]>([])
   const [faceId, setFaceId] = useState<string>('')
   const [outfit, setOutfit] = useState('')
@@ -199,7 +199,7 @@ export default function AmazonThumbnailsPage() {
       ) : (
         <header className="mb-7">
           <div className="flex items-center gap-2 mb-3">
-            <Sparkles size={14} className="text-[#d97706]" />
+            <Sparkles size={14} className="text-[color:var(--hub)]" />
             <span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: 'var(--text-soft)' }}>
               Make videos · Thumbnails
             </span>
@@ -222,7 +222,7 @@ export default function AmazonThumbnailsPage() {
           { title: 'Add a headline (optional)', body: 'Type a punchy line like “WORTH IT?!”, or leave it blank and the Art Director writes one that fits the product.' },
           { title: 'Generate & use it', body: 'MVP designs the full 1280×720 thumbnail in seconds. Download it, or send it to Social designs to post everywhere.' },
         ]}
-        footnote={<>Want your face in designs? Set it up once under <Link href="/photobooth" className="font-semibold" style={{ color: '#d97706' }}>Face models</Link>. Ready to post? Head to <Link href="/amazon/social" className="font-semibold" style={{ color: '#d97706' }}>Social designs</Link>.</>}
+        footnote={<>Want your face in designs? Set it up once under <Link href="/photobooth" className="font-semibold" style={{ color: 'var(--hub)' }}>Face models</Link>. Ready to post? Head to <Link href="/amazon/social" className="font-semibold" style={{ color: 'var(--hub)' }}>Social designs</Link>.</>}
       />
 
       <div className="rounded-2xl border border-gray-200 dark:border-white/10 bg-white dark:bg-white/[0.03] p-5 flex flex-col gap-5">
@@ -282,7 +282,7 @@ export default function AmazonThumbnailsPage() {
               <p className="text-xs" style={{ color: 'var(--text-soft)' }}>Loading your faces…</p>
             ) : faces.length === 0 ? (
               <p className="text-xs" style={{ color: 'var(--text-soft)' }}>
-                No face yet. <Link href="/photobooth" className="text-[#d97706] font-semibold hover:underline">Upload your selfies</Link> to put yourself in the thumbnail, or use Product only.
+                No face yet. <Link href="/photobooth" className="text-[color:var(--hub)] font-semibold hover:underline">Upload your selfies</Link> to put yourself in the thumbnail, or use Product only.
               </p>
             ) : (
               <div className="flex flex-col gap-2.5">
@@ -309,7 +309,7 @@ export default function AmazonThumbnailsPage() {
                     onBlur={() => { void saveOutfitIfDirty() }}
                     placeholder="e.g. a white lab coat"
                     maxLength={120}
-                    className="px-3 py-2 rounded-lg text-sm border border-[#d2d2d7] dark:border-[#3a3a3c] bg-white dark:bg-[#1c1c1e] text-[#1d1d1f] dark:text-[#f5f5f7] outline-none focus:border-[#d97706]"
+                    className="px-3 py-2 rounded-lg text-sm border border-[#d2d2d7] dark:border-[#3a3a3c] bg-white dark:bg-[#1c1c1e] text-[#1d1d1f] dark:text-[#f5f5f7] outline-none focus:border-[color:var(--hub)]"
                   />
                   <span className="text-[11px]" style={{ color: 'var(--text-soft)' }}>
                     Leave blank to let the Art Director vary it. Saved to this face for next time.
@@ -371,7 +371,7 @@ export default function AmazonThumbnailsPage() {
           disabled={busy}
           className={teal
             ? 'flex items-center justify-center gap-2 px-5 py-3 rounded-full bg-[color:var(--accent)] hover:bg-[rgb(var(--brand-strong-rgb))] text-white font-extrabold text-[15px] transition disabled:opacity-60'
-            : 'flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-[#d97706] hover:bg-[#c2410c] text-white font-semibold text-sm transition disabled:opacity-60'}
+            : 'flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-[color:var(--hub)] hover:bg-[color:var(--hub-strong)] text-white font-semibold text-sm transition disabled:opacity-60'}
         >
           {busy ? <><Loader2 size={16} className="animate-spin" /> {status || 'Working…'}</> : <><Wand2 size={16} /> Generate thumbnail</>}
         </button>
@@ -393,11 +393,11 @@ export default function AmazonThumbnailsPage() {
                 saved a file on desktop: it opened a tab. The image is fetched
                 and saved from a blob now, and says so when it cannot. */}
             <DownloadDesign url={result.url} filename="mvp-thumbnail.jpg" />
-            {result.hook && <span className="text-xs px-2 py-1 rounded-full bg-[#d97706]/10 text-[#d97706] font-medium">{result.ownText ? 'Your text: ' : 'MVP wrote: '}{result.hook}</span>}
+            {result.hook && <span className="text-xs px-2 py-1 rounded-full bg-[rgb(var(--hub-rgb)/0.10)] text-[color:var(--hub)] font-medium">{result.ownText ? 'Your text: ' : 'MVP wrote: '}{result.hook}</span>}
             {result.reused && <span className="text-xs text-[#86868b]">Reused, nothing new was made: {result.reused}</span>}
             {!result.cmpNote && (result.cmpShown ?? 0) >= 2 && <span className="text-xs text-[#16a34a] font-medium">All {result.cmpShown} products are in it</span>}
           </div>
-          {result.cmpNote && <p className="mt-2 text-xs text-[#d97706]">{result.cmpNote}</p>}
+          {result.cmpNote && <p className="mt-2 text-xs text-[color:var(--hub)]">{result.cmpNote}</p>}
 
           {/* WHAT WENT IN. If the garment in the render is not the garment on
               this card, MVP was handed the wrong product photo and no amount of

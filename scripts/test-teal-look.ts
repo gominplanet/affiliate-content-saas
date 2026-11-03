@@ -175,6 +175,11 @@ async function main() {
   check('every page with a header of its own has the new-look header card too', noNew.length === 0, noNew)
   check('steps where the page is a job done in order', ['app/(dashboard)/deal-radar/page.tsx', 'app/(dashboard)/cc-campaigns/page.tsx', 'app/(dashboard)/idea-lists/page.tsx', 'app/(dashboard)/instagram-dm/page.tsx', 'components/labs/GroupPostQueue.tsx'].every((f) => /<TealSteps/.test(read(f))))
 
+  check('the shared header carries a job\'s steps, drawn in the new look only', /\{steps && steps\.length > 0 && <TealSteps steps=\{steps\} \/>\}/.test(read('components/layout/PageHero.tsx')))
+  const STEPPED = ['app/(dashboard)/script/page.tsx', 'app/(dashboard)/liftoff/page.tsx', 'components/first-comments/OlderVideos.tsx', 'components/labs/OnSale.tsx', 'components/labs/AmazonLive.tsx', 'app/(dashboard)/comparison/page.tsx', 'components/deal/EndedDeals.tsx', 'app/(dashboard)/collaborations/page.tsx', 'app/(dashboard)/social-launch-kit/page.tsx', 'app/(dashboard)/photobooth/page.tsx', 'app/(dashboard)/levanta/page.tsx']
+  check('job pages pass their steps to the header', STEPPED.every((f) => /<PageHero\s+steps=\{\[\[/.test(read(f))), STEPPED.filter((f) => !/<PageHero\s+steps=\{\[\[/.test(read(f))))
+  check('the Amazon pages\' amber is a setting: amber in the old look, teal in the new', /--hub: #d97706;/.test(rootBlock) && /--hub: rgb\(var\(--brand-rgb\)\);/.test(tealBlock) && !/#d97706/.test(read('components/amazon/PostToAll.tsx')))
+
   // ── The search box's new question ──
   check('filler words drop and plurals fold', requestWords('Edit a review') .join() === 'edit,review' && requestWords('find deals').join() === 'find,deal')
   const first = (q: string) => searchApp(q)[0]?.href

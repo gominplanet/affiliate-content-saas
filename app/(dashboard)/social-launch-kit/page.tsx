@@ -44,6 +44,7 @@ export default function SocialLaunchKitPage() {
   return (
     <div className="max-w-4xl mx-auto px-4 py-6">
       <PageHero
+        steps={[['Pick a platform', 'Facebook Page or Group, Pinterest, X, Threads, Bluesky or LinkedIn.'], ['MVP makes the kit', 'Name, bio, banner and avatar, made for your niche.'], ['Follow the setup', 'A step by step guide, ready to paste.']]}
         guide={<SocialLaunchKitGuide />}
         title="Social Launch Kit"
         subtitle="No time to figure out a Facebook Page or Group, Pinterest, X, Threads, Bluesky or LinkedIn? Pick a platform and MVP hands you everything: name, bio, banner, avatar, and a step-by-step setup, ready to paste."

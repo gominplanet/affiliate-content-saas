@@ -284,6 +284,7 @@ export default function ScriptPage() {
   return (
     <>
       <PageHero
+        steps={[['Paste a product', 'An Amazon link or ASIN. MVP reads the real product details.'], ['Pick a style', 'The kind of video you are making and how long it runs.'], ['Film from the script', 'A script in your voice with the shot list, ready to film.']]}
         guide={<ScriptwriterGuide />}
         title="Video Script & Shot List"
         subtitle={subtitle}

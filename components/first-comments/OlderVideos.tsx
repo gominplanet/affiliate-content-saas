@@ -203,6 +203,7 @@ export default function OlderVideos() {
   return (
     <div className="max-w-5xl mx-auto">
       <PageHero
+        steps={[['Pick your videos', 'New ones as they go live, or older ones from your channel.'], ['MVP writes the comment', 'From your channel, with the product link, in your words.'], ['It is pinned', 'At the top of the comments, where viewers look first.']]}
         accent={ACCENT}
         guide={<PinnedCommentsGuide />}
         title="Pinned comments"

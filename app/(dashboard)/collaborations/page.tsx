@@ -285,6 +285,7 @@ export default function CollaborationsPage() {
   return (
     <>
       <PageHero
+        steps={[['Name the brand', 'And the product or campaign you want to work on.'], ['MVP researches and writes', 'A pitch email that sells your work, in your voice.'], ['Send it', 'Copy it into your email and send it to the brand.']]}
         guide={<CollaborationsGuide />}
         title="Brand pitches"
         subtitle={<>Fill this out and we&apos;ll research the brand and write a pitch email that sells your work, ready to copy and send.<span className="block mt-1 text-[12px]">Formerly Brand Deals.</span></>}

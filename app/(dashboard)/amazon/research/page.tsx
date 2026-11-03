@@ -52,7 +52,7 @@ export default function AmazonResearchPage() {
         classic={(
         <header className="mb-8">
           <div className="flex items-center gap-2 mb-3">
-            <PackageSearch size={14} className="text-[#d97706]" />
+            <PackageSearch size={14} className="text-[color:var(--hub)]" />
             <span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: 'var(--text-soft)' }}>
               Amazon Influencer · Research
             </span>
@@ -87,13 +87,13 @@ export default function AmazonResearchPage() {
             <Link
               key={t.href}
               href={t.href}
-              className="group flex flex-col gap-3 rounded-2xl border border-gray-200 dark:border-white/10 bg-white dark:bg-white/[0.03] p-5 hover:border-[#d97706]/50 hover:shadow-sm transition"
+              className="group flex flex-col gap-3 rounded-2xl border border-gray-200 dark:border-white/10 bg-white dark:bg-white/[0.03] p-5 hover:border-[rgb(var(--hub-rgb)/0.5)] hover:shadow-sm transition"
             >
               <div className="flex items-center justify-between">
-                <div className="w-10 h-10 rounded-xl bg-[#d97706]/10 flex items-center justify-center">
-                  <Icon size={18} className="text-[#d97706]" />
+                <div className="w-10 h-10 rounded-xl bg-[rgb(var(--hub-rgb)/0.10)] flex items-center justify-center">
+                  <Icon size={18} className="text-[color:var(--hub)]" />
                 </div>
-                <ArrowRight size={16} className="text-[#86868b] group-hover:text-[#d97706] group-hover:translate-x-0.5 transition" />
+                <ArrowRight size={16} className="text-[#86868b] group-hover:text-[color:var(--hub)] group-hover:translate-x-0.5 transition" />
               </div>
               <div>
                 <h2 className="text-base font-bold mb-1" style={{ color: 'var(--text)' }}>{t.title}</h2>

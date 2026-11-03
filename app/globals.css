@@ -21,6 +21,11 @@
   --brand-tint-rgb: 237 233 254;    /* #EDE9FE */
   --brand-wash-rgb: 245 243 255;    /* #F5F3FF */
   --brand-2-rgb: 192 38 211;        /* #C026D3 */
+  /* The Amazon pages' own accent (Thumbnails, Social designs, Research):
+     amber, and in the new look the brand teal like every other page. */
+  --hub: #d97706;
+  --hub-rgb: 217 119 6;
+  --hub-strong: #c2410c;
 
   /* Brand accent — violet-600 → fuchsia-500. Replaced the old Apple-blue
      base with a more distinctive saturated violet that reads as "premium
@@ -380,6 +385,9 @@ html:not(.dark) :is(.bg-black, .bg-gray-900, .bg-zinc-900, .bg-neutral-900):not(
   /* Teal for words (a link, a number): the brand itself on a light page, a
      brighter teal on a dark one, where the brand is too dim to read as text. */
   --accent-text: rgb(var(--brand-rgb));
+  --hub: rgb(var(--brand-rgb));
+  --hub-rgb: var(--brand-rgb);
+  --hub-strong: rgb(var(--brand-strong-rgb));
   --bg:        #F2F6F6;
   --surface:   #FFFFFF;
   --surface-2: #EAF1F1;

@@ -282,6 +282,7 @@ export default function AmazonLive() {
         .no-print { display: none !important; }
       }`}</style>
       <PageHero
+        steps={[['Pick the products', 'The ones you will show on the Live.'], ['MVP builds your show', 'The order, the timings, and what to say from your own reviews.'], ['Go live prepared', 'With the questions viewers will ask already answered.']]}
         accent={ACCENT}
         guide={<AmazonLiveGuide />}
         title="Amazon Live Prep"
