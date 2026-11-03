@@ -139,6 +139,13 @@ async function main() {
   check('its tabs carry icons, not emoji, in the new look', /label: 'Needs metadata', icon: <Wand2/.test(CP) && /\{!teal && !activeQuery && drafts\.length > 0 && \(/.test(CP))
   check('Co-Pilot colours set inline follow the brand', !/'#7C3AED'/.test(CP) && /const PURPLE = 'var\(--accent\)', GREEN/.test(CP))
 
+  const CT = read('app/(dashboard)/content/page.tsx')
+  check('Blog posts draws its header card only in the new look, and the old page header as it was', /const teal = useLook\(\) === 'teal'/.test(CT) && /\{teal \? \(\s*<>\s*\{\/\* THE HEADER CARD/.test(CT) && /<PageHero\s+guide=\{<ContentGuide \/>\}/.test(CT))
+  check('its header follows the tab: Blog for the video tab, Share for Social Push', /const headSection = isSocialTab \? shareSection : blogSection/.test(CT) && /\{isSocialTab \? 'Social Push' : 'Blog posts'\}/.test(CT))
+  check('its counts show only once read', /\{!isSocialTab && !loading && \(/.test(CT) && /\{isSocialTab && postsLoaded && \(/.test(CT) && /count: postsLoaded \? allBlogPosts\.length : null/.test(CT))
+  check('Sync is not shown twice in the new look', /\{!teal && <ToolButton tint="green" icon=\{<RefreshCw size=\{18\} \/>\} label="Sync videos"/.test(CT))
+  check('Blog posts colours set inline follow the brand', !/'#7C3AED'/.test(CT) && !/'rgba\(124,58,237/.test(CT))
+
   // ── The search box's new question ──
   check('filler words drop and plurals fold', requestWords('Edit a review') .join() === 'edit,review' && requestWords('find deals').join() === 'find,deal')
   const first = (q: string) => searchApp(q)[0]?.href

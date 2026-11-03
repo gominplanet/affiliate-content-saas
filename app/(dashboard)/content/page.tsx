@@ -47,8 +47,9 @@ import { effectiveTier } from '@/lib/view-as'
 import { metaEnabled } from '@/lib/feature-flags'
 import {
   Youtube, Wand2, ExternalLink, CheckCircle, AlertCircle,
-  RefreshCw, Loader2, ChevronRight, Sparkles, X, Facebook, Pin, MessageCircle, Save, Upload, Search, Calendar, Handshake, ImagePlus, Link2, Tags, Wrench, Pencil, Rocket,
+  RefreshCw, Loader2, ChevronRight, Sparkles, X, Facebook, Pin, MessageCircle, Save, Upload, Search, Calendar, Handshake, ImagePlus, Link2, Tags, Wrench, Pencil, Rocket, Send, FileText,
 } from 'lucide-react'
+import { useLook, useSection } from '@/components/layout/shell-nav-context'
 import type { PinPreviewData } from '@/components/PinterestPreviewModal'
 import { amazonProductUrlRegex, ASIN_PATH_SEGMENTS } from '@/lib/asin'
 import MadeBefore from '@/components/product/MadeBefore'
@@ -2324,7 +2325,7 @@ function ScheduledList({
         const meta = item.kind === 'blog_publish'
           ? { label: 'WordPress', color: '#21759b' }
           : (PLATFORM_META[item.platform ?? 'linkedin']
-              ?? { label: item.platform ? item.platform.charAt(0).toUpperCase() + item.platform.slice(1) : 'Social', color: '#7C3AED' })
+              ?? { label: item.platform ? item.platform.charAt(0).toUpperCase() + item.platform.slice(1) : 'Social', color: 'var(--accent)' })
         // Handed to the Facebook queue (lib/facebook-queue): not published, not
         // failed, waiting for the creator to send it Group first.
         const queued = item.status === 'completed' && isQueuedNote(item.error_message)
@@ -2364,7 +2365,7 @@ function ScheduledList({
                 <div className="flex items-center gap-1.5 mt-2 flex-wrap">
                   <span className="text-[10px] text-[#86868b] dark:text-[#8e8e93]">Then posts to:</span>
                   {item.cascade.map((p) => {
-                    const m = PLATFORM_META[p as keyof typeof PLATFORM_META] ?? { label: p.charAt(0).toUpperCase() + p.slice(1), color: '#7C3AED' }
+                    const m = PLATFORM_META[p as keyof typeof PLATFORM_META] ?? { label: p.charAt(0).toUpperCase() + p.slice(1), color: 'var(--accent)' }
                     // TICKED IS NOT QUEUED. A platform chosen while it was not
                     // connected has no pending push and will not post; a solid
                     // chip said it would. Dashed, grey, and says so.
@@ -4461,8 +4462,113 @@ export default function ContentPage() {
   }, [recentMatched, hideShared, sharedRequired, posts])
 
   const isSocialTab = activeTab === 'posts' || activeTab === 'scheduled'
+  // THE NEW LOOK (lib/look, behind Labs; Seb, 2026-11-03: "go ahead" with
+  // Blog posts): a header card for the tab's job (Blog or Share), its main
+  // buttons, counts as read, the three steps on the blog tab, round tabs.
+  const teal = useLook() === 'teal'
+  const blogSection = useSection('Blog')
+  const shareSection = useSection('Share')
+  const headSection = isSocialTab ? shareSection : blogSection
+  const anyLoading = loading || postsLoading || scheduledLoading || refreshing
+  const pendingScheduled = scheduledItems ? scheduledItems.filter(s => s.status === 'pending').length : null
   return (
     <>
+      {teal ? (
+        <>
+          {/* THE HEADER CARD: the tab's job, its main buttons, and the counts
+              as read (none while they load). */}
+          <header className="relative rounded-[22px] border p-6 sm:p-8 mb-4 flex flex-wrap items-center gap-6" style={{ background: 'var(--surface)', borderColor: 'var(--border-2)' }}>
+            <div className="absolute top-4 right-4 z-10"><ContentGuide /></div>
+            <div className="flex-[1_1_380px] min-w-0 flex flex-col gap-3">
+              <p className="text-[12.5px] font-bold uppercase tracking-[0.08em]" style={{ color: headSection?.color ?? 'var(--text-3)' }}>{isSocialTab ? 'Share' : 'Blog'}</p>
+              <h1 className="text-[32px] sm:text-[42px] font-extrabold leading-[1.05]">{isSocialTab ? 'Social Push' : 'Blog posts'}</h1>
+              <p className="text-[16px] leading-relaxed max-w-[580px]" style={{ color: 'var(--text-2)' }}>
+                {isSocialTab
+                  ? 'Every post on your blog, ready to send to your social accounts: Facebook, Instagram, Pinterest, X, LinkedIn, Threads, Bluesky and Telegram. Now or on a schedule.'
+                  : 'Your YouTube videos become reviews on your blog, written from what you actually said, with your link and real product details. Or start from a product link.'}
+              </p>
+              <div className="mt-1 flex flex-wrap gap-2.5">
+                {isSocialTab ? (
+                  <button type="button" onClick={() => refreshActiveTabRef.current()} disabled={anyLoading || syncing}
+                    className="inline-flex items-center gap-2 rounded-full px-5 py-3 text-[15px] font-extrabold text-white transition-colors bg-[color:var(--accent)] hover:bg-[rgb(var(--brand-strong-rgb))] disabled:opacity-60">
+                    <RefreshCw size={16} className={anyLoading ? 'animate-spin' : ''} /> {anyLoading ? 'Refreshing…' : activeTab === 'scheduled' ? 'Refresh the queue' : 'Refresh your posts'}
+                  </button>
+                ) : (
+                  <>
+                    <button type="button" onClick={() => syncVideos()} disabled={syncing} title="Pull your latest YouTube videos into this blog"
+                      className="inline-flex items-center gap-2 rounded-full px-5 py-3 text-[15px] font-extrabold text-white transition-colors bg-[color:var(--accent)] hover:bg-[rgb(var(--brand-strong-rgb))] disabled:opacity-60">
+                      <RefreshCw size={16} className={syncing ? 'animate-spin' : ''} /> {syncing ? `Pulling${syncProgress ? ` ${syncProgress.pulled}` : ''}…` : 'Sync videos from YouTube'}
+                    </button>
+                    <button type="button" onClick={() => setFromLinkOpen(true)} title="No video? Create a post from a product link or ASIN. MVP researches, writes and publishes it."
+                      className="inline-flex items-center gap-2 rounded-full border-[1.5px] px-5 py-3 text-[15px] font-bold transition-colors hover:border-[color:var(--accent)]" style={{ borderColor: 'var(--border-2)', color: 'var(--text)' }}>
+                      <Sparkles size={16} /> New post from a link
+                    </button>
+                  </>
+                )}
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <SitePicker value={siteId} onChange={setSiteId} compact />
+                {/* Counts only once read. */}
+                {!isSocialTab && !loading && (
+                  <span className="rounded-full px-3 py-1 text-[12.5px] font-bold" style={{ background: 'rgb(var(--brand-rgb) / 0.12)', color: 'var(--accent-text)' }}>
+                    {horizontalVideos.length} {horizontalVideos.length === 1 ? 'video' : 'videos'}, {generatedCount} with a post
+                  </span>
+                )}
+                {isSocialTab && postsLoaded && (
+                  <span className="rounded-full px-3 py-1 text-[12.5px] font-bold" style={{ background: 'rgb(var(--brand-rgb) / 0.12)', color: 'var(--accent-text)' }}>
+                    {allBlogPosts.length} {allBlogPosts.length === 1 ? 'post' : 'posts'} live
+                  </span>
+                )}
+                {isSocialTab && pendingScheduled !== null && (
+                  <span className="rounded-full px-3 py-1 text-[12.5px] font-bold" style={{ background: 'var(--surface-2)', color: 'var(--text-2)' }}>
+                    {pendingScheduled} scheduled
+                  </span>
+                )}
+                {!isSocialTab && (
+                  <button type="button" onClick={() => refreshActiveTabRef.current()} disabled={anyLoading || syncing}
+                    className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[12.5px] font-bold disabled:opacity-50" style={{ background: 'var(--surface-2)', color: 'var(--text-2)' }}>
+                    <RefreshCw size={12} className={anyLoading ? 'animate-spin' : ''} /> {anyLoading ? 'Refreshing…' : 'Refresh'}
+                  </button>
+                )}
+              </div>
+            </div>
+            {/* Room for the banner art: a blog page, or posts going out. */}
+            <div aria-hidden="true" className="hidden sm:block relative flex-[1_1_260px] min-h-[190px] rounded-[18px] overflow-hidden" style={{ background: headSection?.tint ?? 'var(--surface-2)' }}>
+              {isSocialTab ? (
+                <>
+                  <div className="absolute left-[14%] top-[22%] w-[38%] h-[56%] rounded-[12px] flex flex-col gap-1.5 p-2.5" style={{ background: 'var(--bg-sidebar, #fff)' }}>
+                    <span className="h-[46%] rounded-md" style={{ background: '#14B8A6' }} /><span className="h-2 w-[80%] rounded-full" style={{ background: 'var(--surface-2)' }} /><span className="h-2 w-[55%] rounded-full" style={{ background: 'var(--surface-2)' }} />
+                  </div>
+                  <Send size={30} className="absolute right-[18%] top-[34%]" style={{ color: headSection?.color ?? '#FB923C' }} />
+                </>
+              ) : (
+                <div className="absolute left-[14%] right-[14%] top-[16%] bottom-[16%] rounded-[12px] flex flex-col gap-2 p-3" style={{ background: 'var(--bg-sidebar, #fff)' }}>
+                  <span className="h-2.5 w-[70%] rounded-full" style={{ background: '#0F2A2B' }} />
+                  <span className="flex-1 rounded-md" style={{ background: '#14B8A6' }} />
+                  <span className="h-2 w-[90%] rounded-full" style={{ background: 'var(--surface-2)' }} />
+                  <span className="h-2 w-[60%] rounded-full" style={{ background: 'var(--surface-2)' }} />
+                  <span className="h-5 w-[42%] rounded-full" style={{ background: '#FB923C' }} />
+                </div>
+              )}
+            </div>
+          </header>
+          {/* THE THREE STEPS, on the blog tab, in the order they happen. */}
+          {!isSocialTab && (
+            <section aria-label="How it works" className="grid sm:grid-cols-3 gap-3 mb-5">
+              {[
+                ['Sync your videos', 'Pull your YouTube videos in. Any video works, even old ones.'],
+                ['Press Generate Post', 'MVP writes the review from what you said and publishes it to your blog.'],
+                ['Share it', 'Send it to your social accounts from Blog to Social, now or scheduled.'],
+              ].map(([t, d], i) => (
+                <div key={t} className="flex items-start gap-3 rounded-2xl border p-4" style={{ background: 'var(--surface)', borderColor: 'var(--border-2)' }}>
+                  <span className="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-white font-extrabold" style={{ background: 'var(--accent)', fontFamily: 'var(--font-sora), sans-serif' }}>{i + 1}</span>
+                  <span><span className="block font-extrabold">{t}</span><span className="block text-[13.5px]" style={{ color: 'var(--text-3)' }}>{d}</span></span>
+                </div>
+              ))}
+            </section>
+          )}
+        </>
+      ) : (
       <PageHero
         guide={<ContentGuide />}
         // The title follows the tab: the published and scheduled tabs are what
@@ -4498,6 +4604,7 @@ export default function ContentPage() {
           </div>
         }
       />
+      )}
 
       {/* Auto-pilot posts the quality gate kept as drafts, with the reasons.
           Renders nothing when there are none. */}
@@ -4509,6 +4616,7 @@ export default function ContentPage() {
           the hero (Refresh lives up in the header next to the site picker).
           Grouped by colour: create (violet), fix (amber/rose), settings
           (blue/violet), data (green). */}
+      {teal && <h2 className="text-[20px] font-extrabold mb-3">Tools and settings</h2>}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 mb-6">
         <ToolButton tint="violet" icon={<Sparkles size={18} />} label="New post from a link" desc="Product link or ASIN → live post"
           onClick={() => setFromLinkOpen(true)}
@@ -4549,9 +4657,9 @@ export default function ContentPage() {
                 ))}
               </select>
             )}
-            <ToolButton tint="green" icon={<RefreshCw size={18} />} label="Sync videos"
+            {!teal && <ToolButton tint="green" icon={<RefreshCw size={18} />} label="Sync videos"
               desc={syncing ? `Pulling${syncProgress ? ` ${syncProgress.pulled}` : ''}…` : 'Pull new from YouTube'}
-              onClick={() => syncVideos()} loading={syncing} disabled={syncing} title="Pull your latest YouTube videos into this blog" />
+              onClick={() => syncVideos()} loading={syncing} disabled={syncing} title="Pull your latest YouTube videos into this blog" />}
           </>
         )}
       </div>
@@ -4578,6 +4686,34 @@ export default function ContentPage() {
       <Suspense fallback={null}><TabQueryWatcher onParams={applyDeepLink} /></Suspense>
       {/* Tab bar — split Videos into Horizontal (16:9 long-form, blog source)
           and Vertical (9:16 Shorts, Instagram source) since the workflows differ */}
+      {teal ? (
+        // The new look: round tabs with an icon and their count (once read).
+        <div role="tablist" aria-label="Blog posts and Social Push" className="flex flex-wrap items-center gap-2 mb-4">
+          {([
+            { key: 'horizontal' as const, label: 'Video to Blog', icon: <Youtube size={14} />, count: loading ? null : horizontalVideos.length },
+            { key: 'posts' as const, label: 'Blog to Social', icon: <Send size={14} />, count: postsLoaded ? allBlogPosts.length : null },
+            { key: 'scheduled' as const, label: 'Scheduled', icon: <Calendar size={14} />, count: pendingScheduled },
+          ]).map(({ key, label, icon, count }) => {
+            const on = activeTab === key
+            return (
+              <button key={key} type="button" role="tab" aria-selected={on}
+                onClick={() => {
+                  setActiveTab(key)
+                  if (key === 'posts' && !postsLoading) loadWpPosts()
+                  if (key === 'scheduled' && !scheduledLoading) loadScheduled()
+                }}
+                className="inline-flex items-center gap-1.5 rounded-full border-[1.5px] px-4 py-2 text-[14px] font-bold transition-colors hover:border-[color:var(--accent)]"
+                style={on ? { background: 'var(--accent)', borderColor: 'var(--accent)', color: '#fff' } : { borderColor: 'var(--border-2)', background: 'var(--surface)', color: 'var(--text)' }}>
+                {icon} {label}{count !== null && <span className="tabular-nums" style={{ opacity: on ? 0.9 : 0.6 }}>{count}</span>}
+              </button>
+            )
+          })}
+          <a href="/instagram-burner" title="Turn your Shorts into Reels and TikToks in the Shop Burner"
+            className="inline-flex items-center gap-1.5 rounded-full border-[1.5px] border-dashed px-4 py-2 text-[14px] font-bold transition-colors hover:border-[color:var(--accent)]" style={{ borderColor: 'var(--border-2)', color: 'var(--text-2)' }}>
+            <FileText size={14} /> Shorts to Social <ExternalLink size={12} />
+          </a>
+        </div>
+      ) : (
       <div className="flex items-center gap-1 border-b border-gray-200 dark:border-white/10 mb-4 overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
         {([
           { key: 'horizontal' as const, label: 'Video to Blog' },
@@ -4615,6 +4751,7 @@ export default function ContentPage() {
           Shorts → Social <ExternalLink size={12} />
         </a>
       </div>
+      )}
 
       {/* How-it-works explainer — only on the Long-form → Blog tab. ALWAYS
           collapsed on load; it's a plain native <details> that expands only
@@ -4702,7 +4839,7 @@ export default function ContentPage() {
                 className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-[#34c759] text-white rounded-lg hover:bg-[#2db34a] disabled:opacity-60 transition-colors"
                 title="Link old posts to their YouTube videos so Rewrite works"
               >
-                {backfilling ? <><Loader2 size={11} className="animate-spin" /> Linking…</> : '⚡ Link missing videos'}
+                {backfilling ? <><Loader2 size={11} className="animate-spin" /> Linking…</> : teal ? 'Link missing videos' : '⚡ Link missing videos'}
               </button>
               <button
                 onClick={() => setSelectedPostIds(new Set(filteredPosts.filter(p => !p.thumbnail).map(p => p.id)))}
@@ -4815,7 +4952,7 @@ export default function ContentPage() {
                       onClick={() => { setHideShared(v => !v); setRecentPage(1) }}
                       className="inline-flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1 rounded-full border transition-colors"
                       style={hideShared
-                        ? { background: 'rgba(124,58,237,0.12)', borderColor: 'rgba(124,58,237,0.4)', color: '#7C3AED' }
+                        ? { background: 'rgb(var(--brand-rgb) / 0.12)', borderColor: 'rgb(var(--brand-rgb) / 0.4)', color: 'var(--accent)' }
                         : { background: 'transparent', borderColor: 'var(--border, rgba(0,0,0,0.12))', color: 'var(--text-soft, #6e6e73)' }}
                       title="Hide posts already shared to your connected socials. X/Twitter is excluded (rate-limited) and one stray platform failure is forgiven. Toggle off to see everything."
                     >
@@ -5622,7 +5759,8 @@ const TOOL_TINTS: Record<string, { bg: string; fg: string }> = {
   amber:  { bg: 'rgba(245,158,11,0.15)', fg: '#d97706' },
   rose:   { bg: 'rgba(244,63,94,0.15)',  fg: '#e11d48' },
   blue:   { bg: 'rgba(10,132,255,0.15)', fg: '#0a84ff' },
-  violet: { bg: 'rgba(124,58,237,0.15)', fg: '#7C3AED' },
+  // The brand colour: violet in the old look, teal in the new one (globals.css).
+  violet: { bg: 'rgb(var(--brand-rgb) / 0.15)', fg: 'var(--accent)' },
   green:  { bg: 'rgba(52,199,89,0.16)',  fg: '#1f8a3a' },
   slate:  { bg: 'var(--surface-2)',      fg: 'var(--text-soft)' },
 }
