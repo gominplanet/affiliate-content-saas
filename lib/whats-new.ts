@@ -27,6 +27,16 @@ export interface WhatsNewItem {
 }
 
 export const WHATS_NEW: WhatsNewItem[] = [
+  // The new look, open to Pro (Seb, 2026-11-03: "open it to pro").
+  {
+    date: '2026-11-03',
+    gate: 'new_look',
+    badge: 'NEW',
+    tone: '#0B7A6E',
+    title: 'A new look for MVP',
+    desc: 'Teal for everything you can click, a header on every page that says what it does, numbered steps on the jobs you do in order, and a Dashboard that shows what needs you today and everything MVP does, each with a line on what it is for. Prefer the old look for now? Press New look at the bottom of the menu to switch back, and again to return.',
+    href: '/dashboard',
+  },
   // Instagram Auto-DM, open to members (Seb, 2026-10-23: "the auto DM
   // Instagram feature works perfectly. Now add it to the what's new of the
   // pop-up message for all users to see").
@@ -454,8 +464,11 @@ export function newsGateOpen(gate: NewsGate | undefined, tier: unknown): boolean
 /** The entries of the last `days` days this plan has, newest first. Pure. */
 export function recentNews(tier: unknown, now: Date = new Date(), days = NEWS_DAYS, items: WhatsNewItem[] = WHATS_NEW): WhatsNewItem[] {
   const cut = now.getTime() - days * 86_400_000
+  // Never an entry dated ahead of today (a day's grace for time zones), so a
+  // release written up early does not show before it is out.
+  const soonest = now.getTime() + 86_400_000
   return items
-    .filter((u) => Date.parse(u.date + 'T23:59:59Z') >= cut && newsGateOpen(u.gate, tier))
+    .filter((u) => Date.parse(u.date + 'T23:59:59Z') >= cut && Date.parse(u.date + 'T00:00:00Z') <= soonest && newsGateOpen(u.gate, tier))
     .sort((a, b) => b.date.localeCompare(a.date))
 }
 

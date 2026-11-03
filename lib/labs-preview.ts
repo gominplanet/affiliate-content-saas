@@ -62,9 +62,10 @@ const OPEN_TO: Record<PreviewFeature, 'admin' | 'labs'> = {
   // picker for admin only while it is tested (Seb, 2026-11-02).
   creator_look: 'admin',
   // The Teal Pop look (Seb, 2026-11-03: "I like A"): teal and orange, Sora
-  // and Plus Jakarta Sans, the menu and the Dashboard redrawn. Admin only while
-  // it is tried on the live site, with a switch back to the old look (lib/look).
-  new_look: 'admin',
+  // and Plus Jakarta Sans, the menu, the Dashboard and every page redrawn.
+  // Admin only while it was tried on the live site; open to Pro the same day
+  // (Seb: "open it to pro"), with the switch back to the old look (lib/look).
+  new_look: 'labs',
   // Liftoff uploads through SCOUT in YouTube Studio instead of YouTube's API,
   // so an upload costs nothing from the shared daily quota. Admin only while
   // it is tested (Seb, 2026-10-02: "we need to rely on scout"). Opened to Pro

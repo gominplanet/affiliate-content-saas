@@ -1345,8 +1345,9 @@ export default function DashboardShellV2({
         </nav>
 
 
-        {/* THE LOOK SWITCH, for an account trying the new look (Labs): one
-            press between the new look and the old, kept in a cookie. */}
+        {/* THE LOOK SWITCH, for every account the new look is open to (Pro
+            since 2026-11-03): one press between it and the old look, kept
+            in a cookie. */}
         {canTryLook && !railCollapsed && (
           <div className="px-3 pt-2">
             <button
@@ -1354,9 +1355,9 @@ export default function DashboardShellV2({
               onClick={switchLook}
               className="w-full flex items-center justify-between gap-2 rounded-lg border px-2.5 py-2 text-[12px] font-semibold transition-colors"
               style={{ borderColor: 'var(--border)', color: 'var(--text-soft)', backgroundColor: 'var(--surface)' }}
-              title={teal ? 'Go back to the old look. Only you see the new one for now.' : 'Try the new look. Only you see it for now.'}
+              title={teal ? 'Go back to the old look. You can switch again any time.' : 'Use the new look. You can switch again any time.'}
             >
-              <span className="flex items-center gap-1.5"><FlaskConical size={13} /> New look</span>
+              <span className="flex items-center gap-1.5"><Palette size={13} /> New look</span>
               <span
                 className="rounded-full px-2 py-0.5 text-[11px] font-bold"
                 style={teal ? { background: 'var(--accent)', color: '#fff' } : { background: 'var(--surface-bright)', color: 'var(--text-soft)' }}

@@ -3,10 +3,11 @@
 // WHICH LOOK AN ACCOUNT SEES (the Teal Pop redesign, Seb, 2026-11-03: "I like
 // A. I like A the best so far, for sure").
 //
-// Behind Labs while it is tried on the live site (lib/labs-preview new_look).
-// An account allowed to try it gets it straight away, and a switch in the menu
-// takes it back to the old look. The choice is a cookie, so the server draws
-// the right look on the first paint instead of flashing the old one.
+// On its own switch (lib/labs-preview new_look): open to Pro since
+// 2026-11-03 (Seb: "open it to pro"). An account allowed it gets it straight
+// away, and a switch at the foot of the menu takes it back to the old look.
+// The choice is a cookie, so the server draws the right look on the first
+// paint instead of flashing the old one.
 
 import { canUsePreview } from '@/lib/labs-preview'
 
