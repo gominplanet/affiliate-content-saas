@@ -15,13 +15,14 @@
  *   retry    { id }  start a failed video over.
  *   finish   { id }  done with it: the raw takes are deleted now.
  *   remove   { id }  the video, its takes and its files, gone.
+ *   product  { id, product }  its product or ASIN, for the downloaded file's name.
  *   forget_picture { url }  a PNG out of the creator's picture library.
  *   save_look { settings }  the look every new video starts from (migration 462).
  */
 import { NextResponse, after } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { canUsePreview } from '@/lib/labs-preview'
-import { cleanSettings, clock, linesOf, DEFAULT_SETTINGS, type Plan, type Word } from '@/lib/review-edit'
+import { cleanSettings, clock, keepName, linesOf, DEFAULT_SETTINGS, type Plan, type Word } from '@/lib/review-edit'
 import { promptChange } from '@/lib/review-edit-plan'
 import { moveQueue, deleteRaw, ownPath, hasUpload, serverJobs, finishMaking, takeFiles, MAX_TAKE_FILES, EDIT_BUCKET, type EditRow, type Src, type TakeFile, type ServerView, editDb } from '@/lib/review-edit-server'
 import { driveAccessToken, driveFile, isDriveId } from '@/lib/google-drive'
@@ -45,7 +46,7 @@ async function gate() {
 
 /** What the page shows for one video: never the whole transcript. server:
  *  what the video server says about it while it is being made. */
-function view(r: EditRow, server?: ServerView | null) {
+function view(r: EditRow, server?: ServerView | null, dropAsin?: string | null) {
   const onServer = r.status === 'making' && server
     ? (server.progress[`edit-${r.id}`] ? { ...server.progress[`edit-${r.id}`], others: server.others } : { missing: true as const })
     : null
@@ -65,6 +66,8 @@ function view(r: EditRow, server?: ServerView | null) {
     fromDrive: r.review_src?.kind === 'drive',
     /** The files each take is joined from, in order, when more than one. */
     files: { talk: takeFiles(r.review_src).map((f) => f.name || 'A file'), broll: takeFiles(r.broll_src).map((f) => f.name || 'A file') },
+    /** What its file is called when downloaded: the product, and the ASIN when known. */
+    keep: keepName({ product: r.product, heard: r.plan?.product ?? (r.info?.brollCheck?.talk || (cleanSettings(r.settings).kind === 'review' ? r.plan?.title : null) || null), name: r.name, files: takeFiles(r.review_src).map((f) => f.name || ''), dropAsin }),
     settings: cleanSettings(r.settings),
     review: r.info?.review ?? null,
     outputs: r.outputs ?? null,
@@ -121,8 +124,16 @@ export async function GET() {
     for (const r of heard) await finishMaking(db, r.id, r.user_id, { ...server.done[`edit-${r.id}`] })
     if (heard.length) rows = ((await db.from('review_edits').select('*').eq('user_id', g.userId).order('created_at', { ascending: false }).limit(40)).data ?? rows) as EditRow[]
   }
+  // An ASIN set on a finished video in Drop names its download too.
+  const outs = rows.flatMap((r) => Object.values(r.outputs || {}).map((o) => o.url)).filter(Boolean)
+  const dropAsin = new Map<string, string>()
+  if (outs.length) {
+    const { data: items } = await db.from('drop_items').select('source_url,asin').eq('user_id', g.userId).in('source_url', outs.slice(0, 200)).not('asin', 'is', null)
+    for (const it of (items ?? []) as { source_url: string; asin: string }[]) dropAsin.set(it.source_url, it.asin)
+  }
+  const asinOf = (r: EditRow) => Object.values(r.outputs || {}).map((o) => dropAsin.get(o.url)).find(Boolean) ?? null
   return NextResponse.json({
-    edits: rows.map((r: EditRow) => view(r, server)),
+    edits: rows.map((r: EditRow) => view(r, server, asinOf(r))),
     defaults: lookRow ? cleanSettings(lookRow.settings) : last ? cleanSettings(last.settings) : DEFAULT_SETTINGS,
     lookSaved: !!lookRow, lookNeedsSql: lookMissing,
     pictures: await pictureLibrary(db, g.userId),
@@ -221,6 +232,16 @@ export async function POST(request: Request) {
   const { data: found } = await db.from('review_edits').select('*').eq('id', id).eq('user_id', g.userId).maybeSingle()
   const row = found as EditRow | null
   if (!row) return NextResponse.json({ error: 'That video is not in your list.' }, { status: 404 })
+
+  // The product or its ASIN, said after the video was added (Seb, 2026-11-03:
+  // the ASIN in the downloaded file's name). Only the name changes: the edit
+  // is not touched, nor when its step began.
+  if (action === 'product') {
+    const product = typeof body.product === 'string' ? body.product.trim().slice(0, 300) || null : null
+    const { error } = await db.from('review_edits').update({ product }).eq('id', row.id)
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    return NextResponse.json({ ok: true, edit: view({ ...row, product } as EditRow) })
+  }
 
   if (action === 'change') {
     let settings = cleanSettings(body.settings ?? row.settings, cleanSettings(row.settings))

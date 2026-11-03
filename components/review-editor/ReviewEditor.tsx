@@ -27,6 +27,7 @@ import { storageSizeRefusal, BULK_VIDEO_MAX_BYTES } from '@/lib/clip-source-limi
 import { pickFromDrive, type DriveState } from '@/components/review-editor/drive-picker'
 import DriveBatch from '@/components/review-editor/DriveBatch'
 import { BURN_KEEP_DAYS } from '@/lib/burn-retention'
+import { normalizeAsinInput } from '@/lib/asin'
 import {
   DEFAULT_SETTINGS, FORMAT_WORDS, KIND_WORDS, LOGO_OPACITY, LOGO_SIZES, LOGO_WHEN_WORDS, LOGO_WIDTH, MAX_PICTURES, SHOW_SECONDS, PICTURE_WHEN_WORDS, PICTURE_WIDTH, POSITIONS, POSITION_WORDS, SPOTS,
   TITLE_COLORS, TITLE_LOOKS, TITLE_LOOK_WORDS, TITLE_SECONDS, clock, cleanSettings, downloadLink,
@@ -56,6 +57,8 @@ interface EditView {
   rawInMvp: boolean; fromDrive: boolean
   /** The files each take is joined from, in order (one each, usually). */
   files?: { talk: string[]; broll: string[] }
+  /** What its file is called when downloaded (lib/review-edit keepName). */
+  keep?: { base: string; asin: string | null; product: string | null }
   settings: EditSettings
   review: { duration: number; width: number; height: number } | null
   outputs: Partial<Record<Format, { url: string; seconds: number }>> | null
@@ -771,7 +774,16 @@ function EditCard({ e, reload, uploadLogo, withLogo, logoBusy, lib }: {
   const [work, setWork] = useState<string | null>(null)
   const [said, setSaid] = useState<string | null>(null)
   const [open, setOpen] = useState(false)
+  const [asinIn, setAsinIn] = useState('')
   useEffect(() => { if (!changed) setS(e.settings) }, [e.settings, changed])
+  /** The ASIN, typed or pasted as an Amazon link, kept with the product: the
+   *  downloaded file is then named with it. */
+  const addAsin = async () => {
+    const asin = normalizeAsinInput(asinIn)
+    if (!asin) { toast.error('That is not an ASIN or an Amazon product link.'); return }
+    const d = await act('asin', { action: 'product', id: e.id, product: [e.keep?.product ?? '', asin].filter(Boolean).join(' ') }, `Added: ${asin}.`)
+    if (d) setAsinIn('')
+  }
 
   const act = async (what: string, body: Record<string, unknown>, ok?: string) => {
     setWork(what)
@@ -796,7 +808,7 @@ function EditCard({ e, reload, uploadLogo, withLogo, logoBusy, lib }: {
         const o = e.outputs[f]!
         const ar = await fetch('/api/drop', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'draft_add', dropId: d.id, item: { fileName: `${e.name || 'Review'} (${f}).mp4`, sourceUrl: o.url, mimeType: 'video/mp4', durationSeconds: o.seconds, width: f === 'wide' ? 1920 : 1080, height: f === 'wide' ? 1080 : 1920, kind: f === 'wide' ? 'long' : 'vertical', asin: e.product || undefined, title: e.name || undefined } }),
+          body: JSON.stringify({ action: 'draft_add', dropId: d.id, item: { fileName: `${e.name || 'Review'} (${f}).mp4`, sourceUrl: o.url, mimeType: 'video/mp4', durationSeconds: o.seconds, width: f === 'wide' ? 1920 : 1080, height: f === 'wide' ? 1080 : 1920, kind: f === 'wide' ? 'long' : 'vertical', asin: e.keep?.asin || e.product || undefined, title: e.keep?.product || e.name || undefined } }),
         })
         const ad = await ar.json().catch(() => ({}))
         if (!ar.ok) throw new Error(ad.error || 'Drop did not take it.')
@@ -885,13 +897,25 @@ function EditCard({ e, reload, uploadLogo, withLogo, logoBusy, lib }: {
               </button>
               {/* A real download: saved as a file under the video's name, not played in a new tab. */}
               {outs.map(([f, o]) => {
-                const d = downloadLink(o.url, e.name, f, outs.length > 1)
+                const d = downloadLink(o.url, e.keep?.base ?? e.name, f, outs.length > 1)
                 return (
                   <a key={f} href={d.href} download={d.file} className="inline-flex items-center gap-1.5 rounded-lg border px-4 py-2 text-[13.5px] font-semibold"
                     style={{ borderColor: PURPLE, color: PURPLE }}><Download size={14} /> Download{outs.length > 1 ? ` ${f === 'wide' ? 'wide' : 'vertical'}` : ''}</a>
                 )
               })}
             </div>
+            {/* The file's name as it will be saved: an Amazon review with no ASIN known says so, and takes one. */}
+            <p className="text-[12px] -mt-1" style={{ color: 'var(--text-2)' }}>Saves as <b className="font-semibold">{outs.map(([f]) => downloadLink('', e.keep?.base ?? e.name, f, outs.length > 1).file).join(' and ')}</b></p>
+            {e.settings.kind === 'review' && !e.keep?.asin && (
+              <div className="flex flex-wrap items-center gap-1.5 -mt-1">
+                <span className="text-[12px]" style={soft}>No ASIN yet, so it is not in the name.</span>
+                <input value={asinIn} onChange={(ev) => setAsinIn(ev.target.value)} onKeyDown={(ev) => { if (ev.key === 'Enter') void addAsin() }} placeholder="ASIN or Amazon link"
+                  aria-label="The product's ASIN or Amazon link" className="rounded-lg border px-2 py-1 text-[12px] bg-transparent w-44" style={{ borderColor: 'var(--border-2)', color: 'var(--text)' }} />
+                <button type="button" onClick={() => void addAsin()} disabled={!asinIn.trim() || !!work} className="rounded-lg border px-2.5 py-1 text-[12px] font-semibold disabled:opacity-50" style={{ borderColor: PURPLE, color: PURPLE }}>
+                  {work === 'asin' ? <Loader2 size={12} className="animate-spin inline" /> : null} Add
+                </button>
+              </div>
+            )}
             {/* MVP's copy goes 30 days after it is made (lib/burn-retention), so the date is said. */}
             <p className="text-[12px] -mt-1" style={soft}>{keptUntil(e.madeAt)
               ? `MVP keeps its copy until ${keptUntil(e.madeAt)}, 30 days after it was made. Download it to keep it for good.`

@@ -6,7 +6,7 @@
 // zooms run from a strong line to the next cut; captions follow the cuts; a
 // planner answer is checked against the take; settings are made safe.
 import { readFileSync } from 'node:fs'
-import { cleanWords, linesOf, keepSegments, snapSegments, editLength, toOutput, outputWords, insertsFor, zoomsFor, cleanSettings, renderSpec, findWords, cutLines, PACE, DEFAULT_SETTINGS, downloadLink, withoutSilences, whenSaid, pictureTimes, MAX_PICTURES, type Word } from '../lib/review-edit'
+import { cleanWords, linesOf, keepSegments, snapSegments, editLength, toOutput, outputWords, insertsFor, zoomsFor, cleanSettings, renderSpec, findWords, cutLines, PACE, DEFAULT_SETTINGS, downloadLink, keepName, withoutSilences, whenSaid, pictureTimes, MAX_PICTURES, type Word } from '../lib/review-edit'
 import { cleanPlan, jsonIn } from '../lib/review-edit-plan'
 import { snapSegments as serverSnap, editSeconds as serverSeconds } from '../ingest-service/edit-filters'
 
@@ -168,8 +168,27 @@ check('B-roll switched off, or no B-roll take, sends none', renderSpec({ words, 
   check('two versions are told apart, and a name is made safe for a file', downloadLink(`${store}?v=2`, 'A/B: "test"?', 'vertical', true).href.endsWith('?v=2&download=A%20B%20test%20vertical.mp4'))
   check('no name is still a file, and an address that is not MVP storage is left alone', downloadLink('https://cdn.example.com/a.mp4', null).href === 'https://cdn.example.com/a.mp4' && downloadLink(store, '  ').file === 'Review.mp4')
   const U = readFileSync('components/review-editor/ReviewEditor.tsx', 'utf8')
-  check('the card has a Download button next to Send to Drop, using the saving link', /const d = downloadLink\(o\.url, e\.name, f, outs\.length > 1\)/.test(U) && /href=\{d\.href\} download=\{d\.file\}/.test(U) && !/href=\{o\.url\} download/.test(U))
+  check('the card has a Download button next to Send to Drop, using the saving link', /const d = downloadLink\(o\.url, e\.keep\?\.base \?\? e\.name, f, outs\.length > 1\)/.test(U) && /href=\{d\.href\} download=\{d\.file\}/.test(U) && !/href=\{o\.url\} download/.test(U))
   check('the card says the day MVP deletes its copy, from the same 30 days the clean-up uses', /BURN_KEEP_DAYS \* 86400_000/.test(U) && /MVP keeps its copy until \$\{keptUntil\(e\.madeAt\)\}, 30 days after it was made/.test(U))
+}
+
+// ── The downloaded file's name (Seb, 2026-11-03: "could the download link have the ASIN in the file name (if it is an amazon video) if it's not an amazon product, let's at least have the product name") ─
+{
+  const link = keepName({ product: 'https://www.amazon.com/dp/B0DDDD8WD6?tag=x-20', heard: 'Ninja Crispi air fryer', name: 'IMG_0097' })
+  check('an Amazon product: its name and its ASIN, the ASIN on its own the way Drop and Liftoff read it', link.base === 'Ninja Crispi air fryer B0DDDD8WD6' && link.asin === 'B0DDDD8WD6')
+  check('a typed name with the ASIN in it keeps both, once each', keepName({ product: 'Bassdash Hoodie B0ABCDE123' }).base === 'Bassdash Hoodie B0ABCDE123')
+  check('not an Amazon product: at least the product as MVP heard it, never the camera name', keepName({ heard: 'a Bassdash UPF 50 sun hoodie', name: 'IMG_0097' }).base === 'Bassdash UPF 50 sun hoodie')
+  check('an ASIN set in Drop or in a take’s file name is used', keepName({ name: 'IMG_0097', dropAsin: 'b0dddd8wd6' }).asin === 'B0DDDD8WD6' && keepName({ name: 'IMG_0097', files: ['Ninja Crispi B0DDDD8WD6.mov'] }).base === 'Ninja Crispi B0DDDD8WD6')
+  check('two ASINs in the take names is a question, not a guess', keepName({ files: ['B0DDDD8WD6 a.mov', 'B0ABCDE123 b.mov'] }).asin === null)
+  check('nothing known is still a name', keepName({ name: 'IMG_0097' }).base === 'Review')
+  const P = readFileSync('lib/review-edit-plan.ts', 'utf8')
+  const R = readFileSync('app/api/review-edit/route.ts', 'utf8')
+  const U = readFileSync('components/review-editor/ReviewEditor.tsx', 'utf8')
+  check('the planner writes down the product as it is said, never a guess, for reviews and ads', (P.match(/Write "product": the product as they name it/g) || []).length === 2 && /Never a guess/.test(P) && /\.\.\.\(product \? \{ product \} : \{\}\)/.test(P))
+  check('the page is told each video’s file name, with an ASIN set in Drop', /keep: keepName\(\{ product: r\.product, heard: r\.plan\?\.product/.test(R) && /from\('drop_items'\)\.select\('source_url,asin'\)/.test(R) && /view\(r, server, asinOf\(r\)\)/.test(R))
+  check('the ASIN can be added later without touching the edit', /if \(action === 'product'\)/.test(R) && /update\(\{ product \}\)\.eq\('id', row\.id\)/.test(R))
+  check('the card says the name it saves as, and asks for the ASIN on an Amazon review that has none', /Saves as <b/.test(U) && /downloadLink\(o\.url, e\.keep\?\.base \?\? e\.name, f, outs\.length > 1\)/.test(U) && /No ASIN yet, so it is not in the name\./.test(U) && /normalizeAsinInput\(asinIn\)/.test(U))
+  check('Drop is sent the ASIN itself when it is known', /asin: e\.keep\?\.asin \|\| e\.product \|\| undefined/.test(U))
 }
 
 if (fails.length) { console.error(`\n❌ review-edit: ${fails.length} failure(s)\n`); for (const f of fails) console.error(`   • ${f}`); process.exit(1) }

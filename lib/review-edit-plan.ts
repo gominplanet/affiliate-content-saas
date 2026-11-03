@@ -66,7 +66,8 @@ export function cleanPlan(raw: Record<string, unknown> | null, lines: Line[], sh
     used.add(shot)
     placements.push({ shot, line, why: noDash(p?.why) })
   }
-  return { cuts: safeCuts, keys, placements, title: noDash(raw?.title, 60) }
+  const product = noDash(raw?.product, 80)
+  return { cuts: safeCuts, keys, placements, title: noDash(raw?.title, 60), ...(product ? { product } : {}) }
 }
 
 /** What each part of the B-roll take shows. frames: small pictures, evenly
@@ -131,8 +132,9 @@ const PLAN_SYSTEM = [
   'Also pick "keys": lines that land a strong point (the verdict, a surprise, the main benefit, a key detail), about one every 20 to 30 seconds of video, at least 4. The video slowly zooms in on each.',
   'If B-roll shots are listed, place shots under the lines that talk about what the shot shows, each shot once, not on the first two lines. Skip a shot that fits nothing.',
   'Suggest a short on-screen "title": 2 to 5 words, usually the product, never a year, no dashes.',
+  'Write "product": the product as they name it, brand and kind, in under 8 words ("Bassdash UPF 50 sun hoodie"), or "" when they never say what it is. Never a guess.',
   'Each "why" is one short plain sentence to the creator, like "You started this sentence over; the second try is kept."',
-  'Reply with JSON only: {"cuts":[{"from":3,"to":4,"kind":"restart","why":"..."},{"from":7,"to":7,"text":"it keeps the sun off and","kind":"restart","why":"..."}],"keys":[12,30],"placements":[{"shot":2,"line":9,"why":"..."}],"title":"..."}. Line numbers are the numbers shown; "text" is only for part of one line, quoted word for word.',
+  'Reply with JSON only: {"cuts":[{"from":3,"to":4,"kind":"restart","why":"..."},{"from":7,"to":7,"text":"it keeps the sun off and","kind":"restart","why":"..."}],"keys":[12,30],"placements":[{"shot":2,"line":9,"why":"..."}],"title":"...","product":"..."}. Line numbers are the numbers shown; "text" is only for part of one line, quoted word for word.',
 ].join('\n')
 
 // A TRYBE ad is not a review (Seb, 2026-10-30: "It's an ad"): a brand runs it
@@ -147,8 +149,9 @@ const TRYBE_SYSTEM = [
   'Pick "keys": the hook, the strongest benefits and the call to action, about one every 10 to 15 seconds, at least 3. The video slowly zooms in on each.',
   'If B-roll shots are listed, place a shot under each line that talks about what the shot shows, each shot once, not on the first line. Ads use B-roll often.',
   'Write a "title": the hook as on-screen text for the first seconds, under 7 words, no year, no dashes, no price.',
+  'Write "product": the product as they name it, brand and kind, in under 8 words, or "" when they never say what it is. Never a guess.',
   'Each "why" is one short plain sentence to the creator.',
-  'Reply with JSON only: {"cuts":[{"from":3,"to":4,"kind":"restart","why":"..."},{"from":7,"to":7,"text":"um so","kind":"mistake","why":"..."}],"keys":[0,9],"placements":[{"shot":2,"line":5,"why":"..."}],"title":"..."}. Line numbers are the numbers shown; "text" is only for part of one line, quoted word for word.',
+  'Reply with JSON only: {"cuts":[{"from":3,"to":4,"kind":"restart","why":"..."},{"from":7,"to":7,"text":"um so","kind":"mistake","why":"..."}],"keys":[0,9],"placements":[{"shot":2,"line":5,"why":"..."}],"title":"...","product":"..."}. Line numbers are the numbers shown; "text" is only for part of one line, quoted word for word.',
 ].join('\n')
 
 /** The plan for one take: a review, or a TRYBE ad. */

@@ -16,6 +16,9 @@
 // a B-roll moment computed here is the frame it shows on. Pure, tested in
 // scripts/test-review-edit.
 
+import { normalizeAsinInput, asinInFileName } from '@/lib/asin'
+import { productFromName } from '@/lib/review-edit-batch'
+
 export const FPS = 30
 /** Kept before the first word of a line and after its last. */
 export const PAD_IN = 0.08
@@ -85,6 +88,9 @@ export interface Plan {
   placements: Placement[]
   /** A short title MVP suggests for the screen. */
   title: string
+  /** The product as the creator names it in the take, when they do (plans
+   *  made from 2026-11-03 on): for the file name of the finished video. */
+  product?: string
 }
 
 export type Segment = [number, number]
@@ -355,6 +361,29 @@ export function downloadLink(url: string, name: string | null | undefined, forma
   const file = `${base}${both && format ? ` ${format}` : ''}.mp4`
   if (!/\/storage\/v1\/object\/public\//.test(url)) return { href: url, file }
   return { href: `${url}${url.includes('?') ? '&' : '?'}download=${encodeURIComponent(file)}`, file }
+}
+
+/** What a finished video's file is called (Seb, 2026-11-03: "could the
+ *  download link have the ASIN in the file name (if it is an amazon video) if
+ *  it's not an amazon product, let's at least have the product name").
+ *
+ *  The ASIN, when MVP knows it: typed as the product (an ASIN or an Amazon
+ *  link), set in Drop, or in a take's file name. The product: as typed, else
+ *  as MVP heard it named in the take, else the video's or a take's name when
+ *  a person wrote it (never a camera's IMG_0097). "Ninja Crispi B0DDDD8WD6": the ASIN
+ *  standing on its own, the way Drop and Liftoff read it back from a file
+ *  name (lib/asin asinInFileName). Pure. */
+export function keepName(o: { product?: string | null; heard?: string | null; name?: string | null; files?: string[]; dropAsin?: string | null }): { base: string; asin: string | null; product: string | null } {
+  const typed = String(o.product || '').trim()
+  const fromText = (t: string | null | undefined) => (t ? normalizeAsinInput(t.trim()) ?? asinInFileName(t) : null)
+  const inFiles = Array.from(new Set((o.files ?? []).map((f) => asinInFileName(f)).filter((x): x is string => !!x)))
+  const asin = fromText(typed) ?? fromText(o.dropAsin) ?? (inFiles.length === 1 ? inFiles[0] : null)
+  // Words a person would call the product: no link, no ASIN.
+  const words = (t: string | null | undefined) => String(t || '').replace(/https?:\/\/\S+/gi, ' ').replace(/(?<![A-Za-z0-9])B0[A-Za-z0-9]{8}(?![A-Za-z0-9])/g, ' ')
+    .replace(/[\\/:*?"<>|\u0000-\u001f]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 70)
+  const heard = String(o.heard || '').replace(/^(a|an|the)\s+/i, '')
+  const product = words(typed) || words(heard) || [o.name, ...(o.files ?? [])].map((n) => words(productFromName(String(n || '')))).find(Boolean) || null
+  return { base: [product, asin].filter(Boolean).join(' ') || 'Review', asin, product }
 }
 
 export type LogoSize = 'small' | 'medium' | 'large'
