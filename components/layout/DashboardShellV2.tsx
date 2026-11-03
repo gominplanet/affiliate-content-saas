@@ -546,6 +546,11 @@ export default function DashboardShellV2({
         // day it opens to Pro is one word there, and the sidebar, the page,
         // the API, What's new and the sales page card all follow it.
         { href: '/drop', icon: <UploadCloud size={15} />, label: 'Drop', gate: canUsePreview('drop', effectiveTier), badge: 'New' },
+        // Review editor: a review take and a B-roll take in, a finished video
+        // out, worked through in the background. Left Labs for Pro 2026-11-03
+        // (Seb: "open to pro"); on its own switch (lib/labs-preview review_edit),
+        // which the page and every route ask too.
+        { href: '/review-editor', icon: <Clapperboard size={15} />, label: 'Review Editor', gate: canUsePreview('review_edit', effectiveTier), badge: 'New' },
         // The Amazon plan has its six video additions since 2026-10-05 (Seb):
         // one YouTube channel and Co-Pilot, Bulk Amazon upload, Clip Factory
         // with its own allowance, YouTube comments and Amazon Live.
@@ -702,9 +707,6 @@ export default function DashboardShellV2({
         // Plan this video: a joined Creator Connections campaign turned into a
         // filming plan. Admin only while it is tested (lib/labs-preview video_plan).
         { href: '/plan-video', icon: <ClipboardList size={15} />, label: 'Plan This Video', gate: isAdmin, badge: 'New' },
-        // Review editor: a review take and a B-roll take in, a finished video
-        // out, worked through in the background (lib/labs-preview review_edit).
-        { href: '/review-editor', icon: <Clapperboard size={15} />, label: 'Review Editor', gate: isAdmin, badge: 'New' },
       ],
     },
     {

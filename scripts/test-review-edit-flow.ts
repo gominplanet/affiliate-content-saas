@@ -22,7 +22,7 @@ const S = read('ingest-service/server.js')
 
 // ── Labs only ────────────────────────────────────────────────────────────────
 check('open to Pro (2026-11-03), behind the Labs switch', /review_edit: 'labs'/.test(read('lib/labs-preview.ts')))
-check('the route, the page and the menu each check', /canUsePreview\('review_edit'/.test(R) && /canUsePreview\('review_edit'/.test(read('app/(dashboard)/review-editor/page.tsx')) && /href: '\/review-editor'[^\n]*gate: isAdmin/.test(read('components/layout/DashboardShellV2.tsx')))
+check('the route, the page and the menu each check', /canUsePreview\('review_edit'/.test(R) && /canUsePreview\('review_edit'/.test(read('app/(dashboard)/review-editor/page.tsx')) && /href: '\/review-editor'[^\n]*gate: canUsePreview\('review_edit', effectiveTier\)/.test(read('components/layout/DashboardShellV2.tsx')))
 
 // ── In the background, one at a time ─────────────────────────────────────────
 check('adding a video starts it at once, and the cron carries on', /after\(async \(\) => \{ try \{ await moveQueue\(db, \{ userId: g\.userId/.test(R)
