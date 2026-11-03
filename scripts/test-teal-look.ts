@@ -164,6 +164,17 @@ async function main() {
   walk('components'); walk('app')
   check('no page keeps a purple constant of its own (except ones mixed with an opacity in code)', inlineLeft.every((f) => /ProUpgradePanel|ShortsQuotaBadge/.test(f)), inlineLeft)
 
+  // Every page that draws its own header has a new-look one too (the look
+  // switch, or a teal branch that draws the shared header card).
+  const OWN = ['app/(dashboard)/deal-radar/page.tsx', 'app/(dashboard)/wayward/page.tsx', 'components/labs/TrybeOutreach.tsx', 'components/clip-factory/ClipFactory.tsx',
+    'components/labs/LiveFollowup.tsx', 'app/(dashboard)/instagram-dm/page.tsx', 'app/(dashboard)/articles/page.tsx', 'app/(dashboard)/deals/page.tsx',
+    'app/(dashboard)/amazon/social/page.tsx', 'app/(dashboard)/meta/page.tsx', 'app/(dashboard)/link-in-bio/page.tsx', 'components/labs/GroupPostQueue.tsx',
+    'app/(dashboard)/brand-inquiries/page.tsx', 'app/(dashboard)/brand-hub/page.tsx', 'app/(dashboard)/setup/page.tsx', 'app/(dashboard)/connect-socials/page.tsx',
+    'app/(dashboard)/agency/page.tsx', 'app/(dashboard)/tutorials/page.tsx']
+  const noNew = OWN.filter((f) => { const t = read(f); return !(/<ByLook\s+teal=\{\(\s*(<div>\s*)?<PageHero/.test(t) || /\{teal \? \(\s*(<div>\s*|<>\s*)?<PageHero/.test(t) || /teal && \(\s*<PageHero/.test(t)) })
+  check('every page with a header of its own has the new-look header card too', noNew.length === 0, noNew)
+  check('steps where the page is a job done in order', ['app/(dashboard)/deal-radar/page.tsx', 'app/(dashboard)/cc-campaigns/page.tsx', 'app/(dashboard)/idea-lists/page.tsx', 'app/(dashboard)/instagram-dm/page.tsx', 'components/labs/GroupPostQueue.tsx'].every((f) => /<TealSteps/.test(read(f))))
+
   // ── The search box's new question ──
   check('filler words drop and plurals fold', requestWords('Edit a review') .join() === 'edit,review' && requestWords('find deals').join() === 'find,deal')
   const first = (q: string) => searchApp(q)[0]?.href
