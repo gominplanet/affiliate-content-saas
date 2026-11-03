@@ -21,7 +21,7 @@ import { pickBestFrame } from '@/lib/thumbnail-score'
 import { stripDesignBrands } from '@/lib/image-guard'
 import { getOrCreateBriefs } from '@/lib/art-director-cache'
 import { rehostToFal, removeBackground } from '@/lib/thumbnail-generators'
-import { composeThumb, creatorWords } from '@/lib/creator-thumb'
+import { composeThumb, creatorWords, isStockVerdict } from '@/lib/creator-thumb'
 import { bakeSimpleHeadline, compositeBadgeOnly, type ThumbDecoration } from '@/lib/thumbnail-simple-bake'
 import { scrubBanned, hasHealthClaim } from '@/lib/scrub'
 import { normalizeThumbText, thumbTextProblem, withOwnThumbText } from '@/lib/thumb-text'
@@ -559,14 +559,23 @@ async function designThumbnailBriefs(input: {
     '',
     `Design ${n} distinct briefs now. Output the JSON array only.`,
   ].filter(Boolean).join('\n')
+  const system = ART_DIRECTOR_SYSTEM
+    .replace(/N_BRIEFS/g, String(n))
+    .replace('__PRESET_RULES__', presetToBriefRules(resolvePreset(input.presetId)))
+    + (isQuestion ? `\n\n${QUESTION_DIRECTIVE}` : '')
+  const parse = (raw: string): ThumbBrief[] => {
+    const jsonStart = raw.indexOf('[')
+    const jsonEnd = raw.lastIndexOf(']')
+    const arr = jsonStart >= 0 && jsonEnd > jsonStart
+      ? (JSON.parse(raw.slice(jsonStart, jsonEnd + 1)) as Record<string, unknown>[])
+      : []
+    return arr.slice(0, n).map(clampBrief).filter(b => b.line1 || b.line2)
+  }
   try {
     const msg = await withAnthropicRetry(() => anthropic.messages.create({
       model: 'claude-sonnet-4-6',
       max_tokens: 1600,
-      system: ART_DIRECTOR_SYSTEM
-        .replace(/N_BRIEFS/g, String(n))
-        .replace('__PRESET_RULES__', presetToBriefRules(resolvePreset(input.presetId)))
-        + (isQuestion ? `\n\n${QUESTION_DIRECTIVE}` : ''),
+      system,
       messages: [{ role: 'user', content: userMsg }],
     }))
     recordAnthropicUsage(msg, {
@@ -574,12 +583,36 @@ async function designThumbnailBriefs(input: {
       feature: 'yt_thumb_art_director', model: 'claude-sonnet-4-6',
     })
     const raw = (msg.content[0] as { type: string; text?: string }).text || ''
-    const jsonStart = raw.indexOf('[')
-    const jsonEnd = raw.lastIndexOf(']')
-    const arr = jsonStart >= 0 && jsonEnd > jsonStart
-      ? (JSON.parse(raw.slice(jsonStart, jsonEnd + 1)) as Record<string, unknown>[])
-      : []
-    const briefs = arr.slice(0, n).map(clampBrief).filter(b => b.line1 || b.line2)
+    let briefs = parse(raw)
+    // THE CREATOR LOOK'S WORDS ARE THIS PRODUCT'S (Seb, 2026-11-03: "mvp keeps
+    // on writing the same title.. we need it to be based on the product and
+    // the review"). A stock verdict that fits any product ("worth every
+    // penny") is refused, and the art director is asked once more, told which
+    // ones and why. A brief it rewrites replaces the refused one whole, so the
+    // concept goes with its headline.
+    const stock = (b: ThumbBrief) => isStockVerdict(`${b.line1} ${b.line2}`)
+    if (resolvePreset(input.presetId).wordsByMvp && !input.lockedHeadline && briefs.some(stock)) {
+      const refused = Array.from(new Set(briefs.filter(stock).map((b) => `${b.line1} ${b.line2}`.trim().toLowerCase())))
+      console.warn(`[thumb-words] stock headline refused: ${refused.join(' | ')}`)
+      try {
+        const again = await withAnthropicRetry(() => anthropic.messages.create({
+          model: 'claude-sonnet-4-6',
+          max_tokens: 1600,
+          system,
+          messages: [
+            { role: 'user', content: userMsg },
+            { role: 'assistant', content: raw },
+            { role: 'user', content: `These headlines would fit any product, so they are refused: ${refused.map((q) => `"${q}"`).join(', ')}. Write all ${n} briefs again. Each headline is made of this product's own facts above, or the creator's own words when they are given: what it is or does, the problem it fixes, a number or a moment they named. No two the same. Output the JSON array only.` },
+          ],
+        }))
+        recordAnthropicUsage(again, {
+          userId: TELEMETRY.userId, tier: TELEMETRY.tier,
+          feature: 'yt_thumb_art_director', model: 'claude-sonnet-4-6',
+        })
+        const fresh = parse((again.content[0] as { type: string; text?: string }).text || '').filter((b) => !stock(b))
+        briefs = briefs.map((b) => (stock(b) ? fresh.shift() ?? b : b))
+      } catch { /* the first briefs stand */ }
+    }
     if (briefs.length > 0) return factChecked(briefs)
   } catch { /* fall through to the copy-only fallback below */ }
   // Question mode fallback: the statement copy generator below writes CTR

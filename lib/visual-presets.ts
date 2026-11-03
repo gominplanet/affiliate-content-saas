@@ -489,7 +489,12 @@ export function presetToBriefRules(preset: VisualPreset): string {
     `Default colour direction when the product suggests nothing better: ${preset.fallbackPalette}.`,
   ]
   if (preset.wordsByMvp) {
-    lines.push('HEADLINE FOR THIS LOOK: two to four words in total, lowercase (a brand name or an acronym stays as written), a plain verdict or tease such as "surprisingly good", "don\u2019t buy this" or "worth every penny": what the creator thinks of it, never a description of what it is. Put all of it in line2 and leave line1 empty. The emphasis word is the one that carries the verdict.')
+    // FROM THIS PRODUCT AND THIS REVIEW (Seb, 2026-11-03: "mvp keeps on
+    // writing the same title.. we need it to be based on the product and the
+    // review"). It used to show "worth every penny" as an example, and that is
+    // what came back, for a cabinet and for everything else. No phrase to
+    // copy now; stock verdicts are refused in code too (creator-thumb).
+    lines.push('HEADLINE FOR THIS LOOK: two to four words in total, lowercase (a brand name or an acronym stays as written). It is about THIS product and THIS review: the creator\u2019s verdict or the standout thing, said with something only this product has: what it is or does, the problem it fixes, a number or a moment the creator named. When the creator\u2019s own words are given, build it from them. It must not fit any other product: a stock verdict that could go on any thumbnail ("worth it", "game changer", "must have" and the like) is refused. Every brief has a different headline. Put all of it in line2 and leave line1 empty. The emphasis word is the one that carries the verdict.')
   }
   if (!preset.badges) {
     lines.push(

@@ -103,6 +103,29 @@ export function creatorWords(text: unknown, accent: unknown = ''): { words: stri
   return { words: out.join(' '), accent: out.find((x) => norm(x) === a) ?? out[out.length - 1] }
 }
 
+/** STOCK VERDICTS (Seb, 2026-11-03, a cabinet thumbnail reading "worth every
+ *  penny": "mvp keeps on writing the same title.. we need it to be based on
+ *  the product and the review"). Headlines that would fit any product. The
+ *  Creator look's words come from this product and this review, so these are
+ *  refused and MVP writes again. */
+export const STOCK_VERDICTS = [
+  'worth every penny', 'worth every cent', 'worth it', 'so worth it', 'totally worth it', 'worth the money', 'worth the hype',
+  'surprisingly good', 'surprisingly great', 'so good', 'really good', 'pretty good', 'actually good', 'not bad', 'it works',
+  'dont buy this', 'do not buy this', 'dont buy it', 'buy this', 'buy this now', 'must buy', 'must have', 'a must have', 'you need this', 'you need this one',
+  'game changer', 'total game changer', 'a game changer', 'life changer', 'life changing', 'mind blown', 'wow', 'insane', 'unreal', 'amazing',
+  'love it', 'i love it', 'love this', 'obsessed', 'new favorite', 'instant favorite', 'hidden gem', 'best ever', 'best purchase', 'best buy',
+  'highly recommend', 'highly recommended', 'five stars', '5 stars', '10 10', 'no regrets', 'trust me', 'believe the hype', 'dont sleep on this',
+  'honest review', 'my honest review', 'the truth', 'the real truth', 'not what i expected', 'better than expected', 'exceeded expectations',
+  'is it worth it', 'skip this', 'what you actually get', 'worth a look',
+]
+const STOCK = new Set(STOCK_VERDICTS)
+/** True when a headline is one of the stock verdicts that fit any product,
+ *  however it is written (capitals, punctuation, an apostrophe or not). Pure. */
+export function isStockVerdict(text: unknown): boolean {
+  const n = String(text ?? '').toLowerCase().replace(/[\u2018\u2019']/g, '').replace(/[^a-z0-9]+/g, ' ').trim()
+  return !!n && STOCK.has(n)
+}
+
 /** Which word gets the red bar: the one asked for, else the last. Pure. */
 export function accentIndex(words: string, accent: string): number {
   const w = words.trim().split(/\s+/).filter(Boolean)

@@ -9,7 +9,7 @@
 // 1280 x 720 under YouTube's 2MB. Not from video frames (Seb: "too unstable").
 import { readFileSync, existsSync } from 'node:fs'
 import sharp from 'sharp'
-import { alphaBox, cropFor, splitLines, accentIndex, hiddenShare, composeThumb, creatorWords, THUMB_W, THUMB_H } from '../lib/creator-thumb'
+import { alphaBox, cropFor, splitLines, accentIndex, hiddenShare, composeThumb, creatorWords, isStockVerdict, THUMB_W, THUMB_H } from '../lib/creator-thumb'
 import { resolvePreset, presetToBriefRules, presetToPrompt } from '../lib/visual-presets'
 import { buildGraphicThumbnailPrompt } from '../lib/thumbnail-prompt'
 
@@ -91,6 +91,16 @@ async function main() {
   check('the look is offered in the picker only to Labs while it is tested; an account that has it keeps it', look.labs === 'creator_look' && /creator_look: 'admin'/.test(read('lib/labs-preview.ts')) && /!p\.labs \|\| current\.includes\(p\.id\) \|\| \(tier !== null && canUsePreview\(p\.labs, tier\)\)/.test(read('components/brand/VisualPresetPicker.tsx')) && /p\.family === family && offered\(p\)/.test(read('components/brand/VisualPresetPicker.tsx')))
   check('Co-Pilot says when the words had to go over the creator', /there was no room for the words behind your head or beside it, so they sit over you/.test(read('app/(dashboard)/co-pilot/page.tsx')))
   check('no thumbnails from video frames any more', !/makeCreatorThumb|pickThumbFrames|edit-thumbsrc/.test(W) && !/app\.post\('\/still'/.test(S))
+
+  // ── The words: this product and this review (Seb, 2026-11-03: "mvp keeps on writing the same title.. we need it to be based on the product and the review") ─
+  check('a stock verdict that fits any product is caught, however it is written', isStockVerdict('WORTH EVERY PENNY') && isStockVerdict("Don’t buy this!") && isStockVerdict('game-changer') && isStockVerdict('  must have ') && isStockVerdict('Worth it?'))
+  check('words about this product are not', !isStockVerdict('holds 200 lbs') && !isStockVerdict('garage finally clear') && !isStockVerdict('worth every penny for 40 tools') && !isStockVerdict(''))
+  const rules = presetToBriefRules(resolvePreset('creator'))
+  check('the headline rule shows no phrase to copy, and asks for this product and this review', !/worth every penny/i.test(rules) && !/surprisingly good/i.test(rules) && /about THIS product and THIS review/.test(rules) && /must not fit any other product/.test(rules) && /build it from them/.test(rules))
+  const R = readFileSync('app/api/youtube/generate-thumbnail/route.ts', 'utf8')
+  check('a stock headline on the creator look is refused, and the art director asked once more, told which', /const stock = \(b: ThumbBrief\) => isStockVerdict\(`\$\{b\.line1\} \$\{b\.line2\}`\)/.test(R) && /resolvePreset\(input\.presetId\)\.wordsByMvp && !input\.lockedHeadline && briefs\.some\(stock\)/.test(R) && /These headlines would fit any product, so they are refused/.test(R) && /briefs = briefs\.map\(\(b\) => \(stock\(b\) \? fresh\.shift\(\) \?\? b : b\)\)/.test(R))
+  const GEN = readFileSync('app/(dashboard)/amazon/thumbnails/page.tsx', 'utf8')
+  check('the Thumbnail Generator takes the creator’s own take and sends it as their words', /Your take on it/.test(GEN) && /take\.trim\(\)\.length >= 20 \? \{ sourceText: take\.trim\(\)\.slice\(0, 2000\) \}/.test(GEN) && /sourceText/.test(R))
 
   if (fails.length) { console.error(`\n❌ creator-thumb: ${fails.length} failure(s)\n`); for (const f of fails) console.error(`   • ${f}`); process.exit(1) }
   console.log('✅ creator-thumb: the Creator look in the generator, the picture without words, MVP draws them in the serif with the red bar, the head in front only when it hides a sliver')

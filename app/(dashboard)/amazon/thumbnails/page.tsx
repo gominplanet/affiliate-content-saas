@@ -26,6 +26,8 @@ interface FaceModel { id: string; name: string; outfit_pref?: string | null }
 export default function AmazonThumbnailsPage() {
   const [product, setProduct] = useState('')
   const [headline, setHeadline] = useState('')
+  /** What the creator thinks of it, in their words: the headline is written from this. */
+  const [take, setTake] = useState('')
   const [mode, setMode] = useState<'face' | 'product'>('face')
   const [faces, setFaces] = useState<FaceModel[]>([])
   const [faceId, setFaceId] = useState<string>('')
@@ -121,6 +123,10 @@ export default function AmazonThumbnailsPage() {
       ...productFields(raw),
       ...(mode === 'product' ? { noHuman: true } : { faceModelId: faceId }),
       ...(normalizeThumbText(headline) ? { customHeadline: normalizeThumbText(headline) } : {}),
+      // YOUR TAKE (Seb, 2026-11-03: "we need it to be based on the product and
+      // the review"). The creator's own words, the strongest grounding the
+      // headline writer has; the server uses 20 characters or more.
+      ...(take.trim().length >= 20 ? { sourceText: take.trim().slice(0, 2000) } : {}),
       headlineStyle: headlineStyleValue(question),
       // Apparel goes ON the person. Meaningless without a face, and the server
       // ignores it for a product nobody wears.
@@ -307,6 +313,22 @@ export default function AmazonThumbnailsPage() {
         {/* Your own thumbnail text: the same box and rules as every other
             thumbnail surface (lib/thumb-text). */}
         <ThumbTextInput value={headline} onChange={setHeadline} disabled={busy} />
+
+        {/* YOUR TAKE: what MVP writes the headline from, when it writes it. */}
+        {!headline.trim() && (
+          <label className="flex flex-col gap-1.5">
+            <span className="flex items-center gap-1.5 font-semibold uppercase tracking-[0.08em] text-[11px]" style={{ color: 'var(--text-2, #6e6e73)' }}>
+              Your take on it <span className="font-normal normal-case tracking-normal">(optional)</span>
+            </span>
+            <textarea value={take} onChange={(e) => setTake(e.target.value.slice(0, 2000))} disabled={busy} rows={2}
+              placeholder="What you think of it, in a sentence or two. e.g. Took 20 minutes to build and finally cleared my garage floor."
+              className="w-full rounded-lg border bg-transparent px-3 py-2 text-[13px] focus:outline-none focus:border-[#7C3AED] disabled:opacity-50"
+              style={{ borderColor: 'var(--border, rgba(0,0,0,0.12))', color: 'var(--text, #1d1d1f)' }} />
+            <span className="text-[11px]" style={{ color: 'var(--text-soft)' }}>
+              {take.trim().length > 0 && take.trim().length < 20 ? 'A few more words, so MVP has something to go on.' : 'MVP writes the headline from your words and this product, never a line that would fit any product.'}
+            </span>
+          </label>
+        )}
 
         {/* Headline style — Polished (default) vs Question hook (curiosity
             question + matching face). Only meaningful when the Art Director
