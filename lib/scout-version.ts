@@ -8,12 +8,12 @@
  *     store installs to "update" — isScoutOutdated survives only as a
  *     low-level helper, not a user-facing gate.
  */
-export const SCOUT_LATEST_VERSION = '1.53.9'
+export const SCOUT_LATEST_VERSION = '1.54.0'
 
 /** One-line "what's new". No longer shown in a nag (store installs auto-update);
  *  kept as a changelog note for whoever bumps the version. */
 export const SCOUT_WHATS_NEW =
-  'Meta ads: SCOUT hands MVP each ad\'s video file, so MVP can hear what the ad says first. Includes 1.53.8 (the 8 longest running ads of each brand).'
+  'TRYBE first, always: any TRYBE request that finds no TRYBE tab opens one behind MVP\'s tab, waits for it to load, then goes. A Send all run does the same instead of stopping.'
 
 /** Canonical download for the latest SCOUT build (public/, rebuilt from
  *  extension/ on every version bump). Used by the EPC banner + the top-bar
@@ -63,6 +63,12 @@ export const SCOUT_TRYBE_OWN_TAB_MIN_VERSION = '1.53.2'
 
 /** SCOUT opens TRYBE in a tab behind MVP's when none is open (MVP_TRYBE_TAB_OPEN). */
 export const SCOUT_TRYBE_TAB_OPEN_MIN_VERSION = '1.53.5'
+
+/** SCOUT opens TRYBE behind MVP's tab by itself as the first step of any
+ *  TRYBE request, upload, brand list read or Send all run that finds it
+ *  closed (Seb, 2026-11-03: "this should always be the first thing it
+ *  does"). Older SCOUT is covered by MVP opening it first (ensureTrybeTab). */
+export const SCOUT_TRYBE_SELF_OPEN_MIN_VERSION = '1.54.0'
 
 /** SCOUT reads Instagram tag counts quietly, only through an Instagram tab the
  *  creator already has open, never opening one (MVP_HASHTAG_INSTAGRAM quiet). */

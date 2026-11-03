@@ -26,7 +26,7 @@ import { toast } from 'sonner'
 import { Loader2, Lock, Search, Sparkles, Send, Square, ExternalLink, Check, AlertTriangle, Globe, Star, Handshake, RotateCcw, X, Trash2, Tag,
   Dumbbell, Shirt, House, UtensilsCrossed, Baby, PawPrint, Gem, Cpu, Tent, Plane, BookOpen, Church, Palette, SprayCan, Moon, Pill, HeartPulse,
   Scissors, Droplet, Coffee, Leaf, Wand2, MessageCircle, Pencil, ChevronUp, Bell, Lightbulb, CalendarDays, Inbox, ArrowRight, Clapperboard, UploadCloud, BarChart3, Rocket, ListChecks, type LucideIcon } from 'lucide-react'
-import { requestTrybeTab, requestTrybeTabOpen, requestTrybeApi, requestTrybeAccess, requestTrybeScan, requestTrybeSend, requestTrybeHarvest, requestTrybeRun, requestTrybeRunStatus, requestTrybeRunStop, type TrybeScanPass, type TrybeRun } from '@/lib/extension-frame'
+import { ensureTrybeTab, requestTrybeTab, requestTrybeTabOpen, requestTrybeApi, requestTrybeAccess, requestTrybeScan, requestTrybeSend, requestTrybeHarvest, requestTrybeRun, requestTrybeRunStatus, requestTrybeRunStop, type TrybeScanPass, type TrybeRun } from '@/lib/extension-frame'
 import { readMetaAds, readMetaAdsAll, metaAdsWords, type MetaAdsRun } from '@/components/labs/metaAdsRead'
 import TrybeTabGate from '@/components/labs/TrybeTabGate'
 import TrybeStarBrands from '@/components/labs/TrybeStarBrands'
@@ -683,7 +683,19 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
       setKws(d.settings?.keywords || [])
     })
   }, [load])
-  useEffect(() => { void requestTrybeAccess(false).then(r => { setAccess(r.state); setScoutVersion(r.version ?? null) }) }, [])
+  // SCOUT ASLEEP IS NOT SCOUT GONE (Seb, 2026-11-03: "at times it does not
+  // load"). Chrome puts SCOUT to sleep between uses and the first question can
+  // go unanswered while it wakes; that was taken as the answer, and nothing on
+  // this page opened TRYBE or loaded. Asked again, a few seconds apart.
+  useEffect(() => {
+    let live = true
+    void (async () => {
+      let r = await requestTrybeAccess(false)
+      for (let i = 0; i < 3 && live && r.state === 'no-answer'; i++) { await new Promise((ok) => setTimeout(ok, 2000)); r = await requestTrybeAccess(false) }
+      if (live) { setAccess(r.state); setScoutVersion(r.version ?? null) }
+    })()
+    return () => { live = false }
+  }, [])
   // THE TRYBE TAB SCOUT WORKS THROUGH (SCOUT 1.53.2, lib/trybe-tab): looked at
   // again whenever the creator comes back to this page, and every half minute
   // while it is not open, so closing it shows here instead of as failed sends.
@@ -715,16 +727,29 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
   // visit. Signed out there, the card at the top says so and takes them to it.
   const tabOpens = scoutAtLeast(scoutVersion, SCOUT_TRYBE_TAB_OPEN_MIN_VERSION)
   const tabInBackground = ownTab && tabOpens
-  const autoOpened = useRef(false)
+  // EVERY TIME, NOT ONCE A VISIT (Seb, 2026-11-03: "this should always be the
+  // first thing it does for it to work"). Found closed (never opened, closed
+  // since, or put away by Chrome), TRYBE is opened again behind this tab, at
+  // most every 20 seconds so a TRYBE that will not open is not opened in a
+  // loop. The same opening every TRYBE request waits on (ensureTrybeTab).
+  const autoOpenedAt = useRef(0)
   // While SCOUT is opening it, the gate's pop-up waits (it asked to open
   // TRYBE at the very moment TRYBE was opening by itself).
   const [autoOpening, setAutoOpening] = useState(false)
   useEffect(() => {
-    if (preview || !tabInBackground || trybeTab !== 'closed' || autoOpened.current) return
-    autoOpened.current = true
-    setAutoOpening(true)
-    void requestTrybeTabOpen(false).then((r) => { if (r.open) window.setTimeout(() => { lookTab(); setAutoOpening(false) }, 3000); else setAutoOpening(false) }).catch(() => setAutoOpening(false))
-  }, [preview, tabInBackground, trybeTab, lookTab])
+    if (preview || !tabInBackground || trybeTab !== 'closed') return
+    let live = true
+    const go = () => {
+      if (Date.now() - autoOpenedAt.current < 20_000) return
+      autoOpenedAt.current = Date.now()
+      setAutoOpening(true)
+      void ensureTrybeTab().then((s) => { if (!live) return; setTrybeTab(s); if (s === 'not-allowed') setAccess('not-granted') }).finally(() => { if (live) setAutoOpening(false) })
+    }
+    go()
+    // Still closed (it would not open): tried again every 20 seconds.
+    const every = window.setInterval(go, 20_000)
+    return () => { live = false; window.clearInterval(every) }
+  }, [preview, tabInBackground, trybeTab])
   const canInbox = !preview && access === 'granted' && scoutAtLeast(scoutVersion, SCOUT_TRYBE_INBOX_MIN_VERSION)
   const scoutOpens = access === 'granted' && scoutAtLeast(scoutVersion, SCOUT_TRYBE_OPEN_BRAND_MIN_VERSION)
   // 1.46.0: My brands, and each brand's best videos next to its video ideas.

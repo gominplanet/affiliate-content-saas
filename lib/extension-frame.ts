@@ -14,8 +14,8 @@
  */
 
 import { rankScoutCopies, type ScoutCopy } from '@/lib/scout-copies'
-import { trybeTabError, type TrybeTabState } from '@/lib/trybe-tab'
-import { scoutAtLeast, SCOUT_FB_GROUP_MIN_VERSION, SCOUT_FB_GROUP_MEDIA_MIN_VERSION, SCOUT_FB_GROUP_WATCH_MIN_VERSION, SCOUT_FB_ACCESS_MIN_VERSION, SCOUT_FB_GROUP_CLIP_MIN_VERSION, SCOUT_TRYBE_MIN_VERSION, SCOUT_HASHTAG_TRENDS_MIN_VERSION, SCOUT_FB_REEL_JOB_MIN_VERSION, SCOUT_FB_GROUP_SEARCH_MIN_VERSION } from '@/lib/scout-version'
+import { trybeTabError, TRYBE_NOT_OPEN, type TrybeTabState } from '@/lib/trybe-tab'
+import { scoutAtLeast, SCOUT_FB_GROUP_MIN_VERSION, SCOUT_FB_GROUP_MEDIA_MIN_VERSION, SCOUT_FB_GROUP_WATCH_MIN_VERSION, SCOUT_FB_ACCESS_MIN_VERSION, SCOUT_FB_GROUP_CLIP_MIN_VERSION, SCOUT_TRYBE_MIN_VERSION, SCOUT_TRYBE_TAB_OPEN_MIN_VERSION, SCOUT_HASHTAG_TRENDS_MIN_VERSION, SCOUT_FB_REEL_JOB_MIN_VERSION, SCOUT_FB_GROUP_SEARCH_MIN_VERSION } from '@/lib/scout-version'
 
 export const SCOUT_EXTENSION_ID = process.env.NEXT_PUBLIC_SCOUT_EXTENSION_ID || ''
 
@@ -1127,8 +1127,56 @@ export async function requestTrybeTab(): Promise<TrybeTabState> {
  *  open; with `focus`, bring the TRYBE tab to the front (to sign in there).
  *  Resolves, never throws. */
 export async function requestTrybeTabOpen(focus = false): Promise<{ open: boolean; opened?: boolean; error?: string }> {
-  const res = await sendToExtension<{ open?: boolean; opened?: boolean; error?: string }>({ type: 'MVP_TRYBE_TAB_OPEN', focus }, 15_000)
+  // SCOUT 1.54.0 answers once TRYBE has loaded (up to half a minute).
+  const res = await sendToExtension<{ open?: boolean; opened?: boolean; error?: string }>({ type: 'MVP_TRYBE_TAB_OPEN', focus }, 45_000)
   return res ? { open: !!res.open, opened: !!res.opened, error: res.error } : { open: false, error: 'SCOUT did not answer.' }
+}
+
+// TRYBE FIRST, ALWAYS (Seb, 2026-11-03: "at times it does not load.. as if
+// scout is not opening the trybe page in the background.. this should always
+// be the first thing it does for it to work"). Everything on TRYBE goes
+// through the creator's TRYBE tab. Until now MVP's TRYBE page opened it once
+// a visit, and a request that found it closed (closed later, or asked before
+// the page had opened it) failed with "TRYBE is not open". Now the first step
+// of every TRYBE request is this: TRYBE looked for, opened behind MVP's tab
+// when it is not open (SCOUT 1.53.5+), and waited for until it has loaded,
+// then the request is asked again. Requests that find TRYBE closed at the
+// same moment all wait on the one opening, so it is never opened twice.
+let trybeEnsuring: Promise<TrybeTabState> | null = null
+const pause = (ms: number) => new Promise((r) => setTimeout(r, ms))
+/** Make sure TRYBE is open for SCOUT to work through, opening it behind
+ *  MVP's tab when it is not. Resolves the state it ended in ('open',
+ *  'signed-out', 'closed' when it could not be opened, 'not-allowed',
+ *  'unknown'); never throws. */
+export function ensureTrybeTab(): Promise<TrybeTabState> {
+  if (trybeEnsuring) return trybeEnsuring
+  trybeEnsuring = (async (): Promise<TrybeTabState> => {
+    let t = await requestTrybeTab()
+    // A SCOUT Chrome had put to sleep can miss the first question.
+    if (t === 'unknown') { await pause(1500); t = await requestTrybeTab() }
+    if (t !== 'closed') return t
+    const status = await getScoutStatus()
+    if (!scoutAtLeast(status.version, SCOUT_TRYBE_TAB_OPEN_MIN_VERSION)) return 'closed'
+    const r = await requestTrybeTabOpen(false)
+    if (!r.open) return r.error === 'no-access' ? 'not-allowed' : 'closed'
+    for (let i = 0; i < 12; i++) {
+      t = await requestTrybeTab()
+      if (t !== 'closed' && t !== 'unknown') return t
+      await pause(1500)
+    }
+    return t
+  })().finally(() => { trybeEnsuring = null })
+  return trybeEnsuring
+}
+
+/** A TRYBE request, asked again once if SCOUT found TRYBE closed: TRYBE is
+ *  opened first (ensureTrybeTab). Safe for a send too: SCOUT answers
+ *  'trybe-not-open' before it has touched anything. */
+async function withTrybeOpen<T>(ask: () => Promise<T>, notOpen: (r: T) => boolean): Promise<T> {
+  const first = await ask()
+  if (!notOpen(first)) return first
+  const t = await ensureTrybeTab()
+  return t === 'open' ? ask() : first
 }
 
 /** TRYBE outreach (Labs). Is SCOUT allowed on TRYBE; ask: show Chrome's
@@ -1217,7 +1265,10 @@ export interface TrybeApiResult { ok: boolean; status?: number; json?: unknown; 
  *  throws. */
 export async function requestTrybeApi(method: 'GET' | 'POST' | 'DELETE', path: string, body?: unknown): Promise<TrybeApiResult> {
   const once = async (): Promise<TrybeApiResult> => {
-    const res = await sendToExtension<TrybeApiResult>({ type: 'MVP_TRYBE_API', method, path, body: body === undefined ? null : body }, 85_000)
+    const res = await withTrybeOpen(
+      () => sendToExtension<TrybeApiResult>({ type: 'MVP_TRYBE_API', method, path, body: body === undefined ? null : body }, 85_000),
+      (r) => r?.error === TRYBE_NOT_OPEN,
+    )
     return res ? { ...res, error: trybeTabError(res.error) } : { ok: false, error: 'SCOUT did not answer.' }
   }
   // Writes are never queued, shared or repeated, and a read that started
@@ -1260,7 +1311,7 @@ export interface TrybePutResult { ok: boolean; status?: number; etag?: string | 
  *  from MVP's storage to the upload link TRYBE gave, from SCOUT's TRYBE tab.
  *  Up to 16 minutes: a big part on a slow line takes a while. */
 export async function requestTrybePutFile(o: { fileUrl: string; uploadUrl: string; contentType: string; start?: number; end?: number }): Promise<TrybePutResult> {
-  const res = await sendToExtension<TrybePutResult>({ type: 'MVP_TRYBE_PUT_FILE', ...o }, 970_000)
+  const res = await withTrybeOpen(() => sendToExtension<TrybePutResult>({ type: 'MVP_TRYBE_PUT_FILE', ...o }, 970_000), (r) => r?.error === TRYBE_NOT_OPEN)
   return res ? { ...res, error: trybeTabError(res.error) } : { ok: false, error: 'SCOUT did not answer.' }
 }
 
@@ -1293,7 +1344,7 @@ export interface TrybeHarvestResult {
 /** SCOUT 1.41.2+: every brand on TRYBE, page by page from TRYBE's own list,
  *  in a background tab. Nothing is pressed or sent. */
 export async function requestTrybeHarvest(maxPages = 120): Promise<TrybeHarvestResult> {
-  const res = await sendToExtension<TrybeHarvestResult>({ type: 'MVP_TRYBE_HARVEST', maxPages }, 600_000)
+  const res = await withTrybeOpen(() => sendToExtension<TrybeHarvestResult>({ type: 'MVP_TRYBE_HARVEST', maxPages }, 600_000), (r) => r?.error === TRYBE_NOT_OPEN)
   return res ? { ...res, error: trybeTabError(res.error) } : { ok: false, error: 'SCOUT did not answer.' }
 }
 
@@ -1309,7 +1360,8 @@ export interface TrybeSendResult {
  *  answer is 'unconfirmed', never 'failed': SCOUT may have pressed Send. */
 export async function requestTrybeSend(url: string, name: string, message: string, sample?: { url: string; mimeType: string } | null): Promise<TrybeSendResult> {
   // sample (SCOUT 1.53.7+): the intro video's TRYBE link, sent with the request.
-  const res = await sendToExtension<TrybeSendResult>({ type: 'MVP_TRYBE_SEND', url, name, message, sample: sample || null }, 160_000)
+  // Found closed, nothing was pressed: TRYBE is opened and it is sent then.
+  const res = await withTrybeOpen(() => sendToExtension<TrybeSendResult>({ type: 'MVP_TRYBE_SEND', url, name, message, sample: sample || null }, 160_000), (r) => r?.error === TRYBE_NOT_OPEN && (r?.steps ?? []).length === 0)
   return res && res.outcome ? res : { outcome: 'unconfirmed', error: 'SCOUT did not answer.' }
 }
 
@@ -1322,6 +1374,8 @@ export interface TrybeRun {
   log: Array<{ at: number; name: string; text: string; tone: 'ok' | 'bad' | 'warn' | 'info' }>
 }
 export async function requestTrybeRun(ids: string[], label: string): Promise<{ ok: boolean; error?: string; run?: TrybeRun | null }> {
+  // TRYBE first, so the run's first send has a tab to go through.
+  await ensureTrybeTab()
   const res = await sendToExtension<{ ok: boolean; error?: string; run?: TrybeRun | null }>({ type: 'MVP_TRYBE_RUN', ids, label }, 20_000)
   return res || { ok: false, error: 'SCOUT did not answer.' }
 }

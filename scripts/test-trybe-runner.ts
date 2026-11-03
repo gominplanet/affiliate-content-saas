@@ -78,9 +78,10 @@ async function sim(opts: {
     const id = a.url.split('/').pop() as string
     return opts.send ? opts.send(id) : { outcome: 'sent', steps: ['pressed'] }
   }
-  const fn = new Function('chrome', 'fetch', 'trybeSend', 'trybeOwnTab', 'TRYBE_CALLERS', 'Date', 'setTimeout', `${RUNNER}; return { trybeRunTick, trybeRunSave, trybeRunState }`)
+  // 1.54.0: the run opens TRYBE first (trybeApiTabId); noTab is a TRYBE SCOUT could not open.
+  const fn = new Function('chrome', 'fetch', 'trybeSend', 'trybeOwnTab', 'trybeApiTabId', 'TRYBE_CALLERS', 'Date', 'setTimeout', `${RUNNER}; return { trybeRunTick, trybeRunSave, trybeRunState }`)
   const FakeDate = { now: () => clock } as unknown as DateConstructor
-  const api = fn(chrome, fetchFake, trybeSend, async () => (opts.noTab ? null : 7), /^https:\/\/(www\.)?mvpaffiliate\.io$/, FakeDate, () => 0)
+  const api = fn(chrome, fetchFake, trybeSend, async () => (opts.noTab ? null : 7), async () => { if (opts.noTab) throw new Error('trybe-not-open'); return 7 }, /^https:\/\/(www\.)?mvpaffiliate\.io$/, FakeDate, () => 0)
   await api.trybeRunSave({ on: true, origin: 'https://www.mvpaffiliate.io', ids: opts.ids, idx: 0, sent: 0, failStreak: 0, misses: 0, current: null, busyAt: null, nextAt: 0, startedAt: clock, log: [] })
   // Each tick, then the clock moves to the next wake.
   for (let i = 0; i < 400; i++) {
@@ -100,9 +101,9 @@ async function main() {
     check('every send is out of sight', r.sends.length === 3 && r.sends.every(s => s.behind))
   }
   {
-    // 1.53.2: no TRYBE tab, nothing claimed, the run says why and stops.
+    // 1.54.0: no TRYBE tab, SCOUT opens one first; one it cannot open: nothing claimed, the run says why and stops.
     const r = await sim({ ids: ['a', 'b'], noTab: true })
-    check('with no TRYBE tab open nothing is claimed or sent, and the run says to open TRYBE', r.claims.length === 0 && r.sends.length === 0 && /TRYBE is not open in this Chrome\. Open it from MVP's TRYBE page, leave the tab open/.test(r.st.ended || ''))
+    check('a TRYBE SCOUT cannot open: nothing is claimed or sent, and the run says so', r.claims.length === 0 && r.sends.length === 0 && /SCOUT could not open TRYBE in this Chrome\. Open it from MVP's TRYBE page, sign in/.test(r.st.ended || ''))
   }
   {
     const r = await sim({ ids: ['a', 'b', 'c'], claim: (id, n) => n === 1 ? { capped: true, dailyCap: 80, nextFreeAt: '2026-10-17T10:00:00Z' } : { ok: true, name: id, url: `https://jointrybe.com/x/${id}`, message: 'Hi' } })
@@ -143,7 +144,7 @@ async function main() {
     const chrome = { storage: { local: { get: async (k: string) => ({ [k]: JSON.parse(JSON.stringify(store[k])) }), set: async (o: Store) => { Object.assign(store, JSON.parse(JSON.stringify(o))) } } }, alarms: { create: () => {}, clear: () => {}, onAlarm: { addListener: () => {} } }, runtime: { onStartup: { addListener: () => {} } } }
     const fetchFake = async (_u: string, init: { body: string }) => { const b = JSON.parse(init.body); if (b.action === 'result') results.push({ brandId: b.brandId, outcome: b.outcome }); return { ok: true, status: 200, json: async () => (b.action === 'claim' ? { ok: true, name: b.brandId, url: `https://jointrybe.com/x/${b.brandId}`, message: 'Hi' } : { ok: true }) } }
     const send = async (a: { url: string }) => { sent.push(a.url.split('/').pop() as string); return { outcome: 'sent', steps: ['pressed'] } }
-    const api = new Function('chrome', 'fetch', 'trybeSend', 'trybeOwnTab', 'TRYBE_CALLERS', 'Date', 'setTimeout', `${RUNNER}; return { trybeRunTick }`)(chrome, fetchFake, send, async () => 7, /^https:\/\/(www\.)?mvpaffiliate\.io$/, { now: () => 10_000_000 }, () => 0)
+    const api = new Function('chrome', 'fetch', 'trybeSend', 'trybeOwnTab', 'trybeApiTabId', 'TRYBE_CALLERS', 'Date', 'setTimeout', `${RUNNER}; return { trybeRunTick }`)(chrome, fetchFake, send, async () => 7, async () => 7, /^https:\/\/(www\.)?mvpaffiliate\.io$/, { now: () => 10_000_000 }, () => 0)
     await api.trybeRunTick()
     check('a send cut off by a restart is not confirmed, and the next brand goes', results[0]?.brandId === 'a' && results[0]?.outcome === 'unconfirmed' && sent.join() === 'b', JSON.stringify({ results, sent }))
   }

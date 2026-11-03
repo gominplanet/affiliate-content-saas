@@ -11910,6 +11910,9 @@ function trybeCallerOk(sender) {
 chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
   if (!msg || typeof msg.type !== 'string') return
   if (/^MVP_(TRYBE|HASHTAG)_/.test(msg.type) && !trybeCallerOk(sender)) { sendResponse({ ok: false, outcome: 'failed', error: 'bad-origin' }); return false }
+  // 1.54.0: the MVP tab that last asked anything of TRYBE, so a TRYBE tab
+  // SCOUT has to open goes next to it, behind it (trybeOpenBehind).
+  if (/^MVP_TRYBE_/.test(msg.type) && sender && sender.tab && sender.tab.id != null) trybeLastMvpTab = sender.tab.id
   // The page asks SCOUT to keep Liftoff running (or to stop), from its own
   // origin, which is where the background tab will be opened.
   if (msg.type === 'MVP_LIFTOFF_AUTO') {
@@ -12442,10 +12445,10 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
         }
         return { open: true, opened: false }
       }
-      const from = sender && sender.tab ? sender.tab : null
-      const t = await chrome.tabs.create({ url: TRYBE_DISCOVER, active: !!msg.focus, ...(from && from.windowId != null ? { windowId: from.windowId, index: from.index + 1 } : {}) })
-      try { await chrome.tabs.update(t.id, { autoDiscardable: false }) } catch (e) {}
-      return { open: true, opened: true }
+      // 1.54.0: the same opener SCOUT's own requests use, so TRYBE is never
+      // opened twice when MVP and a request both find it closed at once.
+      const id = await trybeOpenBehind(sender && sender.tab ? sender.tab.id : null, !!msg.focus)
+      return id != null ? { open: true, opened: true } : { open: false, error: 'could-not-open' }
     })().then(sendResponse).catch((e) => sendResponse({ open: false, error: e && e.message ? e.message : 'error' }))
     return true // async
   }
@@ -15120,9 +15123,10 @@ const TRYBE_SEND_ONLY = /^\/backend\/api\/discovery\/creators\/me\/requests$/
 // long as nothing pops up, we're good"). TRYBE's sign-in lives in a TRYBE
 // page, so everything SCOUT does on TRYBE goes through the TRYBE tab the
 // creator opened from MVP and left open: requests, the inbox, the brand list,
-// sends. SCOUT opens no window and no tab for TRYBE, and never closes or
-// moves the creator's. With no TRYBE tab open, SCOUT does nothing and says so
-// ('trybe-not-open'); MVP's TRYBE page has the button that opens one.
+// sends. SCOUT never opens a window for TRYBE, and never closes or moves the
+// creator's tab. With no TRYBE tab open, SCOUT opens one first, next to MVP's
+// tab and behind it (1.54.0, trybeOpenBehind); only when that fails does it
+// say so ('trybe-not-open').
 // (Until 1.53.1 SCOUT opened its own TRYBE tab in a minimized window, which
 // Chrome on Windows draws at next to no size, and the creator could see.)
 async function trybeOwnTab() {
@@ -15145,11 +15149,56 @@ async function trybeOwnTab() {
   try { await chrome.scripting.executeScript({ target: { tabId: t.id }, world: 'MAIN', files: ['trybe-hook.js'] }) } catch (e) {}
   return t.id
 }
-/** The tab SCOUT makes TRYBE requests from: the creator's own. */
+/** The tab SCOUT makes TRYBE requests from: the creator's own, opened
+ *  behind MVP's first when none is (1.54.0). */
 async function trybeApiTabId() {
   const id = await trybeOwnTab()
-  if (id == null) throw new Error('trybe-not-open')
-  return id
+  if (id != null) return id
+  const opened = await trybeOpenBehind(trybeLastMvpTab, false)
+  if (opened == null) throw new Error('trybe-not-open')
+  return opened
+}
+
+// TRYBE FIRST, ALWAYS (1.54.0; Seb, 2026-11-03: "at times it does not load..
+// as if scout is not opening the trybe page in the background.. this should
+// always be the first thing it does for it to work"). Until now a request
+// that found no TRYBE tab gave up ('trybe-not-open') and MVP's page had to
+// open one, once a visit, so a TRYBE tab closed later, or a request made
+// before the page had opened it, did not load. Now every request opens
+// TRYBE first when it is not open: a tab next to MVP's tab that asked, behind
+// it (never in front, never a window of SCOUT's own), kept awake, loaded and
+// watched before the request goes. Requests that find it closed at the same
+// moment all wait on the one opening.
+let trybeLastMvpTab = null
+let trybeOpening = null
+function trybeOpenBehind(nearTabId, focus) {
+  if (trybeOpening) return trybeOpening
+  trybeOpening = (async () => {
+    if (!(await hasTrybeAccess())) return null
+    const have = await trybeOwnTab()
+    if (have != null) return have
+    // Next to the MVP tab that asked; without one, in the window used last.
+    let place = {}
+    try {
+      if (nearTabId != null) {
+        const near = await chrome.tabs.get(nearTabId)
+        if (near && near.windowId != null) place = { windowId: near.windowId, index: near.index + 1 }
+      }
+    } catch (e) {}
+    if (place.windowId == null) {
+      try { const w = await chrome.windows.getLastFocused({ windowTypes: ['normal'] }); if (w && w.id != null) place = { windowId: w.id } } catch (e) {}
+    }
+    let t
+    try { t = await chrome.tabs.create({ url: TRYBE_DISCOVER, active: !!focus, ...place }) } catch (e) { return null }
+    if (!t || t.id == null) return null
+    try { await chrome.tabs.update(t.id, { autoDiscardable: false }) } catch (e) {}
+    await waitForTabLoad(t.id, 30000)
+    await _sleep(1500)
+    // The sign-in watcher, should the registered one not have run.
+    try { await chrome.scripting.executeScript({ target: { tabId: t.id }, world: 'MAIN', files: ['trybe-hook.js'] }) } catch (e) {}
+    return t.id
+  })().finally(() => { trybeOpening = null })
+  return trybeOpening
 }
 /** Signed out on the last request: the creator's TRYBE tab is reloaded so
  *  TRYBE's page signs in afresh, unless the creator is looking at it. */
@@ -15468,8 +15517,9 @@ async function trybeHarvest({ maxPages }, callerTabId) {
   let tabId = null
   const hooked = await trybeHookOn()
   try {
-    // In the creator's own TRYBE tab (1.53.2): this only reads TRYBE's data.
-    tabId = await trybeOwnTab()
+    // In the creator's own TRYBE tab (1.53.2), opened first when it is not
+    // (1.54.0): this only reads TRYBE's data.
+    try { tabId = await trybeApiTabId() } catch (e) { tabId = null }
     if (tabId == null) return { ok: false, error: 'trybe-not-open', hooked }
     let state = 'loading'
     for (let i = 0; i < 20 && state === 'loading'; i++) {
@@ -15779,8 +15829,11 @@ async function trybeRunTick() {
     }
     if (st.idx >= st.ids.length) { await trybeRunEnd(st, `Done: ${st.sent} sent.`, st.sent ? 'ok' : 'warn'); return }
     if (st.nextAt && Date.now() < st.nextAt - 500) { trybeRunWake(st.nextAt); return }
-    // Nothing is claimed without a TRYBE tab to send from (1.53.2).
-    if ((await trybeOwnTab()) == null) { await trybeRunEnd(st, `Stopped: TRYBE is not open in this Chrome. Open it from MVP's TRYBE page, leave the tab open, then press Send all again. ${st.sent || 0} sent.`, 'bad'); return }
+    // Nothing is claimed without a TRYBE tab to send from (1.53.2): one is
+    // opened first when it is not (1.54.0), and only if that fails it stops.
+    let runTab = null
+    try { runTab = await trybeApiTabId() } catch (e) { runTab = null }
+    if (runTab == null) { await trybeRunEnd(st, `Stopped: SCOUT could not open TRYBE in this Chrome. Open it from MVP's TRYBE page, sign in, then press Send all again. ${st.sent || 0} sent.`, 'bad'); return }
     const id = st.ids[st.idx]
     const c = await trybeRunApi(st.origin, { action: 'claim', brandId: id })
     if (!c.reached) {

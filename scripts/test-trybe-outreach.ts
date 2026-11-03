@@ -127,7 +127,7 @@ check('a TRYBE category matches', nicheScore(sb, ['Books & Education'], []) >= 2
 check('TRYBE category list is read by name', JSON.stringify(readCategories({ data: [{ category: 'Fashion & Apparel', emoji: 'x' }, { category: 'Beauty & Personal Care' }] })) === JSON.stringify(['Fashion & Apparel', 'Beauty & Personal Care']))
 const harvest = BG.slice(BG.indexOf('async function trybeHarvestInPage('), BG.indexOf('const TRYBE_HOOK_ID'))
 check('collecting the list reads TRYBE pages and never clicks anything', /\/backend\/api\/discovery\/brands\?limit=75&page=/.test(harvest) && !/\.click\(\)/.test(harvest))
-check('collecting runs in the creator\'s own TRYBE tab, and opens nothing', /tabId = await trybeOwnTab\(\)/.test(BG.slice(BG.indexOf('async function trybeHarvest('), BG.indexOf('async function trybeHarvest(') + 900)))
+check('collecting runs in the creator\'s own TRYBE tab, opened behind MVP\'s first when none is (1.54.0)', /try \{ tabId = await trybeApiTabId\(\) \} catch \(e\) \{ tabId = null \}/.test(BG.slice(BG.indexOf('async function trybeHarvest('), BG.indexOf('async function trybeHarvest(') + 900)))
 check('the directory is shared, written by the server only', /action === 'directory'/.test(ROUTE) && /from\('trybe_directory'\)\.upsert/.test(ROUTE))
 check('the shortlist leaves out brands already on the list', /\.filter\(r => !have\.has\(r\.brand_id\)\)/.test(ROUTE))
 check('websites are read in the background', /researchBrandSite/.test(readFileSync('app/api/cron/trybe-directory/route.ts', 'utf8')))
@@ -281,7 +281,8 @@ const fnOf = (head: string) => BG.slice(BG.indexOf(head), BG.indexOf('\n}\n', BG
 const OWN = ['async function trybeOwnTab(', 'async function trybeApiTabId(', 'async function trybeOwnTabRefresh(', 'async function trybeSend(', 'async function trybeHarvest(']
 check('no TRYBE job opens, closes or brings up a window or tab', OWN.every(h => BG.indexOf(h) > 0 && !/openWorkTab|tabs\.create|tabs\.remove|windows\.create|windows\.update|active: true|focused: true/.test(fnOf(h))))
 check('SCOUT works through a TRYBE tab already open, kept awake, with the watcher in it', /chrome\.tabs\.query\(\{ url: TRYBE_WORK_ORIGIN \}\)/.test(fnOf('async function trybeOwnTab(')) && /autoDiscardable: false/.test(fnOf('async function trybeOwnTab(')) && /files: \['trybe-hook\.js'\]/.test(fnOf('async function trybeOwnTab(')))
-check('no TRYBE tab means nothing is done, and it is said', /if \(id == null\) throw new Error\('trybe-not-open'\)/.test(BG) && /catch \(e\) \{ return \{ ok: false, error: 'trybe-not-open' \} \}/.test(BG) && /if \(tabId == null\) return \{ ok: false, error: 'trybe-not-open', hooked \}/.test(BG))
+// TRYBE FIRST (1.54.0; Seb, 2026-11-03: "this should always be the first thing it does").
+check('no TRYBE tab: SCOUT opens one first, and only says so when it cannot', /const opened = await trybeOpenBehind\(trybeLastMvpTab, false\)\s*if \(opened == null\) throw new Error\('trybe-not-open'\)/.test(BG) && /catch \(e\) \{ return \{ ok: false, error: 'trybe-not-open' \} \}/.test(BG) && /if \(tabId == null\) return \{ ok: false, error: 'trybe-not-open', hooked \}/.test(BG))
 check('a signed-out tab is reloaded only when the creator is not looking at it', /if \(t\.active && w\.focused\) return false/.test(fnOf('async function trybeOwnTabRefresh(')))
 check('only the old brand scan (for SCOUTs that cannot collect the list) opens TRYBE itself', (BG.match(/await openWorkTab\(TRYBE_DISCOVER\)/g) || []).length === 1 && /async function trybeScan\([\s\S]{0,1600}await openWorkTab\(TRYBE_DISCOVER\)/.test(BG))
 check('the send itself is never asked of the screen', SENDER.length > 200 && !/trybeRun\(/.test(SENDER) && /trybeApi\(\{ method: 'POST', path: TRYBE_JOIN_PATH/.test(SENDER))
@@ -356,9 +357,10 @@ check('the claim hands SCOUT the program from MVP\'s copy of TRYBE\'s list', /co
 {
   const GATE = readFileSync('components/labs/TrybeTabGate.tsx', 'utf8')
   const open = BG.slice(BG.indexOf("if (msg.type === 'MVP_TRYBE_TAB_OPEN')"), BG.indexOf("if (msg.type === 'MVP_TRYBE_TAB')"))
-  check('SCOUT opens TRYBE in a tab next to MVP\'s, behind it, or uses the one open', /const have = await trybeOwnTab\(\)/.test(open) && /chrome\.tabs\.create\(\{ url: TRYBE_DISCOVER, active: !!msg\.focus, \.\.\.\(from && from\.windowId != null \? \{ windowId: from\.windowId, index: from\.index \+ 1 \}/.test(open) && /autoDiscardable: false/.test(open))
+  const opener = BG.slice(BG.indexOf('function trybeOpenBehind('), BG.indexOf('function trybeOpenBehind(') + 2000)
+  check('SCOUT opens TRYBE in a tab next to MVP\'s, behind it, or uses the one open', /const have = await trybeOwnTab\(\)/.test(open) && /trybeOpenBehind\(sender && sender\.tab \? sender\.tab\.id : null, !!msg\.focus\)/.test(open) && /index: near\.index \+ 1/.test(opener) && /active: !!focus/.test(opener) && /autoDiscardable: false/.test(opener))
   check('it comes to the front only when the creator pressed for it', /if \(msg\.focus\) \{/.test(open) && !/focused: true/.test(open.replace(/if \(msg\.focus\) \{[\s\S]*?\n        \}/, '')))
-  check('the TRYBE page opens it once a visit when none is open', /if \(preview \|\| !tabInBackground \|\| trybeTab !== 'closed' \|\| autoOpened\.current\) return/.test(UI) && /requestTrybeTabOpen\(false\)/.test(UI))
+  check('the TRYBE page opens it whenever it is found closed, at most every 20 seconds', /if \(preview \|\| !tabInBackground \|\| trybeTab !== 'closed'\) return/.test(UI) && /Date\.now\(\) - autoOpenedAt\.current < 20_000/.test(UI) && /void ensureTrybeTab\(\)/.test(UI))
   check('until TRYBE is open a card at the top says so, and a pop-up once a visit', /<TrybeTabGate state=\{access === 'not-granted' \? 'not-allowed' : trybeTab\} inBackground=\{tabScout && tabOpens\} onCheck=\{lookTab\}/.test(UI) && UI.indexOf('<TrybeTabGate ') < UI.indexOf('YOUR WEEK, in one line') && /role="dialog"/.test(GATE) && /sessionStorage\.getItem\(SEEN_KEY\)/.test(GATE))
   // Seb, 2026-10-21: "SCOUT could not open TRYBE (no-access)". SCOUT reinstalled
   // by hand forgets jointrybe.com; the card asks for it, then opens TRYBE.
