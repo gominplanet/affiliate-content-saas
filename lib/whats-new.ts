@@ -12,6 +12,7 @@
 
 import { canUsePreview, trybeAccess, type PreviewFeature } from '@/lib/labs-preview'
 import { canUseIgDm } from '@/lib/ig-dm-access'
+import { canTryLook } from '@/lib/look'
 
 export type NewsGate = PreviewFeature | 'trybe' | 'instagram_dm'
 export interface WhatsNewItem {
@@ -458,6 +459,8 @@ export function newsGateOpen(gate: NewsGate | undefined, tier: unknown): boolean
   if (!gate) return true
   if (gate === 'trybe') return trybeAccess(tier) !== 'none'
   if (gate === 'instagram_dm') return canUseIgDm(typeof tier === 'string' ? tier : null)
+  // The new look reaches the legacy paid plans as well as Pro (lib/look).
+  if (gate === 'new_look') return canTryLook(tier)
   return canUsePreview(gate, tier)
 }
 

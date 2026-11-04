@@ -85,6 +85,8 @@ async function main() {
   check('and the switch back holds', lookFor('admin', 'classic') === 'classic' && lookFor('admin', 'teal') === 'teal')
   check('a member sees it only once it opens to Pro', lookFor('pro', undefined) === (previewOpenToPro('new_look') ? 'teal' : 'classic') && lookFor('trial', undefined) === 'classic' && lookFor('amazon', undefined) === 'classic')
   check('a cookie alone never gives the look to someone not allowed it', lookFor('trial', 'teal') === 'classic')
+  check('every paying member has it once it is open to Pro: the legacy Studio and Creator plans too', previewOpenToPro('new_look') ? (lookFor('studio', undefined) === 'teal' && lookFor('creator', undefined) === 'teal' && canTryLook('studio') && canTryLook('creator')) : (lookFor('studio', undefined) === 'classic' && lookFor('creator', undefined) === 'classic'))
+  check('and they can switch back like Pro', lookFor('studio', 'classic') === 'classic' && lookFor('creator', 'classic') === 'classic')
   check('the switch writes the cookie the server reads, for every page, a year long', lookCookie('classic') === `${LOOK_COOKIE}=classic; path=/; max-age=31536000; samesite=lax`)
   const LAYOUT = read('app/(dashboard)/layout.tsx')
   check('the layout decides the look from the cookie and hands it to the shell', /const look = lookFor\(tier, \(await cookies\(\)\)\.get\(LOOK_COOKIE\)\?\.value\)/.test(LAYOUT) && /look=\{look\}/.test(LAYOUT) && /canTryLook=\{canTryLook\(tier\)\}/.test(LAYOUT))
