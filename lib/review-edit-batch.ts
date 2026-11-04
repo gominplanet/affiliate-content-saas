@@ -276,3 +276,7 @@ export function addBody(v: BatchVideo): { review: { driveId: string; name: strin
   const take = (files: DriveTake[]) => ({ driveId: files[0].id, name: files[0].name, ...(files.length > 1 ? { more: files.slice(1).map((f) => ({ driveId: f.id, name: f.name })) } : {}) })
   return { review: take(v.a), ...(v.b.length ? { broll: take(v.b) } : {}) }
 }
+
+/** A take from the computer, known by its name and exact size: the same file
+ *  picked again has both (the server's uploaded_before, ComputerBatch). Pure. */
+export const uploadKey = (name: string, bytes: number) => `${name}|${bytes}`

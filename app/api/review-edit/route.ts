@@ -4,11 +4,14 @@
  * GET   the creator's videos, newest first, each with where it is, what MVP
  *       cut and why, where the B-roll went, and the finished files.
  * POST  { action }:
- *   add      { name, review: { url, name, bytes } | { driveId, name, more?: [{ driveId, name }] },
+ *   add      { name, review: { url, name, bytes, more?: [{ url, name, bytes }] } | { driveId, name, more?: [{ driveId, name }] },
  *            broll?, product?, settings? }
  *            queue a video; it starts reading at once and carries on in the
  *            background (lib/review-edit-server). `more`: the files after the
  *            first, joined into one video in that order.
+ *   uploaded_before { files: [{ name, bytes }] }  which files from the
+ *            computer are already in a video (same name, same size), so a
+ *            batch from the computer leaves them out (ComputerBatch).
  *   change   { id, settings?, restore?: number[], cut?: number[], placementOff?: number[], prompt? }
  *            the creator's changes, saved; prompt is a typed change.
  *   make     { id }  make it again with the changes.
@@ -23,6 +26,7 @@ import { NextResponse, after } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { canUsePreview } from '@/lib/labs-preview'
 import { cleanSettings, clock, keepName, linesOf, DEFAULT_SETTINGS, type Plan, type Word } from '@/lib/review-edit'
+import { uploadKey } from '@/lib/review-edit-batch'
 import { promptChange } from '@/lib/review-edit-plan'
 import { moveQueue, deleteRaw, ownPath, hasUpload, serverJobs, finishMaking, takeFiles, editAllowance, allowanceFullWords, lineOrder, MAX_TAKE_FILES, EDIT_BUCKET, type EditRow, type Src, type TakeFile, type ServerView, editDb } from '@/lib/review-edit-server'
 import { driveAccessToken, driveFile, isDriveId } from '@/lib/google-drive'
@@ -182,6 +186,22 @@ export async function POST(request: Request) {
     const { error } = await db.storage.from(EDIT_BUCKET).remove([p])
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
     return NextResponse.json({ ok: true, pictures: await pictureLibrary(db, g.userId) })
+  }
+
+  if (action === 'uploaded_before') {
+    // A take from the computer is known by its name and exact size: picking
+    // the same folder again never uploads or makes a video twice.
+    const asked = (Array.isArray(body.files) ? body.files : []).slice(0, 300)
+      .map((f) => ({ name: String((f as { name?: unknown })?.name || '').slice(0, 200), bytes: Number((f as { bytes?: unknown })?.bytes) || 0 }))
+      .filter((f) => f.name && f.bytes > 0)
+    if (!asked.length) return NextResponse.json({ used: [] })
+    const { data: rows, error } = await db.from('review_edits').select('review_src,broll_src').eq('user_id', g.userId).order('created_at', { ascending: false }).limit(2000)
+    if (error) return NextResponse.json({ error: `MVP could not check your earlier videos: ${error.message}` }, { status: 500 })
+    const seen = new Set(((rows ?? []) as { review_src: Src | null; broll_src: Src | null }[])
+      .flatMap((r) => [...takeFiles(r.review_src), ...takeFiles(r.broll_src)])
+      .filter((f) => f?.kind === 'upload' && f.name && f.bytes)
+      .map((f) => uploadKey(f.name || '', f.bytes || 0)))
+    return NextResponse.json({ used: asked.map((f) => uploadKey(f.name, f.bytes)).filter((k) => seen.has(k)) })
   }
 
   if (action === 'add') {

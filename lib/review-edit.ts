@@ -38,7 +38,15 @@ export const END_TAIL = 0.5
 export type VideoKind = 'review' | 'trybe'
 export const KIND_WORDS: Record<VideoKind, { name: string; line: string }> = {
   review: { name: 'Amazon and YouTube review', line: 'Filmed sideways. Edited as a review, wide, for Amazon and YouTube. Its Shorts, TikTok and Reels come from it later, through Drop.' },
-  trybe: { name: 'TRYBE ad', line: 'Filmed upright. Edited as an ad: tight, captions on, a hook at the start, no logo. Vertical, for the TRYBE brand.' },
+  trybe: { name: 'TRYBE ad', line: 'Filmed upright. Edited as an ad: tight, a hook at the start, no logo. Vertical, for the TRYBE brand.' },
+}
+
+/** What a kind of video is, said with this creator's captions setting, so a
+ *  TRYBE ad never reads "captions on" while their look has them off (Seb,
+ *  2026-11-04, whose look had the box unticked). Pure. */
+export function kindLine(kind: VideoKind, captions: boolean): string {
+  if (kind !== 'trybe') return KIND_WORDS[kind].line
+  return `${KIND_WORDS.trybe.line} ${captions ? 'Word by word captions on.' : 'No captions: they are off in Your look.'}`
 }
 /** TIGHT (Seb, 2026-10-30: "there's still a lot of dead air ... I think we
  *  should really focus on making it ... tighter"). Besides the gaps between

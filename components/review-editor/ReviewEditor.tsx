@@ -28,17 +28,16 @@ import { Loader2, UploadCloud, Check, AlertTriangle, Film, Scissors, Clapperboar
 import { cn } from '@/lib/utils'
 import { useLook, useSection } from '@/components/layout/shell-nav-context'
 import { createBrowserClient } from '@/lib/supabase/client'
-import { uploadResumable, ResumableUnavailable } from '@/lib/upload-resumable'
-import { uploadWithProgress } from '@/lib/upload-progress'
-import { freshAccessToken, saysExpired } from '@/lib/fresh-token'
-import { storageSizeRefusal, BULK_VIDEO_MAX_BYTES } from '@/lib/clip-source-limits'
+import { BULK_VIDEO_MAX_BYTES } from '@/lib/clip-source-limits'
+import { uploadTake } from '@/components/review-editor/upload-take'
 import { pickFromDrive, type DriveState } from '@/components/review-editor/drive-picker'
 import DriveBatch from '@/components/review-editor/DriveBatch'
+import ComputerBatch from '@/components/review-editor/ComputerBatch'
 import { BURN_KEEP_DAYS } from '@/lib/burn-retention'
 import { normalizeAsinInput } from '@/lib/asin'
 import {
   DEFAULT_SETTINGS, FORMAT_WORDS, KIND_WORDS, LOGO_OPACITY, LOGO_SIZES, LOGO_WHEN_WORDS, LOGO_WIDTH, MAX_PICTURES, SHOW_SECONDS, PICTURE_WHEN_WORDS, PICTURE_WIDTH, POSITIONS, POSITION_WORDS, SPOTS,
-  TITLE_COLORS, TITLE_LOOKS, TITLE_LOOK_WORDS, TITLE_SECONDS, clock, cleanSettings, downloadLink,
+  TITLE_COLORS, TITLE_LOOKS, TITLE_LOOK_WORDS, TITLE_SECONDS, clock, cleanSettings, downloadLink, kindLine,
   type EditSettings, type Format, type LogoSize, type LogoWhen, type Picture, type PictureTime, type PictureWhen, type Position, type Spot, type TitleColor, type VideoKind,
 } from '@/lib/review-edit'
 import { TealArt } from '@/components/layout/teal-ui'
@@ -424,7 +423,7 @@ export default function ReviewEditor() {
   const [lookOpen, setLookOpen] = useState(false)
   const [savingLook, setSavingLook] = useState(false)
   const [showTips, setShowTips] = useState(false)
-  const [tab, setTab] = useState<'drive' | 'one'>('drive')
+  const [tab, setTab] = useState<'drive' | 'computer' | 'one'>('drive')
   const [kind, setKind] = useState<VideoKind>('review')
   const [review, setReview] = useState<Upl | null>(null)
   const [broll, setBroll] = useState<Upl | null>(null)
@@ -520,31 +519,11 @@ export default function ReviewEditor() {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) { toast.error('Sign in again, then add the take.'); return }
     setU({ name: file.name, bytes: file.size, sent: 0, url: null, error: null })
-    const ext = file.name.split('.').pop()?.toLowerCase() || 'mp4'
-    let path = `${user.id}/source-edit-${crypto.randomUUID()}.${ext}`
-    const type = file.type || 'video/mp4'
     try {
-      try {
-        await uploadResumable({
-          supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL!, anonKey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-          getAccessToken: (force) => freshAccessToken(supabase, force), bucket: 'instagram-videos', path, file, contentType: type,
-          onProgress: ({ sent }) => setU((u) => (u ? { ...u, sent } : u)),
-        })
-      } catch (e) {
-        if (!(e instanceof ResumableUnavailable)) throw e
-        path = `${user.id}/source-edit-${crypto.randomUUID()}.${ext}`
-        const token = await freshAccessToken(supabase, true)
-        if (!token) throw new Error('Signed out during the upload. Sign in again and add it again.')
-        await uploadWithProgress({
-          supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL!, anonKey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, accessToken: token,
-          bucket: 'instagram-videos', path, file, contentType: type, onProgress: ({ sent }) => setU((u) => (u ? { ...u, sent } : u)),
-        })
-      }
-      const url = supabase.storage.from('instagram-videos').getPublicUrl(path).data.publicUrl
+      const { url } = await uploadTake(supabase, user.id, file, (sent) => setU((u) => (u ? { ...u, sent } : u)))
       setU((u) => (u ? { ...u, sent: file.size, url } : u))
     } catch (e) {
-      const msg = e instanceof Error ? e.message : 'The upload failed.'
-      setU((u) => (u ? { ...u, error: storageSizeRefusal(msg, file.size) || (saysExpired(msg) ? 'Your sign-in ran out during the upload. Refresh the page and add it again.' : msg) } : u))
+      setU((u) => (u ? { ...u, error: e instanceof Error ? e.message : 'The upload failed.' } : u))
     }
   }
 
@@ -759,7 +738,7 @@ export default function ReviewEditor() {
         )}
       </section>
 
-      {/* 2. ADD VIDEOS: a batch from Google Drive, or one video. */}
+      {/* 2. ADD VIDEOS: a batch from Google Drive or from this computer, or one video. */}
       <section ref={addRef} id="add-videos" className={cn(card, 'scroll-mt-20')} style={cardStyle} aria-label="Add videos">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
@@ -774,8 +753,8 @@ export default function ReviewEditor() {
               </p>
             )}
           </div>
-          <div className="inline-flex rounded-lg border p-0.5" role="tablist" style={{ borderColor: 'var(--border-2)', background: 'var(--surface-2)' }}>
-            {([['drive', 'A batch from Google Drive'], ['one', 'One video']] as const).map(([k, w]) => (
+          <div className="inline-flex flex-wrap rounded-lg border p-0.5" role="tablist" style={{ borderColor: 'var(--border-2)', background: 'var(--surface-2)' }}>
+            {([['drive', 'A batch from Google Drive'], ['computer', 'A batch from this computer'], ['one', 'One video']] as const).map(([k, w]) => (
               <button key={k} type="button" role="tab" aria-selected={tab === k} onClick={() => setTab(k)}
                 className="rounded-md px-3 py-1.5 text-[12.5px] font-semibold"
                 style={tab === k ? { background: 'var(--surface)', color: 'var(--text)', boxShadow: '0 1px 2px rgba(0,0,0,0.08)' } : { color: 'var(--text-3)' }}>{w}</button>
@@ -807,6 +786,12 @@ export default function ReviewEditor() {
           </div>
         )}
 
+        {tab === 'computer' && (
+          <div className="mt-4">
+            <ComputerBatch settings={settings} onAdded={load} left={allowance?.left ?? null} />
+          </div>
+        )}
+
         {tab === 'one' && (
           <div className="mt-4 flex flex-col gap-3">
             <div>
@@ -816,7 +801,7 @@ export default function ReviewEditor() {
                   <button key={k} type="button" onClick={() => setKind(k)} aria-pressed={kind === k}
                     className="text-left rounded-xl border p-3" style={kind === k ? { borderColor: PURPLE, background: 'rgb(var(--brand-rgb) / 0.07)' } : { borderColor: 'var(--border-2)' }}>
                     <p className="text-[13.5px] font-bold" style={kind === k ? { color: PURPLE } : undefined}>{KIND_WORDS[k].name}</p>
-                    <p className="text-[12px] mt-0.5" style={soft}>{KIND_WORDS[k].line}</p>
+                    <p className="text-[12px] mt-0.5" style={soft}>{kindLine(k, settings.captions)}</p>
                   </button>
                 ))}
               </div>
@@ -825,7 +810,7 @@ export default function ReviewEditor() {
               {takeBox('review', 'Your talking take', kind === 'trybe' ? '(filmed upright)' : '(filmed sideways)')}
               {takeBox('broll', 'Your B-roll take', '(optional)')}
             </div>
-            <p className="text-[12px] -mt-1" style={soft}>Your talking take is in two or more files? Use <button type="button" onClick={() => setTab('drive')} className="underline font-semibold" style={{ color: PURPLE }}>A batch from Google Drive</button>: you say which video each file is for, and MVP joins them.</p>
+            <p className="text-[12px] -mt-1" style={soft}>Your talking take is in two or more files? Use <button type="button" onClick={() => setTab('computer')} className="underline font-semibold" style={{ color: PURPLE }}>A batch from this computer</button> or one from Google Drive: you say which video each file is for, and MVP joins them.</p>
             <label className="text-[13px] font-semibold">The product <span className="font-normal" style={soft}>(optional: {kind === 'trybe' ? 'the brand and product' : 'its name or Amazon link'})</span>
               <input value={product} onChange={(e) => setProduct(e.target.value)} placeholder="Bassdash UPF 50 hoodie" className={`mt-1 max-w-md font-normal ${inputCls}`} style={inputStyle} />
             </label>

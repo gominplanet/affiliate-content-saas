@@ -15,6 +15,12 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { deleteVideoAsset } from '@/services/cloudinary'
 import { storagePathFromPublicUrl } from '@/lib/storage-url'
 
+/** The uploaded files of a review editor take (lib/review-edit-server Src:
+ *  the first file and any joined after it), as storage paths. */
+type EditTake = { kind?: string; path?: string; more?: EditTake[] } | null
+const editTakePaths = (s: EditTake): string[] => (s ? [s, ...(Array.isArray(s.more) ? s.more : [])] : [])
+  .filter((f) => f?.kind === 'upload' && typeof f.path === 'string').map((f) => f!.path!)
+
 export const runtime = 'nodejs'
 export const maxDuration = 300
 
@@ -101,6 +107,25 @@ export async function GET(request: Request) {
     }
   } catch { /* if we can't read the queue, skip the sweep to stay safe */ }
 
+  // THE REVIEW EDITOR'S TAKES (source-edit-*): a take a video still needs is
+  // never swept here. The editor deletes its own (lib/review-edit-server
+  // deleteRaw), two days after the video is made. This sweep used to take
+  // them after a day (found 2026-11-04), so a video still waiting in the
+  // queue, or made again on its second day, had lost its take. A take no
+  // video holds (a batch from the computer stopped mid-way) still goes after
+  // a day. When the editor's videos cannot be read, none of its takes is swept.
+  let editTakesKnown = true
+  try {
+    const { data: edits, error: editErr } = await sb.from('review_edits')
+      .select('user_id,review_src,broll_src').is('raw_deleted_at', null).limit(20000)
+    if (editErr) throw editErr
+    for (const r of (edits || []) as { user_id: string; review_src: EditTake; broll_src: EditTake }[]) {
+      for (const path of [...editTakePaths(r.review_src), ...editTakePaths(r.broll_src)]) {
+        if (path.split('/')[0] === r.user_id) excluded.add(path)
+      }
+    }
+  } catch { editTakesKnown = false }
+
   let sweptFiles = 0
   try {
     const { data: folders } = await admin.storage.from(BUCKET).list('', { limit: 1000 })
@@ -112,6 +137,7 @@ export async function GET(request: Request) {
       const stale = (files || []).filter((f) => {
         if (!f.id || !f.name) return false                        // skip sub-folders
         if (!/^(burner|clip|source)-/.test(f.name)) return false  // transient inputs + orphaned clip sources (never `short-` deliverables)
+        if (!editTakesKnown && f.name.startsWith('source-edit-')) return false  // the editor's videos unread: keep its takes
         const created = f.created_at ? new Date(f.created_at).getTime() : 0
         if (!created || created >= cutoffMs) return false  // still within window
         return !excluded.has(`${folder.name}/${f.name}`)

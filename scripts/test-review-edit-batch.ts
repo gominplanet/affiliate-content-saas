@@ -57,6 +57,8 @@ const mixed = pairTakes([take('a1', 'IMG_2001.MOV'), take('a2', 'talk.mov', { fi
 check('a filming time is only compared with a filming time, a camera number with a camera number', mixed[0].b?.id === 'b1' && mixed[0].how === 'order' && mixed[1].b?.id === 'b2' && mixed[1].how === 'filmed', mixed.map((p) => [p.b?.id, p.how]))
 
 const U = readFileSync('components/review-editor/DriveBatch.tsx', 'utf8')
+// The list to check the videos, shared with a batch from the computer.
+const C = readFileSync('components/review-editor/BatchCheck.tsx', 'utf8')
 const E = readFileSync('components/review-editor/ReviewEditor.tsx', 'utf8')
 const P = readFileSync('components/review-editor/drive-picker.ts', 'utf8')
 check('the creator sets an A-roll and a B-roll folder once, and MVP remembers them', /Choose your A-roll folder/.test(U) && /Choose your B-roll folder/.test(U) && /action: 'folders'/.test(U))
@@ -67,7 +69,7 @@ check('a video that could not be added says why, names its files, and stays to t
 const D = readFileSync('app/api/review-edit/drive/route.ts', 'utf8')
 check('takes already made or in the queue are left out and listed, so selecting a whole folder each time is safe', /in\('review_src->>fileId', ids2\)/.test(D) && /in\('broll_src->>fileId', ids2\)/.test(D) && /filter\(\(f\) => !used\.has\(f\.id\)\)/.test(U) && /Left out, already made or in the queue/.test(U))
 check('when the filming times could not be read, the page says the pairs need checking', /filmedRead: filmed\.read/.test(D) && /MVP could not read when these were filmed/.test(U))
-check('the videos are shown to check before anything is queued', /Check your videos/.test(U) && /Add all \$\{videos\.length\}/.test(U))
+check('the videos are shown to check before anything is queued', /<BatchCheck videos=\{videos\}/.test(U) && /Check your videos/.test(C) && /Add all \$\{videos\.length\}/.test(U))
 
 // ── One video, several files ─────────────────────────────────────────────────
 const at = (iso: string, o: Partial<DriveTake> = {}) => ({ filmedAt: iso, ...o })
@@ -126,8 +128,8 @@ check('the video server is sent every file, and an older one that cannot join th
 check('reading refuses a file with no sound, by name', /has no sound, so MVP cannot hear what to cut\. Take it out of this video/.test(S))
 check('adding checks every file, names the one that fails, and never takes the same file twice', /for \(const r of rest\)/.test(R) && /return \{ error: `\$\{name\}: \$\{f\.error\}` \}/.test(R) && /The same file is in this video twice/.test(R) && /MAX_TAKE_FILES/.test(R))
 check('files joined into a video count as already made in the next batch', /not\('review_src->more', 'is', null\)/.test(D) && /not\('broll_src->more', 'is', null\)/.test(D) && /takeFiles\(s\)/.test(D))
-check('the batch shows each file’s video, says when MVP joined them, and undoes it in filming order', /v\.a\.slice\(1\)\.reverse\(\)\.reduce/.test(U) && /aria-label=\{`Which video \$\{f\.name\} is for`\}/.test(U) && /A new video/.test(U) && /Not used/.test(U) && /MVP put these together: they were filmed/.test(U) && /Keep them apart/.test(U) && /\.\.\.addBody\(v\)/.test(U))
-check('a video mixing upright and sideways files is stopped before it is added', /disabled=\{!!busy \|\| blocked > 0\}/.test(U) && /cannot be one video\. Move one to another video/.test(U))
+check('the batch shows each file’s video, says when MVP joined them, and undoes it in filming order', /v\.a\.slice\(1\)\.reverse\(\)\.reduce/.test(C) && /aria-label=\{`Which video \$\{f\.name\} is for`\}/.test(C) && /A new video/.test(C) && /Not used/.test(C) && /MVP put these together: they were filmed/.test(C) && /Keep them apart/.test(C) && /\.\.\.addBody\(v\)/.test(U))
+check('a video mixing upright and sideways files is stopped before it is added', /disabled=\{!!busy \|\| blocked > 0\}/.test(U) && /filter\(mixed\)/.test(U) && /cannot be one video\. Move one to another video/.test(C))
 check('a finished video names the files it was joined from', /joined into one\./.test(E) && /files: \{ talk: takeFiles\(r\.review_src\)/.test(R))
 
 if (fails.length) { console.error(`\n❌ review-edit-batch: ${fails.length} failure(s)\n`); for (const f of fails) console.error(`   • ${f}`); process.exit(1) }
