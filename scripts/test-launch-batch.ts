@@ -1255,7 +1255,8 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
   // neighbour, and an empty product is stored as no product at all.
   check('only the fields that changed are sent',
     /if \(title !== \(item\.title \?\? ''\)\) body\.title = title/.test(BOARD)
-    && /if \(product !== \(item\.asin \?\? ''\)\) body\.product = product/.test(BOARD),
+    // The saved box text is every product the video has (lib/launch-products).
+    && /if \(product !== savedProduct\) body\.product = product/.test(BOARD),
     'sending both means emptying one box deletes it while you edit the other')
   check('and the save goes through that one function',
     /onClick=\{save\}/.test(BOARD) && /function save\(\)/.test(BOARD),
@@ -1512,7 +1513,7 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
 // broken: the product is plainly on screen an inch away.
 {
   check('writing a title saves an unsaved product first',
-    /const unsaved = product\.trim\(\) && product !== \(item\.asin \?\? ''\)/.test(BOARD)
+    /const unsaved = product\.trim\(\) && product !== savedProduct/.test(BOARD)
     && /await onSave\(item\.id, \{ product \}\)/.test(BOARD),
     'the button is enabled by the box, so it has to act on the box')
   // ORDER MATTERS. Saving after asking is the same bug with extra steps.

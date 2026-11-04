@@ -48,7 +48,10 @@ check('clock reads minutes and seconds', clock(245) === '4:05' && clock(3725) ==
 const bgjs = read('extension/background.js')
 check('SCOUT says which video of how many per store', /setSfProgress\(domain, \{ total: jobs\.length, done: jobNo - 1, current: jobNo/.test(bgjs) && /pct: r\.ok \? 100 : null, done: jobNo \}/.test(bgjs))
 const manifest = JSON.parse(read('extension/manifest.json'))
-check('SCOUT version bumped in lockstep', /SCOUT_LATEST_VERSION = '1\.54\.0'/.test(read('lib/scout-version.ts')) && manifest.version === '1.54.0')
+// In lockstep, and at least the release that brought the live bar in.
+const latest = /SCOUT_LATEST_VERSION = '(\d+\.\d+\.\d+)'/.exec(read('lib/scout-version.ts'))?.[1] ?? ''
+const atLeast = (v: string, min: string) => { const a = v.split('.').map(Number), b = min.split('.').map(Number); for (let i = 0; i < 3; i++) { if ((a[i] || 0) !== (b[i] || 0)) return (a[i] || 0) > (b[i] || 0) } return true }
+check('SCOUT version bumped in lockstep', latest === manifest.version && atLeast(manifest.version, '1.46.1'))
 const lb = read('components/launch/LaunchBoard.tsx')
 check('Bulk Amazon upload shows the live bar', /<AmazonProgress running=\{amazonBusy\}/.test(lb) && /onSending: \(n\) => setAmazonRun/.test(lb))
 check('the listing count is passed out before SCOUT starts', /scope\?\.onSending\?\.\(sendNow\.length\)[^\n]*\n\s*const res = await requestStorefrontDelivery\(sendNow\)/.test(read('lib/storefront-delivery.ts')))

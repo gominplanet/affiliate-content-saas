@@ -50,6 +50,7 @@ import { freshAccessToken, saysExpired } from '@/lib/fresh-token'
 import { BULK_VIDEO_MAX_BYTES, storageSizeRefusal, sizeWords, tooBigWords } from '@/lib/clip-source-limits'
 import { FILES_REMOVED } from '@/lib/liftoff-cleanup'
 import { liftoffEstimate, estimateWords, overnightWorthy, foldSpeed, speedOf, UP_SPEED_KEY, AMAZON_US_PER_DAY } from '@/lib/liftoff-estimate'
+import { productBoxText, splitProductInput } from '@/lib/launch-products'
 
 const text = { color: 'var(--text)' } as const
 const muted = { color: 'var(--text-2)' } as const
@@ -60,6 +61,9 @@ export interface Item {
   source_url: string | null
   rendered_url: string | null
   asin: string | null
+  /** The other products tagged on the Amazon video, never the parent ASIN
+   *  (migration 464, lib/launch-products). At most two. */
+  more_asins?: string[] | null
   title: string | null
   description: string | null
   /** The storefront title, separate from YouTube's (migration 370). Empty
@@ -1328,7 +1332,8 @@ export default function LaunchBoard() {
       })
       const j = await r.json().catch(() => ({}))
       if (!r.ok) { toast.error(j?.error || 'Could not save that.'); return }
-      if (j?.resolvedFromLink) toast.success(`Found ${j.resolvedFromLink} behind that link.`)
+      if (j?.resolvedFromLink) toast.success(`Found ${j.resolvedFromLink} behind ${String(j.resolvedFromLink).includes(',') ? 'what you pasted' : 'that link'}.`)
+      if (j?.warning) toast.error(String(j.warning), { duration: 12000 })
       if (batchId) await load(batchId)
     } finally { setBusy(null) }
   }
@@ -1881,7 +1886,8 @@ export default function LaunchBoard() {
         <div className="flex flex-col gap-2">
           <p className="text-[12.5px]" style={muted}>
             The one thing that cannot be shared: every video sells its own product. Paste the ASIN or
-            the Amazon link, and MVP will follow a shortened one to the end.
+            the Amazon link, and MVP will follow a shortened one to the end. Showing a few colours or
+            sizes? Paste up to 3, and all of them are tagged on the Amazon video.
           </p>
           {items.length === 0 && <p className="text-[12.5px]" style={muted}>Add some videos first.</p>}
           {items.map((it, i) => (
@@ -2981,7 +2987,10 @@ export function ItemRowEditor({
   faceAvailable: boolean
 }) {
   const [title, setTitle] = useState(item.title ?? '')
-  const [product, setProduct] = useState(item.asin ?? '')
+  // UP TO THREE PRODUCTS (lib/launch-products): the saved ones shown as typed,
+  // the video's own product first.
+  const savedProduct = productBoxText(item.asin, item.more_asins)
+  const [product, setProduct] = useState(savedProduct)
   const [options, setOptions] = useState<string[]>([])
   const [writing, setWriting] = useState(false)
   // THE DESCRIPTION IS WHERE THE AFFILIATE LINK GOES. MVP writes it during
@@ -3016,7 +3025,7 @@ export function ItemRowEditor({
       // Two ways to fix that: refuse until they press Save, or press it for
       // them. A creator who typed the ASIN and asked for a title has already
       // told us everything we needed, so asking again is ceremony.
-      const unsaved = product.trim() && product !== (item.asin ?? '')
+      const unsaved = product.trim() && product !== savedProduct
       if (unsaved) {
         dirty.current = false
         await onSave(item.id, { product })
@@ -3032,7 +3041,7 @@ export function ItemRowEditor({
   async function writeAmazonTitle() {
     setWritingAmz(true)
     try {
-      const unsaved = product.trim() && product !== (item.asin ?? '')
+      const unsaved = product.trim() && product !== savedProduct
       if (unsaved) {
         dirty.current = false
         await onSave(item.id, { product })
@@ -3050,20 +3059,21 @@ export function ItemRowEditor({
   // AN ASIN IS NOT A TITLE, and nothing used to stop one becoming the YouTube
   // title of ten videos and the source text for every translation.
   const titleIsAsin = !!title.trim() && !!product.trim()
-    && title.trim().toUpperCase() === product.trim().toUpperCase()
+    && (title.trim().toUpperCase() === product.trim().toUpperCase()
+      || splitProductInput(product).some((p) => p.toUpperCase() === title.trim().toUpperCase()))
   // Only adopt server values the creator has not overwritten, or a poll landing
   // mid-sentence would wipe what they are typing.
   const dirty = useRef(false)
   useEffect(() => {
     if (dirty.current) return
     setTitle(item.title ?? '')
-    setProduct(item.asin ?? '')
+    setProduct(savedProduct)
     setDesc(item.description ?? '')
     setAmazonTitle(item.amazon_title ?? '')
-  }, [item.title, item.asin, item.description, item.amazon_title])
+  }, [item.title, item.asin, savedProduct, item.description, item.amazon_title])
 
   const changed = title !== (item.title ?? '')
-    || product !== (item.asin ?? '')
+    || product !== savedProduct
     || desc !== (item.description ?? '')
     || amazonTitle !== (item.amazon_title ?? '')
   // ONE FIELD'S SAVE MUST NOT WIPE THE OTHER. Both were always sent together,
@@ -3073,7 +3083,7 @@ export function ItemRowEditor({
   function save() {
     const body: Record<string, unknown> = {}
     if (title !== (item.title ?? '')) body.title = title
-    if (product !== (item.asin ?? '')) body.product = product
+    if (product !== savedProduct) body.product = product
     if (desc !== (item.description ?? '')) body.description = desc
     if (amazonTitle !== (item.amazon_title ?? '')) body.amazonTitle = amazonTitle
     dirty.current = false
@@ -3320,7 +3330,7 @@ export function ItemRowEditor({
           <input
             value={product}
             onChange={(e) => { dirty.current = true; setProduct(e.target.value) }}
-            placeholder="ASIN or Amazon link"
+            placeholder="ASIN or Amazon link (up to 3)"
             className="w-full px-2.5 py-1.5 rounded-lg border text-[12.5px] font-mono bg-transparent"
             style={{ borderColor: 'var(--border)', ...text }}
           />
@@ -3341,6 +3351,11 @@ export function ItemRowEditor({
           Done
         </button>
       </div>
+      <p className="text-[11px] pl-7 -mt-1" style={muted}>
+        Up to 3 products, with a space between them: the exact one you show in each colour or size, never the parent ASIN.
+        The first is this video&apos;s product. The others are tagged on the Amazon video too.
+        {(item.more_asins?.length ?? 0) > 0 && <> Tagging more than one needs SCOUT 1.55.0 or newer.</>}
+      </p>
 
       {options.length > 0 && (
         <div className="flex flex-col gap-1.5">

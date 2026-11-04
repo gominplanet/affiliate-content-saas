@@ -20,6 +20,7 @@ import { explainAmazonUpload, uploadFailureKind } from '@/lib/amazon-upload-erro
 import { requestStorefrontDelivery, requestStorefrontPreflight } from '@/lib/extension-frame'
 import { marketByDomain } from '@/lib/markets'
 import { fetchWithTimeout } from '@/lib/fetch-timeout'
+import { withTagged } from '@/lib/launch-products'
 
 export interface DeliveryOutcome {
   /** SCOUT accepted the batch. NOT that every listing is live: Amazon confirms
@@ -204,7 +205,7 @@ export async function deliverPreparedStorefronts(scope?: {
           mediaAci: r.mediaAci ?? null,
           rawError: r.ok ? null : (r.error ?? null),
           detail: dup ? 'Already on this storefront, skipped duplicate'
-            : r.ok ? (it?.thumbnailIsTextFallback ? 'Uploaded, with the English-text thumbnail (no text-free one was made)' : 'Uploaded to storefront')
+            : r.ok ? withTagged(it?.thumbnailIsTextFallback ? 'Uploaded, with the English-text thumbnail (no text-free one was made)' : 'Uploaded to storefront', it, r)
             : (explainAmazonUpload(r.error, String(it?.domain || '')) || 'Upload failed'),
         }),
         timeoutMs: 15_000,

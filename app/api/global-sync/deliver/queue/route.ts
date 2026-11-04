@@ -12,6 +12,7 @@ import { UPLOAD_MARKET, DUBS_ENABLED } from '@/lib/markets'
 import { createServerClient } from '@/lib/supabase/server'
 import { normalizeTier } from '@/lib/tier'
 import { marketByDomain } from '@/lib/global-sync'
+import { moreAsinsForListing } from '@/lib/launch-products'
 
 export const runtime = 'nodejs'
 
@@ -139,6 +140,21 @@ export async function GET(req: Request) {
     }
   }
 
+  // THE OTHER PRODUCTS ON THIS AMAZON VIDEO (migration 464, lib/launch-products):
+  // up to two more, pasted in the bulk upload's Product box. Read here, at
+  // upload time, so a change made before the upload is the one that goes, and
+  // in a query of its own so a database without the column serves one product
+  // as before.
+  const moreByVideo = new Map<string, { asin: string | null; more: string[] }>()
+  if (videoIds.length) {
+    try {
+      const { data: mrows, error: mErr } = await sb.from('launch_items').select('video_id,asin,more_asins').eq('user_id', user.id).in('video_id', videoIds)
+      if (!mErr) for (const m of (mrows ?? []) as Array<{ video_id: string; asin: string | null; more_asins: string[] | null }>) {
+        if (Array.isArray(m.more_asins) && m.more_asins.length) moreByVideo.set(m.video_id, { asin: m.asin, more: m.more_asins })
+      }
+    } catch { /* column not there yet: one product, as before */ }
+  }
+
   // The text-free thumbnail for non-English markets (migration 306). Read it in
   // a SEPARATE query so an older DB without the column can't break the queue —
   // non-English markets just fall back to the text thumbnail until it exists.
@@ -180,6 +196,9 @@ export async function GET(req: Request) {
       title: (r.title as string) || '',
       description: (r.description as string) || '',
       asin: (r.asin as string) || null,
+      // The other products SCOUT tags on this video (1.55.0 and later). Empty
+      // for any store but the US, and for a listing given a local ASIN.
+      moreAsins: moreAsinsForListing(r.domain as string, r.asin as string, moreByVideo.get(vidId)?.asin, moreByVideo.get(vidId)?.more),
       // The dubbed video for a dubbed market; otherwise the master render.
       videoUrl: (r.video_url as string) || masterSrc,
       // The English master, so a market can be delivered without its dub on

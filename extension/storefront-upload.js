@@ -387,12 +387,29 @@
         }
       }
 
+      // 3b. THE OTHER PRODUCTS (1.55.0). Up to two more, pasted in the bulk
+      //     upload's Product box: the exact colour or size shown, never the
+      //     parent ASIN. Each is checked on this marketplace the same way as
+      //     the first, one at a time. One Amazon will not take is left off and
+      //     said, and never stops the upload: the video's own product is on.
+      const extras = []
+      const notTagged = []
+      const wantMore = Array.isArray(job.moreAsins) ? job.moreAsins : []
+      for (const raw of wantMore.slice(0, 2)) {
+        const extra = String(raw || '').trim().toUpperCase()
+        if (!/^[A-Z0-9]{10}$/.test(extra) || extra === String(job.asin).toUpperCase() || extras.includes(extra)) continue
+        reportStep(`Checking product ${extras.length + notTagged.length + 2}`, null)
+        const why = await asinRefusal(extra, ctx)
+        if (why) notTagged.push({ asin: extra, reason: why })
+        else extras.push(extra)
+      }
+
       // 4+5. moderation gate then PUBLISH — both keyed to the SAME mediaId (see
       //      publish(); they used to disagree, which Amazon rejects at validation).
       step = 'publish'
       reportStep('Publishing', null)
       try {
-        return await publish(job, ctx, videoKey, thumbKey)
+        return await publishTagged(job, ctx, videoKey, thumbKey, extras, notTagged)
       } catch (e) {
         // Sharing a bucket doesn't guarantee Amazon accepts another marketplace's
         // key. If a reused key was refused, upload our own copy and publish again
@@ -402,7 +419,7 @@
         const ownKey = `${creds.s3Folder}/${uuid()}.mp4`
         await bgS3Put({ srcUrl: job.videoUrl, creds, key: ownKey, contentType: 'video/mp4', label: 'video' })
         step = 'publish'
-        return await publish(job, ctx, ownKey, thumbKey)
+        return await publishTagged(job, ctx, ownKey, thumbKey, extras, notTagged)
       }
     } catch (e) {
       const msg = e && e.message ? e.message : String(e)
@@ -411,18 +428,68 @@
     }
   }
 
-  async function publish(job, ctx, videoKey, thumbKey) {
+  // WHY AMAZON WOULD NOT TAKE ONE OF THE OTHER PRODUCTS, or null when it will.
+  // The same call and the same reading as the first product's check, so an
+  // extra is held to exactly the rule the video's own product is.
+  async function asinRefusal(asin, ctx) {
+    let res = null, raw = ''
+    try {
+      res = await api('asins', { sourceType: 'REQUEST_BODY', slateToken: ctx.slateToken, asins: [asin] }, ctx.csrf)
+      raw = await res.text().catch(() => '')
+    } catch (e) {
+      return `could not be checked: ${String((e && e.message) || e).slice(0, 60)}`
+    }
+    try {
+      chrome.runtime.sendMessage({
+        action: 'MVP_STOREFRONT_CREATE_LOG', host: location.host,
+        entry: { url: `${location.host}/create/api/asins`, method: 'POST', status: res.status, request: JSON.stringify({ asins: [asin] }), response: raw.slice(0, 2000), ts: Date.now(), via: 'mvp' },
+      })
+    } catch (e) { /* diagnostics must never block an upload */ }
+    if (!res.ok) return `Amazon answered ${res.status}`
+    let aj = null
+    try { aj = raw ? JSON.parse(raw) : null } catch { /* unreadable: treated as fine, like the first product */ }
+    if (aj && aj.hasError === true) return String(aj.message || 'not sold on this store').slice(0, 80)
+    if (aj) {
+      const lists = [aj.asins, aj.products, aj.validAsins, aj.result].filter(Array.isArray)
+      if (lists.length > 0 && !JSON.stringify(lists).toUpperCase().includes(asin)) return 'not sold on this store'
+    }
+    return null
+  }
+
+  // PUBLISH WITH EVERY PRODUCT THAT PASSED, and say which went on. If Amazon
+  // refuses the post with the others on it, it goes up again with the video's
+  // own product alone (a refused publish creates nothing), and the others are
+  // reported as not tagged with Amazon's words. Never a silent drop.
+  async function publishTagged(job, ctx, videoKey, thumbKey, extras, notTagged) {
+    const products = [String(job.asin).toUpperCase(), ...extras]
+    if (extras.length === 0) {
+      const r = await publish(job, ctx, videoKey, thumbKey, products)
+      return { ...r, tagged: products, notTagged }
+    }
+    try {
+      const r = await publish(job, ctx, videoKey, thumbKey, products)
+      return { ...r, tagged: products, notTagged }
+    } catch (e) {
+      const said = String((e && e.message) || e).split(' · ')[0].slice(0, 60)
+      const r = await publish(job, ctx, videoKey, thumbKey, [products[0]])
+      return { ...r, tagged: [products[0]], notTagged: [...notTagged, ...extras.map((a) => ({ asin: a, reason: `Amazon refused the post with it on: ${said}` }))] }
+    }
+  }
+
+  async function publish(job, ctx, videoKey, thumbKey, products) {
     // Belt and braces with the gate in uploadOne: never create a shoppable post
     // with an empty products array. It cannot be fixed while Amazon has the post
     // in "pending", so an untagged video is worse than a failed upload.
     if (!job.asin) throw new Error('Refusing to publish: no product ASIN to tag on this video.')
+    // The video's own product first, then any others that passed their check.
+    const tagged = Array.isArray(products) && products.length ? products : [job.asin]
     const body = (mediaId) => ({
       contentType: 'SHOPPABLE_POST',
       mediaId,
       shoppableMedias: [{
         type: 'video', uri: videoKey,
         ...(thumbKey ? { thumbnailUri: thumbKey } : {}),
-        products: job.asin ? [{ asin: job.asin }] : [],
+        products: tagged.map((asin) => ({ asin })),
       }],
       textContent: '',
       titleContent: (job.title || '').slice(0, 120),

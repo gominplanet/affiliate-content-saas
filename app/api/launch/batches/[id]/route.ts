@@ -144,6 +144,17 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     else for (const r of (trows ?? []) as Array<{ id: string; thumbnail_text: string | null }>) thumbTextById.set(r.id, r.thumbnail_text ?? null)
   }
 
+  // THE OTHER PRODUCTS TAGGED ON THE AMAZON VIDEO (migration 464), read on
+  // their own: a database without the column still loads the batch, with one
+  // product per video as before.
+  const moreAsinsById = new Map<string, string[]>()
+  let moreAsinsAvailable = true
+  {
+    const { data: mrows, error: merr } = await sb.from('launch_items').select('id,more_asins').eq('batch_id', id)
+    if (merr) moreAsinsAvailable = false
+    else for (const r of (mrows ?? []) as Array<{ id: string; more_asins: string[] | null }>) moreAsinsById.set(r.id, Array.isArray(r.more_asins) ? r.more_asins : [])
+  }
+
   // EACH VIDEO'S PINNED FIRST COMMENT (migration 377), read on its own: a
   // database without the table still loads the batch.
   const firstCommentByVideo = new Map<string, { state: string; pinned: boolean | null; pin_error: string | null; last_error: string | null; publish_at: string | null }>()
@@ -163,6 +174,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     amazon_title: amazonTitleById.get(i.id) ?? null,
     thumbnail_face: faceById.get(i.id) ?? null,
     thumbnail_text: thumbTextById.get(i.id) ?? null,
+    more_asins: moreAsinsById.get(i.id) ?? [],
     api_disclosures: disclosuresById.get(i.id) ?? null,
     amazon: (i.video_id && amazonByVideo.get(i.video_id)) || [],
     ...i,
@@ -212,6 +224,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     amazonTitleAvailable,
     faceAvailable,
     thumbTextAvailable,
+    moreAsinsAvailable,
     // YouTube through SCOUT (lib/studio-upload): the board says SCOUT uploads
     // in Studio, not that MVP's uploader does through the API.
     studioUpload: await (async () => {

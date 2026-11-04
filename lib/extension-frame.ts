@@ -162,7 +162,13 @@ function sendToExtension<T>(message: unknown, timeoutMs: number): Promise<T | nu
   })()
 }
 
-export interface StorefrontDeliverResult { ok: boolean; results?: Array<{ targetId: string; ok: boolean; duplicate?: boolean; mediaAci?: string | null; error?: string | null }>; error?: string }
+export interface StorefrontDeliverResult { ok: boolean; results?: Array<{ targetId: string; ok: boolean; duplicate?: boolean; mediaAci?: string | null; error?: string | null
+  /** The products really tagged on the Amazon video (SCOUT 1.55.0 and later;
+   *  missing from an older SCOUT, which tags the first one only). */
+  tagged?: string[]
+  /** Extra products Amazon would not take on this store, and why. */
+  notTagged?: Array<{ asin: string; reason: string }>
+}>; error?: string }
 
 /**
  * Ask SCOUT to upload each localized/dubbed video to its Amazon storefront via
@@ -170,7 +176,8 @@ export interface StorefrontDeliverResult { ok: boolean; results?: Array<{ target
  * Uploads run in background tabs entirely inside the user's Amazon session.
  */
 export async function requestStorefrontDelivery(
-  items: Array<{ targetId: string; domain: string; title: string; asin: string | null; videoUrl: string; thumbnailUrl?: string | null }>,
+  // moreAsins: up to two more products to tag on the same video (lib/launch-products).
+  items: Array<{ targetId: string; domain: string; title: string; asin: string | null; moreAsins?: string[]; videoUrl: string; thumbnailUrl?: string | null }>,
 ): Promise<StorefrontDeliverResult> {
   // Large videos upload slowly (download from storage → PUT to S3, per market,
   // sequentially), so give the whole delivery a generous ceiling.

@@ -12,6 +12,7 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { normalizeAsinInput, asinFromAmazonUrl } from '@/lib/asin'
+import { splitProductInput, uniqueAsins, MAX_PRODUCTS_PER_VIDEO } from '@/lib/launch-products'
 import { resolveAsinFromLinks } from '@/lib/product-link'
 import { normalizeSlots, todayIn } from '@/lib/launch-schedule'
 import { readStudioRun } from '@/lib/studio-finish'
@@ -156,32 +157,54 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   // this follows redirects rather than matching a list of hosts: a creator on
   // their own branded Geniuslink domain was reported as having no product at
   // all, because their domain was not on the list somebody had typed out.
+  //
+  // UP TO THREE (lib/launch-products). Douglas tags up to three variations on
+  // an Amazon video, and the box took one. Each is the exact product shown,
+  // never the parent ASIN. The first is the video's product and everything is
+  // made from it; the others are only tagged on the Amazon video.
   let productNote: string | null = null
+  let moreAsins: string[] | null = null
   if (typeof body.product === 'string') {
     const raw = body.product.trim()
     if (!raw) {
       patch.asin = null
+      moreAsins = []
     } else {
-      let asin = normalizeAsinInput(raw) || asinFromAmazonUrl(raw)
-      if (!asin && /^https?:\/\//i.test(raw)) {
-        try {
-          const hit = await resolveAsinFromLinks(raw, null, 3)
-          asin = hit?.asin ?? null
-        } catch {
-          // COULD NOT LOOK is not the same as no product. Said, so the creator
-          // can paste the ASIN itself rather than wonder why their link vanished.
-          return NextResponse.json({
-            error: 'Could not follow that link just now. Paste the ASIN itself, or try again.',
-          }, { status: 502 })
-        }
-      }
-      if (!asin) {
+      const pieces = splitProductInput(raw)
+      if (pieces.length > MAX_PRODUCTS_PER_VIDEO) {
         return NextResponse.json({
-          error: 'That is not an Amazon product. Paste the 10-character ASIN or the product link.',
+          error: `Up to ${MAX_PRODUCTS_PER_VIDEO} products per video. You pasted ${pieces.length}. Keep the exact products you show, one ASIN or link each.`,
         }, { status: 400 })
       }
-      patch.asin = asin
-      if (asin !== raw.toUpperCase()) productNote = asin
+      const found: string[] = []
+      for (const [k, piece] of pieces.entries()) {
+        const which = pieces.length > 1 ? `Product ${k + 1} ("${piece.slice(0, 40)}")` : 'That'
+        let asin = normalizeAsinInput(piece) || asinFromAmazonUrl(piece)
+        if (!asin && /^https?:\/\//i.test(piece)) {
+          try {
+            const hit = await resolveAsinFromLinks(piece, null, 3)
+            asin = hit?.asin ?? null
+          } catch {
+            // COULD NOT LOOK is not the same as no product. Said, so the creator
+            // can paste the ASIN itself rather than wonder why their link vanished.
+            return NextResponse.json({
+              error: `Could not follow ${pieces.length > 1 ? `the link for product ${k + 1}` : 'that link'} just now. Paste the ASIN itself, or try again.`,
+            }, { status: 502 })
+          }
+        }
+        if (!asin) {
+          return NextResponse.json({
+            error: `${which} is not an Amazon product. Paste the 10-character ASIN or the product link.`,
+          }, { status: 400 })
+        }
+        found.push(asin)
+      }
+      const asins = uniqueAsins(found)
+      patch.asin = asins[0]
+      moreAsins = asins.slice(1)
+      // Said when MVP worked an ASIN out of a link, so they see what it found.
+      const typed = new Set(pieces.map((p) => p.toUpperCase()))
+      if (asins.some((a) => !typed.has(a))) productNote = asins.join(', ')
     }
   }
 
@@ -430,13 +453,28 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   if (productChanged && typeof body.amazonTitle !== 'string') {
     await sb.from('launch_items').update({ amazon_title: null }).eq('id', id).eq('user_id', user.id)
   }
+  // THE OTHER PRODUCTS (migration 464), their own write: a database without
+  // the column still saves the first product, and the reply says the rest
+  // were not kept rather than letting the box look as if they were.
+  let moreWarning: string | null = null
+  if (moreAsins !== null) {
+    const { error: mErr } = await sb.from('launch_items').update({ more_asins: moreAsins }).eq('id', id).eq('user_id', user.id)
+    if (mErr && moreAsins.length > 0) {
+      moreWarning = /more_asins/.test(mErr.message)
+        ? `Saved ${String(patch.asin)} only. The other ${moreAsins.length === 1 ? 'product needs' : 'products need'} a database update (migration 464) before ${moreAsins.length === 1 ? 'it' : 'they'} can be kept.`
+        : `Saved ${String(patch.asin)} only. The other products could not be kept: ${mErr.message}`
+    }
+  }
   // THE AMAZON TITLE LAST when it came with other changes, so a save refused
   // above (a 409, a bad product) does not half-apply.
   if (typeof body.amazonTitle === 'string') {
     const refused = await saveAmazonTitle()
     if (refused) return refused
   }
-  return NextResponse.json({ ok: true, asin: patch.asin ?? null, resolvedFromLink: productNote })
+  return NextResponse.json({
+    ok: true, asin: patch.asin ?? null, moreAsins: moreWarning ? [] : (moreAsins ?? undefined),
+    resolvedFromLink: productNote, warning: moreWarning,
+  })
 }
 
 export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {

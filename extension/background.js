@@ -11383,7 +11383,8 @@ async function deliverOneDomain(domain, jobs) {
         if (nowAt) { r = { ok: false, error: `not signed in: Amazon ${domain || 'amazon.com'} sent SCOUT to its sign-in page (${nowAt.slice(0, 80)}). Sign in there, then send again.` }; break }
         r = await sendJob(job)
       }
-      out.push({ targetId: job.targetId, ok: !!r.ok, duplicate: !!r.duplicate, mediaAci: r.mediaAci || null, error: r.ok ? null : (r.error || 'upload failed') })
+      // tagged / notTagged (1.55.0): which products are really on the Amazon video.
+      out.push({ targetId: job.targetId, ok: !!r.ok, duplicate: !!r.duplicate, mediaAci: r.mediaAci || null, error: r.ok ? null : (r.error || 'upload failed'), ...(r.ok && Array.isArray(r.tagged) ? { tagged: r.tagged, notTagged: Array.isArray(r.notTagged) ? r.notTagged : [] } : {}) })
       setSfProgress(domain, { step: r.ok ? 'Published' : (r.duplicate ? 'Already there' : 'Failed'), pct: r.ok ? 100 : null, done: jobNo })
     } catch (e) {
       out.push({ targetId: job.targetId, ok: false, error: String(e && e.message || e) })

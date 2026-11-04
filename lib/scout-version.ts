@@ -8,12 +8,12 @@
  *     store installs to "update" — isScoutOutdated survives only as a
  *     low-level helper, not a user-facing gate.
  */
-export const SCOUT_LATEST_VERSION = '1.54.0'
+export const SCOUT_LATEST_VERSION = '1.55.0'
 
 /** One-line "what's new". No longer shown in a nag (store installs auto-update);
  *  kept as a changelog note for whoever bumps the version. */
 export const SCOUT_WHATS_NEW =
-  'TRYBE first, always: any TRYBE request that finds no TRYBE tab opens one behind MVP\'s tab, waits for it to load, then goes. A Send all run does the same instead of stopping.'
+  'Bulk Amazon upload: up to three products tagged on one Amazon video. Each extra one is checked on the store first, and one Amazon will not take is left off and named.'
 
 /** Canonical download for the latest SCOUT build (public/, rebuilt from
  *  extension/ on every version bump). Used by the EPC banner + the top-bar
@@ -69,6 +69,11 @@ export const SCOUT_TRYBE_TAB_OPEN_MIN_VERSION = '1.53.5'
  *  closed (Seb, 2026-11-03: "this should always be the first thing it
  *  does"). Older SCOUT is covered by MVP opening it first (ensureTrybeTab). */
 export const SCOUT_TRYBE_SELF_OPEN_MIN_VERSION = '1.54.0'
+
+/** SCOUT tags up to three products on one Amazon video (job.moreAsins) and
+ *  says which went on (tagged / notTagged). Older SCOUT tags the first one
+ *  only, and the saved line says so (lib/launch-products taggedLine). */
+export const SCOUT_MORE_PRODUCTS_MIN_VERSION = '1.55.0'
 
 /** SCOUT reads Instagram tag counts quietly, only through an Instagram tab the
  *  creator already has open, never opening one (MVP_HASHTAG_INSTAGRAM quiet). */

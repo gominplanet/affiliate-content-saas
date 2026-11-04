@@ -100,7 +100,9 @@ async function main() {
   const B = readFileSync('extension/background.js', 'utf8')
   const M = JSON.parse(readFileSync('extension/manifest.json', 'utf8'))
   const opener = B.slice(B.indexOf('function trybeOpenBehind('), B.indexOf('function trybeOpenBehind(') + 2000)
-  check('SCOUT is 1.54.0', M.version === '1.54.0' && /SCOUT_LATEST_VERSION = '1\.54\.0'/.test(readFileSync('lib/scout-version.ts', 'utf8')))
+  const latest = /SCOUT_LATEST_VERSION = '(\d+\.\d+\.\d+)'/.exec(readFileSync('lib/scout-version.ts', 'utf8'))?.[1] ?? ''
+  const [ma, mi] = String(M.version).split('.').map(Number)
+  check('SCOUT is 1.54.0 or newer, in lockstep', latest === M.version && (ma > 1 || (ma === 1 && mi >= 54)))
   check('every SCOUT request opens TRYBE first when it is not open', /async function trybeApiTabId\(\) \{\s*const id = await trybeOwnTab\(\)\s*if \(id != null\) return id\s*const opened = await trybeOpenBehind\(trybeLastMvpTab, false\)/.test(B))
   check('one opener, so TRYBE is never opened twice', /if \(trybeOpening\) return trybeOpening/.test(opener) && /\.finally\(\(\) => \{ trybeOpening = null \}\)/.test(opener))
   check('it opens next to the MVP tab that asked, behind it, kept awake, loaded and watched', /index: near\.index \+ 1/.test(opener) && /active: !!focus/.test(opener) && /autoDiscardable: false/.test(opener) && /waitForTabLoad\(t\.id, 30000\)/.test(opener) && /files: \['trybe-hook\.js'\]/.test(opener))

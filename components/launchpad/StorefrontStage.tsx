@@ -17,6 +17,7 @@ import { requestStorefrontDelivery, requestStorefrontPreflight, requestStorefron
 import { SCOUT_LATEST_VERSION } from '@/lib/scout-version'
 import { normalizeAsinInput } from '@/lib/asin'
 import { decodeHtmlEntities } from '@/lib/decode-entities'
+import { withTagged } from '@/lib/launch-products'
 
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
 
@@ -716,7 +717,7 @@ export default function StorefrontStage({ presetVideoId, presetAsin, allowedDoma
       // who chose to wait in the first wave was never asked again, and the dubbed
       // wave then uploaded thumbnail-less anyway — the exact opposite of Cancel.
       let thumbDecision: 'unasked' | 'go' | 'stop' = 'unasked'
-      type WaveResult = { targetId: string; ok: boolean; duplicate?: boolean; error?: string | null }
+      type WaveResult = { targetId: string; ok: boolean; duplicate?: boolean; error?: string | null; tagged?: string[]; notTagged?: Array<{ asin: string; reason: string }> }
       const deliverWave = async (only: Set<string>, phaseLabel: string): Promise<WaveResult[]> => {
         if (only.size === 0 || thumbDecision === 'stop') return []
         setPhase('Getting the thumbnail…')
@@ -790,7 +791,7 @@ export default function StorefrontStage({ presetVideoId, presetAsin, allowedDoma
             body: JSON.stringify({
               targetId: r.targetId,
               ok: r.ok || isDup,
-              detail: isDup ? 'Already on this storefront, skipped duplicate' : (r.ok ? 'Uploaded to storefront' : (explainAmazonUpload(r.error, String(byId.get(String(r.targetId))?.domain || '')) || 'Upload failed')),
+              detail: isDup ? 'Already on this storefront, skipped duplicate' : (r.ok ? withTagged('Uploaded to storefront', byId.get(String(r.targetId)), r) : (explainAmazonUpload(r.error, String(byId.get(String(r.targetId))?.domain || '')) || 'Upload failed')),
               rawError: r.ok ? null : (r.error ?? null),
             }),
           }).catch(() => {})
