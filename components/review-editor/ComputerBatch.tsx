@@ -27,7 +27,7 @@ import { Loader2, UploadCloud, Film, Check, AlertTriangle } from 'lucide-react'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { batchVideos, uploadKey, type BatchVideo, type DriveTake } from '@/lib/review-edit-batch'
 import { cleanSettings, type EditSettings } from '@/lib/review-edit'
-import { BULK_VIDEO_MAX_BYTES } from '@/lib/clip-source-limits'
+import { BULK_VIDEO_MAX_BYTES, tooBigWords } from '@/lib/clip-source-limits'
 import { readVideoFacts, type VideoFacts } from '@/lib/video-file-facts'
 import { uploadTake, TAKE_BUCKET } from '@/components/review-editor/upload-take'
 import BatchCheck, { mixed } from '@/components/review-editor/BatchCheck'
@@ -121,7 +121,7 @@ export default function ComputerBatch({ settings, onAdded, left = null }: {
       let ok: File[] = []
       for (const f of chosen) {
         if (!f.type.startsWith('video/') && !VIDEO_NAME.test(f.name)) bad.push(`${f.name}: not a video file`)
-        else if (f.size > BULK_VIDEO_MAX_BYTES) bad.push(`${f.name}: ${size(f.size)} is over the ${size(BULK_VIDEO_MAX_BYTES)} limit. Film at 1080p, or keep the take shorter.`)
+        else if (f.size > BULK_VIDEO_MAX_BYTES) bad.push(`${f.name}: ${tooBigWords(f.size)} Split it into two files: two talking files can be one video here.`)
         else ok.push(f)
       }
       if (ok.length > MAX_PICK) {

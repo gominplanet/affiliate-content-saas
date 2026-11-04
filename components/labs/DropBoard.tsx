@@ -30,7 +30,7 @@ import { createBrowserClient } from '@/lib/supabase/client'
 import { uploadResumable, ResumableUnavailable } from '@/lib/upload-resumable'
 import { uploadWithProgress } from '@/lib/upload-progress'
 import { freshAccessToken, saysExpired } from '@/lib/fresh-token'
-import { storageSizeRefusal, BULK_VIDEO_MAX_BYTES } from '@/lib/clip-source-limits'
+import { storageSizeRefusal, BULK_VIDEO_MAX_BYTES, tooBigWords } from '@/lib/clip-source-limits'
 import { getScoutStatus, setLiftoffAuto, requestTrybeApi, requestTrybePutFile } from '@/lib/extension-frame'
 import { scoutAtLeast, SCOUT_TRYBE_SUBMIT_MIN_VERSION } from '@/lib/scout-version'
 import { scheduleItems, cadenceLabel } from '@/lib/launch-schedule'
@@ -521,7 +521,7 @@ export default function DropBoard() {
     // Three at a time, each with its own bar. Each one is saved to the drop as
     // soon as it is up, and a long one goes straight into Liftoff.
     const upOne = async (r: Vid) => {
-      if (r.size > BULK_VIDEO_MAX_BYTES) { mark(r.key, { up: 'failed', error: `${mb(r.size)} is over the ${mb(BULK_VIDEO_MAX_BYTES)} limit.` }); return }
+      if (r.size > BULK_VIDEO_MAX_BYTES) { mark(r.key, { up: 'failed', error: `${tooBigWords(r.size)} Export a smaller copy of it.` }); return }
       const ext = r.name.split('.').pop()?.toLowerCase() || 'mp4'
       let path = `${user.id}/drop-${crypto.randomUUID()}.${ext}`
       mark(r.key, { up: 'uploading', sent: 0, error: undefined })

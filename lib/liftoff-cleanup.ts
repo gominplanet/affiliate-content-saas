@@ -5,7 +5,7 @@
 // been uploaded or if they're done uploading to YouTube and Amazon and
 // everything is done, it should be deleted from the server").
 //
-// A video in a batch is up to two files of up to 800 MB each: the creator's
+// A video in a batch is up to two files of up to 2 GB each: the creator's
 // original, and the copy with the CTA burned in that YouTube gets. The rules,
 // decided here and run hourly by app/api/cron/liftoff-cleanup:
 //
@@ -26,7 +26,7 @@ export const IDLE_DAYS = 2
 export const ORIGINAL_DAYS = 30
 export const WAITING_DAYS = 14
 /** Past this nothing is still coming for the file: an Amazon country stuck
- *  for two months does not keep an 800 MB file for ever. */
+ *  for two months does not keep a 2 GB file for ever. */
 export const BACKSTOP_DAYS = 60
 
 /** On a row whose files were removed before it reached YouTube. The board

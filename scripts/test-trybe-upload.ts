@@ -83,7 +83,7 @@ check('and that rule still asks for a brand, and for a product when the brand wa
 // storage, so the path has to carry their user id.
 check('videos go to this creator’s own storage path', /\$\{user\.id\}\/trybe-\$\{crypto\.randomUUID\(\)\}/.test(U))
 check('a file over the limit says so instead of failing in the upload',
-  /BULK_VIDEO_MAX_BYTES/.test(U) && /is over the \$\{mb\(BULK_VIDEO_MAX_BYTES\)\} limit/.test(U))
+  /BULK_VIDEO_MAX_BYTES/.test(U) && /tooBigWords\(r\.size\)/.test(U))
 check('a sign-in that ran out mid upload is said in words a creator can act on',
   /saysExpired\(msg\)/.test(U) && /Refresh the page and add it again/.test(U))
 check('SCOUT missing is said, and the videos are kept rather than refused',

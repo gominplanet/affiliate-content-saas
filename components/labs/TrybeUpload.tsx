@@ -29,7 +29,7 @@ import { createBrowserClient } from '@/lib/supabase/client'
 import { uploadResumable, ResumableUnavailable } from '@/lib/upload-resumable'
 import { uploadWithProgress } from '@/lib/upload-progress'
 import { freshAccessToken, saysExpired } from '@/lib/fresh-token'
-import { storageSizeRefusal, BULK_VIDEO_MAX_BYTES } from '@/lib/clip-source-limits'
+import { storageSizeRefusal, BULK_VIDEO_MAX_BYTES, tooBigWords } from '@/lib/clip-source-limits'
 import { getScoutStatus, requestTrybeApi, requestTrybePutFile } from '@/lib/extension-frame'
 import { scoutAtLeast, SCOUT_TRYBE_SUBMIT_MIN_VERSION } from '@/lib/scout-version'
 import { readBrandStats, type MyBrand } from '@/lib/trybe-mybrands'
@@ -170,7 +170,7 @@ export default function TrybeUpload({ inbox = null, canChat = false, onOpenChat 
 
     for (const r of rows) {
       if (r.size > BULK_VIDEO_MAX_BYTES) {
-        mark(r.key, { stage: 'failed', note: `${mb(r.size)} is over the ${mb(BULK_VIDEO_MAX_BYTES)} limit.` })
+        mark(r.key, { stage: 'failed', note: `${tooBigWords(r.size)} Export a smaller copy of it.` })
         continue
       }
       const ext = r.name.split('.').pop()?.toLowerCase() || 'mp4'

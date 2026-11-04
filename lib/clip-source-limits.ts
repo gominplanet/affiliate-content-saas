@@ -10,11 +10,21 @@
 
 export const SOURCE_VIDEO_MAX_BYTES = 2 * 1024 * 1024 * 1024
 
-/** How big a Bulk Amazon upload video may be (Seb, 2026-10-08: a video over
- *  500 MB failed; "maybe 800MB?"). Everything after the upload copes: YouTube
- *  gets it in 32 MB pieces across runs (launch-drain takes up to 2 GB), the
- *  CTA render streams it, and storage holds it once its bucket allows it. */
-export const BULK_VIDEO_MAX_BYTES = 800 * 1024 * 1024
+/** How big a video uploaded to MVP may be: Bulk Amazon upload, Drop, TRYBE
+ *  upload and the Review Editor's takes. 2 GB since 2026-11-04 (it was 800 MB):
+ *  a DJI Osmo Pocket 3 records about 300 MB a minute even at 1080p (Seb's
+ *  4:48 review was 1.42 GB), so 800 MB was under three minutes. 2 GB is about
+ *  six and a half minutes of it, and the same limit as Clip Factory's sources
+ *  and the YouTube push (launch-drain), so MVP has one number. Everything
+ *  after the upload copes: YouTube gets it in 32 MB pieces across runs, the
+ *  CTA render streams it, the video server downloads it (15 minutes allowed),
+ *  and the storage bucket takes 2 GB (migration 463). */
+export const BULK_VIDEO_MAX_BYTES = 2 * 1024 * 1024 * 1024
+
+/** A video over the limit, in words: its size and the limit. Pure. */
+export function tooBigWords(bytes: number, max = BULK_VIDEO_MAX_BYTES): string {
+  return `${sizeWords(bytes)} is over the ${sizeWords(max)} limit.`
+}
 
 export function sizeWords(bytes: number): string {
   return bytes >= 1024 * 1024 * 1024 ? `${(bytes / 1024 / 1024 / 1024).toFixed(1)} GB` : `${Math.round(bytes / 1024 / 1024)} MB`

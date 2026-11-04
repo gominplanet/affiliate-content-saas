@@ -28,7 +28,7 @@ import { Loader2, UploadCloud, Check, AlertTriangle, Film, Scissors, Clapperboar
 import { cn } from '@/lib/utils'
 import { useLook, useSection } from '@/components/layout/shell-nav-context'
 import { createBrowserClient } from '@/lib/supabase/client'
-import { BULK_VIDEO_MAX_BYTES } from '@/lib/clip-source-limits'
+import { BULK_VIDEO_MAX_BYTES, tooBigWords } from '@/lib/clip-source-limits'
 import { uploadTake } from '@/components/review-editor/upload-take'
 import { pickFromDrive, type DriveState } from '@/components/review-editor/drive-picker'
 import DriveBatch from '@/components/review-editor/DriveBatch'
@@ -517,7 +517,7 @@ export default function ReviewEditor() {
   const upload = async (file: File, which: 'review' | 'broll') => {
     const setU = which === 'review' ? setReview : setBroll
     if (!file.type.startsWith('video/')) { toast.error('That is not a video file.'); return }
-    if (file.size > BULK_VIDEO_MAX_BYTES) { setU({ name: file.name, bytes: file.size, sent: 0, url: null, error: `${mb(file.size)} is over the ${mb(BULK_VIDEO_MAX_BYTES)} limit. Film at 1080p, or keep the take shorter.` }); return }
+    if (file.size > BULK_VIDEO_MAX_BYTES) { setU({ name: file.name, bytes: file.size, sent: 0, url: null, error: `${tooBigWords(file.size)} Split it into two files and add them as a batch: MVP joins them into one video.` }); return }
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) { toast.error('Sign in again, then add the take.'); return }
     setU({ name: file.name, bytes: file.size, sent: 0, url: null, error: null })

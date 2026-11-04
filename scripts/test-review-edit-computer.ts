@@ -93,6 +93,11 @@ async function main() {
   check('a dropped connection is said in plain words, not the browser’s', /failed to fetch\|load failed/.test(U) && /the connection to MVP dropped/.test(U))
   check('one way to upload a take, for One video and the batch', /uploadTake\(supabase, user\.id, file/.test(E) && /source-edit-\$\{crypto\.randomUUID\(\)\}/.test(U) && !/uploadResumable\(/.test(E))
 
+  // ── How big a take may be ──
+  const L = read('lib/clip-source-limits.ts')
+  check('a take may be 2 GB (a Pocket 3 records about 300 MB a minute at 1080p), the same as Clip Factory and the YouTube push', /export const BULK_VIDEO_MAX_BYTES = 2 \* 1024 \* 1024 \* 1024/.test(L) && /const MAX_UPLOAD_BYTES = 2 \* 1024 \* 1024 \* 1024/.test(read('app/api/cron/launch-drain/route.ts')) && /file_size_limit = 2147483648/.test(read('supabase/migrations/463_video_bucket_2gb.sql')))
+  check('a take over it says how to fit it, never "film at 1080p"', ![C, E, read('components/labs/DropBoard.tsx'), read('components/labs/TrybeUpload.tsx'), read('components/launch/LaunchBoard.tsx')].some((x) => /film at 1080p/i.test(x)) && /tooBigWords\(f\.size\)} Split it into two files/.test(C) && /tooBigWords\(file\.size\)} Split it into two files/.test(E))
+
   // ── The nightly sweep and the editor's takes ──
   const P = read('app/api/cron/purge-shorts-sources/route.ts')
   check('the sweep leaves every take a video still needs', /from\('review_edits'\)[\s\S]{0,120}\.is\('raw_deleted_at', null\)/.test(P) && /excluded\.add\(path\)/.test(P) && /path\.split\('\/'\)\[0\] === r\.user_id/.test(P))
