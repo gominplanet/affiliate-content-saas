@@ -17,7 +17,7 @@
 //     video server that draws fewer pictures is reported, not trusted.
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
-import { calloutTimes, calloutKeys, calloutSpot, cleanCallouts, cleanSettings, DEFAULT_SETTINGS, CALLOUT_SECONDS, MAX_CALLOUTS, type Word } from '../lib/review-edit'
+import { calloutTimes, calloutKeys, calloutSpot, cleanCallouts, cleanSettings, cleanCalloutLook, DEFAULT_SETTINGS, CALLOUT_SECONDS, MAX_CALLOUTS, type Word } from '../lib/review-edit'
 import { cleanIdeas, productInput } from '../lib/review-edit-callouts'
 import { PRICING } from '../lib/ai-usage'
 
@@ -64,6 +64,18 @@ const title = DEFAULT_SETTINGS.title
 check('low on a review, high on a TRYBE ad (its captions are low)', calloutSpot({ kind: 'review', title }) === 'bottom' && calloutSpot({ kind: 'trybe', title }) === 'top')
 check('a title kept on for the whole video at the bottom sends them to the top', calloutSpot({ kind: 'review', title: { ...title, on: true, text: '#ad', seconds: 0, position: 'lower-left' } }) === 'top')
 
+// ── Their own look (Seb, 2026-11-04: "Can we have users select different ways that the titles can appear?") ──
+const old = cleanSettings({ title: { look: 'marker', color: 'yellow', on: false } })
+check('a video or look from before keeps following the title’s look and colour, a size smaller, placed automatically', old.calloutLook.look === 'marker' && old.calloutLook.color === 'yellow' && old.calloutLook.size === 'small' && old.calloutLook.spot === 'auto', old.calloutLook)
+const mine = cleanSettings({ title: { look: 'marker' }, calloutLook: { look: 'tech', color: 'red', size: 'large', spot: 'upper-left', seconds: 6 } })
+check('once chosen, the product titles keep their own look, apart from the title', mine.calloutLook.look === 'tech' && mine.calloutLook.color === 'red' && mine.calloutLook.size === 'large' && mine.calloutLook.spot === 'upper-left' && mine.calloutLook.seconds === 6 && mine.title.look === 'marker', mine.calloutLook)
+check('a look carried from the saved look is kept when a video does not say', cleanSettings({ kind: 'trybe' }, mine).calloutLook.look === 'tech')
+const junk = cleanCalloutLook({ look: 'neon', color: 'gold', size: 'huge', spot: 'middle', seconds: 9 }, DEFAULT_SETTINGS.calloutLook)
+check('a look that is not one of the choices falls back, never breaks the video', JSON.stringify(junk) === JSON.stringify(DEFAULT_SETTINGS.calloutLook), junk)
+check('a chosen place wins over automatic', calloutSpot({ kind: 'trybe', title, calloutLook: { ...DEFAULT_SETTINGS.calloutLook, spot: 'lower-right' } }) === 'lower-right' && calloutSpot({ kind: 'trybe', title, calloutLook: DEFAULT_SETTINGS.calloutLook }) === 'top')
+const six = calloutTimes(['Stereo Sound'], talk('stereo sound'), whole(30), 30, [], 6)
+check('each stays up as long as chosen', six.every((c) => placed(c) && Math.abs(c.to - c.from - 6) < 0.01), six)
+
 // ── What can be picked, and what MVP suggests ──
 check('five at most, trimmed, no repeats', JSON.stringify(cleanCallouts(['  Full  HD ', 'full hd', 3, 'a', 'b', 'c', 'd', 'e'])) === JSON.stringify(['Full HD', 'a', 'b', 'c', 'd']) && MAX_CALLOUTS === 5)
 const ideas = cleanIdeas(['Full HD 1920x1080p', 'Only $79 today', '40% off right now', 'Best projector of 2026', 'New for 2026', '4.5 stars on Amazon', '10,000+ reviews', '2000 Lumens brightness', 'IP67 rated', 'Wifi 6 Compatible!', '• Stereo Sound.', 'Stereo sound', '🔥 Hot item', 'A complete cinema solution in a compact and versatile projector that goes anywhere you need it'])
@@ -82,7 +94,8 @@ check('One video and both batches send each video’s pick', /cleanSettings\(\{ 
 check('the picker is under the product box when adding, and on the card after', (E.match(/<CalloutPicker /g) || []).length === 2 && /<CalloutPicker product=\{v\.product\}/.test(read('components/review-editor/BatchCheck.tsx')))
 check('suggestions come from the product’s listing, and say where from', /action === 'product_titles'/.test(R) && /fetchAmazonProduct\(asin\)/.test(C) && /researchProductFromUrl\(url/.test(C) && /researchProductByWebSearch\(/.test(C) && /from: facts\.from/.test(C) && /written from \{FROM\[about\.from\]/.test(read('components/review-editor/CalloutPicker.tsx')))
 check('the model that writes them has a price, so its cost counts', !!PRICING['claude-opus-5-5'] && PRICING['claude-opus-5-5'].in > 0 && /feature: 'review_edit_titles'/.test(C))
-check('each title is drawn in the creator’s title look and sent with its moment', /calloutImage\(db, row, c\.text, c\.k, settings\.title, spec\.calloutSpot\)/.test(S) && /\.concat\(calloutPics\)/.test(S) && /startSec: c\.from, endSec: c\.to/.test(S))
+check('each title is drawn in its own look and sent with its moment', /calloutImage\(db, row, c\.text, c\.k, settings\.calloutLook, spec\.calloutSpot\)/.test(S) && /look: cl\.look, color: cl\.color, size: cl\.size/.test(S) && /o\.settings\.calloutLook\?\.seconds/.test(read('lib/review-edit.ts')) && /\.concat\(calloutPics\)/.test(S) && /startSec: c\.from, endSec: c\.to/.test(S))
+check('Your look has a Product titles section: style, colour, size, where (or automatic), how long, with a preview drawn like the video’s', /<Group title="Product titles"/.test(E) && /setC\(\{ look: l \}\)/.test(E) && /setC\(\{ color: c \}\)/.test(E) && /setC\(\{ size: z \}\)/.test(E) && /setC\(\{ spot: 'auto' \}\)/.test(E) && /CALLOUT_SECONDS_CHOICES\.map/.test(E) && /callout=\{\{ url: calloutUrl, spot: cSpot \}\}/.test(E) && /label: 'Product titles'/.test(E))
 check('a title that could not be drawn is said on the card', /It could not be drawn, so it is not on this video/.test(S) && /\{c\.missed\}/.test(E) && /when you said/.test(E))
 check('an older video server that draws fewer pictures is reported, not trusted', /sent\.data\.pictures === 'number' \? sent\.data\.pictures : 4/.test(S) && /drew fewer titles/.test(S))
 check('the video server draws nine timed pictures and says so', /const MAX_PICTURES = 9/.test(read('ingest-service/edit-filters.js')) && /accepted: true, pictures: EDIT_MAX_PICTURES/.test(read('ingest-service/server.js')))

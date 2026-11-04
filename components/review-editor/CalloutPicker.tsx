@@ -72,7 +72,7 @@ export default function CalloutPicker({ product, value, onChange, disabled = fal
           className="flex-1 min-w-0 rounded-lg border px-2 py-1 text-[12.5px] bg-transparent" style={{ borderColor: 'var(--border-2)', color: 'var(--text)' }} />
         <button type="button" onClick={addOwn} disabled={disabled || full || !own.trim()} aria-label="Add this title" className="rounded-lg border p-1 disabled:opacity-50" style={{ borderColor: 'var(--border-2)', color: 'var(--text-2)' }}><Plus size={14} /></button>
       </div>
-      {value.length > 0 && <p className="text-[12px]" style={soft}>Each shows for a few seconds when you talk about it, or spread through the video if you never do, in your title’s font and colour.</p>}
+      {value.length > 0 && <p className="text-[12px]" style={soft}>Each shows for a few seconds when you talk about it, or spread through the video if you never do. Their style, colour, size and place are in Your look, under Product titles.</p>}
     </div>
   )
 }

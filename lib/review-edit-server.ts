@@ -20,7 +20,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { transcribeToCues, transcriptionConfigured } from '@/lib/shorts-transcribe'
 import { makeRenderJob } from '@/lib/render-job'
 import { drawTitle } from '@/lib/title-looks'
-import { cleanSettings, cleanWords, clock, linesOf, renderSpec, LOGO_WIDTH, PICTURE_WIDTH, type CalloutTime, type EditSettings, type PictureTime, type Plan, type Shot, type Spot, type Word } from '@/lib/review-edit'
+import { cleanSettings, cleanWords, clock, linesOf, renderSpec, LOGO_WIDTH, PICTURE_WIDTH, type CalloutLook, type CalloutTime, type EditSettings, type PictureTime, type Plan, type Shot, type Spot, type Word } from '@/lib/review-edit'
 import { brollFits, planEdit, readShots } from '@/lib/review-edit-plan'
 import { driveAccessToken, driveMediaUrl } from '@/lib/google-drive'
 import { recordUsage } from '@/lib/ai-usage'
@@ -299,12 +299,12 @@ async function titleImage(db: Db, row: EditRow, t: EditSettings['title']): Promi
   } catch { return null }
 }
 
-/** A product title as a picture (calloutTimes), in the creator's title font
- *  and colour, a size below the title, in the creator's folder, overwritten
- *  on each make. Null when it could not be drawn. */
-async function calloutImage(db: Db, row: EditRow, text: string, k: number, t: EditSettings['title'], spot: Spot): Promise<{ url: string; widthPct: { wide: number; vertical: number } } | null> {
+/** A product title as a picture (calloutTimes), in its own look (the look,
+ *  colour and size chosen under Product titles), in the creator's folder,
+ *  overwritten on each make. Null when it could not be drawn. */
+async function calloutImage(db: Db, row: EditRow, text: string, k: number, cl: CalloutLook, spot: Spot): Promise<{ url: string; widthPct: { wide: number; vertical: number } } | null> {
   try {
-    const { png, width } = await drawTitle(text, { look: t.look, color: t.color, size: 'small', position: spot === 'center' ? 'top' : spot })
+    const { png, width } = await drawTitle(text, { look: cl.look, color: cl.color, size: cl.size, position: spot === 'center' ? 'top' : spot })
     const path = `${row.user_id}/edit-callout-${row.id}-${k}.png`
     const { error } = await db.storage.from(EDIT_BUCKET).upload(path, png, { contentType: 'image/png', upsert: true })
     if (error) return null
@@ -354,7 +354,7 @@ export async function startMaking(db: Db, row: EditRow): Promise<void> {
   const calloutKs: number[] = []
   for (const c of spec.callouts) {
     if (!('from' in c)) { callouts.push(c); continue }
-    const img = await calloutImage(db, row, c.text, c.k, settings.title, spec.calloutSpot)
+    const img = await calloutImage(db, row, c.text, c.k, settings.calloutLook, spec.calloutSpot)
     if (!img) { callouts.push({ k: c.k, text: c.text, missed: 'It could not be drawn, so it is not on this video. Make it again to try once more.' }); continue }
     callouts.push(c)
     calloutPics.push({ url: img.url, position: spec.calloutSpot, widthPct: img.widthPct, opacity: 1, startSec: c.from, endSec: c.to })

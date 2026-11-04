@@ -466,6 +466,8 @@ export interface EditSettings {
   /** The product's titles on screen, chosen by the creator before adding
    *  (calloutTimes): one video's own, never part of the saved look. */
   callouts: string[]
+  /** How the product titles look and where they sit: part of the look. */
+  calloutLook: CalloutLook
 }
 
 export const DEFAULT_SETTINGS: EditSettings = {
@@ -480,6 +482,7 @@ export const DEFAULT_SETTINGS: EditSettings = {
   broll: true,
   cropX: 0.5,
   callouts: [],
+  calloutLook: { look: 'clean', color: 'white', size: 'small', spot: 'auto', seconds: 4 },
 }
 
 const isPos = (v: unknown): v is Position => typeof v === 'string' && (POSITIONS as string[]).includes(v)
@@ -515,6 +518,22 @@ export function cleanSettings(raw: unknown, base: EditSettings = DEFAULT_SETTING
   const logoUrl = lr && typeof lr.url === 'string' && /^https:\/\//.test(lr.url) ? lr.url : base.logo?.url ?? null
   const tr = r.title && typeof r.title === 'object' ? r.title as Record<string, unknown> : {}
   const bool = (k: keyof EditSettings) => (typeof r[k] === 'boolean' ? r[k] as boolean : base[k] as boolean)
+  const title: EditSettings['title'] = {
+    text: typeof tr.text === 'string' ? tr.text.replace(/\s*[–—]\s*/g, ', ').replace(/\s+-\s+/g, ', ').trim().slice(0, 80) : base.title.text,
+    position: isPos(tr.position) ? tr.position : base.title.position,
+    // 0 keeps it on for the whole video.
+    seconds: tr.seconds == null || tr.seconds === '' ? base.title.seconds : Number(tr.seconds) === 0 ? 0 : Math.max(2, Math.min(15, Number(tr.seconds) || 4)),
+    on: typeof tr.on === 'boolean' ? tr.on : base.title.on,
+    look: pick<TitleLook>(tr.look, TITLE_LOOKS, base.title.look ?? 'clean'),
+    color: pick<TitleColor>(tr.color, Object.keys(TITLE_COLORS) as TitleColor[], base.title.color ?? 'white'),
+    size: pick<LogoSize>(tr.size, LOGO_SIZES, base.title.size ?? 'medium'),
+  }
+  // Product titles chosen before their own look existed followed the title's
+  // look and colour, a size smaller: a video or look without one still does.
+  const fromTitle: CalloutLook = { look: title.look, color: title.color, size: 'small', spot: 'auto', seconds: CALLOUT_SECONDS }
+  const calloutLook = r.calloutLook && typeof r.calloutLook === 'object'
+    ? cleanCalloutLook(r.calloutLook, base.calloutLook ?? fromTitle)
+    : base !== DEFAULT_SETTINGS && base.calloutLook ? base.calloutLook : fromTitle
   return {
     kind,
     formats: kind === 'trybe' ? ['vertical'] : ['wide'],
@@ -527,16 +546,7 @@ export function cleanSettings(raw: unknown, base: EditSettings = DEFAULT_SETTING
       when: pick<LogoWhen>(lr?.when, ['whole', 'start', 'end'], base.logo?.when ?? 'whole'),
       seconds: lr?.seconds == null ? base.logo?.seconds ?? SHOW_SECONDS : Math.max(1, Math.min(15, Math.round(Number(lr.seconds)) || SHOW_SECONDS)),
     } : null,
-    title: {
-      text: typeof tr.text === 'string' ? tr.text.replace(/\s*[–—]\s*/g, ', ').replace(/\s+-\s+/g, ', ').trim().slice(0, 80) : base.title.text,
-      position: isPos(tr.position) ? tr.position : base.title.position,
-      // 0 keeps it on for the whole video.
-      seconds: tr.seconds == null || tr.seconds === '' ? base.title.seconds : Number(tr.seconds) === 0 ? 0 : Math.max(2, Math.min(15, Number(tr.seconds) || 4)),
-      on: typeof tr.on === 'boolean' ? tr.on : base.title.on,
-      look: pick<TitleLook>(tr.look, TITLE_LOOKS, base.title.look ?? 'clean'),
-      color: pick<TitleColor>(tr.color, Object.keys(TITLE_COLORS) as TitleColor[], base.title.color ?? 'white'),
-      size: pick<LogoSize>(tr.size, LOGO_SIZES, base.title.size ?? 'medium'),
-    },
+    title,
     pictures: (Array.isArray(r.pictures) ? r.pictures : base.pictures ?? [])
       .map((p) => cleanPicture(p)).filter((p): p is Picture => !!p)
       .filter((p, i, all) => all.findIndex((q) => q.url === p.url) === i).slice(0, MAX_PICTURES),
@@ -546,6 +556,7 @@ export function cleanSettings(raw: unknown, base: EditSettings = DEFAULT_SETTING
     broll: bool('broll'),
     cropX: Math.max(0, Math.min(1, Number.isFinite(Number(r.cropX)) ? Number(r.cropX) : base.cropX)),
     callouts: cleanCallouts(Array.isArray(r.callouts) ? r.callouts : base.callouts ?? []),
+    calloutLook,
   }
 }
 
@@ -565,7 +576,7 @@ export function renderSpec(o: { words: Word[]; lines: Line[]; plan: Plan; shots:
   // The opening title's seconds are kept clear; a title on the whole video
   // sends the product titles to the other edge of the frame instead.
   const busy = t.on && t.text && t.seconds > 0 ? [{ from: 0, to: 0.3 + t.seconds }] : []
-  const callouts = calloutTimes(o.settings.callouts ?? [], o.words, segments, seconds, busy)
+  const callouts = calloutTimes(o.settings.callouts ?? [], o.words, segments, seconds, busy, o.settings.calloutLook?.seconds ?? CALLOUT_SECONDS)
   return { segments, inserts, zooms, words, logo, seconds, pictures, callouts, calloutSpot: calloutSpot(o.settings) }
 }
 
@@ -617,8 +628,25 @@ export function pictureTimes(pictures: Picture[], words: Word[], segs: Segment[]
 // is left out and said so.
 export const MAX_CALLOUTS = 5
 export const MAX_CALLOUT_CHARS = 70
-/** Seconds each product title is on screen. */
-export const CALLOUT_SECONDS = 3.5
+/** Seconds each product title is on screen, unless chosen. */
+export const CALLOUT_SECONDS = 4
+export const CALLOUT_SECONDS_CHOICES = [3, 4, 5, 6]
+/** How the product titles look (any of the title looks, Seb, 2026-11-04:
+ *  "Can we have users select different ways that the titles can appear?"),
+ *  and where: 'auto' is low on a review and high on a TRYBE ad (calloutSpot). */
+export interface CalloutLook { look: TitleLook; color: TitleColor; size: LogoSize; spot: Position | 'auto'; seconds: number }
+
+/** A product title look from anywhere, made safe. Pure. */
+export function cleanCalloutLook(raw: unknown, fb: CalloutLook): CalloutLook {
+  const o = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>
+  return {
+    look: pick<TitleLook>(o.look, TITLE_LOOKS, fb.look),
+    color: pick<TitleColor>(o.color, Object.keys(TITLE_COLORS) as TitleColor[], fb.color),
+    size: pick<LogoSize>(o.size, LOGO_SIZES, fb.size),
+    spot: o.spot === 'auto' || isPos(o.spot) ? o.spot as Position | 'auto' : fb.spot,
+    seconds: CALLOUT_SECONDS_CHOICES.includes(Number(o.seconds)) ? Number(o.seconds) : fb.seconds,
+  }
+}
 const CALLOUT_GAP = 0.6
 
 /** The chosen titles, made safe: trimmed, short, no repeats, five at most. Pure. */
@@ -635,7 +663,8 @@ export function cleanCallouts(raw: unknown[]): string[] {
 
 /** Where the product titles sit: low on a review, high on a TRYBE ad (its
  *  captions are low), and away from a title kept on for the whole video. Pure. */
-export function calloutSpot(s: Pick<EditSettings, 'kind' | 'title'>): Spot {
+export function calloutSpot(s: Pick<EditSettings, 'kind' | 'title'> & { calloutLook?: CalloutLook }): Spot {
+  if (s.calloutLook && s.calloutLook.spot !== 'auto') return s.calloutLook.spot
   const base: Spot = s.kind === 'trybe' ? 'top' : 'bottom'
   const t = s.title
   if (!t.on || !t.text || t.seconds !== 0) return base
@@ -663,8 +692,8 @@ export type CalloutTime =
 /** When each product title is on screen in the finished video, in its
  *  seconds, and the word that placed it (null: spread through the video);
  *  or why it is not on it. Pure. */
-export function calloutTimes(callouts: string[], words: Word[], segs: Segment[], length: number, busy: { from: number; to: number }[] = []): CalloutTime[] {
-  const dur = Math.min(CALLOUT_SECONDS, Math.max(0, length - 1))
+export function calloutTimes(callouts: string[], words: Word[], segs: Segment[], length: number, busy: { from: number; to: number }[] = [], seconds = CALLOUT_SECONDS): CalloutTime[] {
+  const dur = Math.min(seconds, Math.max(0, length - 1))
   const taken = busy.map((b) => ({ ...b }))
   const fits = (from: number) => from >= 0.3 && from + dur <= length - 0.3
     && taken.every((b) => from + dur + CALLOUT_GAP <= b.from || from >= b.to + CALLOUT_GAP)

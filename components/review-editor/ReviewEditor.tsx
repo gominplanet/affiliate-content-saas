@@ -38,8 +38,8 @@ import { BURN_KEEP_DAYS } from '@/lib/burn-retention'
 import { normalizeAsinInput } from '@/lib/asin'
 import {
   DEFAULT_SETTINGS, FORMAT_WORDS, KIND_WORDS, LOGO_OPACITY, LOGO_SIZES, LOGO_WHEN_WORDS, LOGO_WIDTH, MAX_PICTURES, SHOW_SECONDS, PICTURE_WHEN_WORDS, PICTURE_WIDTH, POSITIONS, POSITION_WORDS, SPOTS,
-  TITLE_COLORS, TITLE_LOOKS, TITLE_LOOK_WORDS, TITLE_SECONDS, clock, cleanSettings, downloadLink, kindLine,
-  type CalloutTime, type EditSettings, type Format, type LogoSize, type LogoWhen, type Picture, type PictureTime, type PictureWhen, type Position, type Spot, type TitleColor, type VideoKind,
+  TITLE_COLORS, TITLE_LOOKS, TITLE_LOOK_WORDS, TITLE_SECONDS, CALLOUT_SECONDS_CHOICES, calloutSpot, clock, cleanSettings, downloadLink, kindLine,
+  type CalloutLook, type CalloutTime, type EditSettings, type Format, type LogoSize, type LogoWhen, type Picture, type PictureTime, type PictureWhen, type Position, type Spot, type TitleColor, type VideoKind,
 } from '@/lib/review-edit'
 import { TealArt } from '@/components/layout/teal-ui'
 import { bannerFor } from '@/lib/banner-art'
@@ -189,6 +189,14 @@ function useTitleUrl(t: EditSettings['title']): string {
   return url
 }
 
+/** A product title exactly as MVP draws it for the video, in its own look. */
+function useCalloutUrl(cl: CalloutLook, text: string, spot: Spot): string {
+  const want = `/api/review-edit/title?${new URLSearchParams({ text, look: cl.look, color: cl.color, size: cl.size, position: spot === 'center' ? 'top' : spot })}`
+  const [url, setUrl] = useState(want)
+  useEffect(() => { const h = setTimeout(() => setUrl(want), 450); return () => clearTimeout(h) }, [want])
+  return url
+}
+
 /** Where an overlay sits on a frame, the same spots the video server uses
  *  (edit-filters placeAt: 4% in from the side, 5% from the top or bottom). */
 function spotStyle(p: Spot, widthPct: number, opacity = 1): React.CSSProperties {
@@ -204,9 +212,11 @@ function spotStyle(p: Spot, widthPct: number, opacity = 1): React.CSSProperties 
 
 /** Everything that goes on the video, in its place on a blank frame, at its
  *  real size. Each shows at its own moment on the video; here, all at once. */
-function FramePreview({ s, titleUrl, vertical }: { s: EditSettings; titleUrl: string; vertical: boolean }) {
+function FramePreview({ s, titleUrl, vertical, callout }: { s: EditSettings; titleUrl: string; vertical: boolean; callout?: { url: string; spot: Spot } | null }) {
   const [titleW, setTitleW] = useState<number | null>(null)
+  const [calloutW, setCalloutW] = useState<number | null>(null)
   const share = titleW ? Math.min(0.9, Math.max(0.1, titleW / 1920)) : 0.4
+  const cShare = calloutW ? Math.min(0.85, Math.max(0.08, calloutW / 1920)) : 0.3
   const logo = !vertical && s.logo?.on ? s.logo : null
   const pics = s.pictures.filter((p) => p.on)
   return (
@@ -215,6 +225,7 @@ function FramePreview({ s, titleUrl, vertical }: { s: EditSettings; titleUrl: st
       {pics.map((p, i) => <img key={i} src={p.url} alt="" style={spotStyle(p.position, PICTURE_WIDTH[p.size][vertical ? 'vertical' : 'wide'], p.opacity)} />)}
       {logo && <img src={logo.url} alt="" style={spotStyle(logo.position, LOGO_WIDTH[logo.size].wide, logo.opacity)} />}
       {s.title.on && <img src={titleUrl} alt="" onLoad={(ev) => setTitleW(ev.currentTarget.naturalWidth)} style={spotStyle(s.title.position, vertical ? Math.min(0.9, share * 1.5) : share)} />}
+      {callout && <img src={callout.url} alt="" onLoad={(ev) => setCalloutW(ev.currentTarget.naturalWidth)} style={spotStyle(callout.spot, vertical ? Math.min(0.9, cShare * 1.5) : cShare)} />}
     </div>
   )
 }
@@ -257,10 +268,13 @@ function lookLines(s: EditSettings): { label: string; value: string }[] {
   const title = !t.on ? 'Off'
     : `${TITLE_LOOK_WORDS[t.look]}, ${t.color}, ${POSITION_WORDS[t.position].toLowerCase()}, ${t.seconds === 0 ? 'the whole video' : `${t.seconds} seconds`}${t.text ? `: “${t.text}”` : ', written by MVP for each video'}`
   const pics = s.pictures.filter((p) => p.on).length
+  // Settings from before the product titles had a look of their own follow the title (lib/review-edit cleanSettings).
+  const cl = s.calloutLook ?? cleanSettings(s).calloutLook
   const edit = [s.broll ? 'B-roll on' : 'B-roll off', s.color ? 'colour boost on' : 'colour boost off', s.zooms ? 'slow zooms on' : 'slow zooms off', s.captions ? 'captions on TRYBE ads' : 'no captions'].join(', ')
   return [
     { label: 'Logo', value: logo },
     { label: 'Title', value: title },
+    { label: 'Product titles', value: `${TITLE_LOOK_WORDS[cl.look]}, ${cl.color}, ${sizeWords(cl.size).toLowerCase()}, ${cl.spot === 'auto' ? 'placed automatically' : POSITION_WORDS[cl.spot].toLowerCase()}, ${cl.seconds} seconds each` },
     { label: 'Pictures', value: pics ? `${pics} on every video` : 'None' },
     { label: 'Editing', value: edit.charAt(0).toUpperCase() + edit.slice(1) },
   ]
@@ -275,6 +289,13 @@ function Choices({ s, set, onLogo, logoBusy, lib, kind }: { s: EditSettings; set
   useEffect(() => setTitleBad(false), [titleUrl])
   const t = s.title
   const setT = (v: Partial<EditSettings['title']>) => set({ ...s, title: { ...t, ...v } })
+  const cl = s.calloutLook ?? cleanSettings(s).calloutLook
+  const setC = (v: Partial<CalloutLook>) => set({ ...s, calloutLook: { ...cl, ...v } })
+  // Where they land on this kind of video (the look itself is for both kinds: shown as a review).
+  const cSpot = calloutSpot({ kind: ad ? 'trybe' : 'review', title: t, calloutLook: cl })
+  const calloutUrl = useCalloutUrl(cl, (s.callouts ?? [])[0] || 'Projects on any flat surface', cSpot)
+  const [calloutBad, setCalloutBad] = useState(false)
+  useEffect(() => setCalloutBad(false), [calloutUrl])
   const pos = (cur: Position, pick: (p: Position) => void) => (
     <div className="flex flex-wrap gap-1.5">{POSITIONS.map((p) => <Chip key={p} on={cur === p} onClick={() => pick(p)}>{POSITION_WORDS[p]}</Chip>)}</div>
   )
@@ -352,6 +373,25 @@ function Choices({ s, set, onLogo, logoBusy, lib, kind }: { s: EditSettings; set
           )}
         </Group>
 
+        <Group title="Product titles" note="The titles you pick for each video from its ASIN or link. Each shows when you talk about that feature, or spread through the video if you never do.">
+          <Row label="Style">{TITLE_LOOKS.map((l) => <Chip key={l} on={cl.look === l} onClick={() => setC({ look: l })}>{TITLE_LOOK_WORDS[l]}</Chip>)}</Row>
+          <Row label="Colour">
+            {(Object.keys(TITLE_COLORS) as TitleColor[]).map((c) => (
+              <button key={c} type="button" onClick={() => setC({ color: c })} aria-pressed={cl.color === c} aria-label={`Product titles ${c}`} title={c}
+                className="h-6 w-6 rounded-full border" style={{ background: TITLE_COLORS[c], borderColor: 'var(--border-2)', boxShadow: cl.color === c ? `0 0 0 2px var(--surface), 0 0 0 4px ${PURPLE}` : undefined }} />
+            ))}
+          </Row>
+          <Row label="Size">{LOGO_SIZES.map((z) => <Chip key={z} on={cl.size === z} onClick={() => setC({ size: z })}>{sizeWords(z)}</Chip>)}</Row>
+          <Row label="Where">
+            <div className="flex flex-wrap gap-1.5">
+              <Chip on={cl.spot === 'auto'} onClick={() => setC({ spot: 'auto' })}>Automatic</Chip>
+              {POSITIONS.map((p) => <Chip key={p} on={cl.spot === p} onClick={() => setC({ spot: p })}>{POSITION_WORDS[p]}</Chip>)}
+            </div>
+          </Row>
+          {cl.spot === 'auto' && <p className="text-[12px] mt-1" style={soft}>Automatic: bottom middle on a review, top middle on a TRYBE ad (clear of its captions), and away from a title kept on for the whole video.</p>}
+          <Row label="How long">{CALLOUT_SECONDS_CHOICES.map((n) => <Chip key={n} on={cl.seconds === n} onClick={() => setC({ seconds: n })}>{n} seconds</Chip>)}</Row>
+        </Group>
+
         <Group title="Pictures on screen" note="Your own PNGs: a badge, an arrow, a second logo. A see-through background sits best. Calls to action are added in Drop, so Amazon gets a clean copy.">
           <div className="flex flex-col gap-1.5">
             {s.pictures.map((p, i) => (
@@ -384,7 +424,7 @@ function Choices({ s, set, onLogo, logoBusy, lib, kind }: { s: EditSettings; set
           title drawn by the same code that puts it on the video. */}
       <div className="lg:sticky lg:top-4 flex flex-col gap-2">
         <p className="text-[12px] font-bold uppercase tracking-wider" style={soft}>Preview</p>
-        <FramePreview s={s} titleUrl={titleUrl} vertical={ad} />
+        <FramePreview s={s} titleUrl={titleUrl} vertical={ad} callout={{ url: calloutUrl, spot: cSpot }} />
         <p className="text-[11.5px]" style={soft}>{anything ? 'All at once here. On the video, each shows at its own time.' : 'Nothing on top of the video yet.'}</p>
         {t.on && (
           <div className="mt-1">
@@ -396,6 +436,14 @@ function Choices({ s, set, onLogo, logoBusy, lib, kind }: { s: EditSettings; set
             <p className="text-[11.5px] mt-1" style={soft}>This is the picture MVP puts on the video, drawn the same way.</p>
           </div>
         )}
+        <div className="mt-1">
+          <p className="text-[11.5px] mb-1" style={soft}>A product title{(s.callouts ?? [])[0] ? '' : ' (an example)'}:</p>
+          <div className="rounded-lg p-2.5 flex justify-center" style={{ background: '#3a3330' }}>
+            {calloutBad
+              ? <p className="text-[12.5px]" style={{ color: '#FCA5A5' }}>The preview could not be drawn. Try another style, or check your connection.</p>
+              : <img src={calloutUrl} alt={`A product title as it will look: ${(s.callouts ?? [])[0] || 'Projects on any flat surface'}`} onError={() => setCalloutBad(true)} className="max-w-full h-auto" style={{ maxHeight: 44 }} />}
+          </div>
+        </div>
       </div>
     </div>
   )
@@ -1105,7 +1153,7 @@ function EditCard({ e, reload, uploadLogo, withLogo, logoBusy, lib, teal = false
             <Choices s={s} set={(v) => { setS(v); setChanged(true) }} lib={lib} kind={e.settings.kind} logoBusy={logoBusy} onLogo={(f) => void uploadLogo(f, (url) => { setS((x) => withLogo(x, url)); setChanged(true) })} />
           </div>
           <div>
-            <CalloutPicker product={e.product || e.keep?.asin || ''} value={s.callouts} onChange={(callouts) => { setS((x) => ({ ...x, callouts })); setChanged(true) }} />
+            <CalloutPicker product={e.product || e.keep?.asin || ''} value={s.callouts ?? []} onChange={(callouts) => { setS((x) => ({ ...x, callouts })); setChanged(true) }} />
           </div>
           <div>
             <p className="text-[13.5px] font-bold">Or tell MVP</p>
