@@ -326,6 +326,19 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: true })
   }
 
+  // CUT IT AGAIN FROM THE START (Seb, 2026-11-04): the takes are read and
+  // watched again and every cut is decided afresh, keeping the look. For a
+  // video read before MVP watched how takes start and end. Not counted as
+  // another video: it was counted the first time it was read.
+  if (action === 'reread') {
+    if (row.raw_deleted_at && hasUpload(row)) return NextResponse.json({ error: 'The raw takes for this video were deleted, so it cannot be cut again. Add them again.' }, { status: 409 })
+    const stuck = Date.now() - Date.parse(row.updated_at) > STUCK_AFTER_MS
+    if (['reading', 'making'].includes(row.status) && !stuck) return NextResponse.json({ error: 'MVP is working on this one right now.' }, { status: 409 })
+    await db.from('review_edits').update({ status: 'queued', attempts: 0, note: 'In line to be read and cut again', updated_at: now }).eq('id', row.id)
+    after(async () => { try { await moveQueue(db, { userId: g.userId, readBudget: 1 }) } catch { /* the cron picks it up */ } })
+    return NextResponse.json({ ok: true })
+  }
+
   if (action === 'finish') {
     await deleteRaw(db, row)
     return NextResponse.json({ ok: true })

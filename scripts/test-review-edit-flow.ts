@@ -49,7 +49,7 @@ check('finished videos are named for the 30 day clean-up', /edit-\$\{stamp\}-\$\
 const E = read('lib/review-edit.ts')
 check('one video asks what it is for first', /What is this video for\?/.test(U) && /\(\['review', 'trybe'\] as VideoKind\[\]\)/.test(U) && /settings: look/.test(U))
 check('no wide and vertical choice: the kind decides the format', !/Make it<\/p>/.test(U) && /formats: kind === 'trybe' \? \['vertical'\] : \['wide'\]/.test(E))
-check('a TRYBE ad has its own brief: an ad, cut harder, opening on a hook', /system: o\.kind === 'trybe' \? TRYBE_SYSTEM : PLAN_SYSTEM/.test(P) && /It is not a review/.test(P) && /filler/.test(P))
+check('a TRYBE ad has its own brief: an ad, cut harder, opening on a hook', /const system = o\.kind === 'trybe' \? TRYBE_SYSTEM : PLAN_SYSTEM/.test(P) && /It is not a review/.test(P) && /filler/.test(P))
 check('a take filmed the wrong way round for a review is said before any work', /This take was filmed upright\. An Amazon and YouTube review is filmed sideways/.test(W))
 check('a typed change cannot turn a review into an ad', /kind: o\.settings\.kind,/.test(P))
 check('Send to Drop says what comes next for each kind', /pick the TRYBE brand it is for/.test(U) && /make its Shorts, TikTok and Reels/.test(U))
@@ -96,9 +96,10 @@ check('three parts: your look, add videos, your videos', /aria-label="Your look"
 check('a card folds its changes away until Edit this video is pressed', /Edit this video/.test(U) && /\{open && editable && \(/.test(U))
 
 // ── Cost ─────────────────────────────────────────────────────────────────────
-check('the plan on Sonnet 5, the B-roll and typed changes on Haiku', /PLAN_MODEL = 'claude-sonnet-5'/.test(P) && /QUICK_MODEL = 'claude-haiku-4-5-20251001'/.test(P) && /model: QUICK_MODEL[\s\S]{0,40}max_tokens: 900/.test(P))
+// The plan on Opus 5.5 with the pictures (2026-11-04), Sonnet 5 from the words alone if that fails.
+check('the plan on Opus 5.5, words-only on Sonnet 5, the B-roll and typed changes on Haiku', /PLAN_MODEL = 'claude-opus-5-5'/.test(P) && /WORDS_ONLY_MODEL = 'claude-sonnet-5'/.test(P) && /QUICK_MODEL = 'claude-haiku-4-5-20251001'/.test(P) && /model: QUICK_MODEL[\s\S]{0,40}max_tokens: 900/.test(P))
 check('the B-roll is seen from 36 small frames, sent in the answer, never stored', /frames: 36, width: 320/.test(W) && /jpg: fs\.readFileSync\(out\)\.toString\('base64'\)/.test(S))
-check('every AI call is counted', (P.match(/recordAnthropicUsage\(/g) ?? []).length === (P.match(/messages\.create\(/g) ?? []).length && (P.match(/recordAnthropicUsage\(/g) ?? []).length === 4)
+check('every AI call is counted', (P.match(/recordAnthropicUsage\(/g) ?? []).length === (P.match(/messages\.create\(/g) ?? []).length && (P.match(/recordAnthropicUsage\(/g) ?? []).length === 5)
 
 // ── Every stop says why ──────────────────────────────────────────────────────
 const fails2 = (W.match(/status: 'failed', note: /g) ?? []).length + (W.match(/return await fail\(/g) ?? []).length

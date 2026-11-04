@@ -83,6 +83,9 @@ export interface Cut {
   words?: [number, number]
   /** The creator put it back. */
   restored?: boolean
+  /** The setup before the video starts, or the walk-off after it ends
+   *  (lib/review-edit-plan cleanPlan): found from the pictures and the words. */
+  edge?: 'start' | 'end'
 }
 
 /** A shot in the B-roll take, seconds into that take. */
@@ -99,6 +102,13 @@ export interface Plan {
   /** The product as the creator names it in the take, when they do (plans
    *  made from 2026-11-03 on): for the file name of the finished video. */
   product?: string
+  /** Seconds into the take where the creator stops talking to the viewer
+   *  after their last line (walks to the camera, pulls a face), seen in the
+   *  pictures. The video ends there at the latest (renderSpec). */
+  endAt?: number
+  /** What the cuts were decided from: 'pictures' when MVP also watched the
+   *  start and the end of the take, 'words' when it had the words alone. */
+  read?: 'pictures' | 'words'
 }
 
 export type Segment = [number, number]
@@ -114,6 +124,58 @@ export function cleanWords(words: Word[]): Word[] {
     .filter((w) => w && typeof w.text === 'string' && w.text.trim() && Number.isFinite(w.start) && Number.isFinite(w.end))
     .map((w) => ({ start: Number(w.start), end: Math.max(Number(w.end), Number(w.start) + 0.05), text: w.text.trim() }))
     .sort((a, b) => a.start - b.start)
+}
+
+/** HOW LONG ONE WORD CAN TAKE TO SAY, by its letters: "hi" 0.7 seconds,
+ *  "unbelievable" about 1.4, never over 1.8. */
+export function wordMax(text: string): number {
+  const letters = String(text || '').replace(/[^\p{L}\p{N}]/gu, '').length
+  return Math.min(1.8, Math.max(0.7, 0.35 + 0.09 * letters))
+}
+
+/** WORDS STRETCHED OVER WHAT WAS NOT SAID, put back to their size (Seb,
+ *  2026-11-04: his wife walked into the frame and got ready, and the first
+ *  five seconds of the edit showed it). The speech service times each word,
+ *  and the first word after a quiet stretch, or the last one before it, can
+ *  come back covering the whole stretch: "hi" from 0.0 to 5.2 seconds. Every
+ *  kept word keeps its time, so the walk-in was kept as part of "hi".
+ *
+ *  A word longer than it could take to say is shrunk from the side that has
+ *  room: from its start when the next word follows straight on, from its end
+ *  when nothing follows. Same words, same order, same count, so every word
+ *  and line number stays what it was. Pure. */
+export function tidyWordTimes(words: Word[]): Word[] {
+  return words.map((w, k) => {
+    const max = wordMax(w.text)
+    if (w.end - w.start <= max) return w
+    const next = words[k + 1]
+    const prev = words[k - 1]
+    const tightAfter = !!next && next.start - w.end < 0.3
+    const tightBefore = !!prev && w.start - prev.end < 0.3
+    // Nothing straight after it, and something straight before: the end ran on.
+    if (!tightAfter && (tightBefore || !next)) return { ...w, end: Math.round((w.start + max) * 1000) / 1000 }
+    return { ...w, start: Math.round((w.end - max) * 1000) / 1000 }
+  })
+}
+
+/** THE MOMENTS TO LOOK AT, at the start and at the end of a take: from the
+ *  beginning to a while after the first word, and from a while before the
+ *  last word to the end. That is where a creator walks in and gets ready, and
+ *  where they walk to the camera to stop it. At most `per` pictures each, in
+ *  order, never the same moment twice. Pure. */
+export function edgeMoments(words: Word[], duration: number, per = 16): number[] {
+  if (!words.length || !(duration > 0)) return []
+  const around = 9
+  const spread = (a: number, b: number) => {
+    const span = Math.max(0, b - a)
+    const n = Math.max(2, Math.min(per, Math.ceil(span / 0.7)))
+    return Array.from({ length: n }, (_, i) => Math.round((a + (span * (i + 0.5)) / n) * 100) / 100)
+  }
+  const head = spread(0, Math.min(duration, words[0].start + around))
+  const tail = spread(Math.max(0, words[words.length - 1].end - around), duration)
+  const out: number[] = []
+  for (const t of [...head, ...tail].sort((a, b) => a - b)) if (!out.length || t - out[out.length - 1] >= 0.3) out.push(t)
+  return out
 }
 
 /** Words (cleanWords) broken into lines: after a pause over 0.4 seconds, at
@@ -564,7 +626,16 @@ export function cleanSettings(raw: unknown, base: EditSettings = DEFAULT_SETTING
  *  and the settings. Pure. */
 export function renderSpec(o: { words: Word[]; lines: Line[]; plan: Plan; shots: Shot[]; duration: number; settings: EditSettings; hasBroll: boolean; silences?: Segment[] }) {
   const pace = PACE[o.settings.kind]
-  const segments = keepSegments(o.words, o.lines, o.plan.cuts, o.duration, pace, o.silences ?? [])
+  // THE WALK-OFF IN SILENCE: after the last line, the creator stops talking
+  // to the viewer (seen in the pictures) and the video stops there. Only
+  // when that is after the last word kept, so putting a cut back is never
+  // undone by it.
+  const gone = cutWords(o.lines, o.plan.cuts)
+  let lastKept = -1
+  for (let k = o.words.length - 1; k >= 0; k--) if (!gone.has(k)) { lastKept = k; break }
+  const stopAt = Number(o.plan.endAt)
+  const until = lastKept >= 0 && Number.isFinite(stopAt) && stopAt > o.words[lastKept].end + 0.05 ? Math.min(o.duration, stopAt) : o.duration
+  const segments = keepSegments(o.words, o.lines, o.plan.cuts, until, pace, o.silences ?? [])
   const inserts = o.settings.broll && o.hasBroll ? insertsFor(o.plan.placements, o.shots, o.lines, segments, pace) : []
   const zooms = o.settings.zooms ? zoomsFor(o.plan.keys, o.lines, segments) : []
   const words = o.settings.captions && o.settings.kind === 'trybe' ? outputWords(o.words, segments) : []

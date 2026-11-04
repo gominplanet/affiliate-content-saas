@@ -16,7 +16,13 @@ import { createAnthropicClient } from '@/lib/anthropic'
 import { recordAnthropicUsage } from '@/lib/ai-usage'
 import { cleanSettings, clock, findWords, POSITIONS, TITLE_COLORS, TITLE_LOOKS, type Cut, type CutKind, type EditSettings, type Line, type Plan, type Shot, type VideoKind, type Word } from '@/lib/review-edit'
 
-const PLAN_MODEL = 'claude-sonnet-5'
+// WATCHING AS WELL AS READING (Seb, 2026-11-04: "MVP needs to understand the
+// context of what is being said"). The plan is made by the strongest model,
+// with pictures from the start and the end of the take, about ten cents a
+// video. If that call fails, the words-only planner it replaced makes the
+// plan, and the card says the start and end were not watched.
+const PLAN_MODEL = 'claude-opus-5-5'
+const WORDS_ONLY_MODEL = 'claude-sonnet-5'
 const QUICK_MODEL = 'claude-haiku-4-5-20251001'
 const KINDS: CutKind[] = ['restart', 'mistake', 'repeat', 'chatter']
 
@@ -38,6 +44,15 @@ export function cleanPlan(raw: Record<string, unknown> | null, lines: Line[], sh
   const n = lines.length
   const int = (v: unknown) => (Number.isInteger(Number(v)) ? Number(v) : NaN)
   const cuts: Cut[] = []
+  // ── WHERE THE VIDEO REALLY STARTS AND ENDS ───────────────────────────────
+  // Everything before the first line said to the viewer (walking in, getting
+  // ready, "okay, is it on") and after the last one (walking to the camera,
+  // talking to themselves) goes. Taken first, so the cuts below fit round it.
+  // Never more than half of what was said: a start and end that would take
+  // that much is not trusted, and nothing is cut for it.
+  const { head, tail } = edgeLines(raw, lines)
+  if (head > 0) cuts.push({ from: 0, to: head - 1, kind: 'chatter', edge: 'start', why: noDash(raw?.setup) || 'Before you started talking to the camera: getting ready.' })
+  if (tail < n - 1) cuts.push({ from: tail + 1, to: n - 1, kind: 'chatter', edge: 'end', why: noDash(raw?.walkoff) || 'After your last line to the camera.' })
   for (const c of Array.isArray(raw?.cuts) ? raw!.cuts as Record<string, unknown>[] : []) {
     const from = int(c?.from ?? c?.line), to = int(c?.to ?? c?.from ?? c?.line)
     if (!(from >= 0 && to >= from && to < n)) continue
@@ -67,7 +82,29 @@ export function cleanPlan(raw: Record<string, unknown> | null, lines: Line[], sh
     placements.push({ shot, line, why: noDash(p?.why) })
   }
   const product = noDash(raw?.product, 80)
-  return { cuts: safeCuts, keys, placements, title: noDash(raw?.title, 60), ...(product ? { product } : {}) }
+  // The walk-off with no words in it: seconds into the take, after the last
+  // line kept and inside the take, or nothing.
+  const lastLine = lines[tail]
+  const endAt = Number(raw?.endAt)
+  const stop = lastLine && Number.isFinite(endAt) && endAt > lastLine.end + 0.05 && endAt < (lines[n - 1]?.end ?? 0) + 60 ? Math.round(endAt * 100) / 100 : 0
+  return { cuts: safeCuts, keys, placements, title: noDash(raw?.title, 60), ...(product ? { product } : {}), ...(stop ? { endAt: stop } : {}) }
+}
+
+/** The first and last lines said to the viewer, from a planner answer, or
+ *  the whole take when the answer is missing, backwards, or would cut more
+ *  than half of what was said. Pure. */
+export function edgeLines(raw: Record<string, unknown> | null, lines: Line[]): { head: number; tail: number } {
+  const n = lines.length
+  const whole = { head: 0, tail: Math.max(0, n - 1) }
+  if (!n || !raw) return whole
+  const a = Number.isInteger(Number(raw.start)) ? Number(raw.start) : 0
+  const b = Number.isInteger(Number(raw.end)) ? Number(raw.end) : n - 1
+  const head = Math.max(0, Math.min(n - 1, a))
+  const tail = Math.max(0, Math.min(n - 1, b))
+  if (tail < head) return whole
+  const said = (from: number, to: number) => lines.slice(from, to + 1).reduce((t, l) => t + (l.end - l.start), 0)
+  if (said(head, tail) < said(0, n - 1) * 0.5) return whole
+  return { head, tail }
 }
 
 /** What each part of the B-roll take shows. frames: small pictures, evenly
@@ -120,6 +157,13 @@ export async function brollFits(o: { words: Word[]; shots: Shot[]; product?: str
   } catch { return { fits: true, talk: '', shows: '' } }
 }
 
+const EDGE_RULES = [
+  'WHERE THE VIDEO STARTS AND ENDS. Creators press record, then walk into the frame, sit down, fix their hair, their clothes, the product or the camera, and often say things that are not for the viewer ("okay", "is it on?", "let me just", a laugh, a word to someone off camera) before they begin. At the end they stop talking to the viewer, then walk toward the camera to stop it, talk to themselves ("okay, that was good", "ugh") or pull a face. None of that belongs in the video.',
+  '"start" is the number of the first line said to the viewer once they are settled in the frame and facing the camera: usually their greeting or their opening line. "end" is the number of the last line said to the viewer: their sign-off or their last point. Every line before "start" and after "end" is cut. Give "setup" and "walkoff": one short plain sentence each to the creator saying what was cut there ("You walked in and got ready before you started."), or "" when nothing was.',
+  'When PICTURES from the start and the end of the take are shown, use them. Someone walking, turned away, sitting down, reaching for the camera or not yet settled is not talking to the viewer yet, whatever the words say. The words heard while they move can also be heard wrong.',
+  '"endAt": the time, from the pictures at the end, of the first picture after their last line to the viewer where they have stopped addressing the viewer (looking away, reaching for or walking to the camera, getting up, pulling a face). 0 when the pictures do not show that, or there are no pictures.',
+].join('\n')
+
 const PLAN_SYSTEM = [
   'You edit a creator\'s product review video. They filmed it in one take, talking to the camera, so it has mistakes, restarts and chatter in it. You see what they said, line by line, with the time of each line.',
   'Mark what to cut:',
@@ -128,13 +172,14 @@ const PLAN_SYSTEM = [
   '- repeat: they made the same point twice in a row in almost the same words. Cut the weaker one.',
   '- chatter: talk that is not the review, usually at the start or end ("is it recording?", "okay go", counting down, talking to someone off camera).',
   '- filler: "um", "uh", and an "okay so" or "so yeah" that opens a line. Quote them in "text" on their line. The creator wants it tight.',
-  'Never cut for length, never cut the verdict, the price, pros and cons, or anything said once and said well. When unsure, keep it.',
+  'Never cut for length, never cut the verdict, the price, pros and cons, or anything said once and said well. Inside the review, when unsure, keep it.',
+  EDGE_RULES,
   'Also pick "keys": lines that land a strong point (the verdict, a surprise, the main benefit, a key detail), about one every 20 to 30 seconds of video, at least 4. The video slowly zooms in on each.',
   'If B-roll shots are listed, place shots under the lines that talk about what the shot shows, each shot once, not on the first two lines. Skip a shot that fits nothing.',
   'Suggest a short on-screen "title": 2 to 5 words, usually the product, never a year, no dashes.',
   'Write "product": the product as they name it, brand and kind, in under 8 words ("Bassdash UPF 50 sun hoodie"), or "" when they never say what it is. Never a guess.',
   'Each "why" is one short plain sentence to the creator, like "You started this sentence over; the second try is kept."',
-  'Reply with JSON only: {"cuts":[{"from":3,"to":4,"kind":"restart","why":"..."},{"from":7,"to":7,"text":"it keeps the sun off and","kind":"restart","why":"..."}],"keys":[12,30],"placements":[{"shot":2,"line":9,"why":"..."}],"title":"...","product":"..."}. Line numbers are the numbers shown; "text" is only for part of one line, quoted word for word.',
+  'Reply with JSON only: {"start":1,"end":42,"setup":"...","walkoff":"...","endAt":0,"cuts":[{"from":3,"to":4,"kind":"restart","text":"","why":"..."},{"from":7,"to":7,"text":"it keeps the sun off and","kind":"restart","why":"..."}],"keys":[12,30],"placements":[{"shot":2,"line":9,"why":"..."}],"title":"...","product":"..."}. Line numbers are the numbers shown; "text" is only for part of one line, quoted word for word, and "" for whole lines. Lines before "start" and after "end" need no cut of their own.',
 ].join('\n')
 
 // A TRYBE ad is not a review (Seb, 2026-10-30: "It's an ad"): a brand runs it
@@ -151,19 +196,89 @@ const TRYBE_SYSTEM = [
   'Write a "title": the hook as on-screen text for the first seconds, under 7 words, no year, no dashes, no price.',
   'Write "product": the product as they name it, brand and kind, in under 8 words, or "" when they never say what it is. Never a guess.',
   'Each "why" is one short plain sentence to the creator.',
-  'Reply with JSON only: {"cuts":[{"from":3,"to":4,"kind":"restart","why":"..."},{"from":7,"to":7,"text":"um so","kind":"mistake","why":"..."}],"keys":[0,9],"placements":[{"shot":2,"line":5,"why":"..."}],"title":"...","product":"..."}. Line numbers are the numbers shown; "text" is only for part of one line, quoted word for word.',
+  EDGE_RULES,
+  'Reply with JSON only: {"start":0,"end":30,"setup":"...","walkoff":"...","endAt":0,"cuts":[{"from":3,"to":4,"kind":"restart","text":"","why":"..."},{"from":7,"to":7,"text":"um so","kind":"mistake","why":"..."}],"keys":[0,9],"placements":[{"shot":2,"line":5,"why":"..."}],"title":"...","product":"..."}. Line numbers are the numbers shown; "text" is only for part of one line, quoted word for word, and "" for whole lines. Lines before "start" and after "end" need no cut of their own.',
 ].join('\n')
 
-/** The plan for one take: a review, or a TRYBE ad. */
-export async function planEdit(o: { words: Word[]; lines: Line[]; shots: Shot[]; product?: string | null; kind?: VideoKind; who: Who }): Promise<Plan> {
+/** The shape of the planner's answer, held by the API itself. */
+const PLAN_SCHEMA = {
+  type: 'object',
+  properties: {
+    start: { type: 'integer' },
+    end: { type: 'integer' },
+    setup: { type: 'string' },
+    walkoff: { type: 'string' },
+    endAt: { type: 'number' },
+    cuts: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          from: { type: 'integer' }, to: { type: 'integer' },
+          kind: { type: 'string', enum: ['restart', 'mistake', 'repeat', 'chatter', 'filler'] },
+          text: { type: 'string' }, why: { type: 'string' },
+        },
+        required: ['from', 'to', 'kind', 'text', 'why'],
+        additionalProperties: false,
+      },
+    },
+    keys: { type: 'array', items: { type: 'integer' } },
+    placements: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: { shot: { type: 'integer' }, line: { type: 'integer' }, why: { type: 'string' } },
+        required: ['shot', 'line', 'why'],
+        additionalProperties: false,
+      },
+    },
+    title: { type: 'string' },
+    product: { type: 'string' },
+  },
+  required: ['start', 'end', 'setup', 'walkoff', 'endAt', 'cuts', 'keys', 'placements', 'title', 'product'],
+  additionalProperties: false,
+} as const
+
+/** A picture from the talking take, seconds in, as small JPEG data. */
+export type Frame = { at: number; jpg: string }
+
+/** The plan for one take: a review, or a TRYBE ad. `frames` are pictures
+ *  from its start and end (lib/review-edit edgeMoments), when the video
+ *  server could take them. */
+export async function planEdit(o: { words: Word[]; lines: Line[]; shots: Shot[]; product?: string | null; kind?: VideoKind; frames?: Frame[]; who: Who }): Promise<Plan> {
   const said = o.lines.map((l) => `${l.i} [${clock(l.start)}] ${l.text}`).join('\n')
   const shots = o.shots.length ? `\n\nB-ROLL SHOTS:\n${o.shots.map((s) => `${s.n}: ${s.what} (${(s.end - s.start).toFixed(1)}s)`).join('\n')}` : '\n\nNo B-roll.'
+  const text = `${o.product ? `PRODUCT: ${o.product}\n\n` : ''}WHAT THEY SAID:\n${said}${shots}`
+  const system = o.kind === 'trybe' ? TRYBE_SYSTEM : PLAN_SYSTEM
+  const frames = (o.frames ?? []).filter((f) => f && typeof f.jpg === 'string' && f.jpg && Number.isFinite(f.at))
+  try {
+    const content: Array<Record<string, unknown>> = [{ type: 'text', text }]
+    if (frames.length) {
+      content.push({ type: 'text', text: `PICTURES from the talking take, at the start and at the end, each with its time (the same clock as the lines above):` })
+      for (const f of frames) {
+        content.push({ type: 'text', text: `Picture at ${f.at.toFixed(1)}s (${clock(f.at)})` })
+        content.push({ type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: f.jpg } })
+      }
+    }
+    const msg = await createAnthropicClient().messages.create({
+      model: PLAN_MODEL, max_tokens: 16000, system,
+      output_config: { effort: 'medium', format: { type: 'json_schema', schema: PLAN_SCHEMA } },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      messages: [{ role: 'user', content: content as any }],
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any, { timeout: 110_000, maxRetries: 0 })
+    recordAnthropicUsage(msg as never, { userId: o.who.userId, tier: o.who.tier, feature: 'review_edit_plan', model: PLAN_MODEL })
+    const raw = msg.stop_reason === 'refusal' || msg.stop_reason === 'max_tokens' ? null : jsonIn(textOf(msg as never))
+    if (raw) return { ...cleanPlan(raw, o.lines, o.shots, o.words), read: frames.length ? 'pictures' : 'words' }
+  } catch { /* the words-only planner below (a slow answer included: the reading has five minutes in all) */ }
+  // THE PLANNER IT REPLACED, from the words alone, so a reading never fails
+  // because the new one did. Said on the card ('words').
   const msg = await createAnthropicClient().messages.create({
-    model: PLAN_MODEL, max_tokens: 2500, system: o.kind === 'trybe' ? TRYBE_SYSTEM : PLAN_SYSTEM,
-    messages: [{ role: 'user', content: `${o.product ? `PRODUCT: ${o.product}\n\n` : ''}WHAT THEY SAID:\n${said}${shots}` }],
+    model: WORDS_ONLY_MODEL, max_tokens: 2500, system,
+    messages: [{ role: 'user', content: text }],
   })
-  recordAnthropicUsage(msg, { userId: o.who.userId, tier: o.who.tier, feature: 'review_edit_plan', model: PLAN_MODEL })
-  return cleanPlan(jsonIn(textOf(msg as never)), o.lines, o.shots, o.words)
+  recordAnthropicUsage(msg, { userId: o.who.userId, tier: o.who.tier, feature: 'review_edit_plan', model: WORDS_ONLY_MODEL })
+  return { ...cleanPlan(jsonIn(textOf(msg as never)), o.lines, o.shots, o.words), read: 'words' }
 }
 
 const CHANGE_SYSTEM = [

@@ -1173,6 +1173,15 @@ function EditCard({ e, reload, uploadLogo, withLogo, logoBusy, lib, teal = false
             </button>
             <span className="text-[12px]" style={soft}>Changes here show once you press Make it again.</span>
           </div>
+          {!e.rawDeleted && (
+            <div className="flex flex-wrap items-center gap-2">
+              <button type="button" disabled={!!work} onClick={() => void act('reread', { action: 'reread', id: e.id }, 'In line to be read and cut again.').then((d) => { if (d) setOpen(false) })}
+                className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[12.5px] font-semibold disabled:opacity-50" style={{ borderColor: 'var(--border-2)' }}>
+                {work === 'reread' ? <Loader2 size={13} className="animate-spin" /> : <RotateCcw size={13} />} Cut it again from the start
+              </button>
+              <span className="text-[12px]" style={soft}>MVP listens to and watches your takes again and decides every cut afresh. Your look stays. Cuts you put back are decided again too.</span>
+            </div>
+          )}
         </div>
       )}
     </article>

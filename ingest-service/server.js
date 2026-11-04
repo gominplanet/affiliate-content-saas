@@ -1362,7 +1362,13 @@ app.post('/probe', async (req, res) => {
     const lengths = infos.map((x) => x.duration)
     const duration = lengths.reduce((a, b) => a + b, 0)
     const frames = []
-    const times = Array.from({ length: n }, (_, i) => Math.round(((i + 0.5) * duration / n) * 100) / 100)
+    // CHOSEN MOMENTS ("at", seconds into the take): the review editor looks at
+    // the start and the end, where a creator walks in and walks off. Otherwise
+    // n pictures spread evenly through the take, as before.
+    const chosen = Array.isArray(req.body?.at)
+      ? req.body.at.map(Number).filter((t) => Number.isFinite(t) && t >= 0).slice(0, 40).map((t) => Math.round(Math.min(t, Math.max(0, duration - 0.05)) * 100) / 100)
+      : null
+    const times = chosen && chosen.length ? chosen : Array.from({ length: n }, (_, i) => Math.round(((i + 0.5) * duration / n) * 100) / 100)
     for (let i = 0; i < times.length; i += 4) {
       await Promise.all(times.slice(i, i + 4).map(async (at, j) => {
         const out = path.join(dir, `f${i + j}.jpg`)

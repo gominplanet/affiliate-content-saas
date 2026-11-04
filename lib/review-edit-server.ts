@@ -20,7 +20,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { transcribeToCues, transcriptionConfigured } from '@/lib/shorts-transcribe'
 import { makeRenderJob } from '@/lib/render-job'
 import { drawTitle } from '@/lib/title-looks'
-import { cleanSettings, cleanWords, clock, linesOf, renderSpec, LOGO_WIDTH, PICTURE_WIDTH, type CalloutLook, type CalloutTime, type EditSettings, type PictureTime, type Plan, type Shot, type Spot, type Word } from '@/lib/review-edit'
+import { cleanSettings, cleanWords, clock, edgeMoments, linesOf, renderSpec, tidyWordTimes, LOGO_WIDTH, PICTURE_WIDTH, type CalloutLook, type CalloutTime, type EditSettings, type PictureTime, type Plan, type Shot, type Spot, type Word } from '@/lib/review-edit'
 import { brollFits, planEdit, readShots } from '@/lib/review-edit-plan'
 import { driveAccessToken, driveMediaUrl } from '@/lib/google-drive'
 import { recordUsage } from '@/lib/ai-usage'
@@ -186,9 +186,22 @@ export async function readTakes(db: Db, row: EditRow): Promise<void> {
     recordUsage({ userId: row.user_id, tier: who.tier, feature: 'review_edit_transcribe', model: 'fal-whisper', images: 1 })
     const audioPath = ownPath(audio.data.url, row.user_id)
     if (audioPath) await db.storage.from(EDIT_BUCKET).remove([audioPath])
-    const words = cleanWords(cues.map((c) => ({ start: c.start, end: c.end, text: c.text })))
+    // Words stretched over a walk-in or a walk-off are put back to their size.
+    const words = tidyWordTimes(cleanWords(cues.map((c) => ({ start: c.start, end: c.end, text: c.text }))))
     if (words.length < 8) return await fail('MVP heard almost nothing in your review take. Check that it is the take where you talk.')
     const lines = linesOf(words)
+    // ── PICTURES OF THE START AND THE END ───────────────────────────────────
+    // Where a creator walks in and gets ready, and where they walk to the
+    // camera to stop it. Taken while the B-roll is looked at, so the reading
+    // takes no longer for it. A video server from before it could take
+    // pictures at chosen moments sends evenly spread ones instead: those are
+    // not used, and the plan is made from the words, as before.
+    const moments = edgeMoments(words, probe.data.duration)
+    const edgeFrames: Promise<{ at: number; jpg: string }[]> = moments.length
+      ? videoServer<{ frames: { at: number; jpg: string }[] }>('/probe', { ...src.review, frames: moments.length, at: moments, width: 320 }, 120_000)
+        .then((fp) => (fp.ok && Array.isArray(fp.data.frames) && fp.data.frames.every((f) => moments.some((m) => Math.abs(m - f.at) < 0.05)) ? fp.data.frames : []))
+        .catch(() => [])
+      : Promise.resolve([])
     let shots: Shot[] = []
     let brollInfo: { duration: number } | undefined
     if (src.broll) {
@@ -203,14 +216,18 @@ export async function readTakes(db: Db, row: EditRow): Promise<void> {
     // A B-roll of another product (a batch paired wrong) is caught here, not
     // put over the talk: its moments are planned but left off, and said.
     const check = shots.length ? await brollFits({ words, shots, product: row.product, who }) : null
+    await set(db, row.id, { note: 'Watching how your take starts and ends' })
+    const frames = await edgeFrames
     await set(db, row.id, { note: 'Deciding the cuts' })
-    const plan = await planEdit({ words, lines, shots, product: row.product, kind: kindNow, who })
+    const plan = await planEdit({ words, lines, shots, product: row.product, kind: kindNow, frames, who })
     if (check && !check.fits) plan.placements = plan.placements.map((p) => ({ ...p, off: true }))
     const settings = cleanSettings(row.settings)
     if (!settings.title.text && plan.title) settings.title.text = plan.title
     const brollNote = (files.length > 1 ? ` ${files.length} files joined into one video.` : '')
       + (row.broll_src && !brollInfo ? ' MVP could not open your B-roll take, so this one has none.' : '')
       + (check && !check.fits ? ' The B-roll looks like a different product, so it was left out: see below.' : '') + sideNote
+      // SAID EITHER WAY, so a plan made without the pictures never looks like one made with them.
+      + (plan.read === 'pictures' ? ' MVP watched how it starts and ends.' : ' MVP could not watch how it starts and ends this time, so it cut from your words alone.')
     await set(db, row.id, {
       status: 'ready_to_make', attempts: 0,
       note: `Read: ${plan.cuts.length} ${plan.cuts.length === 1 ? 'cut' : 'cuts'}${shots.length ? `, ${plan.placements.length} B-roll ${plan.placements.length === 1 ? 'moment' : 'moments'}` : ''}. Waiting for its turn on the video server.${brollNote}`,
