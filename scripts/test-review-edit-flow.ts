@@ -98,7 +98,7 @@ check('a card folds its changes away until Edit this video is pressed', /Edit th
 // ── Cost ─────────────────────────────────────────────────────────────────────
 // The plan on Opus 5.5 with the pictures (2026-11-04), Sonnet 5 from the words alone if that fails.
 check('the plan on Opus 5.5, words-only on Sonnet 5, the B-roll and typed changes on Haiku', /PLAN_MODEL = 'claude-opus-5-5'/.test(P) && /WORDS_ONLY_MODEL = 'claude-sonnet-5'/.test(P) && /QUICK_MODEL = 'claude-haiku-4-5-20251001'/.test(P) && /model: QUICK_MODEL[\s\S]{0,40}max_tokens: 900/.test(P))
-check('the B-roll is seen from 36 small frames, sent in the answer, never stored', /frames: 36, width: 320/.test(W) && /jpg: fs\.readFileSync\(out\)\.toString\('base64'\)/.test(S))
+check('the B-roll is seen from 36 small frames, sent in the answer, never stored', /frames: joined\(src\.broll\) \? 40 : 36, width: 320/.test(W) && /jpg: fs\.readFileSync\(out\)\.toString\('base64'\)/.test(S))
 check('every AI call is counted', (P.match(/recordAnthropicUsage\(/g) ?? []).length === (P.match(/messages\.create\(/g) ?? []).length && (P.match(/recordAnthropicUsage\(/g) ?? []).length === 5)
 
 // ── Every stop says why ──────────────────────────────────────────────────────

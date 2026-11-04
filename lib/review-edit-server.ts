@@ -206,11 +206,16 @@ export async function readTakes(db: Db, row: EditRow): Promise<void> {
     let brollInfo: { duration: number } | undefined
     if (src.broll) {
       await set(db, row.id, { note: 'Looking through your B-roll' })
-      const bp = await videoServer<{ duration: number; frames: { at: number; jpg: string }[]; parts?: unknown[] }>('/probe', { ...src.broll, frames: 36, width: 320 }, 240_000)
+      // Several B-roll files (Seb, 2026-11-04): a few more frames, so each
+      // clip is seen, and where each one starts, so no shot crosses a join.
+      const bp = await videoServer<{ duration: number; frames: { at: number; jpg: string }[]; parts?: { duration: number }[] }>('/probe', { ...src.broll, frames: joined(src.broll) ? 40 : 36, width: 320 }, 240_000)
       // Several B-roll files are only used when the server read them all.
       if (bp.ok && (!joined(src.broll) || Array.isArray(bp.data.parts))) {
         brollInfo = { duration: bp.data.duration }
-        shots = await readShots(bp.data.frames, bp.data.duration, who)
+        const starts: number[] = []
+        let at = 0
+        for (const p of bp.data.parts ?? [{ duration: bp.data.duration }]) { starts.push(at); at += Number(p.duration) || 0 }
+        shots = await readShots(bp.data.frames, bp.data.duration, who, starts)
       }
     }
     // A B-roll of another product (a batch paired wrong) is caught here, not

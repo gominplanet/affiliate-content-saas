@@ -1,0 +1,51 @@
+// © 2026 Gominplanet / MVP Affiliate — proprietary & confidential.
+//
+// SEVERAL B-ROLL FILES FOR ONE VIDEO (Seb, 2026-11-04: "we need to be able to
+// upload more than one file for b roll.. and let mvp use them all together as
+// it sees fit").
+//
+// Pinned here: the One video form takes several B-roll files from either
+// place, each shown with how it is going and taken out on its own; they go
+// to MVP as one joined B-roll take; a file that did not come stops the add
+// rather than being left out quietly; and MVP knows where each file starts,
+// so no shot runs from one file into the next.
+import { readFileSync } from 'node:fs'
+import { withinClip } from '../lib/review-edit-plan'
+import { MAX_FILES } from '../lib/review-edit-batch'
+
+const fails: string[] = []
+const check = (name: string, ok: boolean | undefined) => { if (!ok) fails.push(name) }
+const read = (p: string) => readFileSync(p, 'utf8')
+const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b)
+
+// ── NO SHOT ACROSS TWO FILES ─────────────────────────────────────────────────
+check('a shot inside one file is kept as it is', same(withinClip(2, 5, [0, 10, 20], 30), [2, 5]))
+check('a shot over a join keeps its longer side', same(withinClip(8, 13, [0, 10, 20], 30), [10, 13]) && same(withinClip(7, 11, [0, 10, 20], 30), [7, 10]))
+check('a shot over two joins keeps the longest piece', same(withinClip(9, 21, [0, 10, 20], 30), [10, 20]))
+check('one file is never split', same(withinClip(0, 30, [0], 30), [0, 30]))
+const P = read('lib/review-edit-plan.ts')
+check('the shot reader is told the clips and which clip each frame is from', /starts: number\[\] = \[0\]/.test(P) && /B-roll clips of a product, joined in order/.test(P) && /A shot never runs from one clip into the next\./.test(P) && /, clip \$\{clipOf\(f\.at\) \+ 1\}/.test(P))
+check('and every shot is held inside one clip', /\[start, end\] = withinClip\(start, end, starts, duration\)/.test(P))
+const S = read('lib/review-edit-server.ts')
+check('the reading works out where each file starts and looks a little harder', /frames: joined\(src\.broll\) \? 40 : 36/.test(S) && /shots = await readShots\(bp\.data\.frames, bp\.data\.duration, who, starts\)/.test(S))
+
+// ── THE ONE VIDEO FORM ───────────────────────────────────────────────────────
+const U = read('components/review-editor/ReviewEditor.tsx')
+check('up to six B-roll files, the same as a joined take', MAX_FILES === 6 && /import \{ MAX_FILES \} from '@\/lib\/review-edit-batch'/.test(U))
+check('several picked at once in Google Drive', /pickVideosFromDrive\(/.test(U) && /open\(o, \[mine, recent\], true,/.test(read('components/review-editor/drive-picker.ts')))
+check('several chosen at once on the computer, uploaded one after another', /<input type="file" accept="video\/\*" multiple/.test(U) && /for \(const it of items\) \{/.test(U) && /await uploadTake\(supabase, user\.id, it\.file/.test(U))
+check('each file shows how it is going, and is taken out on its own', /waiting its turn to upload/.test(U) && /aria-label=\{`Take \$\{u\.name\} out`\}/.test(U))
+check('the same file is never added twice, and the seventh is said, not dropped quietly', /!list\.some\(\(y\) => y\.key === x\.key\)/.test(U) && /One video takes up to \$\{MAX_FILES\} B-roll files/.test(U))
+check('the list read across waits is the list right now', /const brollsNow = useRef/.test(U) && /brollsNow\.current\.some\(\(b\) => b\.key === it\.key\)/.test(U))
+check('they go to MVP as one take: the first, then the rest in order', /\{ \.\.\.asTake\(rolls\[0\]\), \.\.\.\(rolls\.length > 1 \? \{ more: rolls\.slice\(1\)\.map\(asTake\) \} : \{\}\) \}/.test(U))
+check('a file that did not come stops the add and says so', /disabled=\{!ready\(review\) \|\| !!uploading \|\| brollBad \|\| adding\}/.test(U) && /A B-roll file did not come in\. Take it out, or add it again\./.test(U))
+check('the form says MVP uses them all', /MVP looks through all \{brolls\.filter\(\(b\) => !b\.error\)\.length\} and puts each shot where you talk about what it shows\./.test(U))
+const R = read('app/api/review-edit/route.ts')
+check('the add accepts a B-roll of several files, each checked', /const broll = body\.broll \? await src\(body\.broll\) : null/.test(R) && /One video can be joined from up to \$\{MAX_TAKE_FILES\} files\./.test(R))
+
+if (fails.length) {
+  console.error(`\n❌ review-edit-brolls: ${fails.length} failure(s)\n`)
+  for (const f of fails) console.error(`   • ${f}`)
+  process.exit(1)
+}
+console.log('✅ review-edit-brolls: several B-roll files for one video, from Drive or the computer, joined, each shot kept inside its own file')

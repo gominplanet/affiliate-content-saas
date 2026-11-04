@@ -30,7 +30,8 @@ import { useLook, useSection } from '@/components/layout/shell-nav-context'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { BULK_VIDEO_MAX_BYTES, tooBigWords } from '@/lib/clip-source-limits'
 import { uploadTake } from '@/components/review-editor/upload-take'
-import { pickFromDrive, type DriveState } from '@/components/review-editor/drive-picker'
+import { pickFromDrive, pickVideosFromDrive, type DriveState } from '@/components/review-editor/drive-picker'
+import { MAX_FILES } from '@/lib/review-edit-batch'
 import DriveBatch from '@/components/review-editor/DriveBatch'
 import ComputerBatch from '@/components/review-editor/ComputerBatch'
 import CalloutPicker from '@/components/review-editor/CalloutPicker'
@@ -475,7 +476,18 @@ export default function ReviewEditor() {
   const [tab, setTab] = useState<'drive' | 'computer' | 'one'>('drive')
   const [kind, setKind] = useState<VideoKind>('review')
   const [review, setReview] = useState<Upl | null>(null)
-  const [broll, setBroll] = useState<Upl | null>(null)
+  // SEVERAL B-ROLL FILES FOR ONE VIDEO (Seb, 2026-11-04: "upload more than one
+  // file for b roll.. and let mvp use them all together as it sees fit"):
+  // joined in order into one B-roll take, every shot in any of them free to
+  // go under the line that talks about it. Each keeps its own key while it
+  // uploads.
+  const [brolls, setBrollsState] = useState<(Upl & { key: string })[]>([])
+  // The list as it is right now, for the steps that run across awaits.
+  const brollsNow = useRef<(Upl & { key: string })[]>([])
+  const setBrolls = useCallback((next: (Upl & { key: string })[] | ((list: (Upl & { key: string })[]) => (Upl & { key: string })[])) => {
+    brollsNow.current = typeof next === 'function' ? next(brollsNow.current) : next
+    setBrollsState(brollsNow.current)
+  }, [])
   const [product, setProduct] = useState('')
   const [callouts, setCallouts] = useState<string[]>([])
   const [adding, setAdding] = useState(false)
@@ -518,11 +530,17 @@ export default function ReviewEditor() {
       const st = await loadDrive()
       if (!st?.connected || !st.token) { toast.error(st?.error || 'Connect Google Drive first.'); return }
       if (!st.appId) { toast.error('MVP’s Google project number is missing, so the picker cannot open.'); return }
+      if (which === 'broll') {
+        const picked = await pickVideosFromDrive({ token: st.token, appId: st.appId, key: st.key, title: `Choose your B-roll (up to ${MAX_FILES} files: Shift or Ctrl to pick several)` })
+        const videos = picked.filter((f) => f.mimeType.startsWith('video/'))
+        if (videos.length < picked.length) toast.error(`${picked.length - videos.length === 1 ? 'One file is' : `${picked.length - videos.length} files are`} not a video and ${picked.length - videos.length === 1 ? 'was' : 'were'} left out.`)
+        addBrolls(videos.map((f) => ({ key: `d:${f.id}`, name: f.name, bytes: f.bytes ?? 0, sent: f.bytes ?? 0, url: null, driveId: f.id, error: null })))
+        return
+      }
       const f = await pickFromDrive({ token: st.token, appId: st.appId, key: st.key, title: which === 'review' ? 'Choose your talking take' : 'Choose your B-roll take' })
       if (!f) return
       if (!f.mimeType.startsWith('video/')) { toast.error(`${f.name} is not a video.`); return }
-      const set = which === 'review' ? setReview : setBroll
-      set({ name: f.name, bytes: f.bytes ?? 0, sent: f.bytes ?? 0, url: null, driveId: f.id, error: null })
+      setReview({ name: f.name, bytes: f.bytes ?? 0, sent: f.bytes ?? 0, url: null, driveId: f.id, error: null })
     } catch (e) { toast.error(e instanceof Error ? e.message : 'Google’s picker did not open.') } finally { setPicking(null) }
   }
   const disconnectDrive = async () => {
@@ -562,8 +580,41 @@ export default function ReviewEditor() {
   }
   const cancelLook = () => { if (savedLook) setSettings(savedLook); setLookOpen(false) }
 
-  const upload = async (file: File, which: 'review' | 'broll') => {
-    const setU = which === 'review' ? setReview : setBroll
+  /** B-roll files added to the list: each once, up to MAX_FILES, the rest said. */
+  const addBrolls = (items: (Upl & { key: string })[]): (Upl & { key: string })[] => {
+    const list = brollsNow.current
+    const fresh = items.filter((x) => !list.some((y) => y.key === x.key))
+    const added = fresh.slice(0, Math.max(0, MAX_FILES - list.length))
+    setBrolls([...list, ...added])
+    const over = fresh.length - added.length
+    if (over > 0) toast.error(`One video takes up to ${MAX_FILES} B-roll files, so ${over === 1 ? 'one was' : `${over} were`} left out.`)
+    return added
+  }
+  const setBrollItem = (key: string, f: (u: Upl & { key: string }) => Upl & { key: string }) => setBrolls((list) => list.map((u) => (u.key === key ? f(u) : u)))
+  /** B-roll files from the computer: each checked, then uploaded one after the other. */
+  const uploadBrolls = async (files: File[]) => {
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) { toast.error('Sign in again, then add the B-roll.'); return }
+    const items = files.map((file) => ({
+      key: `u:${file.name}:${file.size}:${file.lastModified}`, name: file.name, bytes: file.size, sent: 0, url: null as string | null,
+      error: !file.type.startsWith('video/') ? 'That is not a video file.' : file.size > BULK_VIDEO_MAX_BYTES ? tooBigWords(file.size) : null,
+      file,
+    }))
+    const added = addBrolls(items.map(({ file: _f, ...u }) => u))
+    for (const it of items) {
+      // Taken out while the ones before it went up: not uploaded.
+      if (it.error || !added.some((a) => a.key === it.key) || !brollsNow.current.some((b) => b.key === it.key)) continue
+      try {
+        const { url } = await uploadTake(supabase, user.id, it.file, (sent) => setBrollItem(it.key, (u) => ({ ...u, sent })))
+        setBrollItem(it.key, (u) => ({ ...u, sent: it.bytes, url }))
+      } catch (e) {
+        setBrollItem(it.key, (u) => ({ ...u, error: e instanceof Error ? e.message : 'The upload failed.' }))
+      }
+    }
+  }
+
+  const upload = async (file: File, which: 'review') => {
+    const setU = setReview
     if (!file.type.startsWith('video/')) { toast.error('That is not a video file.'); return }
     if (file.size > BULK_VIDEO_MAX_BYTES) { setU({ name: file.name, bytes: file.size, sent: 0, url: null, error: `${tooBigWords(file.size)} Split it into two files and add them as a batch: MVP joins them into one video.` }); return }
     const { data: { user } } = await supabase.auth.getUser()
@@ -622,18 +673,23 @@ export default function ReviewEditor() {
     setAdding(true)
     try {
       const look = cleanSettings({ ...settings, kind, callouts }, settings)
-      await api({ action: 'add', name: review.name.replace(/\.[^.]+$/, ''), review: asTake(review), broll: broll && ready(broll) ? asTake(broll) : undefined, product, settings: look })
+      // Every B-roll file, joined in the order shown: the first, then `more`.
+      const rolls = brolls.filter(ready)
+      const brollTake = rolls.length ? { ...asTake(rolls[0]), ...(rolls.length > 1 ? { more: rolls.slice(1).map(asTake) } : {}) } : undefined
+      await api({ action: 'add', name: review.name.replace(/\.[^.]+$/, ''), review: asTake(review), broll: brollTake, product, settings: look })
       toast.success('Added. MVP works on it in the background; you can add the next one now.')
-      setReview(null); setBroll(null); setProduct(''); setCallouts([])
+      setReview(null); setBrolls([]); setProduct(''); setCallouts([])
       await load()
     } catch (e) { toast.error(e instanceof Error ? e.message : 'Not added.') } finally { setAdding(false) }
   }
 
-  const uploading = (review && !ready(review) && !review.error) || (broll && !ready(broll) && !broll.error)
+  const uploading = (review && !ready(review) && !review.error) || brolls.some((b) => !ready(b) && !b.error)
+  // A B-roll file that did not come is never quietly left out of the video.
+  const brollBad = brolls.some((b) => !!b.error)
   /** One take's box: what is in it, or the buttons to fill it. */
-  const takeBox = (which: 'review' | 'broll', label: string, hint: string) => {
-    const u = which === 'review' ? review : broll
-    const clear = () => (which === 'review' ? setReview(null) : setBroll(null))
+  const takeBox = (which: 'review', label: string, hint: string) => {
+    const u = review
+    const clear = () => setReview(null)
     return (
       <div className="rounded-xl border border-dashed p-3 flex flex-col gap-2" style={{ borderColor: 'var(--border-2)' }}>
         <p className="text-[13px] font-semibold">{label} <span className="font-normal" style={soft}>{hint}</span></p>
@@ -651,10 +707,49 @@ export default function ReviewEditor() {
             </button>
           )}
           <label className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[12.5px] font-semibold cursor-pointer" style={{ borderColor: 'var(--border-2)' }}>
-            {which === 'review' ? <UploadCloud size={13} /> : <Film size={13} />} {u ? 'Upload another' : 'Upload from this computer'}
+            <UploadCloud size={13} /> {u ? 'Upload another' : 'Upload from this computer'}
             <input type="file" accept="video/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) void upload(f, which); e.target.value = '' }} />
           </label>
           {u && <button type="button" onClick={clear} className="text-[12px] underline" style={soft}>Clear</button>}
+        </div>
+      </div>
+    )
+  }
+  /** The B-roll box: every file in it, each with how it is going, and the
+   *  buttons to add more (several at once from either place). */
+  const brollBox = () => {
+    const full = brolls.length >= MAX_FILES
+    return (
+      <div className="rounded-xl border border-dashed p-3 flex flex-col gap-2" style={{ borderColor: 'var(--border-2)' }}>
+        <p className="text-[13px] font-semibold">Your B-roll <span className="font-normal" style={soft}>(optional: up to {MAX_FILES} files, {kind === 'trybe' ? 'filmed upright' : 'filmed sideways'})</span></p>
+        {brolls.length > 0 && (
+          <ul className="flex flex-col gap-1">
+            {brolls.map((u) => (
+              <li key={u.key} className="flex items-start gap-2 text-[12.5px]">
+                <span className="flex-1 min-w-0">
+                  {u.error ? <span style={{ color: RED }}>{u.name}: {u.error}</span>
+                    : u.driveId ? <span className="inline-flex items-center gap-1" style={{ color: GREEN }}><Check size={13} /> {u.name}, from Google Drive{u.bytes ? ` (${mb(u.bytes)})` : ''}</span>
+                    : u.url ? <span className="inline-flex items-center gap-1" style={{ color: GREEN }}><Check size={13} /> {u.name} is up ({mb(u.bytes)})</span>
+                    : <span className="inline-flex items-center gap-1.5" style={soft}><Loader2 size={12} className="animate-spin" /> {u.sent > 0 ? `Uploading ${u.name}: ${Math.round((u.sent / Math.max(1, u.bytes)) * 100)}%` : `${u.name}: waiting its turn to upload`}</span>}
+                </span>
+                <button type="button" onClick={() => setBrolls((list) => list.filter((x) => x.key !== u.key))} className="text-[12px] underline shrink-0" style={soft} aria-label={`Take ${u.name} out`}>Take out</button>
+              </li>
+            ))}
+          </ul>
+        )}
+        {brolls.filter((b) => !b.error).length > 1 && <p className="text-[12px]" style={soft}>MVP looks through all {brolls.filter((b) => !b.error).length} and puts each shot where you talk about what it shows.</p>}
+        <div className="flex flex-wrap gap-2">
+          {drive?.connected && (
+            <button type="button" onClick={() => void fromDrive('broll')} disabled={!!picking || full}
+              className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12.5px] font-semibold text-white disabled:opacity-50" style={{ background: BLUE }}>
+              {picking === 'broll' ? <Loader2 size={13} className="animate-spin" /> : <HardDrive size={13} />} {brolls.length ? 'More from Drive' : 'From Google Drive'}
+            </button>
+          )}
+          <label className={cn('inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[12.5px] font-semibold', full ? 'opacity-50 pointer-events-none' : 'cursor-pointer')} style={{ borderColor: 'var(--border-2)' }}>
+            <Film size={13} /> {brolls.length ? 'Upload more' : 'Upload from this computer'}
+            <input type="file" accept="video/*" multiple className="hidden" disabled={full} onChange={(e) => { const fs = Array.from(e.target.files ?? []); if (fs.length) void uploadBrolls(fs); e.target.value = '' }} />
+          </label>
+          {brolls.length > 0 && <button type="button" onClick={() => setBrolls([])} className="text-[12px] underline" style={soft}>Clear all</button>}
         </div>
       </div>
     )
@@ -858,7 +953,7 @@ export default function ReviewEditor() {
             </div>
             <div className="grid sm:grid-cols-2 gap-3">
               {takeBox('review', 'Your talking take', kind === 'trybe' ? '(filmed upright)' : '(filmed sideways)')}
-              {takeBox('broll', 'Your B-roll take', '(optional)')}
+              {brollBox()}
             </div>
             <p className="text-[12px] -mt-1" style={soft}>Your talking take is in two or more files? Use <button type="button" onClick={() => setTab('computer')} className="underline font-semibold" style={{ color: PURPLE }}>A batch from this computer</button> or one from Google Drive: you say which video each file is for, and MVP joins them.</p>
             <label className="text-[13px] font-semibold">The product <span className="font-normal" style={soft}>(optional: its Amazon ASIN, a link to it, or {kind === 'trybe' ? 'the brand and product' : 'its name'})</span>
@@ -866,11 +961,11 @@ export default function ReviewEditor() {
             </label>
             <CalloutPicker product={product} value={callouts} onChange={setCallouts} disabled={adding} />
             <div className="flex flex-wrap items-center gap-2">
-              <button type="button" onClick={() => void add()} disabled={!ready(review) || !!uploading || adding}
+              <button type="button" onClick={() => void add()} disabled={!ready(review) || !!uploading || brollBad || adding}
                 className={cn('inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-[13.5px] font-semibold text-white disabled:opacity-50', teal && PILL)} style={{ background: PURPLE }}>
                 {adding ? <Loader2 size={14} className="animate-spin" /> : <Scissors size={14} />} Add to the queue
               </button>
-              <span className="text-[12.5px]" style={soft}>{!review ? 'Add your talking take first.' : uploading ? 'Waiting for the upload to finish.' : 'It uses your look above.'}</span>
+              <span className="text-[12.5px]" style={review && !uploading && brollBad ? { color: RED } : soft}>{!review ? 'Add your talking take first.' : uploading ? 'Waiting for the uploads to finish.' : brollBad ? 'A B-roll file did not come in. Take it out, or add it again.' : 'It uses your look above.'}</span>
             </div>
           </div>
         )}

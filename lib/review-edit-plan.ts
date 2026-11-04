@@ -110,12 +110,18 @@ export function edgeLines(raw: Record<string, unknown> | null, lines: Line[]): {
 /** What each part of the B-roll take shows. frames: small pictures, evenly
  *  through the take. Shots shorter than 1.5 seconds, or shaky, blurry or
  *  pointing at nothing, are left out. */
-export async function readShots(frames: { at: number; jpg: string }[], duration: number, who: Who): Promise<Shot[]> {
+export async function readShots(frames: { at: number; jpg: string }[], duration: number, who: Who, starts: number[] = [0]): Promise<Shot[]> {
   if (!frames.length) return []
   const step = duration / frames.length
-  const content: Array<Record<string, unknown>> = [{ type: 'text', text: `These are ${frames.length} frames from one continuous B-roll take of a product, ${clock(duration)} long, in order, one every ${step.toFixed(1)} seconds.` }]
+  // SEVERAL B-ROLL FILES (Seb, 2026-11-04) are joined in order: said, so a
+  // shot is never grouped across two of them.
+  const clips = starts.length > 1
+  const clipOf = (t: number) => { let i = 0; while (i + 1 < starts.length && t >= starts[i + 1]) i++; return i }
+  const content: Array<Record<string, unknown>> = [{ type: 'text', text: clips
+    ? `These are ${frames.length} frames from ${starts.length} B-roll clips of a product, joined in order, ${clock(duration)} in all, one frame every ${step.toFixed(1)} seconds. Each frame says which clip it is from. A shot never runs from one clip into the next.`
+    : `These are ${frames.length} frames from one continuous B-roll take of a product, ${clock(duration)} long, in order, one every ${step.toFixed(1)} seconds.` }]
   frames.forEach((f, i) => {
-    content.push({ type: 'text', text: `Frame ${i + 1} (${clock(f.at)})` })
+    content.push({ type: 'text', text: `Frame ${i + 1} (${clock(f.at)})${clips ? `, clip ${clipOf(f.at) + 1}` : ''}` })
     content.push({ type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: f.jpg } })
   })
   content.push({ type: 'text', text: 'Group the frames into shots: runs of frames showing the same thing. Leave out frames that are blurry, mid move, or show nothing useful (floor, hand covering the lens). Reply with JSON only: {"shots":[{"from":1,"to":4,"what":"close up of the zipper"}]}. "what" is under ten plain words saying what the viewer sees.' })
@@ -130,12 +136,26 @@ export async function readShots(frames: { at: number; jpg: string }[], duration:
   for (const s of Array.isArray(raw?.shots) ? raw!.shots as Record<string, unknown>[] : []) {
     const a = Number(s?.from), b = Number(s?.to ?? s?.from)
     if (!(a >= 1 && b >= a && b <= frames.length)) continue
-    const start = Math.max(0, frames[a - 1].at - step / 2)
-    const end = Math.min(duration, frames[b - 1].at + step / 2)
+    let start = Math.max(0, frames[a - 1].at - step / 2)
+    let end = Math.min(duration, frames[b - 1].at + step / 2)
+    // Inside one clip, whatever was answered: the longer side of a shot that
+    // runs over the join between two clips is kept.
+    ;[start, end] = withinClip(start, end, starts, duration)
     if (end - start < 1.5) continue
     out.push({ n: out.length + 1, start: Math.round(start * 100) / 100, end: Math.round(end * 100) / 100, what: noDash(s?.what, 80) || 'B-roll' })
   }
   return out
+}
+
+/** A stretch of joined B-roll kept inside one clip: when it runs over the
+ *  join between two clips, the longer side. Pure. */
+export function withinClip(start: number, end: number, starts: number[], duration: number): [number, number] {
+  const joins = starts.filter((t) => t > start + 1e-6 && t < end - 1e-6)
+  if (!joins.length) return [start, end]
+  const cuts = [start, ...joins, Math.min(end, duration)]
+  let best: [number, number] = [start, joins[0]]
+  for (let i = 0; i + 1 < cuts.length; i++) if (cuts[i + 1] - cuts[i] > best[1] - best[0]) best = [cuts[i], cuts[i + 1]]
+  return best
 }
 
 /** Whether the B-roll shows the product the talk is about (Seb, 2026-10-30:

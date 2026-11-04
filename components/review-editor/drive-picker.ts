@@ -72,6 +72,23 @@ export async function pickFromDrive(o: { token: string; appId: string; key: stri
 
 type Base = { token: string; appId: string; key: string | null; title: string }
 
+/** Open the picker on the creator's videos with several allowed (Shift or
+ *  Ctrl to pick more): the B-roll clips for one video. Resolves with the
+ *  files chosen, or none when they closed it. */
+export async function pickVideosFromDrive(o: Base): Promise<PickedFile[]> {
+  await loadPicker()
+  const g = window.google
+  return new Promise((resolve) => {
+    // Your own Drive and your own videos, as for one take (pickFromDrive).
+    const mine = new g.picker.DocsView(g.picker.ViewId.DOCS).setParent('root').setIncludeFolders(true).setSelectFolderEnabled(false)
+      .setMimeTypes(VIDEO_TYPES).setMode(g.picker.DocsViewMode.LIST).setLabel('My Drive')
+    const recent = new g.picker.DocsView(g.picker.ViewId.DOCS_VIDEOS).setOwnedByMe(true).setMode(g.picker.DocsViewMode.LIST).setLabel('My videos')
+    open(o, [mine, recent], true, (docs) => resolve(docs.map((d: any) => ({
+      id: d[g.picker.Document.ID], name: d[g.picker.Document.NAME] || 'video', bytes: Number(d.sizeBytes) || null, mimeType: d[g.picker.Document.MIME_TYPE] || 'video/mp4',
+    }))))
+  })
+}
+
 function open(o: Base, views: any[], multi: boolean, read: (docs: any[]) => void) {
   const g = window.google
   let b = new g.picker.PickerBuilder().setAppId(o.appId).setOAuthToken(o.token).setTitle(o.title)
