@@ -44,6 +44,32 @@ function ffprobeInfo(input, auth = null) {
   })
 }
 
+/** WHY A FILE WOULD NOT OPEN, in plain words (Seb, 2026-11-04: a DJI take
+ *  stopped on "That file could not be read as a video" and nothing said why).
+ *  ffprobe's own complaint, read again with more time. Never throws. */
+function probeWhy(input, auth = null) {
+  return new Promise((resolve) => {
+    execFile('ffprobe', ['-v', 'error', ...authArgs(auth), '-show_entries', 'format=duration', '-of', 'json', input],
+      { timeout: 90_000, killSignal: 'SIGKILL', maxBuffer: 1024 * 1024 }, (err, _so, se) => {
+        const said = String(se || '').trim()
+        if (err && err.killed) return resolve('it took more than a minute and a half to open, so the connection to it may be slow')
+        resolve(plainProbeError(said || (err ? err.message : '')))
+      })
+  })
+}
+
+/** ffprobe's complaint as a reason a person can act on. Pure. */
+function plainProbeError(text) {
+  const t = String(text || '')
+  if (/\b404\b|not found/i.test(t) && !/moov/i.test(t)) return 'MVP cannot find the file (404). Upload it again'
+  if (/\b40[13]\b|forbidden|unauthori[sz]ed/i.test(t)) return 'MVP was not allowed to open it (403)'
+  if (/moov atom not found/i.test(t)) return 'the file is not complete: the part that tells a player how to play it is missing, usually because the upload or the recording did not finish'
+  if (/invalid data found/i.test(t)) return 'it is not a video file MVP can read'
+  if (/timed out|timeout|connection reset|end of file|i\/o error/i.test(t)) return 'the connection to it dropped while MVP was reading it'
+  const line = t.split(/\r?\n/).map((x) => x.trim()).filter(Boolean).pop() || ''
+  return line ? `ffprobe said: ${line.slice(0, 160)}` : 'ffprobe gave no reason'
+}
+
 function run(args, timeoutMs, label) {
   return new Promise((resolve, reject) => {
     execFile('ffmpeg', ['-hide_banner', '-loglevel', 'error', ...args], { maxBuffer: 1024 * 1024 * 64, timeout: timeoutMs, killSignal: 'SIGKILL' }, (err, _so, se) => {
@@ -104,4 +130,4 @@ async function joinFiles({ files, dir, name, what = 'take', tone = false, thread
   return { file, lengths, remade: !ok }
 }
 
-module.exports = { ffprobeInfo, joinFiles }
+module.exports = { ffprobeInfo, probeWhy, plainProbeError, joinFiles }

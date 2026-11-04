@@ -111,6 +111,12 @@ const now = () => new Date().toISOString()
 const base = () => (process.env.YOUTUBE_INGEST_URL || '').replace(/\/+$/, '')
 const appUrl = () => (process.env.NEXT_PUBLIC_APP_URL || 'https://www.mvpaffiliate.io').replace(/\/+$/, '')
 
+/** A reason from the video server inside a sentence of ours: its own full
+ *  stop dropped, so the card never ends on "video..". Pure. */
+export function oneStop(s: unknown): string {
+  return String(s ?? '').replace(/[\s.]+$/, '')
+}
+
 async function videoServer<T>(path: string, body: unknown, timeoutMs: number): Promise<{ ok: true; data: T } | { ok: false; status: number; error: string }> {
   if (!base()) return { ok: false, status: 0, error: 'MVP’s video server is not set up.' }
   try {
@@ -162,7 +168,7 @@ export async function readTakes(db: Db, row: EditRow): Promise<void> {
     const probe = await videoServer<{ duration: number; width: number; height: number; hasAudio: boolean; parts?: { duration: number; width: number; height: number; hasAudio: boolean }[] }>('/probe', { ...src.review, frames: 0 }, 90_000)
     // A server from before takes could be joined refuses the files, or reads one.
     const updating = 'MVP’s video server is being updated. Press Try again in half an hour.'
-    if (!probe.ok) return await fail(probe.status === 404 || (many && probe.status === 400) ? updating : `MVP could not open your review take: ${probe.error}.`)
+    if (!probe.ok) return await fail(probe.status === 404 || (many && probe.status === 400) ? updating : `MVP could not open your review take: ${oneStop(probe.error)}.`)
     if (many && !Array.isArray(probe.data.parts)) return await fail(updating)
     const files = takeFiles(row.review_src)
     if (many && probe.data.parts) {
@@ -180,7 +186,7 @@ export async function readTakes(db: Db, row: EditRow): Promise<void> {
     // The sound alone, small, for the transcript; deleted straight after.
     // The sound, and where it is quiet (the dead air, lib/review-edit PACE).
     const audio = await videoServer<{ url: string; silences?: [number, number][] }>('/stream-audio', { ...src.review, userId: row.user_id, silences: true }, 295_000)
-    if (!audio.ok) return await fail(many && audio.status === 400 ? updating : `MVP could not take the sound from your review take: ${audio.error}.`)
+    if (!audio.ok) return await fail(many && audio.status === 400 ? updating : `MVP could not take the sound from your review take: ${oneStop(audio.error)}.`)
     const cues = await transcribeToCues(audio.data.url)
     // What it cost, every time it is written down (Whisper, lib/ai-usage).
     recordUsage({ userId: row.user_id, tier: who.tier, feature: 'review_edit_transcribe', model: 'fal-whisper', images: 1 })
@@ -425,7 +431,7 @@ export async function startMaking(db: Db, row: EditRow): Promise<void> {
   if (!sent.ok) {
     // Not there yet (the server is updating): back in line, not a failure.
     if (sent.status === 404 || sent.status === 0) return set(db, row.id, { status: 'ready_to_make', note: `Waiting for MVP’s video server (${sent.error}). It is tried again by itself.` })
-    return set(db, row.id, { status: 'failed', note: `The video server would not take it: ${sent.error}.` })
+    return set(db, row.id, { status: 'failed', note: `The video server would not take it: ${oneStop(sent.error)}.` })
   }
 }
 

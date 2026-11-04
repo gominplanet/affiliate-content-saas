@@ -35,6 +35,23 @@ import { moveQueue, deleteRaw, ownPath, hasUpload, serverJobs, finishMaking, tak
 import { driveAccessToken, driveFile, isDriveId } from '@/lib/google-drive'
 import { placesInLine } from '@/lib/review-edit-queue'
 
+/** How big a file in storage is, from its public address: its size, 0 when
+ *  it is not there, or null when that could not be found out. Asked twice
+ *  before saying it is missing. */
+async function storedBytes(url: string): Promise<number | null> {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const r = await fetch(url, { method: 'HEAD', signal: AbortSignal.timeout(10_000), cache: 'no-store' })
+      if (r.status === 404 || r.status === 400) { if (attempt === 0) { await new Promise((ok) => setTimeout(ok, 2000)); continue } return 0 }
+      if (!r.ok) return null
+      const n = Number(r.headers.get('content-length'))
+      return Number.isFinite(n) && n > 0 ? n : null
+    } catch { return null }
+  }
+  return null
+}
+const mbOf = (n: number) => (n >= 1024 ** 3 ? `${(n / 1024 ** 3).toFixed(2)} GB` : `${Math.round(n / 1024 ** 2)} MB`)
+
 export const runtime = 'nodejs'
 export const maxDuration = 300
 
@@ -235,7 +252,16 @@ export async function POST(request: Request) {
         return { kind: 'drive', fileId: f.file.id, name: f.file.name.slice(0, 200), bytes: f.file.bytes ?? undefined }
       }
       if (!own(o.url)) return null
-      return { kind: 'upload', url: String(o.url), path: ownPath(String(o.url), g.userId)!, name: String(o.name || '').slice(0, 200), bytes: Number(o.bytes) || undefined }
+      // ALL OF IT ARRIVED (Seb, 2026-11-04: a DJI take was added, then could
+      // not be read). Storage is asked for the file before it is queued: one
+      // that is not there, or is smaller than the file that was sent, is said
+      // now, by name. A check that cannot run holds nothing up.
+      const name = String(o.name || '').slice(0, 200)
+      const sent = Number(o.bytes) || 0
+      const got = await storedBytes(String(o.url))
+      if (got === 0) return { error: `${name || 'That file'} did not finish uploading: MVP cannot find it. Upload it again.` }
+      if (got !== null && sent > 0 && Math.abs(got - sent) > 1024) return { error: `${name || 'That file'} did not finish uploading: MVP has ${mbOf(got)} of ${mbOf(sent)}. Upload it again.` }
+      return { kind: 'upload', url: String(o.url), path: ownPath(String(o.url), g.userId)!, name, bytes: sent || undefined }
     }
     // A take of several files (Seb, 2026-11-02: "these files are for video
     // #1"): each checked the same way, joined in the order given, never the

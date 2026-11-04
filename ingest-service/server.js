@@ -1273,7 +1273,7 @@ app.post('/dub', async (req, res) => {
 // job's own temp folder, removed when the job ends, whatever happened.
 const { buildEditGraph, cleanInserts, snapSegments, editSeconds, masterSize, driveAuth, authArgs, hdrChain, filmedAtFrom, takeParts, partAt, joinedAudioGraph, FPS: EDIT_FPS, MAX_PICTURES: EDIT_MAX_PICTURES } = require('./edit-filters')
 // Several files of one take joined into one video, and what a video is.
-const { joinFiles, ffprobeInfo } = require('./join-takes')
+const { joinFiles, ffprobeInfo, probeWhy } = require('./join-takes')
 // Encoder threads per format. A small box stays at 2; a bigger one goes faster.
 const EDIT_THREADS = String(Math.max(1, Math.min(8, Number(process.env.EDIT_THREADS) || 2)))
 const EDIT_MAX_SOURCE_SEC = 60 * 60
@@ -1356,8 +1356,15 @@ app.post('/probe', async (req, res) => {
   try {
     for (const p of parts) await assertPublicHttpUrl(p.url)
     const infos = await Promise.all(parts.map((p) => ffprobeInfo(p.url, p.auth)))
+    // ONE MORE GO for a file that would not open: a slow or dropped
+    // connection to a big file passes on a second try.
+    for (let i = 0; i < infos.length; i++) if (!infos[i] || !infos[i].w) infos[i] = await ffprobeInfo(parts[i].url, parts[i].auth)
     const bad = infos.findIndex((x) => !x || !x.w)
-    if (bad >= 0) return res.status(422).json({ error: parts.length > 1 ? `File ${bad + 1} of ${parts.length} could not be read as a video.` : 'That file could not be read as a video.' })
+    if (bad >= 0) {
+      // SAID WHY, not only that it failed: missing, not allowed, incomplete, slow.
+      const why = infos[bad] && !infos[bad].w ? 'it has no picture in it' : await probeWhy(parts[bad].url, parts[bad].auth)
+      return res.status(422).json({ error: `${parts.length > 1 ? `File ${bad + 1} of ${parts.length}` : 'That file'} could not be read as a video: ${why}` })
+    }
     const info = infos[0]
     const lengths = infos.map((x) => x.duration)
     const duration = lengths.reduce((a, b) => a + b, 0)
