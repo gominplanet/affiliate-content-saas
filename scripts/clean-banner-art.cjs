@@ -9,8 +9,9 @@
 // 560. The fixes below are for the first set (2026-11-04), named per file:
 //   - CHECKER: a grey stair-step shadow painted under the object instead of a
 //     see-through one. Flooded away from the see-through side, stopping at
-//     anything coloured or outlined. Not clean enough on articles, blog-design,
-//     blog-posts and ended-deals, which are held back (HOLD) until remade.
+//     anything coloured or outlined. It was not clean enough on articles,
+//     blog-design, blog-posts and ended-deals, so those were remade (the
+//     second set, clean) instead. HOLD keeps a picture off until remade.
 //   - HAZE: a pale see-through box behind the whole picture, lifted off.
 //   - meta-hub, group-queue: a piece cut off at the box's edge.
 //   - face-models, team, brand-voice, meta-hub: a stray sliver or dot.
@@ -22,23 +23,25 @@ const path = require('path')
 const SRC = process.argv[2]
 if (!SRC) { console.error('Usage: node scripts/clean-banner-art.cjs <folder of PNGs> [name,name]'); process.exit(1) }
 const OUT = path.join(__dirname, '..', 'public', 'banners')
-const HOLD = new Set(['articles', 'blog-design', 'blog-posts', 'ended-deals'])
+const HOLD = new Set()
 const MAP = {
   'Instagram auto dm.png': 'instagram-auto-dm', 'Isometric Dashboard Orbit Illustration.png': 'dashboard',
   'ads.png': 'ads', 'amazon live.png': 'amazon-live', 'articles.png': 'articles', 'ask-mvp.png': 'ask-mvp',
-  'blog-design.png': 'blog-design', 'blog-posts.png': 'blog-posts', 'brand-campaigns.png': 'brand-campaigns',
+  'blog design.png': 'blog-design', 'blog post.png': 'blog-posts', 'brand-campaigns.png': 'brand-campaigns',
   'brand-inbox.png': 'brand-inbox', 'brand-pitches.png': 'brand-pitches', 'brand-voice.png': 'brand-voice',
   'bulk amazon upload.png': 'bulk-amazon-upload', 'clipfactory.png': 'clip-factory', 'comparisons.png': 'comparisons',
   'connections.png': 'connections', 'deal-radar.png': 'deal-radar', 'deals-hub.png': 'deals-hub', 'drop.png': 'drop',
-  'ended-deals.png': 'ended-deals', 'face-models.png': 'face-models', 'group-queue.png': 'group-queue',
+  'ended deals.png': 'ended-deals', 'face-models.png': 'face-models', 'group-queue.png': 'group-queue',
   'idea-lists.png': 'idea-lists', 'launch-kit.png': 'launch-kit', 'link-in-bio.png': 'link-in-bio',
   'meta-hub.png': 'meta-hub', 'partner-programs.png': 'partner-programs', 'passport.png': 'passport',
   'plan-usage.png': 'plan-usage', 'product-research.png': 'product-research', 'revieweditor.png': 'review-editor',
   'seo.png': 'seo', 'social-designs.png': 'social-designs', 'social-push.png': 'social-push', 'team.png': 'team',
   'thumbnails.png': 'thumbnails', 'trybe.png': 'trybe', 'tutorials.png': 'tutorials',
   'youtube comments.png': 'youtube-comments', 'youtube copilot.png': 'youtube-co-pilot',
+  // The second set (2026-11-04): remakes of the four held back, and three new pages.
+  'hashtags insight.png': 'hashtag-insights', 'newsletter.png': 'newsletter', 'scriptwriter.png': 'scriptwriter',
 }
-const CHECKER = new Set(['ads', 'articles', 'blog-design', 'blog-posts', 'comparisons', 'ended-deals', 'seo'])
+const CHECKER = new Set(['ads', 'comparisons', 'seo'])
 const HAZE = new Set(['deals-hub', 'group-queue', 'launch-kit', 'link-in-bio', 'meta-hub', 'passport', 'social-designs', 'social-push'])
 const SLIVER = new Set(['face-models', 'team'])
 const only = process.argv[3] ? new Set(process.argv[3].split(',')) : null

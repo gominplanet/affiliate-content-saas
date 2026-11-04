@@ -7,10 +7,8 @@
 // menu icon instead.
 //
 // The files are public/banners/<name>.webp, cleaned and shrunk from Seb's
-// PNGs by scripts/clean-banner-art.cjs. Held back until remade, because the
-// picture has a grey checkerboard painted under it that would show on the
-// page: Articles, Blog design, Blog posts and Ended deals. Not made yet:
-// Scriptwriter, Newsletter, Hashtag insights.
+// PNGs by scripts/clean-banner-art.cjs. Every job row of the menu has one;
+// Labs and Admin rows show their icon.
 
 export const BANNER_ART: Readonly<Record<string, string>> = {
   'Dashboard': 'dashboard',
@@ -26,15 +24,21 @@ export const BANNER_ART: Readonly<Record<string, string>> = {
   'Review Editor': 'review-editor',
   'YouTube Co-Pilot': 'youtube-co-pilot',
   'Thumbnails': 'thumbnails',
+  'Scriptwriter': 'scriptwriter',
   'Clip Factory': 'clip-factory',
   'Bulk Amazon upload': 'bulk-amazon-upload',
   'YouTube comments': 'youtube-comments',
   'Instagram Auto-DM': 'instagram-auto-dm',
   'Amazon Live': 'amazon-live',
   // Blog
+  'Blog posts': 'blog-posts',
   'Comparisons and guides': 'comparisons',
+  'Articles': 'articles',
+  'Ended deals': 'ended-deals',
   'SEO and indexing': 'seo',
   'Ads': 'ads',
+  'Blog design': 'blog-design',
+  'Newsletter': 'newsletter',
   // Share
   'Social Push': 'social-push',
   'Deals Hub': 'deals-hub',
@@ -42,6 +46,7 @@ export const BANNER_ART: Readonly<Record<string, string>> = {
   'Social Launch Kit': 'launch-kit',
   'Meta Hub': 'meta-hub',
   'Group Post Queue': 'group-queue',
+  'Hashtag insights': 'hashtag-insights',
   'Link in Bio': 'link-in-bio',
   'Passport links': 'passport',
   // Work with brands

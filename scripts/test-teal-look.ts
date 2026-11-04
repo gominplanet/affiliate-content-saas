@@ -12,8 +12,9 @@
 //   - the new Dashboard's "Everything MVP does" has a line for every menu row,
 //     and lists rows from the menu itself, never from a list of its own;
 //   - the search box understands the plain requests its new wording invites;
-//   - every page picture belongs to a real menu row and is on disk, small, and
-//     every header (the shared one and the four drawn by hand) shows it.
+//   - every job row of the menu has a page picture, each belongs to a real
+//     menu row and is on disk and small, and every header (the shared one and
+//     the four drawn by hand) shows it.
 import { readFileSync, readdirSync, statSync, existsSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import path from 'node:path'
@@ -202,8 +203,9 @@ async function main() {
   const files = readdirSync(path.join(ROOT, 'public/banners'))
   const listed = new Set(Object.values(BANNER_ART).map((n) => `${n}.webp`))
   check('the folder holds only small webp pictures the list uses (no PNGs shipped)', files.every((f) => listed.has(f) && statSync(path.join(ROOT, 'public/banners', f)).size < 200_000), files.filter((f) => !listed.has(f) || statSync(path.join(ROOT, 'public/banners', f)).size >= 200_000))
-  check('a page with a picture gets its path, one without gets none', bannerFor('Drop') === '/banners/drop.webp' && bannerFor('Scriptwriter') === null && bannerFor(null) === null)
-  check('the pictures held back for their painted checkerboard stay off', ['Articles', 'Blog design', 'Blog posts', 'Ended deals'].every((l) => bannerFor(l) === null))
+  check('a page with a picture gets its path, one without gets none', bannerFor('Drop') === '/banners/drop.webp' && bannerFor('Brand Radar') === null && bannerFor(null) === null)
+  const JOB_ROWS = ['Dashboard', 'Product research', 'Deal Radar', 'Brand campaigns', 'Partner programs', 'Idea lists', 'TRYBE', 'Drop', 'Review Editor', 'YouTube Co-Pilot', 'Thumbnails', 'Scriptwriter', 'Clip Factory', 'Bulk Amazon upload', 'YouTube comments', 'Instagram Auto-DM', 'Amazon Live', 'Blog posts', 'Comparisons and guides', 'Articles', 'Ended deals', 'SEO and indexing', 'Ads', 'Blog design', 'Newsletter', 'Social Push', 'Deals Hub', 'Social designs', 'Social Launch Kit', 'Meta Hub', 'Group Post Queue', 'Hashtag insights', 'Link in Bio', 'Passport links', 'Brand pitches', 'Brand inbox', 'Connections', 'Brand and voice', 'Face models', 'Team', 'Plan and usage', 'Ask MVP', 'Tutorials and support']
+  check('every job row of the menu has its picture', JOB_ROWS.every((l) => bannerFor(l)), JOB_ROWS.filter((l) => !bannerFor(l)))
   check('the shared header shows the page\'s picture', /banner=\{bannerFor\(active\?\.label\)\}/.test(read('components/layout/PageHero.tsx')) && /<TealArt [^>]*banner=\{banner\}/.test(read('components/layout/teal-ui.tsx')))
   check('without a picture the header falls back to the big icon', /if \(banner\) \{/.test(read('components/layout/teal-ui.tsx')) && /\[&_svg\]:w-11/.test(read('components/layout/teal-ui.tsx')))
   check('the hand-drawn headers show their picture', /bannerFor\('YouTube Co-Pilot'\)/.test(read('app/(dashboard)/co-pilot/page.tsx')) && /bannerFor\('Review Editor'\)/.test(read('components/review-editor/ReviewEditor.tsx')) && /bannerFor\(isSocialTab \? 'Social Push' : 'Blog posts'\)/.test(read('app/(dashboard)/content/page.tsx')) && /bannerFor\('Dashboard'\)/.test(read('components/dashboard/TealDashboard.tsx')))

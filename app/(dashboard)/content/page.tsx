@@ -4534,29 +4534,8 @@ export default function ContentPage() {
                 )}
               </div>
             </div>
-            {/* The tab's picture (lib/banner-art); a drawn blog page or posts going out until it has one. */}
-            {bannerFor(isSocialTab ? 'Social Push' : 'Blog posts') ? (
-              <TealArt tint={headSection?.tint} color={headSection?.color} banner={bannerFor(isSocialTab ? 'Social Push' : 'Blog posts')} />
-            ) : (
-            <div aria-hidden="true" className="hidden sm:block relative flex-[1_1_260px] min-h-[190px] rounded-[18px] overflow-hidden" style={{ background: headSection?.tint ?? 'var(--surface-2)' }}>
-              {isSocialTab ? (
-                <>
-                  <div className="absolute left-[14%] top-[22%] w-[38%] h-[56%] rounded-[12px] flex flex-col gap-1.5 p-2.5" style={{ background: 'var(--bg-sidebar, #fff)' }}>
-                    <span className="h-[46%] rounded-md" style={{ background: '#14B8A6' }} /><span className="h-2 w-[80%] rounded-full" style={{ background: 'var(--surface-2)' }} /><span className="h-2 w-[55%] rounded-full" style={{ background: 'var(--surface-2)' }} />
-                  </div>
-                  <Send size={30} className="absolute right-[18%] top-[34%]" style={{ color: headSection?.color ?? '#FB923C' }} />
-                </>
-              ) : (
-                <div className="absolute left-[14%] right-[14%] top-[16%] bottom-[16%] rounded-[12px] flex flex-col gap-2 p-3" style={{ background: 'var(--bg-sidebar, #fff)' }}>
-                  <span className="h-2.5 w-[70%] rounded-full" style={{ background: '#0F2A2B' }} />
-                  <span className="flex-1 rounded-md" style={{ background: '#14B8A6' }} />
-                  <span className="h-2 w-[90%] rounded-full" style={{ background: 'var(--surface-2)' }} />
-                  <span className="h-2 w-[60%] rounded-full" style={{ background: 'var(--surface-2)' }} />
-                  <span className="h-5 w-[42%] rounded-full" style={{ background: '#FB923C' }} />
-                </div>
-              )}
-            </div>
-            )}
+            {/* The tab's picture (lib/banner-art). */}
+            <TealArt tint={headSection?.tint} color={headSection?.color} banner={bannerFor(isSocialTab ? 'Social Push' : 'Blog posts')} />
           </header>
           {/* THE THREE STEPS, on the blog tab, in the order they happen. */}
           {!isSocialTab && (
