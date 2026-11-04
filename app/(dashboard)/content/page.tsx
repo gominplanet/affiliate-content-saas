@@ -53,6 +53,8 @@ import { useLook, useSection } from '@/components/layout/shell-nav-context'
 import type { PinPreviewData } from '@/components/PinterestPreviewModal'
 import { amazonProductUrlRegex, ASIN_PATH_SEGMENTS } from '@/lib/asin'
 import MadeBefore from '@/components/product/MadeBefore'
+import { TealArt } from '@/components/layout/teal-ui'
+import { bannerFor } from '@/lib/banner-art'
 
 // COST CONTROL (2026-06-12): master switch for every multi-video bulk
 // GENERATION action (bulk generate, bulk schedule, bulk rewrite). Off by
@@ -4532,7 +4534,10 @@ export default function ContentPage() {
                 )}
               </div>
             </div>
-            {/* Room for the banner art: a blog page, or posts going out. */}
+            {/* The tab's picture (lib/banner-art); a drawn blog page or posts going out until it has one. */}
+            {bannerFor(isSocialTab ? 'Social Push' : 'Blog posts') ? (
+              <TealArt tint={headSection?.tint} color={headSection?.color} banner={bannerFor(isSocialTab ? 'Social Push' : 'Blog posts')} />
+            ) : (
             <div aria-hidden="true" className="hidden sm:block relative flex-[1_1_260px] min-h-[190px] rounded-[18px] overflow-hidden" style={{ background: headSection?.tint ?? 'var(--surface-2)' }}>
               {isSocialTab ? (
                 <>
@@ -4551,6 +4556,7 @@ export default function ContentPage() {
                 </div>
               )}
             </div>
+            )}
           </header>
           {/* THE THREE STEPS, on the blog tab, in the order they happen. */}
           {!isSocialTab && (

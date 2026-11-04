@@ -21,7 +21,8 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
-import { AlertTriangle, ArrowRight, BadgeDollarSign, ChevronRight, Loader2, Play, RefreshCw, Sparkles } from 'lucide-react'
+import { AlertTriangle, ArrowRight, BadgeDollarSign, ChevronRight, Loader2, RefreshCw, Sparkles } from 'lucide-react'
+import { bannerFor } from '@/lib/banner-art'
 import type { TodayItem } from '@/lib/today-list'
 import { featureLine } from '@/lib/feature-lines'
 import { useShellNav } from '@/components/layout/shell-nav-context'
@@ -148,15 +149,10 @@ export default function TealDashboard({ firstName, today, meta, primary, seconda
             )}
           </div>
         </div>
-        {/* Room for the banner art; three cards until it arrives. */}
-        <div aria-hidden="true" className="relative hidden md:block flex-[1_1_260px] min-h-[200px]">
-          <div className="absolute right-[8%] top-[4%] w-[140px] h-[180px] rounded-[18px] rotate-6" style={{ background: '#14B8A6' }} />
-          <div className="absolute right-[32%] top-[14%] w-[140px] h-[180px] rounded-[18px] -rotate-[5deg]" style={{ background: '#FB923C' }} />
-          <div className="absolute right-[19%] top-[22%] w-[140px] h-[180px] rounded-[18px] flex items-center justify-center" style={{ background: '#F2F6F6' }}>
-            <span className="w-[52px] h-[52px] rounded-full flex items-center justify-center" style={{ background: '#0F2A2B' }}>
-              <Play size={22} fill="#fff" color="#fff" />
-            </span>
-          </div>
+        {/* The Dashboard's picture (lib/banner-art), drawn for this dark card. */}
+        <div aria-hidden="true" className="relative hidden md:block flex-[1_1_260px] max-w-[460px] min-h-[220px] self-stretch">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={bannerFor('Dashboard') ?? ''} alt="" decoding="async" className="absolute inset-0 m-auto w-full h-full object-contain" />
         </div>
       </section>
 

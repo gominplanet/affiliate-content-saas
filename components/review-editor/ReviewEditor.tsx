@@ -41,6 +41,8 @@ import {
   TITLE_COLORS, TITLE_LOOKS, TITLE_LOOK_WORDS, TITLE_SECONDS, clock, cleanSettings, downloadLink,
   type EditSettings, type Format, type LogoSize, type LogoWhen, type Picture, type PictureTime, type PictureWhen, type Position, type Spot, type TitleColor, type VideoKind,
 } from '@/lib/review-edit'
+import { TealArt } from '@/components/layout/teal-ui'
+import { bannerFor } from '@/lib/banner-art'
 
 // The brand colour: violet in the old look, teal in the new one (globals.css).
 const PURPLE = 'var(--accent)'
@@ -681,13 +683,7 @@ export default function ReviewEditor() {
                 {drive?.connected && <span className="rounded-full px-3 py-1 text-[12.5px] font-bold" style={{ background: 'var(--surface-2)', color: 'var(--text-2)' }}>Takes stay in your Google Drive</span>}
               </div>
             </div>
-            {/* Room for the banner art: a timeline with its cuts until it comes. */}
-            <div aria-hidden="true" className="hidden sm:block relative flex-[1_1_260px] min-h-[190px] rounded-[18px] overflow-hidden" style={{ background: section?.tint ?? 'var(--surface-2)' }}>
-              <div className="absolute left-[10%] right-[10%] top-[38%] h-11 rounded-[10px] flex gap-1.5 p-1.5" style={{ background: 'var(--bg-sidebar, #fff)' }}>
-                {[3, 1, 2, 1, 2].map((f, i) => <span key={i} className="rounded-md" style={{ flex: f, background: i % 2 ? '#FB923C' : '#14B8A6' }} />)}
-              </div>
-              <Scissors size={22} className="absolute left-[44%] top-[22%]" style={{ color: section?.color ?? 'var(--text-3)' }} />
-            </div>
+            <TealArt tint={section?.tint} color={section?.color} banner={bannerFor('Review Editor')} />
           </header>
           {tips}
           {/* THE THREE STEPS, in the order they happen. */}

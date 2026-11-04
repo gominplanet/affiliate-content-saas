@@ -18,7 +18,7 @@ import { useLook } from './shell-nav-context'
 const sora = { fontFamily: 'var(--font-sora), var(--font-jakarta), sans-serif' } as const
 
 /** The header card: section, title, a line on what it does, buttons, chips, art. */
-export function TealHeader({ eyebrow, color, tint, title, line, actions, chips, art, guide, icon }: {
+export function TealHeader({ eyebrow, color, tint, title, line, actions, chips, art, guide, icon, banner }: {
   /** The menu section the page sits in ("Make videos"). */
   eyebrow?: string | null
   /** The section's colour and its pale wash (shell-nav-context). */
@@ -36,6 +36,8 @@ export function TealHeader({ eyebrow, color, tint, title, line, actions, chips, 
   guide?: ReactNode
   /** The page's menu icon, drawn large in the default art. */
   icon?: ReactNode
+  /** The page's picture (lib/banner-art), shown in place of the icon. */
+  banner?: string | null
 }) {
   return (
     <header className="relative rounded-[22px] border p-6 sm:p-8 mb-5 flex flex-wrap items-center gap-6" style={{ background: 'var(--surface)', borderColor: 'var(--border-2)' }}>
@@ -47,17 +49,27 @@ export function TealHeader({ eyebrow, color, tint, title, line, actions, chips, 
         {actions && <div className="mt-1 flex flex-wrap items-center gap-2.5">{actions}</div>}
         {chips && <div className="flex flex-wrap items-center gap-2">{chips}</div>}
       </div>
-      {art ?? <TealArt tint={tint} color={color} icon={icon} />}
+      {art ?? <TealArt tint={tint} color={color} icon={icon} banner={banner} />}
     </header>
   )
 }
 
-/** The default art: the page's icon, large, on its section's wash, with the
- *  look's teal and orange bars. Room for the banner art until it comes. */
-export function TealArt({ tint, color, icon }: { tint?: string; color?: string; icon?: ReactNode }) {
+/** The default art: the page's picture (lib/banner-art) on its section's
+ *  wash, or, for a page without one yet, its icon drawn large with the look's
+ *  teal and orange bars. */
+export function TealArt({ tint, color, icon, banner }: { tint?: string; color?: string; icon?: ReactNode; banner?: string | null }) {
+  const box = 'hidden sm:block relative flex-[1_1_240px] max-w-[440px] min-h-[180px] self-stretch rounded-[18px] overflow-hidden'
+  if (banner) {
+    return (
+      <div aria-hidden="true" className={box} style={{ background: tint ?? 'var(--surface-2)' }}>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={banner} alt="" decoding="async" className="absolute inset-0 m-auto w-[88%] h-[88%] object-contain" />
+      </div>
+    )
+  }
   const big = isValidElement(icon) ? cloneElement(icon as ReactElement<{ size?: number; strokeWidth?: number }>, { size: 44, strokeWidth: 1.8 }) : null
   return (
-    <div aria-hidden="true" className="hidden sm:block relative flex-[1_1_240px] max-w-[440px] min-h-[180px] self-stretch rounded-[18px] overflow-hidden" style={{ background: tint ?? 'var(--surface-2)' }}>
+    <div aria-hidden="true" className={box} style={{ background: tint ?? 'var(--surface-2)' }}>
       {/* [&_svg] sizes an icon a server page already drew, which cloneElement cannot resize. */}
       <span className="absolute left-1/2 top-[40%] -translate-x-1/2 -translate-y-1/2 w-[92px] h-[92px] rounded-[24px] flex items-center justify-center shadow-sm [&_svg]:w-11 [&_svg]:h-11" style={{ background: 'var(--bg-sidebar, #fff)', color: color ?? 'var(--accent)' }}>
         {big}

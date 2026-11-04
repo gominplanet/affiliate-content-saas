@@ -32,8 +32,10 @@ import { readComparisonSlots, productLinksInText, type ComparisonSlotInput } fro
 import {
   Youtube, Wand2, CheckCircle, AlertCircle, Loader2, ExternalLink,
   Copy, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, RefreshCw, Link2, Tag, Lock, Eye, Globe,
-  Image, Download, Sparkles, Upload, X, Search, Calendar, Camera, Package, Plus, EyeOff, Play,
+  Image, Download, Sparkles, Upload, X, Search, Calendar, Camera, Package, Plus, EyeOff,
 } from 'lucide-react'
+import { TealArt } from '@/components/layout/teal-ui'
+import { bannerFor } from '@/lib/banner-art'
 
 /** Walkthrough shown beside the page title. */
 // THE WALKTHROUGH VIDEO, off until it is re-recorded for the full Studio
@@ -4968,14 +4970,7 @@ export default function StudioPage() {
                 </div>
               )}
             </div>
-            {/* Room for the banner art: a video with its title being written. */}
-            <div aria-hidden="true" className="hidden sm:block relative flex-[1_1_260px] min-h-[190px] rounded-[18px] overflow-hidden" style={{ background: section?.tint ?? 'var(--surface-2)' }}>
-              <div className="absolute left-[12%] right-[12%] top-[14%] bottom-[34%] rounded-[12px] flex items-center justify-center" style={{ background: '#0F2A2B' }}>
-                <span className="w-11 h-8 rounded-[9px] flex items-center justify-center" style={{ background: '#ff0000' }}><Play size={16} fill="#fff" color="#fff" /></span>
-              </div>
-              <div className="absolute left-[12%] bottom-[20%] h-2.5 w-[60%] rounded-full" style={{ background: '#14B8A6' }} />
-              <div className="absolute left-[12%] bottom-[10%] h-2.5 w-[38%] rounded-full" style={{ background: '#FB923C' }} />
-            </div>
+            <TealArt tint={section?.tint} color={section?.color} banner={bannerFor('YouTube Co-Pilot')} />
           </header>
           {/* THE THREE STEPS, in the order they happen. */}
           <section aria-label="How it works" className="grid sm:grid-cols-3 gap-3 mb-5">

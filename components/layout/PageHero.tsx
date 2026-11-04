@@ -4,7 +4,8 @@
 // IN THE NEW LOOK (lib/look) this draws the shared header card instead
 // (components/layout/teal-ui TealHeader): the page's menu section in its
 // colour, the title, the subtitle as its line, the actions as its buttons,
-// and the page's menu icon as the art. Every page using PageHero gets it.
+// and the page's picture as the art (lib/banner-art; its menu icon until it
+// has one). Every page using PageHero gets it.
 //
 // PageHero — the V2 page-header used across the dashboard routes.
 //
@@ -20,6 +21,7 @@
 import type { ReactNode } from 'react'
 import { useLook, useActiveNav } from './shell-nav-context'
 import { TealHeader, TealSteps } from './teal-ui'
+import { bannerFor } from '@/lib/banner-art'
 
 interface PageHeroProps {
   title: string
@@ -56,6 +58,7 @@ export default function PageHero({ title, subtitle, actions, accent, media, guid
         color={active?.color}
         tint={active?.tint}
         icon={active?.icon}
+        banner={bannerFor(active?.label)}
         title={title}
         line={subtitle}
         actions={actions}

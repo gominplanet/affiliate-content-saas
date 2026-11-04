@@ -11,8 +11,10 @@
 //     server reads);
 //   - the new Dashboard's "Everything MVP does" has a line for every menu row,
 //     and lists rows from the menu itself, never from a list of its own;
-//   - the search box understands the plain requests its new wording invites.
-import { readFileSync } from 'node:fs'
+//   - the search box understands the plain requests its new wording invites;
+//   - every page picture belongs to a real menu row and is on disk, small, and
+//     every header (the shared one and the four drawn by hand) shows it.
+import { readFileSync, readdirSync, statSync, existsSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import path from 'node:path'
 import postcss from 'postcss'
@@ -21,6 +23,7 @@ import { previewOpenToPro } from '../lib/labs-preview'
 import { FEATURE_LINES } from '../lib/feature-lines'
 import { searchApp, requestWords } from '../lib/app-search-index'
 import { pickBuckets } from '../lib/usage-highlights'
+import { BANNER_ART, bannerFor } from '../lib/banner-art'
 
 const require = createRequire(import.meta.url)
 const ROOT = path.resolve(__dirname, '..')
@@ -189,6 +192,21 @@ async function main() {
   check('"write a post" opens Blog posts', first('write a post') === '/content', searchApp('write a post').map((e) => e.label))
   check('"find deals" opens Deal Radar', first('find deals') === '/deal-radar', searchApp('find deals').map((e) => e.label))
   check('the pages the menu shows are all in search now', ['/drop', '/review-editor', '/trybe', '/instagram-dm', '/group-queue'].every((h) => searchApp(h === '/trybe' ? 'trybe' : h.slice(1).replace('-', ' ')).some((e) => e.href === h)))
+
+  // ── The page pictures ──
+  const menuSrc = read('components/layout/DashboardShellV2.tsx')
+  const notInMenu = Object.keys(BANNER_ART).filter((label) => !menuSrc.includes(`label: '${label}'`))
+  check('every picture is keyed by a label the menu really has', notInMenu.length === 0, notInMenu)
+  const missingArt = Object.values(BANNER_ART).filter((n) => !existsSync(path.join(ROOT, 'public/banners', `${n}.webp`)))
+  check('every picture listed is on disk', missingArt.length === 0, missingArt)
+  const files = readdirSync(path.join(ROOT, 'public/banners'))
+  const listed = new Set(Object.values(BANNER_ART).map((n) => `${n}.webp`))
+  check('the folder holds only small webp pictures the list uses (no PNGs shipped)', files.every((f) => listed.has(f) && statSync(path.join(ROOT, 'public/banners', f)).size < 200_000), files.filter((f) => !listed.has(f) || statSync(path.join(ROOT, 'public/banners', f)).size >= 200_000))
+  check('a page with a picture gets its path, one without gets none', bannerFor('Drop') === '/banners/drop.webp' && bannerFor('Scriptwriter') === null && bannerFor(null) === null)
+  check('the pictures held back for their painted checkerboard stay off', ['Articles', 'Blog design', 'Blog posts', 'Ended deals'].every((l) => bannerFor(l) === null))
+  check('the shared header shows the page\'s picture', /banner=\{bannerFor\(active\?\.label\)\}/.test(read('components/layout/PageHero.tsx')) && /<TealArt [^>]*banner=\{banner\}/.test(read('components/layout/teal-ui.tsx')))
+  check('without a picture the header falls back to the big icon', /if \(banner\) \{/.test(read('components/layout/teal-ui.tsx')) && /\[&_svg\]:w-11/.test(read('components/layout/teal-ui.tsx')))
+  check('the hand-drawn headers show their picture', /bannerFor\('YouTube Co-Pilot'\)/.test(read('app/(dashboard)/co-pilot/page.tsx')) && /bannerFor\('Review Editor'\)/.test(read('components/review-editor/ReviewEditor.tsx')) && /bannerFor\(isSocialTab \? 'Social Push' : 'Blog posts'\)/.test(read('app/(dashboard)/content/page.tsx')) && /bannerFor\('Dashboard'\)/.test(read('components/dashboard/TealDashboard.tsx')))
 
   if (fails.length) {
     console.error(`test-teal-look: ${fails.length} failed`)
