@@ -207,7 +207,7 @@ export default function ComputerBatch({ settings, onAdded, left = null }: {
       try {
         // The look on every video. A title left empty is written by MVP for
         // each video; one typed (a disclosure) is the same on all of them.
-        const look = cleanSettings({ ...settings, kind: v.kind }, settings)
+        const look = cleanSettings({ ...settings, kind: v.kind, callouts: v.callouts ?? [] }, settings)
         const r = await fetch('/api/review-edit', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ action: 'add', name: v.product || v.a[0].name.replace(/\.[^.]+$/, ''), review: take(v.a), ...(v.b.length ? { broll: take(v.b) } : {}), product: v.product, settings: look }),

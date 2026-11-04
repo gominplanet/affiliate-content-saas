@@ -9,6 +9,8 @@
  *            queue a video; it starts reading at once and carries on in the
  *            background (lib/review-edit-server). `more`: the files after the
  *            first, joined into one video in that order.
+ *   product_titles { product }  ten titles for the product, to put on the
+ *            video (lib/review-edit-callouts): from its ASIN, a link, or a name.
  *   uploaded_before { files: [{ name, bytes }] }  which files from the
  *            computer are already in a video (same name, same size), so a
  *            batch from the computer leaves them out (ComputerBatch).
@@ -25,8 +27,9 @@
 import { NextResponse, after } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { canUsePreview } from '@/lib/labs-preview'
-import { cleanSettings, clock, keepName, linesOf, DEFAULT_SETTINGS, type Plan, type Word } from '@/lib/review-edit'
+import { cleanSettings, clock, keepName, linesOf, DEFAULT_SETTINGS, MAX_CALLOUTS, type Plan, type Word } from '@/lib/review-edit'
 import { uploadKey } from '@/lib/review-edit-batch'
+import { suggestCallouts } from '@/lib/review-edit-callouts'
 import { promptChange } from '@/lib/review-edit-plan'
 import { moveQueue, deleteRaw, ownPath, hasUpload, serverJobs, finishMaking, takeFiles, editAllowance, allowanceFullWords, lineOrder, MAX_TAKE_FILES, EDIT_BUCKET, type EditRow, type Src, type TakeFile, type ServerView, editDb } from '@/lib/review-edit-server'
 import { driveAccessToken, driveFile, isDriveId } from '@/lib/google-drive'
@@ -169,7 +172,8 @@ export async function POST(request: Request) {
   const own = (u: unknown) => typeof u === 'string' && ownPath(u, g.userId) !== null
 
   if (action === 'save_look') {
-    const settings = cleanSettings(body.settings)
+    // One video's product titles are never part of the look every video starts from.
+    const settings = { ...cleanSettings(body.settings), callouts: [] }
     if (settings.logo && !own(settings.logo.url)) settings.logo = null
     settings.pictures = settings.pictures.filter((p) => own(p.url))
     const { error } = await db.from('review_edit_looks').upsert({ user_id: g.userId, settings, updated_at: now }, { onConflict: 'user_id' })
@@ -186,6 +190,11 @@ export async function POST(request: Request) {
     const { error } = await db.storage.from(EDIT_BUCKET).remove([p])
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
     return NextResponse.json({ ok: true, pictures: await pictureLibrary(db, g.userId) })
+  }
+
+  if (action === 'product_titles') {
+    const r = await suggestCallouts(typeof body.product === 'string' ? body.product.slice(0, 500) : '', { userId: g.userId, tier: g.tier ?? null })
+    return r.ok ? NextResponse.json(r) : NextResponse.json({ error: r.error }, { status: 422 })
   }
 
   if (action === 'uploaded_before') {
@@ -325,7 +334,7 @@ export async function POST(request: Request) {
   if (action === 'remove') {
     if (row.status === 'making') return NextResponse.json({ error: 'It is being made right now. Remove it once it is done.' }, { status: 409 })
     await deleteRaw(db, row)
-    const files = [...Object.values(row.outputs || {}).map((o) => ownPath(o.url, g.userId)), `${g.userId}/edit-title-${row.id}.png`,
+    const files = [...Object.values(row.outputs || {}).map((o) => ownPath(o.url, g.userId)), `${g.userId}/edit-title-${row.id}.png`, ...Array.from({ length: MAX_CALLOUTS }, (_, k) => `${g.userId}/edit-callout-${row.id}-${k}.png`),
       // A thumbnail from a video frame, made while that existed (2026-11-02).
       (row.info as { thumb?: { url?: string } } | null)?.thumb?.url ? ownPath(String((row.info as { thumb?: { url?: string } }).thumb!.url), g.userId) : null,
       `${g.userId}/edit-thumbsrc-${row.id}.jpg`, `${g.userId}/edit-thumbcut-${row.id}.png`].filter((p): p is string => !!p)

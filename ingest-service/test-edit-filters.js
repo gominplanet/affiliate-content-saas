@@ -44,13 +44,13 @@ check('a take with no sound still gets a sound track', /anullsrc/.test(E.buildEd
     segments: [[0, 10]], srcW: 1920, srcH: 1080, hasAudio: true, formats: ['wide'],
     logo: { input: 1, w: 100, h: 50, position: 'upper-left', widthPct: { wide: 0.1, vertical: 0.2 } },
     title: { input: 2, w: 400, h: 80, position: 'top', startSec: 0.3, endSec: 4.3, widthPct: { wide: 0.3, vertical: 0.45 } },
-    pictures: [pic(3, { startSec: 6, endSec: 8.5 }), pic(4, { position: 'center', opacity: 0.5 }), pic(5, {}), pic(6, {}), pic(7, {})],
+    pictures: [pic(3, { startSec: 6, endSec: 8.5 }), pic(4, { position: 'center', opacity: 0.5 }), pic(5, {}), pic(6, {}), pic(7, {}), pic(8, {}), pic(9, {}), pic(10, {}), pic(11, {}), pic(12, {})],
   }).graph
   check('a picture with a moment shows only then', /\[3:v\]scale=384:384\[pc0wides\]/.test(g) && /overlay=1459:642:enable='between\(t,6,8\.5\)'\[pc0wideo\]/.test(g), g)
   const pc1 = g.split(';').find((l) => l.includes('[pc1wideo]')) || ''
   check('a picture for the whole video has no moment, and a see-through one keeps its own transparency', !!pc1 && !/enable/.test(pc1) && /\[4:v\]scale=384:384,format=rgba,colorchannelmixer=aa=0\.5/.test(g), pc1)
   check('pictures go under the logo and the title, so a big one never hides them', g.indexOf('[pc0wideo]') < g.indexOf('[lgwideo]') && g.indexOf('[lgwideo]') < g.indexOf('[ttwideo]'))
-  check('four pictures at most', /pc3wideo/.test(g) && !/pc4wide/.test(g))
+  check('nine pictures at most: the creator\u2019s four and the product\u2019s five titles', E.MAX_PICTURES === 9 && /pc8wideo/.test(g) && !/pc9wide/.test(g))
 }
 
 // ── The logo for the whole video, the first or the last seconds ─────────────

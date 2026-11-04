@@ -13,6 +13,7 @@ import type { ReactNode } from 'react'
 import { AlertTriangle, ArrowUp } from 'lucide-react'
 import { moveFile, moveUp, unusedBroll, talkSeconds, type BatchVideo, type DriveTake, type Pair } from '@/lib/review-edit-batch'
 import { clock, KIND_WORDS, type VideoKind } from '@/lib/review-edit'
+import CalloutPicker from '@/components/review-editor/CalloutPicker'
 
 const PURPLE = 'var(--accent)'
 const soft = { color: 'var(--text-3)' }
@@ -90,10 +91,11 @@ export default function BatchCheck({ videos, setVideos, pool, locked = false, st
                 ? <ul className="mt-0.5 flex flex-col gap-1">{v.b.map((f) => fileLine(f, i, false))}</ul>
                 : <p className="text-[12px]" style={{ color: '#B45309' }}>None. Choose one from the B-roll not used below, or it is made without.</p>}
               {v.b.length > 0 && <p className="text-[11.5px] mt-0.5" style={soft}>{HOW[v.how]}{v.b.length > 1 ? '. The B-roll files are joined into one.' : ''}</p>}
-              <label className="block text-[12px] mt-2" style={soft}>The product (optional)
-                <input value={v.product} onChange={(e) => change(i, { product: e.target.value.slice(0, 120) })} disabled={locked} placeholder="MVP hears it in your take if empty"
+              <label className="block text-[12px] mt-2" style={soft}>The product (optional): its Amazon ASIN, a link to it, or its name
+                <input value={v.product} onChange={(e) => change(i, { product: e.target.value.slice(0, 300) })} disabled={locked} placeholder="B0FR4RHHXF, a product link, or MVP hears it in your take"
                   className="mt-0.5 w-full rounded-lg border px-2 py-1 text-[12.5px] bg-transparent" style={{ borderColor: 'var(--border-2)', color: 'var(--text)' }} />
               </label>
+              <div className="mt-2"><CalloutPicker product={v.product} value={v.callouts ?? []} onChange={(callouts) => change(i, { callouts })} disabled={locked} /></div>
             </li>
           )
         })}

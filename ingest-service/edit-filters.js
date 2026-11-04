@@ -229,7 +229,7 @@ function buildEditGraph(opts) {
   }
   const logoIn = pngIn(o.logo, 'lg')
   const titleIn = pngIn(o.title, 'tt')
-  const pictures = (Array.isArray(o.pictures) ? o.pictures : []).filter((p) => p && Number.isInteger(p.input)).slice(0, 4)
+  const pictures = (Array.isArray(o.pictures) ? o.pictures : []).filter((p) => p && Number.isInteger(p.input)).slice(0, MAX_PICTURES)
   const picIn = pictures.map((p, i) => pngIn(p, `pc${i}`))
 
   const outputs = {}
@@ -392,6 +392,10 @@ function parseSilences(stderr, duration) {
   return out.filter(([x, y]) => y > x)
 }
 
+/** Timed pictures on one edit: the creator's own four, and the product's
+ *  five titles (lib/review-edit calloutTimes), drawn as pictures. */
+const MAX_PICTURES = 9
+
 /** The mean loudness volumedetect reports, in dB, or null. */
 function parseMeanDb(stderr) {
   const m = /mean_volume:\s*(-?[\d.]+) dB/.exec(String(stderr || ''))
@@ -413,4 +417,4 @@ function filmedAtFrom(tags) {
   return read(t['com.apple.quicktime.creationdate']) || read(t.creation_time) || null
 }
 
-module.exports = { JOIN_FADE, joinFade, MAX_PARTS, takeParts, partStarts, partAt, concatList, joinedAudioGraph, joinAsIs, joinedOk, remakeSize, filmedAtFrom, silenceNoiseDb, parseSilences, parseMeanDb, hdrChain, driveAuth, authArgs, FPS, snapSegments, editSeconds, outputWindows, cleanInserts, trackSetpts, insertEnable, zoomExpr, cleanZooms, masterSize, placeAt, buildEditGraph }
+module.exports = { MAX_PICTURES, JOIN_FADE, joinFade, MAX_PARTS, takeParts, partStarts, partAt, concatList, joinedAudioGraph, joinAsIs, joinedOk, remakeSize, filmedAtFrom, silenceNoiseDb, parseSilences, parseMeanDb, hdrChain, driveAuth, authArgs, FPS, snapSegments, editSeconds, outputWindows, cleanInserts, trackSetpts, insertEnable, zoomExpr, cleanZooms, masterSize, placeAt, buildEditGraph }

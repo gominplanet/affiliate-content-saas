@@ -1271,7 +1271,7 @@ app.post('/dub', async (req, res) => {
 // pass (edit-filters.js): wide for Amazon and YouTube, vertical for TRYBE and
 // TikTok, or both from the same decode. The raw takes are only ever in this
 // job's own temp folder, removed when the job ends, whatever happened.
-const { buildEditGraph, cleanInserts, snapSegments, editSeconds, masterSize, driveAuth, authArgs, hdrChain, filmedAtFrom, takeParts, partAt, joinedAudioGraph, FPS: EDIT_FPS } = require('./edit-filters')
+const { buildEditGraph, cleanInserts, snapSegments, editSeconds, masterSize, driveAuth, authArgs, hdrChain, filmedAtFrom, takeParts, partAt, joinedAudioGraph, FPS: EDIT_FPS, MAX_PICTURES: EDIT_MAX_PICTURES } = require('./edit-filters')
 // Several files of one take joined into one video, and what a video is.
 const { joinFiles, ffprobeInfo } = require('./join-takes')
 // Encoder threads per format. A small box stays at 2; a bigger one goes faster.
@@ -1511,9 +1511,9 @@ async function renderEditJob(body, report = () => {}) {
     }
     const logo = await png(body.logo, 'logo')
     const title = await png(body.title, 'title')
-    // The creator's own pictures (PNGs), up to four.
+    // The creator's own pictures (PNGs, up to four), then the product's titles.
     const pictures = []
-    for (const [i, p] of (Array.isArray(body.pictures) ? body.pictures : []).slice(0, 4).entries()) {
+    for (const [i, p] of (Array.isArray(body.pictures) ? body.pictures : []).slice(0, EDIT_MAX_PICTURES).entries()) {
       const got = await png(p, `picture${i}`)
       if (got) pictures.push(got)
     }
@@ -1596,7 +1596,9 @@ app.post('/render-edit', async (req, res) => {
     if (j.stage !== stage) { j.stage = stage; j.since = Date.now() }
     j.pct = Number.isFinite(pct) ? pct : null
   }
-  res.status(202).json({ accepted: true })
+  // How many timed pictures it draws, so the app can say which product
+  // titles an older server left out (it said nothing, and drew four).
+  res.status(202).json({ accepted: true, pictures: EDIT_MAX_PICTURES })
   renderQueue = renderQueue.then(async () => {
     let rec
     try {

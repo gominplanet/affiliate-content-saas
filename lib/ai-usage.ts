@@ -44,6 +44,9 @@ export const PRICING: Record<string, Pricing> = {
   // $0.04 an unpriced image gets. A writer that costs nothing is a writer
   // nobody's spend ceiling can ever stop.
   'claude-opus-5':             { in: 5,  out: 25 },
+  // Opus 5.5 — the Review Editor's on-screen product titles (2026-11-04).
+  // Listed price $4/$20 per 1M; listed before use for the reason above.
+  'claude-opus-5-5':           { in: 4,  out: 20 },
 
   // ── OpenAI — image generation (per-image flat rates) ──────────────────
   // dall-e-3 standard 1024x1024 = $0.04, 1024x1792 / 1792x1024 = $0.08

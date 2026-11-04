@@ -111,7 +111,7 @@ export default function DriveBatch({ drive, loadDrive, settings, onAdded, left =
       try {
         // The look on every video. A title left empty is written by MVP for
         // each video; one typed (a disclosure) is the same on all of them.
-        const look = cleanSettings({ ...settings, kind: v.kind }, settings)
+        const look = cleanSettings({ ...settings, kind: v.kind, callouts: v.callouts ?? [] }, settings)
         const r = await fetch('/api/review-edit', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ action: 'add', name: v.product || v.a[0].name.replace(/\.[^.]+$/, ''), ...addBody(v), product: v.product, settings: look }),

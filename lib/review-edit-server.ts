@@ -20,7 +20,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { transcribeToCues, transcriptionConfigured } from '@/lib/shorts-transcribe'
 import { makeRenderJob } from '@/lib/render-job'
 import { drawTitle } from '@/lib/title-looks'
-import { cleanSettings, cleanWords, clock, linesOf, renderSpec, LOGO_WIDTH, PICTURE_WIDTH, type EditSettings, type PictureTime, type Plan, type Shot, type Word } from '@/lib/review-edit'
+import { cleanSettings, cleanWords, clock, linesOf, renderSpec, LOGO_WIDTH, PICTURE_WIDTH, type CalloutTime, type EditSettings, type PictureTime, type Plan, type Shot, type Spot, type Word } from '@/lib/review-edit'
 import { brollFits, planEdit, readShots } from '@/lib/review-edit-plan'
 import { driveAccessToken, driveMediaUrl } from '@/lib/google-drive'
 import { recordUsage } from '@/lib/ai-usage'
@@ -283,7 +283,7 @@ export async function filmedTimes(token: string, fileIds: string[]): Promise<{ r
  *  video seconds, and what was left out and why: the card shows this, not
  *  the settings, so a title that could not be drawn or a picture waiting for
  *  words never said is seen as missing (Seb's rule: report what happened). */
-export interface Placed { title: { from: number; to: number } | { missed: string } | null; pictures: PictureTime[] }
+export interface Placed { title: { from: number; to: number } | { missed: string } | null; pictures: PictureTime[]; callouts?: CalloutTime[] }
 
 /** The title as a picture, in the creator's folder, overwritten on each make. */
 /** Drawn for a 1920 wide frame: on the wide version it keeps its own size,
@@ -295,6 +295,20 @@ async function titleImage(db: Db, row: EditRow, t: EditSettings['title']): Promi
     const { error } = await db.storage.from(EDIT_BUCKET).upload(path, png, { contentType: 'image/png', upsert: true })
     if (error) return null
     const share = Math.min(0.9, Math.max(0.1, width / 1920))
+    return { url: `${db.storage.from(EDIT_BUCKET).getPublicUrl(path).data.publicUrl}?v=${Date.now()}`, widthPct: { wide: share, vertical: Math.min(0.9, share * 1.5) } }
+  } catch { return null }
+}
+
+/** A product title as a picture (calloutTimes), in the creator's title font
+ *  and colour, a size below the title, in the creator's folder, overwritten
+ *  on each make. Null when it could not be drawn. */
+async function calloutImage(db: Db, row: EditRow, text: string, k: number, t: EditSettings['title'], spot: Spot): Promise<{ url: string; widthPct: { wide: number; vertical: number } } | null> {
+  try {
+    const { png, width } = await drawTitle(text, { look: t.look, color: t.color, size: 'small', position: spot === 'center' ? 'top' : spot })
+    const path = `${row.user_id}/edit-callout-${row.id}-${k}.png`
+    const { error } = await db.storage.from(EDIT_BUCKET).upload(path, png, { contentType: 'image/png', upsert: true })
+    if (error) return null
+    const share = Math.min(0.85, Math.max(0.08, width / 1920))
     return { url: `${db.storage.from(EDIT_BUCKET).getPublicUrl(path).data.publicUrl}?v=${Date.now()}`, widthPct: { wide: share, vertical: Math.min(0.9, share * 1.5) } }
   } catch { return null }
 }
@@ -334,15 +348,28 @@ export async function startMaking(db: Db, row: EditRow): Promise<void> {
   // A title on for the whole video (a disclosure) stays to the last frame.
   const titleTo = settings.title.seconds === 0 ? spec.seconds + 1 : 0.3 + settings.title.seconds
   const shown = spec.pictures.filter((p): p is Extract<PictureTime, { from: number }> => 'from' in p)
+  // The product's titles, each drawn; one that could not be drawn is said, not dropped.
+  const callouts: CalloutTime[] = []
+  const calloutPics: { url: string; position: Spot; widthPct: { wide: number; vertical: number }; opacity: number; startSec: number; endSec: number }[] = []
+  const calloutKs: number[] = []
+  for (const c of spec.callouts) {
+    if (!('from' in c)) { callouts.push(c); continue }
+    const img = await calloutImage(db, row, c.text, c.k, settings.title, spec.calloutSpot)
+    if (!img) { callouts.push({ k: c.k, text: c.text, missed: 'It could not be drawn, so it is not on this video. Make it again to try once more.' }); continue }
+    callouts.push(c)
+    calloutPics.push({ url: img.url, position: spec.calloutSpot, widthPct: img.widthPct, opacity: 1, startSec: c.from, endSec: c.to })
+    calloutKs.push(c.k)
+  }
   const placed: Placed = {
     title: !settings.title.on || !settings.title.text ? null
       : title ? { from: settings.title.seconds === 0 ? 0 : 0.3, to: Math.min(spec.seconds, titleTo) }
       : { missed: 'The title could not be drawn, so it is not on this video. Make it again to try once more.' },
     pictures: spec.pictures,
+    callouts,
   }
   await set(db, row.id, { info: { ...info, placed } })
   const broll = spec.inserts.length ? src.broll : null
-  const sent = await videoServer<{ accepted?: boolean }>('/render-edit', {
+  const sent = await videoServer<{ accepted?: boolean; pictures?: number }>('/render-edit', {
     // One file each, or the files the video server joins first.
     ...(joined(src.review) ? { mainParts: src.review.parts } : { mainUrl: src.review.url, mainAuth: src.review.auth }),
     ...(broll ? (joined(broll) ? { brollParts: broll.parts } : { brollUrl: broll.url, brollAuth: broll.auth }) : {}),
@@ -360,8 +387,19 @@ export async function startMaking(db: Db, row: EditRow): Promise<void> {
       const pic = settings.pictures[p.k]
       // On for the whole video: no timing, so it is there from the first frame to the last.
       return { url: p.url, position: pic.position, widthPct: PICTURE_WIDTH[pic.size], opacity: pic.opacity, ...(pic.when === 'whole' ? {} : { startSec: p.from, endSec: p.to }) }
-    }),
+    }).concat(calloutPics),
   }, 60_000)
+  // A video server older than the product titles draws four pictures and
+  // says nothing: a title past what it draws is said to be left out.
+  if (sent.ok && calloutPics.length) {
+    const room = typeof sent.data.pictures === 'number' ? sent.data.pictures : 4
+    const over = shown.length + calloutPics.length - room
+    if (over > 0) {
+      const cut = new Set(calloutKs.slice(-over))
+      placed.callouts = callouts.map((c) => (cut.has(c.k) ? { k: c.k, text: c.text, missed: 'MVP’s video server was being updated and drew fewer titles. Make it again to add this one.' } : c))
+      await set(db, row.id, { info: { ...info, placed } })
+    }
+  }
   if (!sent.ok) {
     // Not there yet (the server is updating): back in line, not a failure.
     if (sent.status === 404 || sent.status === 0) return set(db, row.id, { status: 'ready_to_make', note: `Waiting for MVP’s video server (${sent.error}). It is tried again by itself.` })

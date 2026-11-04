@@ -463,6 +463,9 @@ export interface EditSettings {
   broll: boolean
   /** Where the vertical version is cut from a sideways take: 0 left, 1 right. */
   cropX: number
+  /** The product's titles on screen, chosen by the creator before adding
+   *  (calloutTimes): one video's own, never part of the saved look. */
+  callouts: string[]
 }
 
 export const DEFAULT_SETTINGS: EditSettings = {
@@ -476,6 +479,7 @@ export const DEFAULT_SETTINGS: EditSettings = {
   color: true,
   broll: true,
   cropX: 0.5,
+  callouts: [],
 }
 
 const isPos = (v: unknown): v is Position => typeof v === 'string' && (POSITIONS as string[]).includes(v)
@@ -541,6 +545,7 @@ export function cleanSettings(raw: unknown, base: EditSettings = DEFAULT_SETTING
     color: bool('color'),
     broll: bool('broll'),
     cropX: Math.max(0, Math.min(1, Number.isFinite(Number(r.cropX)) ? Number(r.cropX) : base.cropX)),
+    callouts: cleanCallouts(Array.isArray(r.callouts) ? r.callouts : base.callouts ?? []),
   }
 }
 
@@ -556,7 +561,12 @@ export function renderSpec(o: { words: Word[]; lines: Line[]; plan: Plan; shots:
   const logo = o.settings.kind === 'review' && o.settings.logo?.on ? o.settings.logo : null
   const seconds = editLength(segments)
   const pictures = pictureTimes(o.settings.pictures ?? [], o.words, segments, seconds)
-  return { segments, inserts, zooms, words, logo, seconds, pictures }
+  const t = o.settings.title
+  // The opening title's seconds are kept clear; a title on the whole video
+  // sends the product titles to the other edge of the frame instead.
+  const busy = t.on && t.text && t.seconds > 0 ? [{ from: 0, to: 0.3 + t.seconds }] : []
+  const callouts = calloutTimes(o.settings.callouts ?? [], o.words, segments, seconds, busy)
+  return { segments, inserts, zooms, words, logo, seconds, pictures, callouts, calloutSpot: calloutSpot(o.settings) }
 }
 
 /** The words of a phrase, wherever they are said, ignoring case and
@@ -593,6 +603,119 @@ export function pictureTimes(pictures: Picture[], words: Word[], segs: Segment[]
     }
   })
   return out
+}
+
+// THE PRODUCT'S TITLES ON SCREEN (Seb, 2026-11-04: "MVP would do a little
+// research on the product, and come up with ... 10 titles that MVP could
+// burn on top of the video throughout the video", the creator choosing
+// their top 5 before it is queued). Lines like "Full HD 1920x1080p" or
+// "Projects on any flat surface". Each is on screen for a few seconds from
+// the moment the creator talks about it (the rarest word it shares with
+// what they say, so "Wifi 6 compatible" waits for "wifi", not "the"), and a
+// title never mentioned is spread evenly through what is left. Never over
+// the opening title or another product title, and one that finds no room
+// is left out and said so.
+export const MAX_CALLOUTS = 5
+export const MAX_CALLOUT_CHARS = 70
+/** Seconds each product title is on screen. */
+export const CALLOUT_SECONDS = 3.5
+const CALLOUT_GAP = 0.6
+
+/** The chosen titles, made safe: trimmed, short, no repeats, five at most. Pure. */
+export function cleanCallouts(raw: unknown[]): string[] {
+  const out: string[] = []
+  for (const v of raw) {
+    if (typeof v !== 'string') continue
+    const t = v.replace(/\s+/g, ' ').trim().slice(0, MAX_CALLOUT_CHARS).trim()
+    if (t && !out.some((o) => o.toLowerCase() === t.toLowerCase())) out.push(t)
+    if (out.length >= MAX_CALLOUTS) break
+  }
+  return out
+}
+
+/** Where the product titles sit: low on a review, high on a TRYBE ad (its
+ *  captions are low), and away from a title kept on for the whole video. Pure. */
+export function calloutSpot(s: Pick<EditSettings, 'kind' | 'title'>): Spot {
+  const base: Spot = s.kind === 'trybe' ? 'top' : 'bottom'
+  const t = s.title
+  if (!t.on || !t.text || t.seconds !== 0) return base
+  const high = (p: Spot) => p === 'top' || p === 'upper-left' || p === 'upper-right'
+  return high(t.position) === high(base) ? (base === 'top' ? 'bottom' : 'top') : base
+}
+
+const CALLOUT_SKIP = new Set(['with', 'and', 'the', 'for', 'any', 'all', 'one', 'comes', 'come', 'your', 'you', 'this', 'that', 'from', 'into', 'onto', 'over', 'has', 'have', 'are', 'can', 'its', 'our', 'out', 'use', 'get', 'very', 'more', 'most', 'less', 'than', 'not', 'but', 'just', 'also', 'up', 'to', 'in', 'on', 'of', 'a', 'an', 'is', 'it', 'by', 'or', 'as', 'at', 'be', 'so', 'no', 'complete', 'compact', 'versatile', 'solution', 'design', 'easy', 'great', 'perfect', 'ideal', 'built', 'made', 'includes', 'included', 'compatible'])
+const digitsOf = (t: string) => t.replace(/\D+/g, '')
+/** The words of a title that could be heard: no small words, numbers kept
+ *  ("1920x1080p" is 1920 and 1080p). Pure. */
+export function calloutKeys(text: string): string[] {
+  return [...new Set(String(text || '').replace(/(\d)x(\d)/gi, '$1 $2').split(/[^A-Za-z0-9']+/)
+    .map((w) => w.replace(/'s$/i, ''))
+    // A short word in capitals is a name ("HD", "TV", "UV"), kept.
+    .filter((w) => w && (w.length >= 3 || /\d/.test(w) || /^[A-Z]{2}$/.test(w)))
+    .map((w) => w.toLowerCase())
+    .filter((w) => !CALLOUT_SKIP.has(w)))]
+}
+
+export type CalloutTime =
+  | { k: number; text: string; from: number; to: number; heard: string | null }
+  | { k: number; text: string; missed: string }
+
+/** When each product title is on screen in the finished video, in its
+ *  seconds, and the word that placed it (null: spread through the video);
+ *  or why it is not on it. Pure. */
+export function calloutTimes(callouts: string[], words: Word[], segs: Segment[], length: number, busy: { from: number; to: number }[] = []): CalloutTime[] {
+  const dur = Math.min(CALLOUT_SECONDS, Math.max(0, length - 1))
+  const taken = busy.map((b) => ({ ...b }))
+  const fits = (from: number) => from >= 0.3 && from + dur <= length - 0.3
+    && taken.every((b) => from + dur + CALLOUT_GAP <= b.from || from >= b.to + CALLOUT_GAP)
+  const kept = outputWords(words, segs).map((w) => ({ at: w.start, n: norm(w.text), d: digitsOf(w.text) }))
+  const out: CalloutTime[] = []
+  const later: number[] = []
+  if (dur < 2) return callouts.map((text, k) => ({ k, text, missed: 'The finished video is too short for product titles.' }))
+  // Each title's heard words, rarest first ("wifi" before "compatible").
+  const heard = callouts.map((text, k) => ({
+    k, text,
+    keys: calloutKeys(text).map((key) => {
+      const d = digitsOf(key)
+      return { key, hits: kept.filter((w) => (d ? w.d === d : w.n === key || w.n === `${key}s` || `${w.n}s` === key)).map((w) => w.at) }
+    }).filter((x) => x.hits.length).sort((a, b) => a.hits.length - b.hits.length || b.key.length - a.key.length),
+  }))
+  // In the order they are talked about, each from the moment it is said, or
+  // up to 3 seconds later when another title is still on screen.
+  const first = (h: (typeof heard)[number]) => Math.min(...h.keys[0].hits)
+  for (const h of heard.filter((x) => x.keys.length).sort((a, b) => first(a) - first(b))) {
+    let placed = false
+    for (const { key, hits } of h.keys) {
+      for (const at of hits) {
+        for (let off = 0; off <= 3 && !placed; off += 0.25) {
+          const spot = r3(Math.max(0.3, at - 0.2 + off))
+          if (!fits(spot)) continue
+          out.push({ k: h.k, text: h.text, from: spot, to: r3(spot + dur), heard: key })
+          taken.push({ from: spot, to: spot + dur })
+          placed = true
+        }
+        if (placed) break
+      }
+      if (placed) break
+    }
+    if (!placed) later.push(h.k)
+  }
+  for (const h of heard) if (!h.keys.length) later.push(h.k)
+  later.sort((a, b) => a - b)
+  // Never mentioned: spread evenly through the room that is left.
+  const start = Math.max(1.5, ...busy.map((b) => b.to + CALLOUT_GAP))
+  const end = length - 1
+  later.forEach((k, i) => {
+    const text = callouts[k]
+    const ideal = start + ((end - start - dur) * (i + 1)) / (later.length + 1)
+    const tries: number[] = []
+    for (let d = 0; d <= length; d += 0.5) tries.push(ideal + d, ideal - d)
+    const spot = tries.map(r3).find(fits)
+    if (spot == null) { out.push({ k, text, missed: 'There was no free moment for it in this video. Pick fewer titles, or make the video longer.' }); return }
+    out.push({ k, text, from: spot, to: r3(spot + dur), heard: null })
+    taken.push({ from: spot, to: spot + dur })
+  })
+  return out.sort((a, b) => a.k - b.k)
 }
 
 /** "1:05" for a second count. */

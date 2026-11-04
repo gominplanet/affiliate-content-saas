@@ -33,12 +33,13 @@ import { uploadTake } from '@/components/review-editor/upload-take'
 import { pickFromDrive, type DriveState } from '@/components/review-editor/drive-picker'
 import DriveBatch from '@/components/review-editor/DriveBatch'
 import ComputerBatch from '@/components/review-editor/ComputerBatch'
+import CalloutPicker from '@/components/review-editor/CalloutPicker'
 import { BURN_KEEP_DAYS } from '@/lib/burn-retention'
 import { normalizeAsinInput } from '@/lib/asin'
 import {
   DEFAULT_SETTINGS, FORMAT_WORDS, KIND_WORDS, LOGO_OPACITY, LOGO_SIZES, LOGO_WHEN_WORDS, LOGO_WIDTH, MAX_PICTURES, SHOW_SECONDS, PICTURE_WHEN_WORDS, PICTURE_WIDTH, POSITIONS, POSITION_WORDS, SPOTS,
   TITLE_COLORS, TITLE_LOOKS, TITLE_LOOK_WORDS, TITLE_SECONDS, clock, cleanSettings, downloadLink, kindLine,
-  type EditSettings, type Format, type LogoSize, type LogoWhen, type Picture, type PictureTime, type PictureWhen, type Position, type Spot, type TitleColor, type VideoKind,
+  type CalloutTime, type EditSettings, type Format, type LogoSize, type LogoWhen, type Picture, type PictureTime, type PictureWhen, type Position, type Spot, type TitleColor, type VideoKind,
 } from '@/lib/review-edit'
 import { TealArt } from '@/components/layout/teal-ui'
 import { bannerFor } from '@/lib/banner-art'
@@ -78,7 +79,7 @@ interface EditView {
   broll: { k: number; off: boolean; why: string; shot: string; line: string; at: string }[]
   zooms: number
   /** What went on the video when it was last sent to be made, and what was left out. */
-  placed: { title: { from: number; to: number } | { missed: string } | null; pictures: PictureTime[] } | null
+  placed: { title: { from: number; to: number } | { missed: string } | null; pictures: PictureTime[]; callouts?: CalloutTime[] } | null
   brollCheck: { fits: boolean; talk: string; shows: string } | null
 }
 
@@ -428,6 +429,7 @@ export default function ReviewEditor() {
   const [review, setReview] = useState<Upl | null>(null)
   const [broll, setBroll] = useState<Upl | null>(null)
   const [product, setProduct] = useState('')
+  const [callouts, setCallouts] = useState<string[]>([])
   const [adding, setAdding] = useState(false)
   const [logoBusy, setLogoBusy] = useState(false)
   const [library, setLibrary] = useState<string[]>([])
@@ -571,10 +573,10 @@ export default function ReviewEditor() {
     if (!review || !ready(review)) return
     setAdding(true)
     try {
-      const look = cleanSettings({ ...settings, kind }, settings)
+      const look = cleanSettings({ ...settings, kind, callouts }, settings)
       await api({ action: 'add', name: review.name.replace(/\.[^.]+$/, ''), review: asTake(review), broll: broll && ready(broll) ? asTake(broll) : undefined, product, settings: look })
       toast.success('Added. MVP works on it in the background; you can add the next one now.')
-      setReview(null); setBroll(null); setProduct('')
+      setReview(null); setBroll(null); setProduct(''); setCallouts([])
       await load()
     } catch (e) { toast.error(e instanceof Error ? e.message : 'Not added.') } finally { setAdding(false) }
   }
@@ -811,9 +813,10 @@ export default function ReviewEditor() {
               {takeBox('broll', 'Your B-roll take', '(optional)')}
             </div>
             <p className="text-[12px] -mt-1" style={soft}>Your talking take is in two or more files? Use <button type="button" onClick={() => setTab('computer')} className="underline font-semibold" style={{ color: PURPLE }}>A batch from this computer</button> or one from Google Drive: you say which video each file is for, and MVP joins them.</p>
-            <label className="text-[13px] font-semibold">The product <span className="font-normal" style={soft}>(optional: {kind === 'trybe' ? 'the brand and product' : 'its name or Amazon link'})</span>
-              <input value={product} onChange={(e) => setProduct(e.target.value)} placeholder="Bassdash UPF 50 hoodie" className={`mt-1 max-w-md font-normal ${inputCls}`} style={inputStyle} />
+            <label className="text-[13px] font-semibold">The product <span className="font-normal" style={soft}>(optional: its Amazon ASIN, a link to it, or {kind === 'trybe' ? 'the brand and product' : 'its name'})</span>
+              <input value={product} onChange={(e) => setProduct(e.target.value)} placeholder="B0FR4RHHXF" className={`mt-1 max-w-md font-normal ${inputCls}`} style={inputStyle} />
             </label>
+            <CalloutPicker product={product} value={callouts} onChange={setCallouts} disabled={adding} />
             <div className="flex flex-wrap items-center gap-2">
               <button type="button" onClick={() => void add()} disabled={!ready(review) || !!uploading || adding}
                 className={cn('inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-[13.5px] font-semibold text-white disabled:opacity-50', teal && PILL)} style={{ background: PURPLE }}>
@@ -1033,7 +1036,7 @@ function EditCard({ e, reload, uploadLogo, withLogo, logoBusy, lib, teal = false
             {facts && <p className="text-[12.5px]" style={{ color: 'var(--text-2)' }}>{facts}</p>}
             {/* WHAT IS ON THE VIDEO, AS MADE: a title that could not be drawn or a
                 picture waiting for words never said shows as missing, not as done. */}
-            {e.placed && (e.placed.title || e.placed.pictures.length > 0) && (
+            {e.placed && (e.placed.title || e.placed.pictures.length > 0 || (e.placed.callouts?.length ?? 0) > 0) && (
               <ul className="flex flex-col gap-1 text-[12px]" style={{ color: 'var(--text-2)' }}>
                 {e.placed.title && ('missed' in e.placed.title
                   ? <li className="inline-flex items-center gap-1.5" style={{ color: AMBER }}><AlertTriangle size={12} /> {e.placed.title.missed}</li>
@@ -1044,6 +1047,9 @@ function EditCard({ e, reload, uploadLogo, withLogo, logoBusy, lib, teal = false
                     {'missed' in p ? <span style={{ color: AMBER }}>{p.missed}</span> : <span>On screen {clock(p.from)} to {clock(p.to)}</span>}
                   </li>
                 ))}
+                {(e.placed.callouts ?? []).map((c) => ('missed' in c
+                  ? <li key={`c${c.k}`} className="inline-flex items-start gap-1.5" style={{ color: AMBER }}><AlertTriangle size={12} className="mt-0.5 shrink-0" /> “{c.text}”: {c.missed}</li>
+                  : <li key={`c${c.k}`}>“{c.text}” on screen {clock(c.from)} to {clock(c.to)}{c.heard ? `, when you said “${c.heard}”` : ', spread through the video (you did not mention it)'}</li>))}
               </ul>
             )}
             {e.fromDrive && !e.rawInMvp && <p className="text-[12px]" style={soft}>Your takes stay in your Google Drive; MVP kept no copy.</p>}
@@ -1052,8 +1058,11 @@ function EditCard({ e, reload, uploadLogo, withLogo, logoBusy, lib, teal = false
           </div>
         </div>
       )}
-      {e.status === 'making' && e.placed && e.placed.pictures.some((p) => 'missed' in p) && (
-        <ul className="mt-2 text-[12px]">{e.placed.pictures.map((p) => ('missed' in p ? <li key={p.k} style={{ color: AMBER }}>{p.missed}</li> : null))}</ul>
+      {e.status === 'making' && e.placed && (e.placed.pictures.some((p) => 'missed' in p) || (e.placed.callouts ?? []).some((c) => 'missed' in c)) && (
+        <ul className="mt-2 text-[12px]">
+          {e.placed.pictures.map((p) => ('missed' in p ? <li key={p.k} style={{ color: AMBER }}>{p.missed}</li> : null))}
+          {(e.placed.callouts ?? []).map((c) => ('missed' in c ? <li key={`c${c.k}`} style={{ color: AMBER }}>“{c.text}”: {c.missed}</li> : null))}
+        </ul>
       )}
 
       {footer && <div className="mt-3 pt-3 border-t flex flex-wrap items-center gap-2" style={{ borderColor: 'var(--border-2)' }}>
@@ -1094,6 +1103,9 @@ function EditCard({ e, reload, uploadLogo, withLogo, logoBusy, lib, teal = false
           <div>
             <p className="text-[13.5px] font-bold mb-2">The look of this video</p>
             <Choices s={s} set={(v) => { setS(v); setChanged(true) }} lib={lib} kind={e.settings.kind} logoBusy={logoBusy} onLogo={(f) => void uploadLogo(f, (url) => { setS((x) => withLogo(x, url)); setChanged(true) })} />
+          </div>
+          <div>
+            <CalloutPicker product={e.product || e.keep?.asin || ''} value={s.callouts} onChange={(callouts) => { setS((x) => ({ ...x, callouts })); setChanged(true) }} />
           </div>
           <div>
             <p className="text-[13.5px] font-bold">Or tell MVP</p>

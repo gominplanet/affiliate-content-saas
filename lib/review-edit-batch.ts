@@ -154,7 +154,7 @@ export function unpaired(pairs: Pair[], bRoll: DriveTake[]): DriveTake[] {
  *  B-roll files. `apart`: when MVP joined talking files because they were
  *  filmed back to back, the longest gap between them in seconds (said on the
  *  page, so a join MVP guessed is never mistaken for one the creator made). */
-export interface BatchVideo { a: DriveTake[]; b: DriveTake[]; how: Pair['how']; apart: number | null; kind: VideoKind; product: string }
+export interface BatchVideo { a: DriveTake[]; b: DriveTake[]; how: Pair['how']; apart: number | null; kind: VideoKind; product: string; /** Product titles picked for it (CalloutPicker). */ callouts?: string[] }
 
 /** The most files one take is joined from (lib/review-edit-server MAX_TAKE_FILES). */
 export const MAX_FILES = 6
