@@ -894,50 +894,50 @@ function FounderSection() {
 function OldWayNewWay() {
   const ROWS: { old: string; mvp: string }[] = [
     {
-      old: 'Your whole business lives on a storefront Amazon owns and can change.',
-      mvp: 'Everything also lands on a blog on your own domain, which is yours whatever Amazon does next.',
+      old: 'Your whole business sits on a storefront Amazon owns and can change the rules on any day.',
+      mvp: 'Everything also lands on a blog on your own domain, an asset that stays yours no matter what Amazon does next.',
     },
     {
       // HALO SALES (Seb, 2026-10-15). Said as how Amazon pays, never as a source.
-      old: 'A sale through your storefront video pays you on that one product.',
-      mvp: 'A shopper who reaches Amazon from your blog, a pin or a video description can earn you on everything else they buy within 24 hours, not just the product you linked.',
+      old: 'A storefront sale pays you on that one product, and nothing else in the cart.',
+      mvp: 'Send a shopper to Amazon from your blog, a pin or a description and you earn on everything else they buy for the next 24 hours, not just the product you linked.',
     },
     {
-      old: 'A video gets filmed, uploaded, and that is the end of its life.',
-      mvp: 'One video becomes an article, a description, tags, a thumbnail, social posts and vertical clips.',
+      old: 'You film a video, upload it, and that is the end of its life.',
+      mvp: 'One take becomes an article, a description, tags, a thumbnail, social posts and vertical clips, with nothing filmed twice.',
     },
     {
       // TRYBE (Seb, 2026-10-18: "it is exploding right now").
-      old: 'Brand deals mean scrolling a marketplace, guessing which brands are worth it and writing every pitch from scratch.',
-      mvp: 'MVP sorts every brand on TRYBE by fit for your channel, drafts your first message in your words, and writes the shooting scripts once a brand says yes.',
+      old: 'Brand deals mean scrolling a marketplace, guessing which brands are worth it, and writing every pitch cold.',
+      mvp: 'MVP sorts every brand on TRYBE by fit for your channel, writes your first message in your words, and hands you the shooting scripts the moment a brand says yes.',
     },
     {
-      old: 'Hours go into editing and planning each video, and the extra time never shows up in what you earn.',
-      mvp: `Co-Pilot writes the title, description and tags in minutes, and Bulk Amazon upload sends up to ${BULK_UPLOAD_MAX_VIDEOS} videos to YouTube and your Amazon storefront in one press.`,
+      old: 'Hours disappear into editing and planning each upload, and that time never shows up in what you earn.',
+      mvp: `Co-Pilot writes the title, description and tags in minutes, and Bulk Amazon upload pushes up to ${BULK_UPLOAD_MAX_VIDEOS} videos to YouTube and your Amazon storefront in one press.`,
     },
     {
-      old: 'Your thumbnail is a plain still that disappears on a crowded carousel.',
-      mvp: 'One click makes a bright, clean thumbnail of you with the product that still looks like you.',
+      old: 'Your thumbnail is a plain still that vanishes in a crowded carousel.',
+      mvp: 'One click gives you a bright, scroll-stopping thumbnail of you with the product that still looks like you.',
     },
     {
-      old: 'A product you reviewed goes on sale and nobody watching your old video ever hears about it.',
-      mvp: 'On sale comments spot the sale, pin a comment with your link on that video, and take the sale out when it ends.',
+      old: 'A product you reviewed goes on sale and nobody watching your old video ever finds out.',
+      mvp: 'On sale comments catch the drop, pin your link on that video, and pull the sale back out the moment it ends.',
     },
     {
       old: 'Writing the review is the evening you did not want to spend.',
-      mvp: 'It is written from your own transcript, in your voice, from what you actually said on camera.',
+      mvp: 'It writes itself from your own transcript, in your voice, from what you actually said on camera.',
     },
     {
-      old: 'Posting to Pinterest, Instagram and Facebook is another hour you skip.',
-      mvp: 'The post goes out to every channel you connect, on a schedule, with the images made for you.',
+      old: 'Posting to Pinterest, Instagram and Facebook is another hour you quietly skip.',
+      mvp: 'One review goes out to every channel you connect, on a schedule, with the images already made for you.',
     },
     {
       old: 'International clicks land on the wrong Amazon and earn you nothing.',
-      mvp: 'Passport routes every shopper to their own country\u2019s Amazon. Unlimited, no cost per click.',
+      mvp: 'Passport routes every shopper to their own local Amazon, with your tag. Unlimited, and no cost per click.',
     },
     {
-      old: 'A dead product link sits there for weeks before you notice.',
-      mvp: 'Broken and off-style links are found, counted link by link, and repaired in one pass.',
+      old: 'A dead product link sits there for weeks before you even notice.',
+      mvp: 'Broken and off-style links are found, counted link by link, and fixed in one pass.',
     },
   ]
   return (
