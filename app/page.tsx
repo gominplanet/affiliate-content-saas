@@ -39,6 +39,8 @@ import {
   CloudUpload, Handshake,
 } from 'lucide-react'
 import NextImage from 'next/image'
+import { SiYoutube, SiTiktok, SiInstagram, SiFacebook, SiPinterest, SiX, SiWordpress } from 'react-icons/si'
+import { FaAmazon } from 'react-icons/fa6'
 import { FAQSection, HeroVideo, SalesVideosSection, StickyBottomBar } from '@/components/landing/islands'
 
 // Local CSS-var override for a DARK emphasis band inside the otherwise-light
@@ -151,9 +153,8 @@ export default function LandingPreview() {
           sections in this file. */}
       <Nav />
       <Hero />
-      {/* ONE PLAN (Seb, 2026-10-18): the "which one are you?" fork offered
-          the Amazon plan, which is no longer sold, so it is gone. */}
-      <PlatformBar />
+      {/* The platform logo row (PlatformBar) now renders inside <Hero />, so the
+          "which one are you?" fork and the old standalone strip are both gone. */}
       <OldWayNewWay />
       {/* PROOF MOVES ITSELF. With a real wall of quotes, proof belongs high:
           cold traffic off an ad trusts nobody, and other creators are the
@@ -239,7 +240,7 @@ function HowItWorks() {
             Find. Create. Publish. Earn.
           </h2>
           <p className="mt-4 text-[15.5px]" style={{ color: 'var(--text-soft)' }}>
-            One system that runs the whole business side while you create.
+            You stay on camera. MVP runs the whole business side behind you, from the research and the edit to the uploads, the posts and the brand deals, so one review keeps earning long after you film it.
           </p>
         </div>
         <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-5 mt-10">
@@ -260,16 +261,17 @@ function HowItWorks() {
 
 /** Condensed features grid — absorbs ~10 of the old feature sections into one
  *  scannable grid, and leads with the new work (voice, Shorts, Passport). */
-const CONDENSED_FEATURES: { icon: React.ReactNode; title: string; desc: string; isNew?: boolean }[] = [
-  { icon: <Sparkles size={19} />, title: 'Writes in your real voice', desc: 'MVP learns how you actually sound from your own videos and edits, and sharpens over time. Every post reads like you, not generic AI.', isNew: true },
-  { icon: <Scissors size={19} />, title: 'Post Shorts to TikTok & Instagram', desc: 'Clip Factory turns long videos into ready-to-post shorts, and reframes a horizontal video to vertical for you before you post.', isNew: true },
-  { icon: <Globe size={19} />, title: 'Passport geo-links, no click fees', desc: 'Send every shopper to their own country’s Amazon and keep the commission, with no per-click fees. Included in Pro.', isNew: true },
-  { icon: <Zap size={19} />, title: 'Amazon Deal Radar', desc: 'Live, price-history-verified deals, not fake “was” prices. MVP turns the real drops into posts and a shoppable bio.' },
-  { icon: <FileText size={19} />, title: 'SEO & AI-optimized articles', desc: 'Reviews, comparisons, buying guides and researched articles built to rank on Google and get quoted by AI answers.' },
-  { icon: <Search size={19} />, title: 'Product and campaign research', desc: 'Filter all of Amazon by category, price, rating, reviews and sales rank. Scout Levanta, PartnerBoost, Walmart and Wayward campaigns too.' },
-  { icon: <Handshake size={19} />, title: 'Paid brand deals on TRYBE', desc: 'MVP finds the TRYBE brands that fit your channel, drafts your first message and plans the videos once a brand says yes.', isNew: true },
-  { icon: <Store size={19} />, title: 'Your own blog, forever', desc: 'A beautifully designed WordPress site that stays yours, even if you leave. No walled garden, no lock-in.' },
-  { icon: <ShieldCheck size={19} />, title: 'Your data stays yours', desc: 'MVP never uses or sells your personal data. It works from your content, nothing else.' },
+const CONDENSED_FEATURES: { icon: React.ReactNode; title: string; desc: string; isNew?: boolean; banner?: string }[] = [
+  { icon: <Wand2 size={19} />, banner: 'review-editor', title: 'Review Editor: film it, MVP edits it', desc: 'Hand MVP your talking take and your B-roll and it cuts a finished video: colour boost, titles, captions, your logo and the disclaimers added for you. Save a look once and every video matches it. Pull clips from your computer or Google Drive, one at a time or in batches, then publish to Amazon, YouTube, TRYBE and TikTok.', isNew: true },
+  { icon: <Sparkles size={19} />, banner: 'brand-voice', title: 'Writes in your real voice', desc: 'MVP studies your own videos and the edits you make and builds a voice fingerprint, one per channel if you run more than one. Every article, caption and post then reads like you wrote it, not like generic AI, and it sharpens each time you publish.', isNew: true },
+  { icon: <Scissors size={19} />, banner: 'clip-factory', title: 'Post Shorts to TikTok & Instagram', desc: 'Clip Factory finds the moments that land in your long videos and cuts them into vertical shorts, reframed from horizontal for you with a center crop or a split screen. Add captions and post them straight to TikTok, Instagram, Facebook Reels and YouTube Shorts, each with your link.', isNew: true },
+  { icon: <Globe size={19} />, banner: 'passport', title: 'Passport geo-links, no click fees', desc: 'A shopper in another country who lands on the US store rarely buys. Passport sends each one to their own local Amazon with your tag for that country, so the sale counts and the commission is yours. Unlimited links and clicks, no per-click fees and no overage, included for every member.', isNew: true },
+  { icon: <Zap size={19} />, banner: 'deal-radar', title: 'Amazon Deal Radar', desc: 'Deal Radar tracks real price drops against price history, so a deal you post is a drop that actually happened, never a fake was-price. Filter the genuine ones and MVP turns them into social posts and a shoppable bio, ready to go while the deal is still live.' },
+  { icon: <FileText size={19} />, banner: 'seo', title: 'SEO & AI-optimized articles', desc: 'Reviews, comparisons, buying guides and researched articles, each structured and interlinked to rank on Google and to get quoted by AI answers. MVP writes them from your transcript in your voice, adds the images and the affiliate links, and publishes them to your blog.' },
+  { icon: <Search size={19} />, banner: 'product-research', title: 'Product and campaign research', desc: 'Filter all of Amazon by category, price, rating, reviews, sales rank and how much video competition a product already has, so you know what is worth filming before you buy it. Scout Creator Connections, Levanta, PartnerBoost, Walmart and Wayward campaigns from the same place.' },
+  { icon: <Handshake size={19} />, banner: 'trybe', title: 'Paid brand deals on TRYBE', desc: 'MVP reads TRYBE and sorts every brand by how well it fits your channel, then drafts your first message in your words and suggests a reply on every conversation. Once a brand says yes, it turns the brief into shooting scripts so you know exactly what to film.', isNew: true },
+  { icon: <Store size={19} />, banner: 'blog-posts', title: 'Your own blog, forever', desc: 'Your reviews publish to a beautifully designed WordPress site on your own domain, formatted, illustrated and linked, an asset that keeps earning long after the feed scrolls past. It stays yours even if you leave MVP, with no walled garden and no lock-in.' },
+  { icon: <ShieldCheck size={19} />, title: 'Your data stays yours', desc: 'MVP works from your content and nothing else. It never sells or reuses your personal data, your audience or your earnings, and the face you add in Photobooth stays yours. The tool works for you; you are never the product.' },
 ]
 function FeaturesGridCondensed() {
   return (
@@ -287,7 +289,13 @@ function FeaturesGridCondensed() {
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4 mt-10">
           {CONDENSED_FEATURES.map(f => (
             <div key={f.title} className="rounded-2xl border p-5 transition-all hover:-translate-y-0.5" style={{ background: 'var(--surface)', borderColor: 'var(--border)' }}>
-              <div className="w-10 h-10 rounded-xl grid place-items-center mb-3.5" style={{ background: 'rgba(0,128,128,0.1)', color: '#008080' }}>{f.icon}</div>
+              {f.banner ? (
+                <div className="rounded-xl overflow-hidden mb-4" style={{ background: 'linear-gradient(135deg, rgba(0,128,128,0.08), rgba(45,212,191,0.06))' }}>
+                  <NextImage src={`/banners/${f.banner}.webp`} alt="" width={760} height={526} loading="lazy" className="w-full h-auto" />
+                </div>
+              ) : (
+                <div className="w-10 h-10 rounded-xl grid place-items-center mb-3.5" style={{ background: 'rgba(0,128,128,0.1)', color: '#008080' }}>{f.icon}</div>
+              )}
               <h3 className="text-[16.5px] font-bold mb-1.5 flex items-center gap-2 flex-wrap" style={{ color: 'var(--text)' }}>
                 {f.title}
                 {f.isNew && <span className="text-[9px] font-extrabold uppercase tracking-[0.12em] text-white px-1.5 py-0.5 rounded-full" style={{ background: 'linear-gradient(135deg,#008080,#2DD4BF)' }}>New</span>}
@@ -322,7 +330,7 @@ const ROLES: { id: string; gate: PreviewFeature | null; icon: React.ReactNode; r
     icon: <CloudUpload size={20} />,
     role: 'Your upload team',
     title: 'Drop: film it, drop it, done',
-    desc: `Drop up to ${BULK_UPLOAD_MAX_VIDEOS} videos at once and MVP sends each one everywhere it belongs. It tells your long reviews from your vertical videos by their shape, so there is nothing to sort.`,
+    desc: `Drop up to ${BULK_UPLOAD_MAX_VIDEOS} videos at once and MVP sends each one everywhere it belongs, with no sitting through each export. It tells your long reviews from your vertical clips by their shape, so there is nothing to sort and nothing to label. You make three choices once, the CTA, the posting days and the products, then press launch and walk away.`,
     points: [
       'Long reviews go to YouTube and your Amazon storefront, with the title, description, thumbnail and links done',
       'Each one also becomes a blog post, a Pinterest pin, a Facebook Group post and three short clips',
@@ -338,7 +346,7 @@ const ROLES: { id: string; gate: PreviewFeature | null; icon: React.ReactNode; r
     icon: <Handshake size={20} />,
     role: 'Your brand deal agent',
     title: 'Land paid brand deals on TRYBE',
-    desc: 'TRYBE is the marketplace where brands pay creators to make videos. MVP finds the brands worth your time, writes your first message, and plans the videos once a brand says yes.',
+    desc: 'TRYBE is the marketplace where brands pay creators to make videos, and the hard part is finding the right ones and keeping up with the inbox. MVP sorts every brand by fit for your channel, writes your first message in your voice, suggests a reply on every conversation, and once a brand says yes it hands you the shooting scripts. You choose the deals and film; the busywork is handled.',
     points: [
       'Every brand on TRYBE, sorted by best fit for your channel, fewest creators, total payouts or newest',
       'Your first message to each brand drafted in your words, and the requests sent for you a few at a time',
@@ -354,7 +362,7 @@ const ROLES: { id: string; gate: PreviewFeature | null; icon: React.ReactNode; r
     icon: <Facebook size={20} />,
     role: 'Your Facebook manager',
     title: 'Meta Hub: Facebook that actually sells',
-    desc: 'Meta Hub sets up the Facebook system that works for affiliates: your Group holds the link, and your Page points people to it.',
+    desc: 'Meta Hub sets up the Facebook system that actually sells for affiliates: your niche Groups hold the product links, and your Page points people into them. SCOUT fills in each post for you, so building a Facebook presence that earns is a few clicks instead of a second job. Every review, clip and deal flows into one queue, ready to post.',
     points: [
       'Niche Groups like Kitchen or Automotive, each holding its own product links',
       'SCOUT fills in every Group post for you, and you press Post',
@@ -370,7 +378,7 @@ const ROLES: { id: string; gate: PreviewFeature | null; icon: React.ReactNode; r
     icon: <Radar size={20} />,
     role: 'Your researcher',
     title: 'Know what to film before you buy it',
-    desc: 'Search all of Amazon and the partner programs you belong to, then turn the best finds into content in one click.',
+    desc: 'Search the whole Amazon catalogue and the partner programs you belong to, then turn the best finds into content in one click. MVP surfaces products with real demand, strong ratings and room for your video, and flags when something you already reviewed goes on sale. You stop guessing what to film and film what pays.',
     points: [
       'Filter the whole Amazon catalogue by category, price, rating, reviews and sales rank',
       'MVP picks: products with real demand, strong ratings and room for your video',
@@ -391,7 +399,7 @@ function RolesSection() {
             The team you would otherwise hire
           </h2>
           <p className="mt-4 text-[15.5px]" style={{ color: 'var(--text-soft)' }}>
-            Uploading, brand deals, Facebook and research eat a creator&apos;s week. MVP does the heavy part of each, and you decide what goes out.
+            Uploading, brand deals, Facebook and research each eat a chunk of a creator&apos;s week. MVP does the heavy part of every one of them, and you stay in control of what goes out.
           </p>
         </div>
         <div className="grid lg:grid-cols-2 gap-5 mt-10">
@@ -417,7 +425,7 @@ function RolesSection() {
                   ))}
                 </ul>
                 <p className="mt-auto pt-5 text-[12.5px]" style={{ color: 'var(--text-faint)' }}>
-                  {live ? r.note : `Coming soon to every Pro member. ${r.note}`}
+                  {live ? r.note : `Coming soon to every member. ${r.note}`}
                 </p>
               </article>
             )
@@ -431,7 +439,14 @@ function RolesSection() {
 /** Feature spotlights — a headline paired with a REAL product image, for the
  *  flagship new work. Alternating sides. Add an entry as each image lands in
  *  public/png. */
-const SPOTLIGHTS: { img: string; eyebrow: string; title: string; desc: string }[] = [
+const SPOTLIGHTS: { img: string; eyebrow: string; title: string; desc: string; bare?: boolean }[] = [
+  {
+    img: '/banners/review-editor.webp',
+    eyebrow: 'New',
+    title: 'Review Editor: film it, MVP edits it',
+    desc: 'Give MVP your talking take and your B-roll and it cuts them into a finished video: colour boost, titles, captions, your logo and the disclaimers added for you. Save a look once and every video matches it. Bring clips from your computer or Google Drive, one at a time or in batches, then publish to Amazon, YouTube, TRYBE and TikTok.',
+    bare: true,
+  },
   {
     img: '/png/mvp-voice.webp',
     eyebrow: 'New',
@@ -443,6 +458,20 @@ const SPOTLIGHTS: { img: string; eyebrow: string; title: string; desc: string }[
     eyebrow: 'New',
     title: 'Post your Shorts to TikTok and Instagram',
     desc: 'Clip Factory turns your long videos into ready-to-post shorts. Upload a horizontal video and MVP reframes it to vertical for you, center crop or split screen, so it is ready to post everywhere in a couple of clicks.',
+  },
+  {
+    img: '/banners/trybe.webp',
+    eyebrow: 'New',
+    title: 'Paid brand deals, done for you',
+    desc: 'MVP reads TRYBE and finds the brands that fit your channel, drafts your first message in your own words, suggests a reply on every conversation, and turns each brief into shooting scripts. You pick the deals and film. The outreach and the planning are handled.',
+    bare: true,
+  },
+  {
+    img: '/banners/deal-radar.webp',
+    eyebrow: 'Live',
+    title: 'Real deals, turned into posts',
+    desc: 'Deal Radar tracks real price drops against price history, so a deal you post is a drop that actually happened, never a fake was-price. MVP turns the genuine ones into social posts and a shoppable bio, ready to go.',
+    bare: true,
   },
 ]
 function FeatureSpotlights() {
@@ -457,7 +486,14 @@ function FeatureSpotlights() {
               <h3 className="text-[28px] sm:text-[36px] font-extrabold tracking-[-0.03em] leading-[1.05] mt-4" style={{ color: 'var(--text)' }}>{s.title}</h3>
               <p className="mt-4 text-[15.5px] leading-relaxed max-w-xl" style={{ color: 'var(--text-soft)' }}>{s.desc}</p>
             </div>
-            <NextImage src={s.img} alt={s.title} width={1200} height={800} loading="lazy" className="w-full h-auto rounded-2xl border" style={{ borderColor: 'var(--border)', boxShadow: 'var(--card-shadow)' }} />
+            {s.bare ? (
+              <div className="relative">
+                <div aria-hidden className="pointer-events-none absolute inset-0" style={{ background: 'radial-gradient(58% 58% at 50% 45%, rgba(0,128,128,0.18), transparent 70%)', filter: 'blur(30px)' }} />
+                <NextImage src={s.img} alt={s.title} width={760} height={526} loading="lazy" className="relative w-full h-auto" />
+              </div>
+            ) : (
+              <NextImage src={s.img} alt={s.title} width={1200} height={800} loading="lazy" className="w-full h-auto rounded-2xl border" style={{ borderColor: 'var(--border)', boxShadow: 'var(--card-shadow)' }} />
+            )}
           </div>
         ))}
       </div>
@@ -858,50 +894,50 @@ function FounderSection() {
 function OldWayNewWay() {
   const ROWS: { old: string; mvp: string }[] = [
     {
-      old: 'Your whole business lives on a storefront Amazon owns and can change.',
-      mvp: 'Everything also lands on a blog on your own domain, which is yours whatever Amazon does next.',
+      old: 'Your whole business sits on a storefront Amazon owns and can change the rules on any day.',
+      mvp: 'Everything also lands on a blog on your own domain, an asset that stays yours no matter what Amazon does next.',
     },
     {
       // HALO SALES (Seb, 2026-10-15). Said as how Amazon pays, never as a source.
-      old: 'A sale through your storefront video pays you on that one product.',
-      mvp: 'A shopper who reaches Amazon from your blog, a pin or a video description can earn you on everything else they buy within 24 hours, not just the product you linked.',
+      old: 'A storefront sale pays you on that one product, and nothing else in the cart.',
+      mvp: 'Send a shopper to Amazon from your blog, a pin or a description and it can earn you on everything else they buy within 24 hours, not just the product you linked.',
     },
     {
-      old: 'A video gets filmed, uploaded, and that is the end of its life.',
-      mvp: 'One video becomes an article, a description, tags, a thumbnail, social posts and vertical clips.',
+      old: 'You film a video, upload it, and that is the end of its life.',
+      mvp: 'One take becomes an article, a description, tags, a thumbnail, social posts and vertical clips, with nothing filmed twice.',
     },
     {
       // TRYBE (Seb, 2026-10-18: "it is exploding right now").
-      old: 'Brand deals mean scrolling a marketplace, guessing which brands are worth it and writing every pitch from scratch.',
-      mvp: 'MVP sorts every brand on TRYBE by fit for your channel, drafts your first message in your words, and writes the shooting scripts once a brand says yes.',
+      old: 'Brand deals mean scrolling a marketplace, guessing which brands are worth it, and writing every pitch cold.',
+      mvp: 'MVP sorts every brand on TRYBE by fit for your channel, writes your first message in your words, and hands you the shooting scripts the moment a brand says yes.',
     },
     {
-      old: 'Hours go into editing and planning each video, and the extra time never shows up in what you earn.',
-      mvp: `Co-Pilot writes the title, description and tags in minutes, and Bulk Amazon upload sends up to ${BULK_UPLOAD_MAX_VIDEOS} videos to YouTube and your Amazon storefront in one press.`,
+      old: 'Hours disappear into editing and planning each upload, and that time never shows up in what you earn.',
+      mvp: `Co-Pilot writes the title, description and tags in minutes, and Bulk Amazon upload pushes up to ${BULK_UPLOAD_MAX_VIDEOS} videos to YouTube and your Amazon storefront in one press.`,
     },
     {
-      old: 'Your thumbnail is a plain still that disappears on a crowded carousel.',
-      mvp: 'One click makes a bright, clean thumbnail of you with the product that still looks like you.',
+      old: 'Your thumbnail is a plain still that vanishes in a crowded carousel.',
+      mvp: 'One click gives you a bright, scroll-stopping thumbnail of you with the product that still looks like you.',
     },
     {
-      old: 'A product you reviewed goes on sale and nobody watching your old video ever hears about it.',
-      mvp: 'On sale comments spot the sale, pin a comment with your link on that video, and take the sale out when it ends.',
+      old: 'A product you reviewed goes on sale and nobody watching your old video ever finds out.',
+      mvp: 'On sale comments catch the drop, pin your link on that video, and pull the sale back out the moment it ends.',
     },
     {
       old: 'Writing the review is the evening you did not want to spend.',
-      mvp: 'It is written from your own transcript, in your voice, from what you actually said on camera.',
+      mvp: 'It writes itself from your own transcript, in your voice, from what you actually said on camera.',
     },
     {
-      old: 'Posting to Pinterest, Instagram and Facebook is another hour you skip.',
-      mvp: 'The post goes out to every channel you connect, on a schedule, with the images made for you.',
+      old: 'Posting to Pinterest, Instagram and Facebook is another hour you quietly skip.',
+      mvp: 'One review goes out to every channel you connect, on a schedule, with the images already made for you.',
     },
     {
       old: 'International clicks land on the wrong Amazon and earn you nothing.',
-      mvp: 'Passport routes every shopper to their own country\u2019s Amazon. Unlimited, no cost per click.',
+      mvp: 'Passport routes every shopper to their own local Amazon, with your tag. Unlimited, and no cost per click.',
     },
     {
-      old: 'A dead product link sits there for weeks before you notice.',
-      mvp: 'Broken and off-style links are found, counted link by link, and repaired in one pass.',
+      old: 'A dead product link sits there for weeks before you even notice.',
+      mvp: 'Broken and off-style links are found, counted link by link, and fixed in one pass.',
     },
   ]
   return (
@@ -1054,9 +1090,9 @@ function PassportSpotlight() {
 /** Support & community — the "you're not doing this alone" section. Matches the
  *  education + community that logie5 and Oink lean on (tutorials, calls, group). */
 const COMMUNITY: { Icon: typeof Play; title: string; desc: string; href?: string; cta?: string }[] = [
-  { Icon: Play, title: 'Video tutorials', desc: 'Step-by-step tutorials for every feature on the MVP YouTube channel, so you are never stuck.', href: 'https://www.youtube.com/@MVPaffiliate', cta: 'Watch on YouTube' },
-  { Icon: Calendar, title: 'Weekly live calls', desc: 'Jump on our weekly calls to get your questions answered and talk shop on affiliate marketing and everything online.' },
-  { Icon: Facebook, title: 'A private community', desc: 'A Facebook group where creators share what is working, celebrate wins, and help shape what we build next.', href: 'https://www.facebook.com/groups/mvpaffiliate', cta: 'Join the group' },
+  { Icon: Play, title: 'Video tutorials', desc: 'Step-by-step tutorials for every feature on the MVP YouTube channel, so you are never stuck. New walkthroughs land as features ship, and the full catalogue is there whenever you want to go deeper on a tool.', href: 'https://www.youtube.com/@MVPaffiliate', cta: 'Watch on YouTube' },
+  { Icon: Calendar, title: 'Weekly live calls', desc: 'Jump on our weekly live calls to get your questions answered in real time and talk shop on affiliate marketing and everything online. Bring a problem and leave with a plan, or just listen in and pick up what is working for other creators.' },
+  { Icon: Facebook, title: 'A private community', desc: 'A Facebook group where creators share what is working, celebrate wins and help shape what we build next. It is the fastest place to get an answer, find a collaborator, or catch a strategy before it gets crowded.', href: 'https://www.facebook.com/groups/mvpaffiliate', cta: 'Join the group' },
 ]
 function CommunitySection() {
   return (
@@ -1067,6 +1103,9 @@ function CommunitySection() {
           <h2 className="text-[32px] sm:text-[44px] font-extrabold tracking-[-0.03em] leading-[1.03] mt-3" style={{ color: 'var(--text)' }}>
             Support and a community behind you
           </h2>
+          <p className="mt-4 text-[15.5px]" style={{ color: 'var(--text-soft)' }}>
+            Tutorials for every feature, weekly live calls, and a room full of creators who have already solved what you are hitting. You are never stuck on your own.
+          </p>
         </div>
         <div className="grid sm:grid-cols-3 gap-4 mt-10">
           {COMMUNITY.map(({ Icon, title, desc, href, cta }) => {
@@ -1467,7 +1506,7 @@ function Hero() {
             className="mt-6 text-[18px] sm:text-[20px] font-semibold tracking-tight leading-snug max-w-2xl [text-wrap:pretty]"
             style={{ color: 'var(--text-muted)' }}
           >
-            Drop in one video and MVP turns it into your YouTube upload, your Amazon storefront video, a blog post built to rank, Shorts and Reels, and posts on nine social networks, all in your voice. Then it finds the brands on TRYBE that will pay you for the next one.
+            Drop in your footage and the <span style={{ color: '#008080' }}>automatic video editor</span> cuts your raw footage into a finished review, then MVP turns it into your YouTube upload, your Amazon storefront video, a blog post built to rank, Shorts and Reels, and posts on nine social networks, all in your voice.
           </p>
 
           {/* Sub */}
@@ -1519,33 +1558,31 @@ function Hero() {
                 We never use or sell your personal data.
               </span>
             </div>
-
-            {/* New-feature ribbon — ties the hero to the flagship new work in the
-                features grid below (voice + Shorts). */}
-            <a
-              href="#trybe"
-              className="mt-6 inline-flex items-center gap-2.5 rounded-2xl px-4 py-3 text-[13px] font-medium transition-transform hover:-translate-y-0.5"
-              style={{
-                background: 'linear-gradient(135deg, rgba(249,115,22,0.14), rgba(45,212,191,0.14))',
-                border: '1px solid rgba(249,115,22,0.3)',
-                color: 'var(--text)',
-              }}
-            >
-              <span className="inline-flex items-center justify-center w-7 h-7 rounded-lg flex-shrink-0" style={{ background: 'linear-gradient(135deg, #2DD4BF, #2DD4BF)', color: '#fff' }}>
-                <Handshake size={14} />
-              </span>
-              <span>
-                <span className="font-semibold">New: TRYBE brand deals.</span>{' '}
-                <span style={{ color: 'var(--text-soft)' }}>MVP sorts every TRYBE brand by fit for your channel, drafts your pitch and writes the shooting scripts.</span>
-              </span>
-              <ArrowRight size={14} className="flex-shrink-0" style={{ color: '#2DD4BF' }} />
-            </a>
           </div>
         </div>
 
         {/* ── Right: the full walkthrough, ready to play (Seb, 2026-10-18) ── */}
         <div className="w-full self-center">
           <HeroVideo />
+          <PlatformBar />
+          <a
+            href="#trybe"
+            className="mt-7 flex items-center gap-2.5 rounded-2xl px-4 py-3 text-[13px] font-medium transition-transform hover:-translate-y-0.5"
+            style={{
+              background: 'linear-gradient(135deg, rgba(249,115,22,0.14), rgba(45,212,191,0.14))',
+              border: '1px solid rgba(249,115,22,0.3)',
+              color: 'var(--text)',
+            }}
+          >
+            <span className="inline-flex items-center justify-center w-7 h-7 rounded-lg flex-shrink-0" style={{ background: 'linear-gradient(135deg, #2DD4BF, #2DD4BF)', color: '#fff' }}>
+              <Handshake size={14} />
+            </span>
+            <span>
+              <span className="font-semibold">New: TRYBE brand deals.</span>{' '}
+              <span style={{ color: 'var(--text-soft)' }}>MVP sorts every TRYBE brand by fit for your channel, drafts your pitch and writes the shooting scripts.</span>
+            </span>
+            <ArrowRight size={14} className="flex-shrink-0" style={{ color: '#2DD4BF' }} />
+          </a>
         </div>
       </div>
     </section>
@@ -1715,58 +1752,41 @@ function ComparisonSection() {
   )
 }
 
+// A bold brand-logo row shown INSIDE the hero: the platforms MVP publishes to
+// and works with. Uses the Simple Icons brand set (react-icons) for the real
+// marks, shown as nominative "works with" integrations, never an endorsement.
+// Still named PlatformBar because scripts/test-sales-page slices the hero up to
+// this function.
+const HERO_PLATFORMS: { name: string; Icon: React.ComponentType<{ size?: number }>; color: string }[] = [
+  { name: 'YouTube', Icon: SiYoutube, color: '#FF0000' },
+  { name: 'Amazon', Icon: FaAmazon, color: '#FF9900' },
+  { name: 'TikTok', Icon: SiTiktok, color: '#1C1917' },
+  { name: 'Instagram', Icon: SiInstagram, color: '#E1306C' },
+  { name: 'Facebook', Icon: SiFacebook, color: '#1877F2' },
+  { name: 'Pinterest', Icon: SiPinterest, color: '#E60023' },
+  { name: 'X', Icon: SiX, color: '#1C1917' },
+  { name: 'WordPress', Icon: SiWordpress, color: '#21759B' },
+]
 function PlatformBar() {
   return (
-    <section className="px-6 lg:px-8 pt-2 pb-14 relative">
-      <div className="max-w-4xl mx-auto text-center">
-        <p
-          className="text-[10px] uppercase tracking-[0.18em] mb-3"
-          style={{ color: 'var(--text-faint)' }}
-        >
-          One review video → published everywhere
-        </p>
-        <p className="text-lg sm:text-xl font-medium mb-7 leading-snug" style={{ color: 'var(--text-soft)' }}>
-          Every post auto-publishes natively to{' '}
-          <span className="font-bold" style={{ color: '#008080' }}>{PLATFORMS.length} channels</span>.
-          {' '}No copy-paste, no separate scheduler.
-        </p>
-        <div className="flex flex-wrap items-center justify-center gap-2.5">
-          {PLATFORMS.map((p) => (
-            <span
-              key={p.name}
-              className="inline-flex items-center gap-2 rounded-full px-3.5 py-2 text-[13px] font-medium"
-              style={{
-                color: 'var(--text-soft)',
-                border: '1px solid var(--text-faint)',
-                background: 'color-mix(in srgb, var(--text-soft) 4%, transparent)',
-              }}
-            >
-              <span style={{ color: p.color }}>{p.icon}</span>
-              {p.name}
-            </span>
-          ))}
-        </div>
-        <p className="text-[11px] mt-5" style={{ color: 'var(--text-faint)' }}>
-          TikTok included: your Shorts post straight to your feed from MVP, no phone step.
-        </p>
+    <div className="mt-7">
+      <p className="text-center text-[11px] font-bold uppercase tracking-[0.15em] mb-4" style={{ color: 'var(--text-faint)' }}>
+        Publishes to and works with
+      </p>
+      <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-4">
+        {HERO_PLATFORMS.map(({ name, Icon, color }) => (
+          <span key={name} role="img" aria-label={name} title={name} className="transition-transform hover:-translate-y-0.5" style={{ color }}>
+            <Icon size={28} />
+          </span>
+        ))}
+        <a href="#trybe" aria-label="TRYBE" title="TRYBE" className="transition-transform hover:-translate-y-0.5 inline-flex items-center">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/logos/trybe.svg" alt="TRYBE" width={28} height={28} style={{ width: 28, height: 28 }} />
+        </a>
       </div>
-    </section>
+    </div>
   )
 }
-
-const PLATFORMS = [
-  { name: 'WordPress', icon: <Globe size={15} />, color: '#21759B' },
-  // X + Threads brand marks are black/white — use the theme-aware token so
-  // they stay visible in both light and dark mode.
-  { name: 'X', icon: <Twitter size={15} />, color: 'var(--text-soft)' },
-  { name: 'LinkedIn', icon: <Linkedin size={15} />, color: '#0A66C2' },
-  { name: 'Facebook', icon: <Facebook size={15} />, color: '#1877F2' },
-  { name: 'Instagram', icon: <Instagram size={15} />, color: '#E1306C' },
-  { name: 'Threads', icon: <AtSign size={15} />, color: 'var(--text-soft)' },
-  { name: 'Bluesky', icon: <Cloud size={15} />, color: '#1185FE' },
-  { name: 'Telegram', icon: <Send size={15} />, color: '#229ED9' },
-  { name: 'Pinterest', icon: <Pin size={15} />, color: '#E60023' },
-]
 
 /** Footer — closes the page with a clean lockup of navigation, legal,
  *  and social links. Required before this preview can replace the live
