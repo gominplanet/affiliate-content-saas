@@ -432,7 +432,14 @@ function RolesSection() {
 /** Feature spotlights — a headline paired with a REAL product image, for the
  *  flagship new work. Alternating sides. Add an entry as each image lands in
  *  public/png. */
-const SPOTLIGHTS: { img: string; eyebrow: string; title: string; desc: string }[] = [
+const SPOTLIGHTS: { img: string; eyebrow: string; title: string; desc: string; bare?: boolean }[] = [
+  {
+    img: '/banners/review-editor.webp',
+    eyebrow: 'New',
+    title: 'Review Editor: film it, MVP edits it',
+    desc: 'Give MVP your talking take and your B-roll and it cuts them into a finished video: colour boost, titles, captions, your logo and the disclaimers added for you. Save a look once and every video matches it. Bring clips from your computer or Google Drive, one at a time or in batches, then publish to Amazon, YouTube, TRYBE and TikTok.',
+    bare: true,
+  },
   {
     img: '/png/mvp-voice.webp',
     eyebrow: 'New',
@@ -458,7 +465,14 @@ function FeatureSpotlights() {
               <h3 className="text-[28px] sm:text-[36px] font-extrabold tracking-[-0.03em] leading-[1.05] mt-4" style={{ color: 'var(--text)' }}>{s.title}</h3>
               <p className="mt-4 text-[15.5px] leading-relaxed max-w-xl" style={{ color: 'var(--text-soft)' }}>{s.desc}</p>
             </div>
-            <NextImage src={s.img} alt={s.title} width={1200} height={800} loading="lazy" className="w-full h-auto rounded-2xl border" style={{ borderColor: 'var(--border)', boxShadow: 'var(--card-shadow)' }} />
+            {s.bare ? (
+              <div className="relative">
+                <div aria-hidden className="pointer-events-none absolute inset-0" style={{ background: 'radial-gradient(58% 58% at 50% 45%, rgba(0,128,128,0.18), transparent 70%)', filter: 'blur(30px)' }} />
+                <NextImage src={s.img} alt={s.title} width={760} height={526} loading="lazy" className="relative w-full h-auto" />
+              </div>
+            ) : (
+              <NextImage src={s.img} alt={s.title} width={1200} height={800} loading="lazy" className="w-full h-auto rounded-2xl border" style={{ borderColor: 'var(--border)', boxShadow: 'var(--card-shadow)' }} />
+            )}
           </div>
         ))}
       </div>
