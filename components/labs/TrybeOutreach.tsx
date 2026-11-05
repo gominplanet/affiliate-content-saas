@@ -200,6 +200,18 @@ const PAY_SAYS: Record<LivePay, string> = {
 }
 /** On the list in a way that means it is not picked again from the live list. */
 const TAKEN: Array<Brand['status']> = ['drafted', 'sending', 'sent', 'already', 'failed']
+/** WHY A BRAND CANNOT BE TICKED, said beside it (Seb, 2026-11-05: "why is it
+ *  like this.. i cannot select it?"). A greyed box alone does not say. */
+function takenWhy(status: string | null | undefined): string | null {
+  switch (status) {
+    case 'drafted': return 'A message to this brand is already written and waiting in Sent, so it cannot be ticked again here.'
+    case 'sending': return 'A request to this brand is on its way, so it cannot be ticked again.'
+    case 'sent': return 'MVP already sent this brand a request from your account, so it cannot be ticked again: MVP never asks a brand twice.'
+    case 'already': return 'You had already asked this brand on TRYBE, so MVP will not ask it again.'
+    case 'failed': return 'The last send to this brand failed. Queue it again in Sent.'
+    default: return null
+  }
+}
 interface LogLine { at: number; name: string; text: string; tone: 'ok' | 'warn' | 'bad' | 'info' }
 
 // The kind of core message MVP recommends (Seb, 2026-10-07): who you are and
@@ -2487,6 +2499,7 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
                         <a href={adLibraryUrl(b.name)} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} className="text-[12px] inline-flex items-center gap-0.5" style={soft} title="Its ads in Meta's Ad Library">Meta ads <ExternalLink size={10} /></a>
                         {b.website && <a href={b.website} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} className="text-[12px] inline-flex items-center gap-0.5" style={soft}><Globe size={11} /> {siteName(b.website)} <ExternalLink size={10} /></a>}
                       </span>
+                      {taken && takenWhy(b.status) && <span className="block text-[12.5px] mt-1" style={{ color: 'var(--text)' }}>{takenWhy(b.status)}</span>}
                       <span className="flex flex-wrap items-center gap-1.5 mt-1.5">
                         <NewChip on={b.is_new} />
                         {sortBy !== 'picks' && <VerdictChip score={b.pick} read={b.pick_read} />}

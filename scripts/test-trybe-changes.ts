@@ -142,7 +142,7 @@ check('changes are logged where MVP\'s copy is written: directory, tiers, left, 
 {
   const out = read('components/labs/TrybeOutreach.tsx'), ch = read('components/labs/TrybeChanges.tsx'), jn = read('lib/trybe-joined.ts')
   check('a collection sends the collector\'s live joined brands, or says it could not read them', /const joinedIds = canMyBrands \? await readJoinedBrandIds\(\) : null/.test(out) && /joined: joinedIds == null \? \{ read: false \} : \{ read: true, ids: joinedIds \}/.test(out) && /brands\/stats\?period=all/.test(jn))
-  check('joined brands are stamped seen before anything is marked left', /if \(joinedRead\) await healJoined\(admin, joined\.ids, now\)[\s\S]{0,800}if \(c\.complete === true && hasLeft && joinedRead\)/.test(route))
+  check('joined brands are stamped seen before anything is marked left', /if \(joinedRead\) await healJoined\(admin, joined\.ids, now\)[\s\S]{0,1600}if \(c\.complete === true && hasLeft && joinedRead\)/.test(route))
   check('a collection that could not read joined brands marks nothing as left', /c\.complete === true && hasLeft && joinedRead/.test(route) && /marks no brand as left TRYBE/.test(out))
   check('healing clears the left mark and the false left rows, and logs no "back"', /update\(\{ last_seen_at: now, left_at: null \}\)\.in\('brand_id', part\)/.test(route) && /from\('trybe_directory_changes'\)\.delete\(\)\.eq\('kind', 'left'\)\.in\('brand_id', part\)/.test(route))
   check('What changed reads your joined brands first and says what it put right', /const joined = scoutOpens \? await readJoinedBrandIds\(\) : null/.test(ch) && /const healed = tier === 'admin' \? await healJoined\(admin, body\.joined, now\)/.test(route) && /Put right: \{data\.healed\}/.test(ch))

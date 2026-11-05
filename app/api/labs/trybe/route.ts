@@ -301,6 +301,25 @@ async function healJoined(admin: Db, raw: unknown, now: string): Promise<number>
   return healed
 }
 
+/** REQUESTED BRANDS STAY LISTED: every brand this creator sent a request to
+ *  through MVP (or had already requested on TRYBE) is stamped seen now and
+ *  any "left" mark cleared, since TRYBE's Discover list leaves a brand out
+ *  for the creator once it answers them. Only their own requests. */
+const REQUESTED_STATUSES = ['sent', 'already'] as const
+async function healRequested(admin: Db, ownerId: string, now: string): Promise<number> {
+  const { rows, error } = await allRows<{ brand_id: string }>(() => admin.from('trybe_brands').select('brand_id').eq('user_id', ownerId).in('status', REQUESTED_STATUSES as unknown as string[]).order('brand_id', { ascending: true }), 20000)
+  if (error) return 0
+  const ids = Array.from(new Set(rows.map(r => String(r.brand_id || '')).filter(Boolean)))
+  let healed = 0
+  for (let i = 0; i < ids.length; i += 200) {
+    const part = ids.slice(i, i + 200)
+    const { data } = await admin.from('trybe_directory').update({ last_seen_at: now, left_at: null }).in('brand_id', part).select('brand_id')
+    healed += (data || []).length
+    await admin.from('trybe_directory_changes').delete().eq('kind', 'left').in('brand_id', part)
+  }
+  return healed
+}
+
 /** How complete MVP's copy of TRYBE is. Null before migration 417. */
 async function directoryStats(admin: Db) {
   try {
@@ -807,6 +826,13 @@ export async function POST(request: Request) {
       const joined = (body.joined && typeof body.joined === 'object' ? body.joined : {}) as { read?: unknown; ids?: unknown }
       const joinedRead = joined.read === true
       if (joinedRead) await healJoined(admin, joined.ids, now)
+      // THE COLLECTOR'S REQUESTED BRANDS ARE ON TRYBE TOO (Seb, 2026-11-05:
+      // Alphatech Apparel, live on TRYBE, was marked as left on 2026-11-01
+      // and hidden from every member's search). A brand drops off the
+      // collector's own Discover list once it answers their request, so not
+      // seeing it there is not it leaving. Stamped seen before anything is
+      // marked left, and any wrong "left" cleared.
+      if (c.complete === true) await healRequested(admin, ownerId, now).catch(() => 0)
       // LEFT THE LIST: a WHOLE collection that did not see a brand in 12
       // hours means TRYBE no longer lists it. Marked once; it comes back as
       // "back" when a collection sees it again. ONLY WHEN MVP COULD CHECK: a

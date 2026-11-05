@@ -61,6 +61,16 @@ check('the list says it searched all of TRYBE, and that filters were paused', /S
 check('a brand not on the list at the last check is marked', /\{b\.not_listed && <span/.test(U))
 check('the page keeps what the search says about names', /nameSearch: d\.nameSearch \?\? null/.test(U))
 
+// ── A BRAND YOU ASKED IS NOT A BRAND THAT LEFT (Seb, 2026-11-05: Alphatech
+// Apparel, live on TRYBE, marked as left on 2026-11-01 after a request was
+// sent to it, and hidden from every member's search).
+check('a whole collection stamps the collector\'s requested brands as seen first', /if \(c\.complete === true\) await healRequested\(admin, ownerId, now\)/.test(R)
+  && R.indexOf('await healRequested(admin, ownerId, now)') < R.indexOf("update({ left_at: now }).lt('last_seen_at', cutoff)"))
+check('requested means sent through MVP or already asked on TRYBE, the collector\'s own only', /const REQUESTED_STATUSES = \['sent', 'already'\] as const/.test(R) && /\.eq\('user_id', ownerId\)\.in\('status', REQUESTED_STATUSES/.test(R))
+check('a wrong "left" is cleared, and its change entry with it', /update\(\{ last_seen_at: now, left_at: null \}\)\.in\('brand_id', part\)/.test(R) && /delete\(\)\.eq\('kind', 'left'\)\.in\('brand_id', part\)/.test(R))
+check('a route exports nothing but its handlers, or the build fails', !/^export const REQUESTED_STATUSES/m.test(R))
+check('a greyed brand says why it cannot be ticked', /function takenWhy\(/.test(U) && /\{taken && takenWhy\(b\.status\) && <span/.test(U) && /MVP already sent this brand a request from your account, so it cannot be ticked again/.test(U))
+
 if (fails.length) {
   console.error(`\n❌ trybe-name-search: ${fails.length} failure(s)\n`)
   for (const f of fails) console.error(`   • ${f}`)
