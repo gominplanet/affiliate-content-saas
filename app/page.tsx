@@ -1502,7 +1502,7 @@ function Hero() {
             className="mt-6 text-[18px] sm:text-[20px] font-semibold tracking-tight leading-snug max-w-2xl [text-wrap:pretty]"
             style={{ color: 'var(--text-muted)' }}
           >
-            Drop in your footage and the <span style={{ color: '#008080' }}>automatic video editor</span> cuts your raw footage into a finished review, then MVP turns it into your YouTube upload, your Amazon storefront video, a blog post built to rank, Shorts and Reels, and posts on nine social networks, all in your voice. Then it finds the brands on TRYBE that will pay you for the next one.
+            Drop in your footage and the <span style={{ color: '#008080' }}>automatic video editor</span> cuts your raw footage into a finished review, then MVP turns it into your YouTube upload, your Amazon storefront video, a blog post built to rank, Shorts and Reels, and posts on nine social networks, all in your voice.
           </p>
 
           {/* Sub */}
