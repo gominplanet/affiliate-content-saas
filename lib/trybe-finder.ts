@@ -462,6 +462,11 @@ export function ratingOf(r: { rating?: unknown; raw?: unknown }): { stars: numbe
 export const FAST_REVIEW_DAYS = 5
 
 /** A filter body from the page, read safely. Pure. */
+/** Whether any finder filter is on (the page's filtersOn, for the server). Pure. */
+export function anyFilterOn(f: FinderFilters): boolean {
+  return !!(f.minPerVideo || f.maxCreators || f.maxVideos || f.paidCreators || f.samples || f.onAmazon || f.starred || f.openOnly || f.spending || f.newOnly || f.fastReview || f.sells || f.minSpend || f.tiktokShop || f.tierUp || f.minRating)
+}
+
 export function readFilters(v: unknown): FinderFilters {
   const o = isObj(v) ? v : {}
   const pos = (x: unknown) => { const n = Number(x); return Number.isFinite(n) && n > 0 ? Math.min(n, 1_000_000) : null }

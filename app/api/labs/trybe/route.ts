@@ -24,7 +24,7 @@ import { sellsOf, type SellsRead } from '@/lib/trybe-sells'
 import { outreachNiche } from '@/lib/outreach-niche'
 import { pickScore, creatorProgramOf, readTopCreatives, tallyTop, META_ADS_FRESH_MS, readPriorities, weighScore, staticsOf, bucketDollars, metaTrustOf, metaUsable } from '@/lib/trybe-pick'
 import { adsPerCreator, adsPerReview, STAR_MIN_REVIEWS } from '@/lib/brand-popularity'
-import { ratingOf, readDirStats, rawKeys, amazonOf, nameVariants, readFilters, filterCheck, spendingOf, productOnAmazon, filmedProducts, mergeSnapshot, pickBaseline, crowdOf, creatorSpendOf, snapshotKey, isNewBrand, mixPick, mixOf, SNAPSHOT_KEEP_DAYS, type AmazonOf, type AmazonFilmed, type AmazonVideoProduct, type CcCampaign, type FilterId, type Snapshot } from '@/lib/trybe-finder'
+import { ratingOf, readDirStats, rawKeys, amazonOf, nameVariants, readFilters, anyFilterOn, filterCheck, spendingOf, productOnAmazon, filmedProducts, mergeSnapshot, pickBaseline, crowdOf, creatorSpendOf, snapshotKey, isNewBrand, mixPick, mixOf, SNAPSHOT_KEEP_DAYS, type AmazonOf, type AmazonFilmed, type AmazonVideoProduct, type CcCampaign, type FilterId, type Snapshot } from '@/lib/trybe-finder'
 import { payLines, payReadOf, estimatePay } from '@/lib/trybe-pay'
 import { readTopWords, firstHook, keepHooks, readHooksBody, hooksBlock, type TopHook } from '@/lib/trybe-hooks'
 import { readRetainers } from '@/lib/trybe-retainer'
@@ -1487,7 +1487,7 @@ export async function POST(request: Request) {
     const want = Math.max(1, Math.min(120, Number(body.limit) || 60))
     const terms = [...kws, ...cats].map(t => t.toLowerCase().replace(/[%,()]/g, ' ').trim()).filter(Boolean)
     const words = searchWords(terms)
-    const BASE_COLS = 'brand_id, name, website, categories, about, pay_text, trybe_score, total_creators, rating, site_products, site_text, first_seen_at, raw'
+    const BASE_COLS = 'brand_id, name, website, categories, about, pay_text, trybe_score, total_creators, rating, site_products, site_text, first_seen_at, last_seen_at, raw'
     // The pick signals (migration 425): asked for, and left out when the
     // database does not have them yet, so the list never breaks on them.
     const PICK_COLS = ', tiktok_handle, tiktok_shop, socials_checked_at, meta_ads, meta_ads_checked_at, top100_hits, top100_best_rank, top100_checked_at, earnings_bucket'
@@ -1502,7 +1502,7 @@ export async function POST(request: Request) {
       if (!probe.error || !/does not exist|schema cache/i.test(probe.error.message)) { COLS = cols; break }
     }
     const sort: BrowseSort = (BROWSE_SORTS as readonly string[]).includes(String(body.sort)) ? body.sort as BrowseSort : 'match'
-    const payType: PayType = (PAY_TYPES as readonly string[]).includes(String(body.payType)) ? body.payType as PayType : 'any'
+    let payType: PayType = (PAY_TYPES as readonly string[]).includes(String(body.payType)) ? body.payType as PayType : 'any'
     let rows: Array<Record<string, any>> = [] // eslint-disable-line @typescript-eslint/no-explicit-any
     // No user given: nothing is left out, so a brand on the list still shows.
     // Best bets and Fewest creators rank a wider pool: the search keeps its
@@ -1514,11 +1514,22 @@ export async function POST(request: Request) {
     // change ranks at once; else the saved ones.
     const settings = await readSettings(admin, ownerId)
     const priorities = body.priorities != null ? readPriorities(body.priorities) : (settings.priorities ?? readPriorities(null))
-    const filters = readFilters(body.filters)
+    const asked = readFilters(body.filters)
     const starredIds = new Set(settings.starred ?? [])
     // A brand's name, or the starred brands, are looked up directly: the
     // niche and keywords do not narrow them.
-    const nameQ = typeof body.name === 'string' ? body.name.replace(/[%,()_\\]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 60) : ''
+    const nameQ = typeof body.name === 'string' ? body.name.replace(/[%,()_\\"*]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 60) : ''
+    // A NAME IS LOOKED UP OVER ALL OF TRYBE (Seb, 2026-11-05: "I can find a
+    // brand like Alphatech Apparel really quickly by just searching for the
+    // brand... When I do the same thing ... it doesn't show up"). Typing a
+    // brand's name is asking for that brand: the filters and pay type are
+    // paused while it is searched (and said so), and a brand already
+    // messaged, passed on or removed is shown with where it stands.
+    const nameOnly = nameQ.length >= 2 && !asked.starred
+    const pausedFilters = nameOnly && (anyFilterOn(asked) || payType !== 'any')
+    const filters = nameOnly ? readFilters(null) : asked
+    if (nameOnly) payType = 'any'
+    const includeMine = nameOnly || body.includeMine === true
     // BRANDS BY ID (Seb, 2026-10-16: "we should be able to see more details on
     // these brands here too"): What changed opens one brand with the same
     // details Find brands shows, so the two pages never disagree.
@@ -1622,8 +1633,12 @@ export async function POST(request: Request) {
         let q = admin.from('trybe_directory').select(COLS)
         if (chunk) q = q.in('brand_id', chunk)
         if (idsQ.length) q = q.in('brand_id', idsQ)
-        if (nameQ.length >= 2) q = q.ilike('name', `%${nameQ}%`)
-        if (since) q = q.gte('last_seen_at', since)
+        // As typed, and with its spaces taken out: "Alpha Tech" finds
+        // "Alphatech Apparel" too.
+        if (nameQ.length >= 2) q = q.or(Array.from(new Set([nameQ, nameQ.replace(/\s+/g, '')])).map((v) => `name.ilike."%${v}%"`).join(','))
+        // A brand looked up by name is shown even when the last collection
+        // did not see it, marked so (notListed below), never hidden.
+        if (since && !nameOnly) q = q.gte('last_seen_at', since)
         const { data, error: e } = await q.limit(400)
         if (e) return NextResponse.json({ error: e.message }, { status: 500 })
         rows.push(...((data || []) as Array<Record<string, any>>)) // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -1854,8 +1869,8 @@ export async function POST(request: Request) {
     // Passed on (skipped) leaves the list too, like Oink's Pass, until undone.
     const DONE = ['drafted', 'sending', 'sent', 'already', 'failed', 'removed', 'skipped']
     const isDone = (id: string) => DONE.includes(String(mineBy.get(id)?.status || ''))
-    const hiddenMine = body.includeMine === true ? 0 : ranked.filter(x => isDone(x.r.brand_id)).length
-    const shown = body.includeMine === true ? ranked : ranked.filter(x => !isDone(x.r.brand_id))
+    const hiddenMine = includeMine ? 0 : ranked.filter(x => isDone(x.r.brand_id)).length
+    const shown = includeMine ? ranked : ranked.filter(x => !isDone(x.r.brand_id))
     const top = shown.slice(0, want)
     // HOW MUCH OF THE LIST IS READ (Star brands): Meta ads, website rank and
     // Google, counted over every brand matched, not only the ones shown, so
@@ -1895,6 +1910,8 @@ export async function POST(request: Request) {
       // limit and Best bets' "few creators" say so instead of doing nothing.
       creatorsKnown,
       hiddenMine,
+      // A name search: over all of TRYBE, the filters paused while it runs.
+      nameSearch: nameOnly ? { query: nameQ, pausedFilters } : null,
       payUnknown,
       payOther,
       sort,
@@ -1937,6 +1954,9 @@ export async function POST(request: Request) {
           first_seen_at: r.first_seen_at ?? null,
           products: productsFirst(r.site_products || [], kws).slice(0, 8), website_read: !!r.site_text,
           status: m?.status ?? null,
+          // Looked up by name, and not seen on TRYBE's list at the last whole
+          // collection: it may have left TRYBE, or be one you joined.
+          not_listed: nameOnly && !!since && !!r.last_seen_at && r.last_seen_at < since,
           fit_score: fitScore(r.brand_id), fit_reason: current(r.brand_id) ? (m?.fit_reason ?? null) : null,
           // Judged for an earlier search: said so, never shown as this one's verdict.
           fit_stale: !!m && m.fit_prefs != null && !current(r.brand_id) && (m.status === 'not_fit' || m.fit_score != null),

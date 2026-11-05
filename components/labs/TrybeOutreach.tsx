@@ -26,6 +26,7 @@ import { toast } from 'sonner'
 import { Loader2, Lock, Search, Sparkles, Send, Square, ExternalLink, Check, AlertTriangle, Globe, Star, Handshake, RotateCcw, X, Trash2, Tag,
   Dumbbell, Shirt, House, UtensilsCrossed, Baby, PawPrint, Gem, Cpu, Tent, Plane, BookOpen, Church, Palette, SprayCan, Moon, Pill, HeartPulse,
   Scissors, Droplet, Coffee, Leaf, Wand2, MessageCircle, Pencil, ChevronUp, Bell, Lightbulb, CalendarDays, Inbox, ArrowRight, Clapperboard, UploadCloud, BarChart3, Rocket, ListChecks, type LucideIcon } from 'lucide-react'
+import { nameKey, trybeSearchPath, brandsNamed, TRYBE_SEARCH_PARAMS } from '@/lib/trybe-name-lookup'
 import { ensureTrybeTab, requestTrybeTab, requestTrybeTabOpen, requestTrybeApi, requestTrybeAccess, requestTrybeScan, requestTrybeSend, requestTrybeHarvest, requestTrybeRun, requestTrybeRunStatus, requestTrybeRunStop, type TrybeScanPass, type TrybeRun } from '@/lib/extension-frame'
 import { readMetaAds, readMetaAdsAll, metaAdsWords, type MetaAdsRun } from '@/components/labs/metaAdsRead'
 import TrybeTabGate from '@/components/labs/TrybeTabGate'
@@ -128,6 +129,8 @@ interface LiveBrand {
   brand_id: string; name: string; website: string | null; categories: string[]; about: string | null
   pay_text: string | null; pay_kind?: 'flat' | 'percent' | 'both' | null; trybe_score: number | null; total_creators: number | null; match: number
   first_seen_at?: string | null
+  /** Looked up by name, and not seen on TRYBE's list at the last whole collection. */
+  not_listed?: boolean
   products: string[]; website_read: boolean
   /** Where it stands on this creator's own list, if it is on it. */
   status: Brand['status'] | null; fit_score: number | null; fit_reason: string | null
@@ -585,7 +588,12 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
     hiddenBy?: Partial<Record<FilterId, number>>; blankBy?: Partial<Record<FilterId, number>>; unknownBy?: Partial<Record<FilterId, number>>; amazonNotes?: string[]; amazonVideos?: number; rawKeys?: string[]; prioritiesSaved?: boolean; starsSaved?: boolean; crowdDays?: number | null; spendKnown?: { recent: number; lifetime: number; none: number } | null
     readCounts?: { total: number; meta: number; web: number; google: number; popularityReady: boolean; creators?: number; rankedBy?: 'perCreator' | 'perReview' }; metaTodo?: Array<{ brand_id: string; name: string }>
     /** Any brand looked at has a creator count (TRYBE's list gave none, Seb's check 2026-10-21). */
-    creatorsKnown?: boolean; mix?: { small: number; mid: number; big: number; unknown: number; says: string | null } | null } | null>(null)
+    creatorsKnown?: boolean; mix?: { small: number; mid: number; big: number; unknown: number; says: string | null } | null
+    /** A search by a brand's name: over all of TRYBE, the filters paused. */
+    nameSearch?: { query: string; pausedFilters: boolean } | null } | null>(null)
+  // A NAME MVP'S COPY DOES NOT HAVE, asked of TRYBE itself (lib/trybe-name-lookup).
+  const [nameLookup, setNameLookup] = useState<{ query: string; state: 'asking' | 'found' | 'none' | 'failed'; note?: string | null; names?: string[] } | null>(null)
+  const lookedUp = useRef<Set<string>>(new Set())
   // FINDER (Seb, 2026-10-14, after Rob's Oink Blue video: "build all 4"):
   // filters, a brand's name, and the creator's priorities for Best bets.
   const [filters, setFilters] = useState<FinderFilters>(NO_FILTERS)
@@ -1246,7 +1254,7 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
           // the spend note, the crowd window and the read counts were sent and
           // read but never copied, so none of them ever showed.
           crowdDays: d.crowdDays ?? null, spendKnown: d.spendKnown ?? null, mix: d.mix ?? null,
-          readCounts: d.readCounts, metaTodo: d.metaTodo, creatorsKnown: d.creatorsKnown })
+          readCounts: d.readCounts, metaTodo: d.metaTodo, creatorsKnown: d.creatorsKnown, nameSearch: d.nameSearch ?? null })
         // The saved priorities, until the creator changes them on this visit.
         if (!prioritiesEdited && d.priorities) setPriorities(d.priorities)
         setLiveError(null)
@@ -1260,6 +1268,46 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
     }, 350)
     return () => clearTimeout(t)
   }, [hasDirectory, catsKey, kwsKey, liveNonce, showMine, sortBy, payType, JSON.stringify(filters), nameQ.trim(), prioritiesEdited ? JSON.stringify(priorities) : '']) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // NOT IN MVP'S COPY: TRYBE ITSELF IS ASKED (Seb, 2026-11-05: Alphatech
+  // Apparel found on TRYBE's own search, 0 here). Once per name, through
+  // SCOUT, reading TRYBE's brand list by that name. What it finds is kept in
+  // the copy like any collection and the search runs again; what it does not
+  // find, or could not ask, is said.
+  useEffect(() => {
+    const q = live?.nameSearch?.query
+    if (!q || liveLoading || (live?.matched ?? 0) > 0) return
+    const key = nameKey(q)
+    if (key.length < 2 || lookedUp.current.has(key)) return
+    lookedUp.current.add(key)
+    void (async () => {
+      setNameLookup({ query: q, state: 'asking' })
+      let answered = false
+      let note: string | null = null
+      try {
+        for (const param of TRYBE_SEARCH_PARAMS) {
+          const r = await requestTrybeApi('GET', trybeSearchPath(param, q)).catch(() => ({ ok: false as const, error: 'SCOUT did not answer.' }))
+          if (!r.ok) {
+            note = ('error' in r && r.error) || `TRYBE answered ${'status' in r ? r.status : 'nothing'}`
+            // SCOUT or TRYBE not reachable: every other way would fail the same.
+            if (!answered) break
+            continue
+          }
+          answered = true
+          const hits = brandsNamed(r.json, q)
+          if (hits.length) {
+            await api({ action: 'directory', items: hits.map((h) => h.raw) })
+            setNameLookup({ query: q, state: 'found', names: hits.map((h) => h.name) })
+            setLiveNonce((n) => n + 1)
+            return
+          }
+        }
+        setNameLookup({ query: q, state: answered ? 'none' : 'failed', note })
+      } catch (e) {
+        setNameLookup({ query: q, state: 'failed', note: e instanceof Error ? e.message : 'MVP could not keep what TRYBE answered.' })
+      }
+    })()
+  }, [live, liveLoading]) // eslint-disable-line react-hooks/exhaustive-deps
 
   /** A priority changed: Best bets ranks by it at once, and it is saved a
    *  moment later. A save that failed is said; the ranking still uses it. */
@@ -2398,8 +2446,23 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
                 {payType !== 'any' && (live.payOther ?? 0) > 0
                   ? <>No brand here pays {PAY_WORD[payType]} as far as TRYBE&rsquo;s list says. <button onClick={() => setPayType('any')} className="font-semibold underline" style={{ color: PURPLE }}>Show any pay</button></>
                   : filters.starred && !nameQ.trim() && !Object.values(live.hiddenBy || {}).some(n => (n ?? 0) > 0) ? 'No starred brands yet. Press the star on a brand to keep it here.'
+                  : live.nameSearch ? (() => {
+                    // A SEARCH BY NAME says what was looked at: MVP's copy,
+                    // then TRYBE itself, and what each answered.
+                    const q = live.nameSearch.query
+                    const l = nameLookup && nameKey(nameLookup.query) === nameKey(q) ? nameLookup : null
+                    if (!l || l.state === 'asking') return <span className="inline-flex items-center gap-1.5"><Loader2 size={12} className="animate-spin" /> &ldquo;{q}&rdquo; is not in MVP&rsquo;s copy of TRYBE&rsquo;s brand list. Asking TRYBE itself through SCOUT&hellip;</span>
+                    if (l.state === 'found') return <>TRYBE found {l.names?.join(', ')}. MVP kept {l.names && l.names.length > 1 ? 'them' : 'it'} and is searching again.</>
+                    if (l.state === 'none') return <>TRYBE did not find a brand called &ldquo;{q}&rdquo; either. Check the spelling, or type part of the name.</>
+                    return <>&ldquo;{q}&rdquo; is not in MVP&rsquo;s copy of TRYBE&rsquo;s brand list, and SCOUT could not ask TRYBE: {l.note || 'no answer'}.</>
+                  })()
                   : filtersOn(filters) || nameQ.trim() ? <>No brand passes these filters. <button onClick={() => { setFilters(NO_FILTERS); setNameQ('') }} className="font-semibold underline" style={{ color: PURPLE }}>Clear filters</button></>
                   : hasNiche ? 'No TRYBE brands match these niches and keywords yet. Try other words.' : 'No TRYBE brands to show yet. Press Refresh from TRYBE to collect the list.'}
+              </p>
+            )}
+            {live?.nameSearch && (live.brands || []).length > 0 && (
+              <p className="text-[12px] mb-2" style={soft}>
+                Searching all of TRYBE for &ldquo;{live.nameSearch.query}&rdquo;{live.nameSearch.pausedFilters ? ', with your filters paused while you search by name' : ''}. A brand you already messaged shows with where it stands.
               </p>
             )}
             <div className="space-y-2">
@@ -2419,6 +2482,7 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
                         <StarButton on={!!b.starred} onClick={() => void star(b)} />
                         <CompareButton on={compare.some(x => x.brand_id === b.brand_id)} full={compare.length >= COMPARE_MAX} onClick={() => flipCompare(b)} />
                         {where && <span className="text-[11px] font-semibold rounded-full px-2 py-0.5" style={{ background: 'rgb(var(--brand-rgb) / 0.10)', color: PURPLE }}>{where}</span>}
+                        {b.not_listed && <span className="text-[11px] font-semibold rounded-full px-2 py-0.5" style={{ background: 'rgba(217,119,6,0.12)', color: '#B45309' }} title="TRYBE's Discover list did not have it at the last check: it may have left TRYBE, or be a brand you joined.">Not on TRYBE&rsquo;s list at the last check</span>}
                         <TrybeLink brandId={b.brand_id} name={b.name} scout={scoutOpens} />
                         <a href={adLibraryUrl(b.name)} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} className="text-[12px] inline-flex items-center gap-0.5" style={soft} title="Its ads in Meta's Ad Library">Meta ads <ExternalLink size={10} /></a>
                         {b.website && <a href={b.website} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} className="text-[12px] inline-flex items-center gap-0.5" style={soft}><Globe size={11} /> {siteName(b.website)} <ExternalLink size={10} /></a>}
