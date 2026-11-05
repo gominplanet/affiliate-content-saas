@@ -1582,9 +1582,9 @@ function Hero() {
         {/* ── Right: the full walkthrough, ready to play (Seb, 2026-10-18) ── */}
         <div className="w-full self-center">
           <HeroVideo />
+          <PlatformBar />
         </div>
       </div>
-      <PlatformBar />
     </section>
   )
 }
@@ -1769,17 +1769,20 @@ const HERO_PLATFORMS: { name: string; Icon: React.ComponentType<{ size?: number 
 ]
 function PlatformBar() {
   return (
-    <div className="relative max-w-5xl mx-auto px-5 sm:px-8 pt-2 pb-4">
-      <p className="text-center text-[12px] font-bold uppercase tracking-[0.16em] mb-6" style={{ color: 'var(--text-faint)' }}>
-        Publishes to and works with the platforms you already use
+    <div className="mt-7">
+      <p className="text-center text-[11px] font-bold uppercase tracking-[0.15em] mb-4" style={{ color: 'var(--text-faint)' }}>
+        Publishes to and works with
       </p>
-      <div className="flex flex-wrap items-center justify-center gap-x-9 gap-y-6">
+      <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-4">
         {HERO_PLATFORMS.map(({ name, Icon, color }) => (
           <span key={name} role="img" aria-label={name} title={name} className="transition-transform hover:-translate-y-0.5" style={{ color }}>
-            <Icon size={30} />
+            <Icon size={28} />
           </span>
         ))}
-        <a href="#trybe" aria-label="TRYBE" title="TRYBE" className="inline-flex items-center rounded-full px-3.5 py-1.5 text-[14px] font-extrabold tracking-tight transition-transform hover:-translate-y-0.5" style={{ color: '#0C6E6B', border: '1px solid rgba(0,128,128,0.35)' }}>TRYBE</a>
+        <a href="#trybe" aria-label="TRYBE" title="TRYBE" className="transition-transform hover:-translate-y-0.5 inline-flex items-center">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/logos/trybe.svg" alt="TRYBE" width={28} height={28} style={{ width: 28, height: 28 }} />
+        </a>
       </div>
     </div>
   )
