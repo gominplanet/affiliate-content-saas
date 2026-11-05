@@ -112,13 +112,18 @@ export function edgeLines(raw: Record<string, unknown> | null, lines: Line[]): {
  *  pointing at nothing, are left out. */
 export async function readShots(frames: { at: number; jpg: string }[], duration: number, who: Who, starts: number[] = [0]): Promise<Shot[]> {
   if (!frames.length) return []
-  const step = duration / frames.length
-  // SEVERAL B-ROLL FILES (Seb, 2026-11-04) are joined in order: said, so a
-  // shot is never grouped across two of them.
+  // SEVERAL B-ROLL FILES (Seb, 2026-11-04) are joined in order, and each is
+  // looked at on its own (framesPerFile): said, so a shot is never grouped
+  // across two of them, and each frame stands for its own share of its file.
   const clips = starts.length > 1
   const clipOf = (t: number) => { let i = 0; while (i + 1 < starts.length && t >= starts[i + 1]) i++; return i }
+  const clipEnd = (c: number) => (c + 1 < starts.length ? starts[c + 1] : duration)
+  const inClip = new Map<number, number>()
+  for (const f of frames) inClip.set(clipOf(f.at), (inClip.get(clipOf(f.at)) ?? 0) + 1)
+  const stepAt = (t: number) => { const c = clipOf(t); return (clipEnd(c) - starts[c]) / Math.max(1, inClip.get(c) ?? 1) }
+  const step = duration / frames.length
   const content: Array<Record<string, unknown>> = [{ type: 'text', text: clips
-    ? `These are ${frames.length} frames from ${starts.length} B-roll clips of a product, joined in order, ${clock(duration)} in all, one frame every ${step.toFixed(1)} seconds. Each frame says which clip it is from. A shot never runs from one clip into the next.`
+    ? `These are ${frames.length} frames from ${starts.length} B-roll clips of a product, joined in order, ${clock(duration)} in all, each clip seen from start to end. Each frame says which clip it is from. A shot never runs from one clip into the next.`
     : `These are ${frames.length} frames from one continuous B-roll take of a product, ${clock(duration)} long, in order, one every ${step.toFixed(1)} seconds.` }]
   frames.forEach((f, i) => {
     content.push({ type: 'text', text: `Frame ${i + 1} (${clock(f.at)})${clips ? `, clip ${clipOf(f.at) + 1}` : ''}` })
@@ -126,7 +131,7 @@ export async function readShots(frames: { at: number; jpg: string }[], duration:
   })
   content.push({ type: 'text', text: 'Group the frames into shots: runs of frames showing the same thing. Leave out frames that are blurry, mid move, or show nothing useful (floor, hand covering the lens). Reply with JSON only: {"shots":[{"from":1,"to":4,"what":"close up of the zipper"}]}. "what" is under ten plain words saying what the viewer sees.' })
   const msg = await createAnthropicClient().messages.create({
-    model: QUICK_MODEL, max_tokens: 900,
+    model: QUICK_MODEL, max_tokens: clips ? 1600 : 900,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     messages: [{ role: 'user', content: content as any }],
   })
@@ -136,15 +141,24 @@ export async function readShots(frames: { at: number; jpg: string }[], duration:
   for (const s of Array.isArray(raw?.shots) ? raw!.shots as Record<string, unknown>[] : []) {
     const a = Number(s?.from), b = Number(s?.to ?? s?.from)
     if (!(a >= 1 && b >= a && b <= frames.length)) continue
-    let start = Math.max(0, frames[a - 1].at - step / 2)
-    let end = Math.min(duration, frames[b - 1].at + step / 2)
+    const fa = frames[a - 1].at, fb = frames[b - 1].at
+    let start = Math.max(starts[clipOf(fa)] ?? 0, fa - stepAt(fa) / 2)
+    let end = Math.min(clipEnd(clipOf(fb)), fb + stepAt(fb) / 2)
     // Inside one clip, whatever was answered: the longer side of a shot that
     // runs over the join between two clips is kept.
     ;[start, end] = withinClip(start, end, starts, duration)
     if (end - start < 1.5) continue
-    out.push({ n: out.length + 1, start: Math.round(start * 100) / 100, end: Math.round(end * 100) / 100, what: noDash(s?.what, 80) || 'B-roll' })
+    out.push({ n: out.length + 1, start: Math.round(start * 100) / 100, end: Math.round(end * 100) / 100, what: noDash(s?.what, 80) || 'B-roll', ...(clips ? { clip: clipOf(start + 0.01) } : {}) })
   }
   return out
+}
+
+/** HOW MANY PICTURES OF EACH B-ROLL FILE, so a short clip next to long ones
+ *  is still seen: its share of `total`, at least 6 and at most 16 each. A
+ *  file of no length gets none. Pure. */
+export function framesPerFile(lengths: number[], total = 48): number[] {
+  const sum = lengths.reduce((t, d) => t + Math.max(0, Number(d) || 0), 0)
+  return lengths.map((d) => (!(Number(d) > 0) || !(sum > 0) ? 0 : Math.max(6, Math.min(16, Math.round((total * Number(d)) / sum)))))
 }
 
 /** A stretch of joined B-roll kept inside one clip: when it runs over the
@@ -267,7 +281,14 @@ export type Frame = { at: number; jpg: string }
  *  server could take them. */
 export async function planEdit(o: { words: Word[]; lines: Line[]; shots: Shot[]; product?: string | null; kind?: VideoKind; frames?: Frame[]; who: Who }): Promise<Plan> {
   const said = o.lines.map((l) => `${l.i} [${clock(l.start)}] ${l.text}`).join('\n')
-  const shots = o.shots.length ? `\n\nB-ROLL SHOTS:\n${o.shots.map((s) => `${s.n}: ${s.what} (${(s.end - s.start).toFixed(1)}s)`).join('\n')}` : '\n\nNo B-roll.'
+  // SEVERAL B-ROLL FILES (Seb, 2026-11-04: "use snippets of each in
+  // context"): each shot says its file, and the good shots of every file are
+  // to be used where they fit, spread through the video.
+  const clipCount = new Set(o.shots.map((s) => s.clip).filter((c) => c !== undefined)).size
+  const shots = o.shots.length
+    ? `\n\nB-ROLL SHOTS:\n${o.shots.map((s) => `${s.n}: ${s.what} (${(s.end - s.start).toFixed(1)}s)${clipCount > 1 && s.clip !== undefined ? `, clip ${s.clip + 1}` : ''}`).join('\n')}`
+      + (clipCount > 1 ? `\nThe B-roll is ${clipCount} separate clips. Use good shots from every clip where they fit what is said, spread through the video, rather than many from one clip. Still skip a shot that fits nothing.` : '')
+    : '\n\nNo B-roll.'
   const text = `${o.product ? `PRODUCT: ${o.product}\n\n` : ''}WHAT THEY SAID:\n${said}${shots}`
   const system = o.kind === 'trybe' ? TRYBE_SYSTEM : PLAN_SYSTEM
   const frames = (o.frames ?? []).filter((f) => f && typeof f.jpg === 'string' && f.jpg && Number.isFinite(f.at))

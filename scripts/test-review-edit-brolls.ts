@@ -10,7 +10,8 @@
 // rather than being left out quietly; and MVP knows where each file starts,
 // so no shot runs from one file into the next.
 import { readFileSync } from 'node:fs'
-import { withinClip } from '../lib/review-edit-plan'
+import { withinClip, framesPerFile } from '../lib/review-edit-plan'
+import { brollFilesLine } from '../lib/review-edit-server'
 import { MAX_FILES } from '../lib/review-edit-batch'
 
 const fails: string[] = []
@@ -27,7 +28,27 @@ const P = read('lib/review-edit-plan.ts')
 check('the shot reader is told the clips and which clip each frame is from', /starts: number\[\] = \[0\]/.test(P) && /B-roll clips of a product, joined in order/.test(P) && /A shot never runs from one clip into the next\./.test(P) && /, clip \$\{clipOf\(f\.at\) \+ 1\}/.test(P))
 check('and every shot is held inside one clip', /\[start, end\] = withinClip\(start, end, starts, duration\)/.test(P))
 const S = read('lib/review-edit-server.ts')
-check('the reading works out where each file starts and looks a little harder', /frames: joined\(src\.broll\) \? 40 : 36/.test(S) && /shots = await readShots\(bp\.data\.frames, bp\.data\.duration, who, starts\)/.test(S))
+// ── EVERY FILE SEEN (Seb, 2026-11-04: "MVP is going to use snippets of each
+// in context. Yes?"). Pictures spread over all the files together could miss
+// a short clip next to long ones; each file now gets its own share.
+check('a short clip next to a long one is still seen', same(framesPerFile([120, 5, 5]), [16, 6, 6]))
+check('even files share evenly, about 48 pictures in all', same(framesPerFile([10, 10, 10, 10, 10, 10]), [8, 8, 8, 8, 8, 8]))
+check('a file of no length gets none, never a division by nothing', same(framesPerFile([0, 10]), [0, 16]) && same(framesPerFile([0, 0]), [0, 0]))
+check('each file is looked at on its own, two at a time, on the joined clock', /const counts = framesPerFile\(lengths\)/.test(S) && /\{ \.\.\.p, frames: counts\[k\], width: 320 \}/.test(S) && /i \+= 2/.test(S) && /starts\[k\] \+ Math\.min\(f\.at/.test(S))
+check('one B-roll file is looked at as before', /\{ \.\.\.src\.broll, frames: 36, width: 320 \}/.test(S))
+check('each shot knows its file', /\.\.\.\(clips \? \{ clip: clipOf\(start \+ 0\.01\) \} : \{\}\)/.test(P))
+check('the planner is told to use good shots from every file, spread through the video', /Use good shots from every clip where they fit what is said, spread through the video, rather than many from one clip\./.test(P) && /, clip \$\{s\.clip \+ 1\}/.test(P))
+{
+  const shots = [{ n: 1, start: 0, end: 3, what: 'box', clip: 0 }, { n: 2, start: 10, end: 13, what: 'zip', clip: 1 }]
+  const plan = { placements: [{ shot: 1, line: 3, why: '' }] }
+  check('the card says which files went in, and why any did not',
+    brollFilesLine(['a.mov', 'b.mov', 'c.mov'], shots, plan) === ' B-roll from 1 of 3 files. Not used: b.mov (nothing in it fitted what you said), c.mov (no clear shots in it).')
+  check('a file MVP could not open says so', /c\.mov \(MVP could not open it\)/.test(brollFilesLine(['a.mov', 'b.mov', 'c.mov'], shots, plan, [2])))
+  check('every file used says so, and one file says nothing', brollFilesLine(['a.mov', 'b.mov'], shots, { placements: [{ shot: 1, line: 1, why: '' }, { shot: 2, line: 5, why: '' }] }) === ' B-roll from 2 of 2 files.' && brollFilesLine(['a.mov'], shots, plan) === '')
+  check('a moment taken out does not count as used', /b\.mov/.test(brollFilesLine(['a.mov', 'b.mov'], shots, { placements: [{ shot: 1, line: 1, why: '' }, { shot: 2, line: 5, why: '', off: true }] })))
+}
+check('the reading note and the card both say it', /brollFilesLine\(takeFiles\(row\.broll_src\)/.test(S) && /brollFiles: plan && r\.shots \? brollFilesLine\(/.test(read('app/api/review-edit/route.ts')) && /\{e\.brollFiles && <p/.test(read('components/review-editor/ReviewEditor.tsx')))
+check('each B-roll moment on the card names its file', /\{b\.file && <span style=\{soft\}>, from \{b\.file\}<\/span>\}/.test(read('components/review-editor/ReviewEditor.tsx')))
 
 // ── THE ONE VIDEO FORM ───────────────────────────────────────────────────────
 const U = read('components/review-editor/ReviewEditor.tsx')

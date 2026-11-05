@@ -89,7 +89,8 @@ export interface Cut {
 }
 
 /** A shot in the B-roll take, seconds into that take. */
-export interface Shot { n: number; start: number; end: number; what: string }
+/** clip: which B-roll file it is in (from 0), when there were several. */
+export interface Shot { n: number; start: number; end: number; what: string; clip?: number }
 export interface Placement { shot: number; line: number; why: string; off?: boolean }
 
 export interface Plan {

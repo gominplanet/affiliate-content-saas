@@ -77,7 +77,9 @@ interface EditView {
   review: { duration: number; width: number; height: number } | null
   outputs: Partial<Record<Format, { url: string; seconds: number }>> | null
   cuts: { k: number; kind: string; why: string; restored: boolean; at: string; text: string }[]
-  broll: { k: number; off: boolean; why: string; shot: string; line: string; at: string }[]
+  broll: { k: number; off: boolean; why: string; shot: string; file?: string | null; line: string; at: string }[]
+  /** Which B-roll files went in, and why any did not (several files only). */
+  brollFiles?: string
   zooms: number
   /** What went on the video when it was last sent to be made, and what was left out. */
   placed: { title: { from: number; to: number } | { missed: string } | null; pictures: PictureTime[]; callouts?: CalloutTime[] } | null
@@ -1226,6 +1228,7 @@ function EditCard({ e, reload, uploadLogo, withLogo, logoBusy, lib, teal = false
           {(e.cuts.length > 0 || e.broll.length > 0) && (
             <div>
               <p className="text-[13.5px] font-bold">What MVP cut ({e.cuts.filter((c) => !c.restored).length}){e.hasBroll ? ` and where the B-roll went (${e.broll.filter((b) => !b.off).length})` : ''}</p>
+              {e.brollFiles && <p className="text-[12.5px] mt-0.5" style={soft}>{e.brollFiles}</p>}
               <ul className="mt-2 flex flex-col gap-1.5 max-h-80 overflow-y-auto pr-1">
                 {e.cuts.map((c) => (
                   <li key={`c${c.k}`} className="rounded-lg border p-2 text-[12.5px]" style={{ borderColor: 'var(--border-2)' }}>
@@ -1236,7 +1239,7 @@ function EditCard({ e, reload, uploadLogo, withLogo, logoBusy, lib, teal = false
                 ))}
                 {e.broll.map((b) => (
                   <li key={`b${b.k}`} className="rounded-lg border p-2 text-[12.5px]" style={{ borderColor: 'var(--border-2)' }}>
-                    <span className="font-semibold">{b.at}</span> B-roll: <b>{b.shot}</b>{b.line && <span style={soft}> over &ldquo;{b.line}&rdquo;</span>}
+                    <span className="font-semibold">{b.at}</span> B-roll: <b>{b.shot}</b>{b.file && <span style={soft}>, from {b.file}</span>}{b.line && <span style={soft}> over &ldquo;{b.line}&rdquo;</span>}
                     <button type="button" disabled={!!work} onClick={() => void act('broll', { action: 'change', id: e.id, ...(b.off ? { placementOn: [b.k] } : { placementOff: [b.k] }) })} className="ml-2 underline font-semibold" style={{ color: PURPLE }}>{b.off ? 'Use it' : 'Take it out'}</button>
                   </li>
                 ))}

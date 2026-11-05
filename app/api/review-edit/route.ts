@@ -31,7 +31,7 @@ import { cleanSettings, clock, keepName, linesOf, DEFAULT_SETTINGS, MAX_CALLOUTS
 import { uploadKey } from '@/lib/review-edit-batch'
 import { suggestCallouts } from '@/lib/review-edit-callouts'
 import { promptChange } from '@/lib/review-edit-plan'
-import { moveQueue, deleteRaw, ownPath, hasUpload, serverJobs, finishMaking, takeFiles, editAllowance, allowanceFullWords, lineOrder, MAX_TAKE_FILES, EDIT_BUCKET, type EditRow, type Src, type TakeFile, type ServerView, editDb } from '@/lib/review-edit-server'
+import { brollFilesLine, moveQueue, deleteRaw, ownPath, hasUpload, serverJobs, finishMaking, takeFiles, editAllowance, allowanceFullWords, lineOrder, MAX_TAKE_FILES, EDIT_BUCKET, type EditRow, type Src, type TakeFile, type ServerView, editDb } from '@/lib/review-edit-server'
 import { driveAccessToken, driveFile, isDriveId } from '@/lib/google-drive'
 import { placesInLine } from '@/lib/review-edit-queue'
 
@@ -103,12 +103,20 @@ function view(r: EditRow, server?: ServerView | null, dropAsin?: string | null, 
       at: clock(c.words ? words[c.words[0]]?.start ?? 0 : lines[c.from]?.start ?? 0),
       text: textOf(c.from, c.to, c.words).slice(0, 300),
     })),
-    broll: (plan?.placements ?? []).map((p, k) => ({
-      k, off: !!p.off, why: p.why,
-      shot: (r.shots ?? []).find((s) => s.n === p.shot)?.what ?? 'B-roll',
-      line: lines[p.line]?.text?.slice(0, 160) ?? '',
-      at: clock(lines[p.line]?.start ?? 0),
-    })),
+    broll: (plan?.placements ?? []).map((p, k) => {
+      const shot = (r.shots ?? []).find((s) => s.n === p.shot)
+      const names = takeFiles(r.broll_src).map((f) => f.name || '')
+      return {
+        k, off: !!p.off, why: p.why,
+        shot: shot?.what ?? 'B-roll',
+        // Which B-roll file it is from, when there were several.
+        file: names.length > 1 && shot?.clip !== undefined ? (names[shot.clip] || `file ${shot.clip + 1}`) : null,
+        line: lines[p.line]?.text?.slice(0, 160) ?? '',
+        at: clock(lines[p.line]?.start ?? 0),
+      }
+    }),
+    /** Which B-roll files went in, and why any did not (several files only). */
+    brollFiles: plan && r.shots ? brollFilesLine(takeFiles(r.broll_src).map((f) => f.name || ''), r.shots, plan, r.info?.broll?.unseen ?? []).trim() : '',
     zooms: (plan?.keys ?? []).length,
     /** What went on the video when it was last sent to be made, and what was left out. */
     placed: r.info?.placed ?? null,

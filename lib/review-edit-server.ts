@@ -21,7 +21,7 @@ import { transcribeToCues, transcriptionConfigured } from '@/lib/shorts-transcri
 import { makeRenderJob } from '@/lib/render-job'
 import { drawTitle } from '@/lib/title-looks'
 import { cleanSettings, cleanWords, clock, edgeMoments, linesOf, renderSpec, tidyWordTimes, LOGO_WIDTH, PICTURE_WIDTH, type CalloutLook, type CalloutTime, type EditSettings, type PictureTime, type Plan, type Shot, type Spot, type Word } from '@/lib/review-edit'
-import { brollFits, planEdit, readShots } from '@/lib/review-edit-plan'
+import { brollFits, framesPerFile, planEdit, readShots } from '@/lib/review-edit-plan'
 import { driveAccessToken, driveMediaUrl } from '@/lib/google-drive'
 import { recordUsage } from '@/lib/ai-usage'
 import { fairOrder, lastServedBy } from '@/lib/review-edit-queue'
@@ -100,7 +100,7 @@ export function mixedShapes(files: { name?: string }[], parts: { width: number; 
 export interface EditRow {
   id: string; user_id: string; name: string | null; status: string; note: string | null
   review_src: Src; broll_src: Src | null; product: string | null
-  settings: unknown; info: { review?: { duration: number; width: number; height: number; hasAudio: boolean; silences?: [number, number][] }; broll?: { duration: number }; placed?: Placed; brollCheck?: { fits: boolean; talk: string; shows: string }
+  settings: unknown; info: { review?: { duration: number; width: number; height: number; hasAudio: boolean; silences?: [number, number][] }; broll?: { duration: number; unseen?: number[] }; placed?: Placed; brollCheck?: { fits: boolean; talk: string; shows: string }
     /** Counted as one of the member's edited videos (the first time it was read). */
     counted?: boolean } | null
   words: Word[] | null; shots: Shot[] | null; plan: Plan | null; outputs: Record<string, { url: string; seconds: number }> | null
@@ -110,6 +110,17 @@ export interface EditRow {
 const now = () => new Date().toISOString()
 const base = () => (process.env.YOUTUBE_INGEST_URL || '').replace(/\/+$/, '')
 const appUrl = () => (process.env.NEXT_PUBLIC_APP_URL || 'https://www.mvpaffiliate.io').replace(/\/+$/, '')
+
+/** WHICH B-ROLL FILES ARE IN THE VIDEO, and why any are not, when there
+ *  were several: "" for one file. Pure. */
+export function brollFilesLine(names: string[], shots: Shot[], plan: Pick<Plan, 'placements'>, unseen: number[] = []): string {
+  if (names.length < 2) return ''
+  const used = new Set(plan.placements.filter((p) => !p.off).map((p) => shots.find((s) => s.n === p.shot)?.clip).filter((c): c is number => c !== undefined))
+  const seen = new Set(shots.map((s) => s.clip))
+  const left = names.map((n, i) => ({ n: n || `file ${i + 1}`, i })).filter(({ i }) => !used.has(i))
+  const why = (i: number) => (unseen.includes(i) ? 'MVP could not open it' : !seen.has(i) ? 'no clear shots in it' : 'nothing in it fitted what you said')
+  return ` B-roll from ${used.size} of ${names.length} files.${left.length ? ` Not used: ${left.map(({ n, i }) => `${n} (${why(i)})`).join(', ')}.` : ''}`
+}
 
 /** A reason from the video server inside a sentence of ours: its own full
  *  stop dropped, so the card never ends on "video..". Pure. */
@@ -210,18 +221,43 @@ export async function readTakes(db: Db, row: EditRow): Promise<void> {
       : Promise.resolve([])
     let shots: Shot[] = []
     let brollInfo: { duration: number } | undefined
+    // B-roll files MVP could not take pictures of (several files only).
+    const brollUnseen: number[] = []
     if (src.broll) {
       await set(db, row.id, { note: 'Looking through your B-roll' })
-      // Several B-roll files (Seb, 2026-11-04): a few more frames, so each
-      // clip is seen, and where each one starts, so no shot crosses a join.
-      const bp = await videoServer<{ duration: number; frames: { at: number; jpg: string }[]; parts?: { duration: number }[] }>('/probe', { ...src.broll, frames: joined(src.broll) ? 40 : 36, width: 320 }, 240_000)
-      // Several B-roll files are only used when the server read them all.
-      if (bp.ok && (!joined(src.broll) || Array.isArray(bp.data.parts))) {
-        brollInfo = { duration: bp.data.duration }
-        const starts: number[] = []
-        let at = 0
-        for (const p of bp.data.parts ?? [{ duration: bp.data.duration }]) { starts.push(at); at += Number(p.duration) || 0 }
-        shots = await readShots(bp.data.frames, bp.data.duration, who, starts)
+      if (!joined(src.broll)) {
+        const bp = await videoServer<{ duration: number; frames: { at: number; jpg: string }[] }>('/probe', { ...src.broll, frames: 36, width: 320 }, 240_000)
+        if (bp.ok) {
+          brollInfo = { duration: bp.data.duration }
+          shots = await readShots(bp.data.frames, bp.data.duration, who)
+        }
+      } else {
+        // SEVERAL B-ROLL FILES, EACH LOOKED AT ON ITS OWN (Seb, 2026-11-04:
+        // "MVP is going to use snippets of each in context"). Pictures spread
+        // over all of them together could miss a short clip next to long
+        // ones, so each file gets its own share (framesPerFile), two files at
+        // a time. Their lengths first, from the files joined as they are made.
+        const lp = await videoServer<{ duration: number; parts?: { duration: number }[] }>('/probe', { ...src.broll, frames: 0 }, 120_000)
+        // Several B-roll files are only used when the server read them all.
+        if (lp.ok && Array.isArray(lp.data.parts)) {
+          const lengths = lp.data.parts.map((p) => Number(p.duration) || 0)
+          const starts = lengths.map((_, i) => lengths.slice(0, i).reduce((t, d) => t + d, 0))
+          const counts = framesPerFile(lengths)
+          const parts = (src.broll as { parts: { url: string; auth?: string }[] }).parts
+          const frames: { at: number; jpg: string }[] = []
+          for (let i = 0; i < parts.length; i += 2) {
+            await Promise.all(parts.slice(i, i + 2).map(async (p, j) => {
+              const k = i + j
+              const fp = counts[k] ? await videoServer<{ frames: { at: number; jpg: string }[] }>('/probe', { ...p, frames: counts[k], width: 320 }, 150_000) : null
+              if (fp?.ok && Array.isArray(fp.data.frames) && fp.data.frames.length) {
+                for (const f of fp.data.frames) frames.push({ at: Math.round((starts[k] + Math.min(f.at, Math.max(0, lengths[k] - 0.05))) * 100) / 100, jpg: f.jpg })
+              } else brollUnseen.push(k)
+            }))
+          }
+          frames.sort((a, b) => a.at - b.at)
+          brollInfo = { duration: lp.data.duration }
+          shots = await readShots(frames, lp.data.duration, who, starts)
+        }
       }
     }
     // A B-roll of another product (a batch paired wrong) is caught here, not
@@ -239,10 +275,12 @@ export async function readTakes(db: Db, row: EditRow): Promise<void> {
       + (check && !check.fits ? ' The B-roll looks like a different product, so it was left out: see below.' : '') + sideNote
       // SAID EITHER WAY, so a plan made without the pictures never looks like one made with them.
       + (plan.read === 'pictures' ? ' MVP watched how it starts and ends.' : ' MVP could not watch how it starts and ends this time, so it cut from your words alone.')
+      // WHICH B-ROLL FILES WENT IN, and why any did not.
+      + brollFilesLine(takeFiles(row.broll_src).map((f) => f.name || ''), shots, plan, brollUnseen)
     await set(db, row.id, {
       status: 'ready_to_make', attempts: 0,
       note: `Read: ${plan.cuts.length} ${plan.cuts.length === 1 ? 'cut' : 'cuts'}${shots.length ? `, ${plan.placements.length} B-roll ${plan.placements.length === 1 ? 'moment' : 'moments'}` : ''}. Waiting for its turn on the video server.${brollNote}`,
-      info: { review: { ...probe.data, silences: Array.isArray(audio.data.silences) ? audio.data.silences : undefined }, ...(brollInfo ? { broll: brollInfo } : {}), ...(check ? { brollCheck: check } : {}), counted: true }, words, shots, plan, settings,
+      info: { review: { ...probe.data, silences: Array.isArray(audio.data.silences) ? audio.data.silences : undefined }, ...(brollInfo ? { broll: { ...brollInfo, ...(brollUnseen.length ? { unseen: brollUnseen } : {}) } } : {}), ...(check ? { brollCheck: check } : {}), counted: true }, words, shots, plan, settings,
     })
     // ONE OF THE MONTH'S EDITED VIDEOS, counted once: the first time it is
     // read. Try again and Make it again never count it twice; removing it
