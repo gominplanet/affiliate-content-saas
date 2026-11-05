@@ -260,16 +260,16 @@ function HowItWorks() {
 
 /** Condensed features grid — absorbs ~10 of the old feature sections into one
  *  scannable grid, and leads with the new work (voice, Shorts, Passport). */
-const CONDENSED_FEATURES: { icon: React.ReactNode; title: string; desc: string; isNew?: boolean }[] = [
-  { icon: <Wand2 size={19} />, title: 'Review Editor: film it, MVP edits it', desc: 'Hand MVP your talking take and your B-roll and it cuts a finished video: colour boost, titles, captions, your logo and the disclaimers added for you. Save a look once and every video matches it. Pull clips from your computer or Google Drive, one at a time or in batches, then publish to Amazon, YouTube, TRYBE and TikTok.', isNew: true },
-  { icon: <Sparkles size={19} />, title: 'Writes in your real voice', desc: 'MVP learns how you actually sound from your own videos and edits, and sharpens over time. Every post reads like you, not generic AI.', isNew: true },
-  { icon: <Scissors size={19} />, title: 'Post Shorts to TikTok & Instagram', desc: 'Clip Factory turns long videos into ready-to-post shorts, and reframes a horizontal video to vertical for you before you post.', isNew: true },
-  { icon: <Globe size={19} />, title: 'Passport geo-links, no click fees', desc: 'Send every shopper to their own country’s Amazon and keep the commission, with no per-click fees. Included in Pro.', isNew: true },
-  { icon: <Zap size={19} />, title: 'Amazon Deal Radar', desc: 'Live, price-history-verified deals, not fake “was” prices. MVP turns the real drops into posts and a shoppable bio.' },
-  { icon: <FileText size={19} />, title: 'SEO & AI-optimized articles', desc: 'Reviews, comparisons, buying guides and researched articles built to rank on Google and get quoted by AI answers.' },
-  { icon: <Search size={19} />, title: 'Product and campaign research', desc: 'Filter all of Amazon by category, price, rating, reviews and sales rank. Scout Levanta, PartnerBoost, Walmart and Wayward campaigns too.' },
-  { icon: <Handshake size={19} />, title: 'Paid brand deals on TRYBE', desc: 'MVP finds the TRYBE brands that fit your channel, drafts your first message and plans the videos once a brand says yes.', isNew: true },
-  { icon: <Store size={19} />, title: 'Your own blog, forever', desc: 'A beautifully designed WordPress site that stays yours, even if you leave. No walled garden, no lock-in.' },
+const CONDENSED_FEATURES: { icon: React.ReactNode; title: string; desc: string; isNew?: boolean; banner?: string }[] = [
+  { icon: <Wand2 size={19} />, banner: 'review-editor', title: 'Review Editor: film it, MVP edits it', desc: 'Hand MVP your talking take and your B-roll and it cuts a finished video: colour boost, titles, captions, your logo and the disclaimers added for you. Save a look once and every video matches it. Pull clips from your computer or Google Drive, one at a time or in batches, then publish to Amazon, YouTube, TRYBE and TikTok.', isNew: true },
+  { icon: <Sparkles size={19} />, banner: 'brand-voice', title: 'Writes in your real voice', desc: 'MVP learns how you actually sound from your own videos and edits, and sharpens over time. Every post reads like you, not generic AI.', isNew: true },
+  { icon: <Scissors size={19} />, banner: 'clip-factory', title: 'Post Shorts to TikTok & Instagram', desc: 'Clip Factory turns long videos into ready-to-post shorts, and reframes a horizontal video to vertical for you before you post.', isNew: true },
+  { icon: <Globe size={19} />, banner: 'passport', title: 'Passport geo-links, no click fees', desc: 'Send every shopper to their own country’s Amazon and keep the commission, with no per-click fees, included for every member.', isNew: true },
+  { icon: <Zap size={19} />, banner: 'deal-radar', title: 'Amazon Deal Radar', desc: 'Live, price-history-verified deals, not fake “was” prices. MVP turns the real drops into posts and a shoppable bio.' },
+  { icon: <FileText size={19} />, banner: 'seo', title: 'SEO & AI-optimized articles', desc: 'Reviews, comparisons, buying guides and researched articles built to rank on Google and get quoted by AI answers.' },
+  { icon: <Search size={19} />, banner: 'product-research', title: 'Product and campaign research', desc: 'Filter all of Amazon by category, price, rating, reviews and sales rank. Scout Levanta, PartnerBoost, Walmart and Wayward campaigns too.' },
+  { icon: <Handshake size={19} />, banner: 'trybe', title: 'Paid brand deals on TRYBE', desc: 'MVP finds the TRYBE brands that fit your channel, drafts your first message and plans the videos once a brand says yes.', isNew: true },
+  { icon: <Store size={19} />, banner: 'blog-posts', title: 'Your own blog, forever', desc: 'A beautifully designed WordPress site that stays yours, even if you leave. No walled garden, no lock-in.' },
   { icon: <ShieldCheck size={19} />, title: 'Your data stays yours', desc: 'MVP never uses or sells your personal data. It works from your content, nothing else.' },
 ]
 function FeaturesGridCondensed() {
@@ -288,7 +288,13 @@ function FeaturesGridCondensed() {
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4 mt-10">
           {CONDENSED_FEATURES.map(f => (
             <div key={f.title} className="rounded-2xl border p-5 transition-all hover:-translate-y-0.5" style={{ background: 'var(--surface)', borderColor: 'var(--border)' }}>
-              <div className="w-10 h-10 rounded-xl grid place-items-center mb-3.5" style={{ background: 'rgba(0,128,128,0.1)', color: '#008080' }}>{f.icon}</div>
+              {f.banner ? (
+                <div className="rounded-xl overflow-hidden mb-4" style={{ background: 'linear-gradient(135deg, rgba(0,128,128,0.08), rgba(45,212,191,0.06))' }}>
+                  <NextImage src={`/banners/${f.banner}.webp`} alt="" width={760} height={526} loading="lazy" className="w-full h-auto" />
+                </div>
+              ) : (
+                <div className="w-10 h-10 rounded-xl grid place-items-center mb-3.5" style={{ background: 'rgba(0,128,128,0.1)', color: '#008080' }}>{f.icon}</div>
+              )}
               <h3 className="text-[16.5px] font-bold mb-1.5 flex items-center gap-2 flex-wrap" style={{ color: 'var(--text)' }}>
                 {f.title}
                 {f.isNew && <span className="text-[9px] font-extrabold uppercase tracking-[0.12em] text-white px-1.5 py-0.5 rounded-full" style={{ background: 'linear-gradient(135deg,#008080,#2DD4BF)' }}>New</span>}
@@ -418,7 +424,7 @@ function RolesSection() {
                   ))}
                 </ul>
                 <p className="mt-auto pt-5 text-[12.5px]" style={{ color: 'var(--text-faint)' }}>
-                  {live ? r.note : `Coming soon to every Pro member. ${r.note}`}
+                  {live ? r.note : `Coming soon to every member. ${r.note}`}
                 </p>
               </article>
             )
@@ -451,6 +457,20 @@ const SPOTLIGHTS: { img: string; eyebrow: string; title: string; desc: string; b
     eyebrow: 'New',
     title: 'Post your Shorts to TikTok and Instagram',
     desc: 'Clip Factory turns your long videos into ready-to-post shorts. Upload a horizontal video and MVP reframes it to vertical for you, center crop or split screen, so it is ready to post everywhere in a couple of clicks.',
+  },
+  {
+    img: '/banners/trybe.webp',
+    eyebrow: 'New',
+    title: 'Paid brand deals, done for you',
+    desc: 'MVP reads TRYBE and finds the brands that fit your channel, drafts your first message in your own words, suggests a reply on every conversation, and turns each brief into shooting scripts. You pick the deals and film. The outreach and the planning are handled.',
+    bare: true,
+  },
+  {
+    img: '/banners/deal-radar.webp',
+    eyebrow: 'Live',
+    title: 'Real deals, turned into posts',
+    desc: 'Deal Radar tracks real price drops against price history, so a deal you post is a drop that actually happened, never a fake was-price. MVP turns the genuine ones into social posts and a shoppable bio, ready to go.',
+    bare: true,
   },
 ]
 function FeatureSpotlights() {
