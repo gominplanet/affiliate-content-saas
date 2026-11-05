@@ -240,7 +240,7 @@ function HowItWorks() {
             Find. Create. Publish. Earn.
           </h2>
           <p className="mt-4 text-[15.5px]" style={{ color: 'var(--text-soft)' }}>
-            One system that runs the whole business side while you create.
+            You stay on camera. MVP runs the whole business side behind you, from the research and the edit to the uploads, the posts and the brand deals, so one review keeps earning long after you film it.
           </p>
         </div>
         <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-5 mt-10">
@@ -399,7 +399,7 @@ function RolesSection() {
             The team you would otherwise hire
           </h2>
           <p className="mt-4 text-[15.5px]" style={{ color: 'var(--text-soft)' }}>
-            Uploading, brand deals, Facebook and research eat a creator&apos;s week. MVP does the heavy part of each, and you decide what goes out.
+            Uploading, brand deals, Facebook and research each eat a chunk of a creator&apos;s week. MVP does the heavy part of every one of them, and you stay in control of what goes out.
           </p>
         </div>
         <div className="grid lg:grid-cols-2 gap-5 mt-10">
@@ -1103,6 +1103,9 @@ function CommunitySection() {
           <h2 className="text-[32px] sm:text-[44px] font-extrabold tracking-[-0.03em] leading-[1.03] mt-3" style={{ color: 'var(--text)' }}>
             Support and a community behind you
           </h2>
+          <p className="mt-4 text-[15.5px]" style={{ color: 'var(--text-soft)' }}>
+            Tutorials for every feature, weekly live calls, and a room full of creators who have already solved what you are hitting. You are never stuck on your own.
+          </p>
         </div>
         <div className="grid sm:grid-cols-3 gap-4 mt-10">
           {COMMUNITY.map(({ Icon, title, desc, href, cta }) => {
