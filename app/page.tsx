@@ -900,7 +900,7 @@ function OldWayNewWay() {
     {
       // HALO SALES (Seb, 2026-10-15). Said as how Amazon pays, never as a source.
       old: 'A storefront sale pays you on that one product, and nothing else in the cart.',
-      mvp: 'Send a shopper to Amazon from your blog, a pin or a description and you earn on everything else they buy for the next 24 hours, not just the product you linked.',
+      mvp: 'Send a shopper to Amazon from your blog, a pin or a description and it can earn you on everything else they buy within 24 hours, not just the product you linked.',
     },
     {
       old: 'You film a video, upload it, and that is the end of its life.',
