@@ -261,6 +261,7 @@ function HowItWorks() {
 /** Condensed features grid — absorbs ~10 of the old feature sections into one
  *  scannable grid, and leads with the new work (voice, Shorts, Passport). */
 const CONDENSED_FEATURES: { icon: React.ReactNode; title: string; desc: string; isNew?: boolean }[] = [
+  { icon: <Upload size={19} />, title: 'Edit and publish videos in bulk', desc: `Load up to ${BULK_UPLOAD_MAX_VIDEOS} videos at once, set your call-to-action and thumbnail look once, and MVP burns the CTA onto every video, builds each thumbnail, and publishes them to YouTube and your Amazon storefront in one press, with disclosures set.`, isNew: true },
   { icon: <Sparkles size={19} />, title: 'Writes in your real voice', desc: 'MVP learns how you actually sound from your own videos and edits, and sharpens over time. Every post reads like you, not generic AI.', isNew: true },
   { icon: <Scissors size={19} />, title: 'Post Shorts to TikTok & Instagram', desc: 'Clip Factory turns long videos into ready-to-post shorts, and reframes a horizontal video to vertical for you before you post.', isNew: true },
   { icon: <Globe size={19} />, title: 'Passport geo-links, no click fees', desc: 'Send every shopper to their own country’s Amazon and keep the commission, with no per-click fees. Included in Pro.', isNew: true },
