@@ -39,6 +39,8 @@ import {
   CloudUpload, Handshake,
 } from 'lucide-react'
 import NextImage from 'next/image'
+import { SiYoutube, SiTiktok, SiInstagram, SiFacebook, SiPinterest, SiX, SiWordpress } from 'react-icons/si'
+import { FaAmazon } from 'react-icons/fa6'
 import { FAQSection, HeroVideo, SalesVideosSection, StickyBottomBar } from '@/components/landing/islands'
 
 // Local CSS-var override for a DARK emphasis band inside the otherwise-light
@@ -151,9 +153,8 @@ export default function LandingPreview() {
           sections in this file. */}
       <Nav />
       <Hero />
-      {/* ONE PLAN (Seb, 2026-10-18): the "which one are you?" fork offered
-          the Amazon plan, which is no longer sold, so it is gone. */}
-      <PlatformBar />
+      {/* The platform logo row (PlatformBar) now renders inside <Hero />, so the
+          "which one are you?" fork and the old standalone strip are both gone. */}
       <OldWayNewWay />
       {/* PROOF MOVES ITSELF. With a real wall of quotes, proof belongs high:
           cold traffic off an ad trusts nobody, and other creators are the
@@ -1583,6 +1584,7 @@ function Hero() {
           <HeroVideo />
         </div>
       </div>
+      <PlatformBar />
     </section>
   )
 }
@@ -1750,58 +1752,38 @@ function ComparisonSection() {
   )
 }
 
+// A bold brand-logo row shown INSIDE the hero: the platforms MVP publishes to
+// and works with. Uses the Simple Icons brand set (react-icons) for the real
+// marks, shown as nominative "works with" integrations, never an endorsement.
+// Still named PlatformBar because scripts/test-sales-page slices the hero up to
+// this function.
+const HERO_PLATFORMS: { name: string; Icon: React.ComponentType<{ size?: number }>; color: string }[] = [
+  { name: 'YouTube', Icon: SiYoutube, color: '#FF0000' },
+  { name: 'Amazon', Icon: FaAmazon, color: '#FF9900' },
+  { name: 'TikTok', Icon: SiTiktok, color: '#1C1917' },
+  { name: 'Instagram', Icon: SiInstagram, color: '#E1306C' },
+  { name: 'Facebook', Icon: SiFacebook, color: '#1877F2' },
+  { name: 'Pinterest', Icon: SiPinterest, color: '#E60023' },
+  { name: 'X', Icon: SiX, color: '#1C1917' },
+  { name: 'WordPress', Icon: SiWordpress, color: '#21759B' },
+]
 function PlatformBar() {
   return (
-    <section className="px-6 lg:px-8 pt-2 pb-14 relative">
-      <div className="max-w-4xl mx-auto text-center">
-        <p
-          className="text-[10px] uppercase tracking-[0.18em] mb-3"
-          style={{ color: 'var(--text-faint)' }}
-        >
-          One review video → published everywhere
-        </p>
-        <p className="text-lg sm:text-xl font-medium mb-7 leading-snug" style={{ color: 'var(--text-soft)' }}>
-          Every post auto-publishes natively to{' '}
-          <span className="font-bold" style={{ color: '#008080' }}>{PLATFORMS.length} channels</span>.
-          {' '}No copy-paste, no separate scheduler.
-        </p>
-        <div className="flex flex-wrap items-center justify-center gap-2.5">
-          {PLATFORMS.map((p) => (
-            <span
-              key={p.name}
-              className="inline-flex items-center gap-2 rounded-full px-3.5 py-2 text-[13px] font-medium"
-              style={{
-                color: 'var(--text-soft)',
-                border: '1px solid var(--text-faint)',
-                background: 'color-mix(in srgb, var(--text-soft) 4%, transparent)',
-              }}
-            >
-              <span style={{ color: p.color }}>{p.icon}</span>
-              {p.name}
-            </span>
-          ))}
-        </div>
-        <p className="text-[11px] mt-5" style={{ color: 'var(--text-faint)' }}>
-          TikTok included: your Shorts post straight to your feed from MVP, no phone step.
-        </p>
+    <div className="relative max-w-5xl mx-auto px-5 sm:px-8 pt-2 pb-4">
+      <p className="text-center text-[12px] font-bold uppercase tracking-[0.16em] mb-6" style={{ color: 'var(--text-faint)' }}>
+        Publishes to and works with the platforms you already use
+      </p>
+      <div className="flex flex-wrap items-center justify-center gap-x-9 gap-y-6">
+        {HERO_PLATFORMS.map(({ name, Icon, color }) => (
+          <span key={name} role="img" aria-label={name} title={name} className="transition-transform hover:-translate-y-0.5" style={{ color }}>
+            <Icon size={30} />
+          </span>
+        ))}
+        <a href="#trybe" aria-label="TRYBE" title="TRYBE" className="inline-flex items-center rounded-full px-3.5 py-1.5 text-[14px] font-extrabold tracking-tight transition-transform hover:-translate-y-0.5" style={{ color: '#0C6E6B', border: '1px solid rgba(0,128,128,0.35)' }}>TRYBE</a>
       </div>
-    </section>
+    </div>
   )
 }
-
-const PLATFORMS = [
-  { name: 'WordPress', icon: <Globe size={15} />, color: '#21759B' },
-  // X + Threads brand marks are black/white — use the theme-aware token so
-  // they stay visible in both light and dark mode.
-  { name: 'X', icon: <Twitter size={15} />, color: 'var(--text-soft)' },
-  { name: 'LinkedIn', icon: <Linkedin size={15} />, color: '#0A66C2' },
-  { name: 'Facebook', icon: <Facebook size={15} />, color: '#1877F2' },
-  { name: 'Instagram', icon: <Instagram size={15} />, color: '#E1306C' },
-  { name: 'Threads', icon: <AtSign size={15} />, color: 'var(--text-soft)' },
-  { name: 'Bluesky', icon: <Cloud size={15} />, color: '#1185FE' },
-  { name: 'Telegram', icon: <Send size={15} />, color: '#229ED9' },
-  { name: 'Pinterest', icon: <Pin size={15} />, color: '#E60023' },
-]
 
 /** Footer — closes the page with a clean lockup of navigation, legal,
  *  and social links. Required before this preview can replace the live
