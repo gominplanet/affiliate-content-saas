@@ -330,7 +330,7 @@ const ROLES: { id: string; gate: PreviewFeature | null; icon: React.ReactNode; r
     icon: <CloudUpload size={20} />,
     role: 'Your upload team',
     title: 'Drop: film it, drop it, done',
-    desc: `Drop up to ${BULK_UPLOAD_MAX_VIDEOS} videos at once and MVP sends each one everywhere it belongs. It tells your long reviews from your vertical videos by their shape, so there is nothing to sort.`,
+    desc: `Drop up to ${BULK_UPLOAD_MAX_VIDEOS} videos at once and MVP sends each one everywhere it belongs, with no sitting through each export. It tells your long reviews from your vertical clips by their shape, so there is nothing to sort and nothing to label. You make three choices once, the CTA, the posting days and the products, then press launch and walk away.`,
     points: [
       'Long reviews go to YouTube and your Amazon storefront, with the title, description, thumbnail and links done',
       'Each one also becomes a blog post, a Pinterest pin, a Facebook Group post and three short clips',
@@ -346,7 +346,7 @@ const ROLES: { id: string; gate: PreviewFeature | null; icon: React.ReactNode; r
     icon: <Handshake size={20} />,
     role: 'Your brand deal agent',
     title: 'Land paid brand deals on TRYBE',
-    desc: 'TRYBE is the marketplace where brands pay creators to make videos. MVP finds the brands worth your time, writes your first message, and plans the videos once a brand says yes.',
+    desc: 'TRYBE is the marketplace where brands pay creators to make videos, and the hard part is finding the right ones and keeping up with the inbox. MVP sorts every brand by fit for your channel, writes your first message in your voice, suggests a reply on every conversation, and once a brand says yes it hands you the shooting scripts. You choose the deals and film; the busywork is handled.',
     points: [
       'Every brand on TRYBE, sorted by best fit for your channel, fewest creators, total payouts or newest',
       'Your first message to each brand drafted in your words, and the requests sent for you a few at a time',
@@ -362,7 +362,7 @@ const ROLES: { id: string; gate: PreviewFeature | null; icon: React.ReactNode; r
     icon: <Facebook size={20} />,
     role: 'Your Facebook manager',
     title: 'Meta Hub: Facebook that actually sells',
-    desc: 'Meta Hub sets up the Facebook system that works for affiliates: your Group holds the link, and your Page points people to it.',
+    desc: 'Meta Hub sets up the Facebook system that actually sells for affiliates: your niche Groups hold the product links, and your Page points people into them. SCOUT fills in each post for you, so building a Facebook presence that earns is a few clicks instead of a second job. Every review, clip and deal flows into one queue, ready to post.',
     points: [
       'Niche Groups like Kitchen or Automotive, each holding its own product links',
       'SCOUT fills in every Group post for you, and you press Post',
@@ -378,7 +378,7 @@ const ROLES: { id: string; gate: PreviewFeature | null; icon: React.ReactNode; r
     icon: <Radar size={20} />,
     role: 'Your researcher',
     title: 'Know what to film before you buy it',
-    desc: 'Search all of Amazon and the partner programs you belong to, then turn the best finds into content in one click.',
+    desc: 'Search the whole Amazon catalogue and the partner programs you belong to, then turn the best finds into content in one click. MVP surfaces products with real demand, strong ratings and room for your video, and flags when something you already reviewed goes on sale. You stop guessing what to film and film what pays.',
     points: [
       'Filter the whole Amazon catalogue by category, price, rating, reviews and sales rank',
       'MVP picks: products with real demand, strong ratings and room for your video',
@@ -1090,9 +1090,9 @@ function PassportSpotlight() {
 /** Support & community — the "you're not doing this alone" section. Matches the
  *  education + community that logie5 and Oink lean on (tutorials, calls, group). */
 const COMMUNITY: { Icon: typeof Play; title: string; desc: string; href?: string; cta?: string }[] = [
-  { Icon: Play, title: 'Video tutorials', desc: 'Step-by-step tutorials for every feature on the MVP YouTube channel, so you are never stuck.', href: 'https://www.youtube.com/@MVPaffiliate', cta: 'Watch on YouTube' },
-  { Icon: Calendar, title: 'Weekly live calls', desc: 'Jump on our weekly calls to get your questions answered and talk shop on affiliate marketing and everything online.' },
-  { Icon: Facebook, title: 'A private community', desc: 'A Facebook group where creators share what is working, celebrate wins, and help shape what we build next.', href: 'https://www.facebook.com/groups/mvpaffiliate', cta: 'Join the group' },
+  { Icon: Play, title: 'Video tutorials', desc: 'Step-by-step tutorials for every feature on the MVP YouTube channel, so you are never stuck. New walkthroughs land as features ship, and the full catalogue is there whenever you want to go deeper on a tool.', href: 'https://www.youtube.com/@MVPaffiliate', cta: 'Watch on YouTube' },
+  { Icon: Calendar, title: 'Weekly live calls', desc: 'Jump on our weekly live calls to get your questions answered in real time and talk shop on affiliate marketing and everything online. Bring a problem and leave with a plan, or just listen in and pick up what is working for other creators.' },
+  { Icon: Facebook, title: 'A private community', desc: 'A Facebook group where creators share what is working, celebrate wins and help shape what we build next. It is the fastest place to get an answer, find a collaborator, or catch a strategy before it gets crowded.', href: 'https://www.facebook.com/groups/mvpaffiliate', cta: 'Join the group' },
 ]
 function CommunitySection() {
   return (
