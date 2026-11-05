@@ -1555,27 +1555,6 @@ function Hero() {
                 We never use or sell your personal data.
               </span>
             </div>
-
-            {/* New-feature ribbon — ties the hero to the flagship new work in the
-                features grid below (voice + Shorts). */}
-            <a
-              href="#trybe"
-              className="mt-6 inline-flex items-center gap-2.5 rounded-2xl px-4 py-3 text-[13px] font-medium transition-transform hover:-translate-y-0.5"
-              style={{
-                background: 'linear-gradient(135deg, rgba(249,115,22,0.14), rgba(45,212,191,0.14))',
-                border: '1px solid rgba(249,115,22,0.3)',
-                color: 'var(--text)',
-              }}
-            >
-              <span className="inline-flex items-center justify-center w-7 h-7 rounded-lg flex-shrink-0" style={{ background: 'linear-gradient(135deg, #2DD4BF, #2DD4BF)', color: '#fff' }}>
-                <Handshake size={14} />
-              </span>
-              <span>
-                <span className="font-semibold">New: TRYBE brand deals.</span>{' '}
-                <span style={{ color: 'var(--text-soft)' }}>MVP sorts every TRYBE brand by fit for your channel, drafts your pitch and writes the shooting scripts.</span>
-              </span>
-              <ArrowRight size={14} className="flex-shrink-0" style={{ color: '#2DD4BF' }} />
-            </a>
           </div>
         </div>
 
@@ -1583,6 +1562,24 @@ function Hero() {
         <div className="w-full self-center">
           <HeroVideo />
           <PlatformBar />
+          <a
+            href="#trybe"
+            className="mt-7 flex items-center gap-2.5 rounded-2xl px-4 py-3 text-[13px] font-medium transition-transform hover:-translate-y-0.5"
+            style={{
+              background: 'linear-gradient(135deg, rgba(249,115,22,0.14), rgba(45,212,191,0.14))',
+              border: '1px solid rgba(249,115,22,0.3)',
+              color: 'var(--text)',
+            }}
+          >
+            <span className="inline-flex items-center justify-center w-7 h-7 rounded-lg flex-shrink-0" style={{ background: 'linear-gradient(135deg, #2DD4BF, #2DD4BF)', color: '#fff' }}>
+              <Handshake size={14} />
+            </span>
+            <span>
+              <span className="font-semibold">New: TRYBE brand deals.</span>{' '}
+              <span style={{ color: 'var(--text-soft)' }}>MVP sorts every TRYBE brand by fit for your channel, drafts your pitch and writes the shooting scripts.</span>
+            </span>
+            <ArrowRight size={14} className="flex-shrink-0" style={{ color: '#2DD4BF' }} />
+          </a>
         </div>
       </div>
     </section>
