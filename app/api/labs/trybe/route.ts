@@ -59,6 +59,7 @@ import { brandKey } from '@/lib/brand-normalize'
 const brandKeyOf = (n: string | null | undefined) => brandKey(n)
 import { researchBrandSite } from '@/lib/trybe-research'
 import { mergeDirectory, directorySearchText, nicheScore, readCategories, siteSearchText, programOf } from '@/lib/trybe-directory'
+import { TOP100, adSpendProof, samplesProof, sampleSignsByBrand, activityCounts, activityDigest, cleanProfile, pushesOf, readTop100Ask, type Activity } from '@/lib/trybe-top100'
 import {
   clampCap, countsTowardCap, sanitizeScanned, sendUrl, tidyDraft,
   DRAFT_SYSTEM, draftUserPrompt, DEFAULT_DAILY_CAP, type ScannedBrand,
@@ -76,6 +77,8 @@ export const maxDuration = 300
 const MODEL = 'claude-sonnet-4-6'
 // Judging fit is a short yes or no per brand: the small model, a few at a time.
 const FIT_MODEL = 'claude-haiku-4-5-20251001'
+/** My top 100 reads the creator's work with the strongest model, once a press. */
+const TOP100_MODEL = 'claude-opus-5-5'
 const RESEARCH_TTL_MS = 14 * 24 * 3600_000
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1504,13 +1507,102 @@ export async function POST(request: Request) {
     }
   }
 
+  // ── MY TOP 100: WHAT THE CREATOR DOES (Seb, 2026-11-05) ─────────────────
+  // Their blog posts and how often each went to social, the TRYBE brands they
+  // work with and submitted to (read by SCOUT and sent by the page), the
+  // brands they messaged and the samples they asked for, read once by the AI
+  // into TRYBE's categories and the words their brands sell. The search
+  // below ranks TRYBE with it (browse with top100).
+  if (action === 'top100_profile') {
+    const spend = await spendGate(userId, tier)
+    if (spend) return spend
+    let posts: Activity['posts'] = []
+    {
+      const full = await admin.from('blog_posts').select('title, seo_keyword, affiliate_keywords, social_publish_counts').eq('user_id', ownerId).order('created_at', { ascending: false }).limit(300)
+      const got = full.error ? await admin.from('blog_posts').select('title').eq('user_id', ownerId).order('created_at', { ascending: false }).limit(300) : full
+      posts = ((got.data || []) as Array<Record<string, unknown>>).map(p => ({ title: (p.title as string) ?? null, keyword: (p.seo_keyword as string) ?? null, words: p.affiliate_keywords, pushes: pushesOf(p.social_publish_counts) }))
+    }
+    const { rows: mineRows } = await allRows<{ brand_id: string; status: string }>(() => admin.from('trybe_brands').select('brand_id, status').eq('user_id', ownerId).order('brand_id', { ascending: true }), 6000)
+    const messagedIds = mineRows.filter(r => ['sent', 'already', 'sending', 'drafted'].includes(r.status)).map(r => r.brand_id)
+    const myBrands = (Array.isArray(body.myBrands) ? body.myBrands as Array<Record<string, unknown>> : []).slice(0, 400)
+      .map(b => ({ id: String(b?.id || '').slice(0, 80), name: String(b?.name || '').slice(0, 120), submitted: Number(b?.submitted) || null, earnings: Number(b?.earnings) || null }))
+      .filter(b => b.id && b.name)
+    // What each of those brands sells, from MVP's copy of TRYBE.
+    const catsOf = new Map<string, { name: string; categories: string[] }>()
+    const want = Array.from(new Set([...messagedIds.slice(-400), ...myBrands.map(b => b.id)]))
+    for (let i = 0; i < want.length; i += 200) {
+      const { data } = await admin.from('trybe_directory').select('brand_id, name, categories').in('brand_id', want.slice(i, i + 200))
+      for (const r of (data || []) as Array<{ brand_id: string; name: string; categories: string[] | null }>) catsOf.set(r.brand_id, { name: r.name, categories: r.categories || [] })
+    }
+    const { data: sam } = await admin.from('trybe_samples').select('brand_name, product').eq('user_id', ownerId).order('requested_at', { ascending: false }).limit(200)
+    const activity: Activity = {
+      posts,
+      worksWith: myBrands.map(b => ({ name: b.name, categories: catsOf.get(b.id)?.categories, submitted: b.submitted, earnings: b.earnings })),
+      messaged: messagedIds.map(id => catsOf.get(id)).filter((x): x is { name: string; categories: string[] } => !!x),
+      samples: ((sam || []) as Array<{ brand_name: string; product: string }>).map(s => ({ brand: s.brand_name, product: s.product })),
+    }
+    const counts = activityCounts(activity)
+    if (!counts.posts && !counts.worksWith && !counts.messaged && !counts.samples) {
+      return NextResponse.json({ error: 'MVP has nothing of yours to read yet: no blog posts, no TRYBE brands, no messages and no samples. Pick your niches in step 2 and search that way for now.' }, { status: 400 })
+    }
+    const { data: catRow } = await admin.from('trybe_directory_meta').select('value').eq('key', 'categories').maybeSingle()
+    const trybeCats = (Array.isArray(catRow?.value) ? catRow.value : []).map((c: unknown) => String(c || '')).filter(Boolean)
+    try {
+      const msg = await createAnthropicClient().messages.create({
+        model: TOP100_MODEL, max_tokens: 4000,
+        output_config: {
+          effort: 'low',
+          format: {
+            type: 'json_schema',
+            schema: {
+              type: 'object',
+              properties: {
+                summary: { type: 'string' },
+                categories: { type: 'array', items: { type: 'string' } },
+                keywords: { type: 'array', items: { type: 'string' } },
+              },
+              required: ['summary', 'categories', 'keywords'],
+              additionalProperties: false,
+            },
+          },
+        },
+        messages: [{ role: 'user', content: `A creator makes product reviews and posts. Below is what they actually do. Work out which TRYBE brands would fit them: brands selling the kinds of products they already make content about.
+
+${activityDigest(activity)}
+
+TRYBE'S CATEGORIES (pick from these only, exactly as written):
+${trybeCats.join(', ') || '(none listed)'}
+
+Reply with:
+- "summary": one plain sentence to the creator saying what they make content about, no dashes.
+- "categories": 2 to 6 of TRYBE's categories above that fit the products they cover, most fitting first.
+- "keywords": 6 to 15 short product words a fitting brand would sell (like "hoodie", "dog bed", "projector"), from what they cover, most frequent first. Never brand names.
+Weigh posts pushed to social, and TRYBE brands they earned with or submitted to, more than the rest.` }],
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      } as any)
+      try { const u = usageFromAnthropic(msg as never); recordUsage({ userId, tier, feature: 'trybe_top100_profile', model: TOP100_MODEL, input: u.input, output: u.output }) } catch { /* best-effort */ }
+      if ((msg as { stop_reason?: string }).stop_reason === 'refusal') return NextResponse.json({ error: 'MVP could not read your work this time. Press My top 100 again.' }, { status: 502 })
+      const text = ((msg as { content: Array<{ type: string; text?: string }> }).content).map(b => (b.type === 'text' ? b.text || '' : '')).join('')
+      let parsed: unknown = null
+      try { parsed = JSON.parse(text) } catch { /* said below */ }
+      const profile = cleanProfile(parsed, trybeCats)
+      if (!profile.categories.length && !profile.keywords.length) return NextResponse.json({ error: 'MVP read your work but could not tell what your brands sell. Pick your niches in step 2 instead.' }, { status: 502 })
+      return NextResponse.json({ ok: true, profile, counts })
+    } catch (e) {
+      return NextResponse.json({ error: e instanceof Error ? `MVP could not read your work: ${e.message}` : 'MVP could not read your work.' }, { status: 502 })
+    }
+  }
+
   if (action === 'browse') {
     // LIVE FILTERING (Seb, 2026-10-07: "as users change filters, the results
     // ... should change"). MVP's copy of TRYBE is searched as the creator
     // ticks categories or types keywords: no SCOUT, no TRYBE, no website
     // fetched. Brands already on their list come back with where they stand.
-    const cats = cleanTerms(body.categories), kws = cleanTerms(body.keywords)
-    const want = Math.max(1, Math.min(120, Number(body.limit) || 60))
+    // MY TOP 100 (lib/trybe-top100): the profile read from the creator's
+    // work stands in for the niches typed on the page.
+    const top100 = readTop100Ask(body.top100)
+    const cats = top100 ? cleanTerms(top100.categories) : cleanTerms(body.categories), kws = top100 ? cleanTerms(top100.keywords) : cleanTerms(body.keywords)
+    const want = top100 ? TOP100 : Math.max(1, Math.min(120, Number(body.limit) || 60))
     const terms = [...kws, ...cats].map(t => t.toLowerCase().replace(/[%,()]/g, ' ').trim()).filter(Boolean)
     const words = searchWords(terms)
     const BASE_COLS = 'brand_id, name, website, categories, about, pay_text, trybe_score, total_creators, rating, site_products, site_text, first_seen_at, last_seen_at, raw'
@@ -1527,14 +1619,14 @@ export async function POST(request: Request) {
       const probe = await admin.from('trybe_directory').select(cols).limit(1)
       if (!probe.error || !/does not exist|schema cache/i.test(probe.error.message)) { COLS = cols; break }
     }
-    const sort: BrowseSort = (BROWSE_SORTS as readonly string[]).includes(String(body.sort)) ? body.sort as BrowseSort : 'match'
+    const sort: BrowseSort = top100 ? 'picks' : (BROWSE_SORTS as readonly string[]).includes(String(body.sort)) ? body.sort as BrowseSort : 'match'
     let payType: PayType = (PAY_TYPES as readonly string[]).includes(String(body.payType)) ? body.payType as PayType : 'any'
     let rows: Array<Record<string, any>> = [] // eslint-disable-line @typescript-eslint/no-explicit-any
     // No user given: nothing is left out, so a brand on the list still shows.
     // Best bets and Fewest creators rank a wider pool: the search keeps its
     // best keyword matches first, and small brands with few creators (the
     // best bets) would never reach the list from 400.
-    const pool = sort === 'picks' || sort === 'creators' || sort === 'spend' || sort === 'payouts' || sort === 'adsPerCreator' || readFilters(body.filters).minRating ? 1200 : 400
+    const pool = top100 || sort === 'picks' || sort === 'creators' || sort === 'spend' || sort === 'payouts' || sort === 'adsPerCreator' || readFilters(body.filters).minRating ? 1200 : 400
     // FINDER (Seb, 2026-10-14, after Rob's Oink Blue video): the creator's
     // priorities, stars and filters. Priorities sent by the page win, so a
     // change ranks at once; else the saved ones.
@@ -1551,16 +1643,18 @@ export async function POST(request: Request) {
     // brand's name is asking for that brand: the filters and pay type are
     // paused while it is searched (and said so), and a brand already
     // messaged, passed on or removed is shown with where it stands.
-    const nameOnly = nameQ.length >= 2 && !asked.starred
+    const nameOnly = !top100 && nameQ.length >= 2 && !asked.starred
     const pausedFilters = nameOnly && (anyFilterOn(asked) || payType !== 'any')
-    const filters = nameOnly ? readFilters(null) : asked
-    if (nameOnly) payType = 'any'
-    const includeMine = nameOnly || body.includeMine === true
+    // My top 100 has its own rules (proof of ad spend and samples, below):
+    // the page's filters and pay type are not applied to it.
+    const filters = nameOnly || top100 ? readFilters(null) : asked
+    if (nameOnly || top100) payType = 'any'
+    const includeMine = nameOnly || (!top100 && body.includeMine === true)
     // BRANDS BY ID (Seb, 2026-10-16: "we should be able to see more details on
     // these brands here too"): What changed opens one brand with the same
     // details Find brands shows, so the two pages never disagree.
     const idsQ = Array.isArray(body.ids) ? (body.ids as unknown[]).map(v => String(v || '').slice(0, 80)).filter(Boolean).slice(0, 60) : []
-    const direct = nameQ.length >= 2 || filters.starred || idsQ.length > 0
+    const direct = !top100 && (nameQ.length >= 2 || filters.starred || idsQ.length > 0)
     // STAR BRANDS OVER ALL OF TRYBE (no keyword): the keyword search would
     // hand back its first 1,000 brands by TRYBE score, and with no score in
     // MVP's copy (Seb's check, 2026-10-21: none of 7,378 had one) that is
@@ -1895,8 +1989,57 @@ export async function POST(request: Request) {
     // Passed on (skipped) leaves the list too, like Oink's Pass, until undone.
     const DONE = ['drafted', 'sending', 'sent', 'already', 'failed', 'removed', 'skipped']
     const isDone = (id: string) => DONE.includes(String(mineBy.get(id)?.status || ''))
-    const hiddenMine = includeMine ? 0 : ranked.filter(x => isDone(x.r.brand_id)).length
-    const shown = includeMine ? ranked : ranked.filter(x => !isDone(x.r.brand_id))
+    const hiddenMine = includeMine || top100 ? 0 : ranked.filter(x => isDone(x.r.brand_id)).length
+    // ── MY TOP 100: NEW TO THEM, PROVEN ON AD SPEND AND SAMPLES ────────────
+    // (Seb, 2026-11-05: "we don't want to give a top 100 brand to a user and
+    // have them complain that these brands are not good... or the samples
+    // have never been sent".) Any brand the creator already has a tie with is
+    // left out: on their list in MVP at all, joined on TRYBE, or sampled.
+    // Each brand left must show ad spend in the last 60 days and send
+    // samples (lib/trybe-top100), said on it in words; every brand left out
+    // is counted by why. Then fit first, quality next, proven samples last.
+    const proofBy = new Map<string, { spend: string[]; samples: string; proven: boolean }>()
+    let top100Out: { leftOut: Record<string, number>; considered: number; kept: number; provenSamples: number } | null = null
+    let top100Shown: typeof ranked | null = null
+    if (top100) {
+      const ids = ranked.map(x => x.r.brand_id)
+      const memberRows: Array<{ brand_id: string | null; requested_at: string | null; received_at: string | null }> = []
+      for (let i = 0; i < ids.length; i += 200) {
+        const { data } = await admin.from('trybe_samples').select('brand_id, requested_at, received_at').in('brand_id', ids.slice(i, i + 200))
+        memberRows.push(...((data || []) as typeof memberRows))
+      }
+      const memberSamples = sampleSignsByBrand(memberRows)
+      const { data: mySam } = await admin.from('trybe_samples').select('brand_id').eq('user_id', ownerId).not('brand_id', 'is', null)
+      const sampledMine = new Set(((mySam || []) as Array<{ brand_id: string }>).map(r => r.brand_id))
+      const leftOut = { known: 0, noSpend: 0, samplesOff: 0, samplesMissing: 0, samplesUnknown: 0 }
+      const kept: Array<{ x: typeof ranked[number]; proven: boolean }> = []
+      const fourWeeks = 4 * META_ADS_FRESH_MS
+      for (const x of ranked) {
+        const id = x.r.brand_id
+        if (mineBy.has(id) || top100.joined.has(id) || sampledMine.has(id)) { leftOut.known++; continue }
+        const crowd = crowdBy.get(id)
+        const metaAt = typeof x.r.meta_ads_checked_at === 'string' ? Date.parse(x.r.meta_ads_checked_at) : NaN
+        const spend = adSpendProof({
+          metaAds: Number.isFinite(metaAt) && Date.now() - metaAt < fourWeeks ? metaUsable(x.r) : null,
+          top100Hits: x.r.top100_checked_at && typeof x.r.top100_hits === 'number' ? x.r.top100_hits : null,
+          newVideos: crowd?.newVideos ?? null, days: crowd?.days ?? null,
+          tierUp: tierLog ? !!tierLog.get(id)?.up : null,
+        })
+        if (!spend.proven) { leftOut.noSpend++; continue }
+        const ms = memberSamples.get(id) ?? { received: 0, waitingLong: 0 }
+        const sm = samplesProof({ trybe: statsBy.get(id)?.samples ?? null, received: ms.received, waitingLong: ms.waitingLong })
+        if (!sm.ok) { leftOut[sm.why === 'off' ? 'samplesOff' : sm.why === 'missing' ? 'samplesMissing' : 'samplesUnknown']++; continue }
+        proofBy.set(id, { spend: spend.says, samples: sm.says, proven: sm.proven })
+        kept.push({ x, proven: sm.proven })
+      }
+      const maxMatch = Math.max(1, ...kept.map(k => k.x.match))
+      const maxPick = Math.max(1, ...kept.map(k => weighed(k.x)))
+      const scoreOf = (k: typeof kept[number]) => 0.6 * (k.x.match / maxMatch) + 0.3 * (Math.max(0, weighed(k.x)) / maxPick) + (k.proven ? 0.1 : 0)
+      kept.sort((a, b) => scoreOf(b) - scoreOf(a))
+      top100Shown = kept.map(k => k.x)
+      top100Out = { leftOut, considered: ranked.length, kept: kept.length, provenSamples: kept.slice(0, TOP100).filter(k => k.proven).length }
+    }
+    const shown = top100Shown ?? (includeMine ? ranked : ranked.filter(x => !isDone(x.r.brand_id)))
     const top = shown.slice(0, want)
     // HOW MUCH OF THE LIST IS READ (Star brands): Meta ads, website rank and
     // Google, counted over every brand matched, not only the ones shown, so
@@ -1938,6 +2081,8 @@ export async function POST(request: Request) {
       hiddenMine,
       // A name search: over all of TRYBE, the filters paused while it runs.
       nameSearch: nameOnly ? { query: nameQ, pausedFilters } : null,
+      // My top 100: what was left out and why, and how many proved samples.
+      top100: top100Out,
       payUnknown,
       payOther,
       sort,
@@ -1980,6 +2125,8 @@ export async function POST(request: Request) {
           first_seen_at: r.first_seen_at ?? null,
           products: productsFirst(r.site_products || [], kws).slice(0, 8), website_read: !!r.site_text,
           status: m?.status ?? null,
+          // My top 100: why it is on the list, ad spend and samples, in words.
+          proof: proofBy.get(r.brand_id) ?? null,
           // Looked up by name, and not seen on TRYBE's list at the last whole
           // collection: it may have left TRYBE, or be one you joined.
           not_listed: nameOnly && !!since && !!r.last_seen_at && r.last_seen_at < since,

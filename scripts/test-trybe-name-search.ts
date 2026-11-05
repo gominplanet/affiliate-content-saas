@@ -44,9 +44,9 @@ check('a list given bare, or as brands, is read too', brandsNamed(page.data, 'al
 
 // ── THE SEARCH ───────────────────────────────────────────────────────────────
 const R = read('app/api/labs/trybe/route.ts')
-check('a name search pauses the filters and pay type, and says so', /const nameOnly = nameQ\.length >= 2 && !asked\.starred/.test(R) && /const filters = nameOnly \? readFilters\(null\) : asked/.test(R) && /if \(nameOnly\) payType = 'any'/.test(R) && /nameSearch: nameOnly \? \{ query: nameQ, pausedFilters \} : null/.test(R))
+check('a name search pauses the filters and pay type, and says so', /const nameOnly = !top100 && nameQ\.length >= 2 && !asked\.starred/.test(R) && /const filters = nameOnly \|\| top100 \? readFilters\(null\) : asked/.test(R) && /if \(nameOnly \|\| top100\) payType = 'any'/.test(R) && /nameSearch: nameOnly \? \{ query: nameQ, pausedFilters \} : null/.test(R))
 check('the filters it paused are only said when some were on', anyFilterOn(readFilters({ minPerVideo: 25 })) && !anyFilterOn(readFilters(null)))
-check('a name search shows brands already messaged, with where they stand', /const includeMine = nameOnly \|\| body\.includeMine === true/.test(R) && /const shown = includeMine \? ranked/.test(R))
+check('a name search shows brands already messaged, with where they stand', /const includeMine = nameOnly \|\| \(!top100 && body\.includeMine === true\)/.test(R) && /const shown = top100Shown \?\? \(includeMine \? ranked/.test(R))
 check('"Alpha Tech" finds "Alphatech" too', /nameQ\.replace\(\/\\s\+\/g, ''\)/.test(R) && /name\.ilike\."%\$\{v\}%"/.test(R))
 check('a brand the last collection missed is shown and marked, not hidden', /if \(since && !nameOnly\) q = q\.gte\('last_seen_at', since\)/.test(R) && /not_listed: nameOnly && !!since && !!r\.last_seen_at && r\.last_seen_at < since/.test(R) && /last_seen_at, raw'/.test(R))
 check('a quote or star in the name cannot break the search', R.includes(String.raw`body.name.replace(/[%,()_\\"*]/g, ' ')`))

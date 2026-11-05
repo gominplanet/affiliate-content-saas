@@ -56,7 +56,7 @@ import TrybeSubmissions from '@/components/labs/TrybeSubmissions'
 import TrybeRetainers from '@/components/labs/TrybeRetainers'
 import TrybeIntroVideo from '@/components/labs/TrybeIntroVideo'
 import TrybeSampleGuard from '@/components/labs/TrybeSampleGuard'
-import { readScript } from '@/lib/trybe-mybrands'
+import { readScript, readBrandStats } from '@/lib/trybe-mybrands'
 import { FinderToolbar, FinderFilterNote, FinderPriorities, FinderPresets, PopularityChips, RatingChip, BrandExtras, StarButton, PassButton, AmazonLine, PayChip, CrowdChip, SpendChip, SpendNote, NewChip, StaticsChip, SellsChip, VerdictChip, ReviewChip, PaidOutChip, TikTokShopChip, CompareButton, BrandMark, NO_FILTERS, filtersOn, type LiveAmazon, type LivePayEst } from '@/components/labs/TrybeFinderControls'
 import TrybeCompare from '@/components/labs/TrybeCompare'
 import { COMPARE_MAX } from '@/lib/trybe-compare'
@@ -131,6 +131,8 @@ interface LiveBrand {
   first_seen_at?: string | null
   /** Looked up by name, and not seen on TRYBE's list at the last whole collection. */
   not_listed?: boolean
+  /** My top 100: its ad spend and samples, in words. */
+  proof?: { spend: string[]; samples: string; proven: boolean } | null
   products: string[]; website_read: boolean
   /** Where it stands on this creator's own list, if it is on it. */
   status: Brand['status'] | null; fit_score: number | null; fit_reason: string | null
@@ -602,7 +604,13 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
     /** Any brand looked at has a creator count (TRYBE's list gave none, Seb's check 2026-10-21). */
     creatorsKnown?: boolean; mix?: { small: number; mid: number; big: number; unknown: number; says: string | null } | null
     /** A search by a brand's name: over all of TRYBE, the filters paused. */
-    nameSearch?: { query: string; pausedFilters: boolean } | null } | null>(null)
+    nameSearch?: { query: string; pausedFilters: boolean } | null
+    /** My top 100: what was left out and why. */
+    top100?: { leftOut: { known: number; noSpend: number; samplesOff: number; samplesMissing: number; samplesUnknown: number }; considered: number; kept: number; provenSamples: number } | null } | null>(null)
+  // MY TOP 100 (Seb, 2026-11-05; lib/trybe-top100): MVP reads the creator's
+  // work into a profile, then the list below is their 100.
+  const [top100, setTop100] = useState<{ profile: { summary: string; categories: string[]; keywords: string[] }; counts: { posts: number; pushed: number; worksWith: number; submitted: number; messaged: number; samples: number }; joined: string[]; note: string | null } | null>(null)
+  const [top100Busy, setTop100Busy] = useState<string | null>(null)
   // A NAME MVP'S COPY DOES NOT HAVE, asked of TRYBE itself (lib/trybe-name-lookup).
   const [nameLookup, setNameLookup] = useState<{ query: string; state: 'asking' | 'found' | 'none' | 'failed'; note?: string | null; names?: string[] } | null>(null)
   const lookedUp = useRef<Set<string>>(new Set())
@@ -1258,7 +1266,8 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
     setLiveLoading(true)
     const t = setTimeout(async () => {
       try {
-        const d = await api({ action: 'browse', categories: cats, keywords: kws, limit: 60, includeMine: showMine, sort: sortBy, payType, filters, name: nameQ.trim(), ...(prioritiesEdited ? { priorities } : {}) })
+        const d = await api({ action: 'browse', categories: cats, keywords: kws, limit: 60, includeMine: showMine, sort: sortBy, payType, filters, name: nameQ.trim(), ...(prioritiesEdited ? { priorities } : {}),
+          ...(top100 ? { top100: { categories: top100.profile.categories, keywords: top100.profile.keywords, joined: top100.joined } } : {}) })
         if (id !== liveReq.current) return // a newer search has started
         setLive({ brands: d.brands || [], matched: d.matched ?? 0, capped: !!d.capped, hiddenMine: d.hiddenMine ?? 0, payUnknown: d.payUnknown ?? 0, payOther: d.payOther ?? 0,
           hiddenBy: d.hiddenBy, blankBy: d.blankBy, unknownBy: d.unknownBy, amazonNotes: d.amazonNotes, amazonVideos: d.amazonVideos, rawKeys: d.rawKeys, prioritiesSaved: d.prioritiesSaved, starsSaved: d.starsSaved,
@@ -1266,7 +1275,7 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
           // the spend note, the crowd window and the read counts were sent and
           // read but never copied, so none of them ever showed.
           crowdDays: d.crowdDays ?? null, spendKnown: d.spendKnown ?? null, mix: d.mix ?? null,
-          readCounts: d.readCounts, metaTodo: d.metaTodo, creatorsKnown: d.creatorsKnown, nameSearch: d.nameSearch ?? null })
+          readCounts: d.readCounts, metaTodo: d.metaTodo, creatorsKnown: d.creatorsKnown, nameSearch: d.nameSearch ?? null, top100: d.top100 ?? null })
         // The saved priorities, until the creator changes them on this visit.
         if (!prioritiesEdited && d.priorities) setPriorities(d.priorities)
         setLiveError(null)
@@ -1279,7 +1288,28 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
       }
     }, 350)
     return () => clearTimeout(t)
-  }, [hasDirectory, catsKey, kwsKey, liveNonce, showMine, sortBy, payType, JSON.stringify(filters), nameQ.trim(), prioritiesEdited ? JSON.stringify(priorities) : '']) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [hasDirectory, catsKey, kwsKey, liveNonce, showMine, sortBy, payType, JSON.stringify(filters), nameQ.trim(), prioritiesEdited ? JSON.stringify(priorities) : '', top100 ? JSON.stringify(top100.profile) : '']) // eslint-disable-line react-hooks/exhaustive-deps
+
+  /** MY TOP 100: the TRYBE brands the creator works with (SCOUT), then their
+   *  work read into a profile (top100_profile), then the list is theirs. */
+  async function runTop100() {
+    let note: string | null = null
+    let myBrands: Array<{ id: string; name: string; submitted: number | null; earnings: number | null }> = []
+    try {
+      setTop100Busy('Reading the TRYBE brands you work with')
+      const r = await requestTrybeApi('GET', '/backend/api/creator/v2/brands/stats?period=all').catch(() => ({ ok: false as const, error: 'SCOUT did not answer.' }))
+      if (r.ok && r.json != null) myBrands = readBrandStats(r.json).map(b => ({ id: b.id, name: b.name, submitted: b.submitted, earnings: b.earnings }))
+      else note = `SCOUT could not read the brands you work with on TRYBE (${('error' in r && r.error) || 'no answer'}), so MVP read your posts, messages and samples only, and could not leave those brands out.`
+      setTop100Busy('Reading your blog posts, social pushes, messages and samples')
+      const d = await api({ action: 'top100_profile', myBrands })
+      setLivePick(new Set())
+      setTop100({ profile: d.profile, counts: d.counts, joined: myBrands.map(b => b.id), note })
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'My top 100 did not run.', { duration: 12000 })
+    } finally {
+      setTop100Busy(null)
+    }
+  }
 
   // NOT IN MVP'S COPY: TRYBE ITSELF IS ASKED (Seb, 2026-11-05: Alphatech
   // Apparel found on TRYBE's own search, 0 here). Once per name, through
@@ -2292,6 +2322,10 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
                 </a>
               )}
               {!preview && <div className="ml-auto flex flex-wrap gap-2">
+                <button onClick={() => void runTop100()} disabled={busy || !!top100Busy} className={btn} style={{ background: GREEN, color: '#fff' }}
+                  title="MVP reads your blog posts, social pushes, TRYBE submissions and the brands you work with, then finds 100 TRYBE brands new to you that spend on ads and send samples.">
+                  {top100Busy ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />} My top 100
+                </button>
                 <button onClick={() => void refreshFromTrybe()} disabled={busy || access !== 'granted' || !canHarvest} className={btn} style={{ border: '1px solid var(--border)' }}
                   title={access !== 'granted' ? 'Allow SCOUT on TRYBE first (top of this page).' : !canHarvest ? 'Your SCOUT is too old to collect TRYBE\u2019s list. Chrome updates it within a day.' : busy ? `Busy: ${finding?.stage || 'sending'}. This unlocks when it finishes.` : "SCOUT collects TRYBE's list again now. It does this by itself once a day."}>
                   {finding ? <Loader2 size={13} className="animate-spin" /> : <RotateCcw size={13} />} Refresh from TRYBE
@@ -2319,6 +2353,49 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
               </div>}
             </div>
             <p className="text-[12px] mb-3" style={soft}>{SORTS.find(s => s.id === sortBy)?.says} {preview ? 'Star the ones you like and pass on the rest.' : 'Tick the brands you want and MVP writes each one a message from your core message.'}</p>
+            {top100Busy && <p className="text-[12.5px] mb-3 inline-flex items-center gap-1.5" style={{ color: GREEN }}><Loader2 size={12} className="animate-spin" /> My top 100: {top100Busy}&hellip;</p>}
+            {top100 && (() => {
+              // WHAT MVP READ, WHAT IT LOOKED FOR, WHAT IT LEFT OUT: said, so a
+              // short list is never a quiet one.
+              const c = top100.counts
+              const t = live?.top100
+              const n = live?.brands.length ?? 0
+              const free = (live?.brands || []).filter(b => !TAKEN.includes(b.status as Brand['status']))
+              const read = [
+                c.posts ? `${c.posts} blog post${c.posts === 1 ? '' : 's'}${c.pushed ? ` (${c.pushed} pushed to social)` : ''}` : null,
+                c.worksWith ? `${c.worksWith} TRYBE brand${c.worksWith === 1 ? '' : 's'} you work with${c.submitted ? ` (${c.submitted} with videos submitted)` : ''}` : null,
+                c.messaged ? `${c.messaged} brand${c.messaged === 1 ? '' : 's'} you messaged` : null,
+                c.samples ? `${c.samples} sample${c.samples === 1 ? '' : 's'} you asked for` : null,
+              ].filter(Boolean).join(', ')
+              const out = t ? [
+                t.leftOut.known ? `${t.leftOut.known} you already know` : null,
+                t.leftOut.noSpend ? `${t.leftOut.noSpend} with no ad spend MVP can prove in the last 60 days` : null,
+                t.leftOut.samplesOff ? `${t.leftOut.samplesOff} that do not take sample requests` : null,
+                t.leftOut.samplesMissing ? `${t.leftOut.samplesMissing} where MVP creators asked for samples that never came` : null,
+                t.leftOut.samplesUnknown ? `${t.leftOut.samplesUnknown} where TRYBE does not say whether they send samples` : null,
+              ].filter(Boolean).join(', ') : ''
+              return (
+                <div className="mb-3 rounded-xl p-3.5" style={{ border: `1.5px solid ${GREEN}`, background: 'rgba(22,163,74,0.06)' }}>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="text-[14px] font-bold" style={{ color: GREEN }}>Your top {n || 100}</p>
+                    <span className="ml-auto flex flex-wrap gap-2">
+                      <button onClick={() => setLivePick(new Set(free.map(b => b.brand_id)))} disabled={!free.length || busy} className={btn} style={{ background: GREEN, color: '#fff' }}>
+                        <Check size={13} /> Tick all {free.length}
+                      </button>
+                      <button onClick={() => { setTop100(null); setLivePick(new Set()) }} className={btn} style={{ border: '1px solid var(--border)' }}>Back to my search</button>
+                    </span>
+                  </div>
+                  {top100.profile.summary && <p className="text-[13px] mt-1.5">{top100.profile.summary}</p>}
+                  <p className="text-[12px] mt-1" style={soft}>MVP read {read || 'what you have'}, and looked for brands selling {[...top100.profile.categories, ...top100.profile.keywords].slice(0, 12).join(', ')}.</p>
+                  <p className="text-[12px] mt-1" style={soft}>
+                    Every brand here is new to you, spent on ads in the last 60 days, and sends samples, each said on the brand.{t ? ` ${t.provenSamples} of them have sent samples to MVP creators already; the rest take sample requests on TRYBE.` : ''}
+                  </p>
+                  {out && <p className="text-[12px] mt-1" style={soft}>Left out of {t?.considered.toLocaleString()} that fit you: {out}.</p>}
+                  {t && n < 100 && <p className="text-[12px] mt-1" style={{ color: AMBER }}>Only {n} passed every check, so your list is {n}, not 100. MVP never pads it with brands it cannot vouch for.</p>}
+                  {top100.note && <p className="text-[12px] mt-1" style={{ color: AMBER }}>{top100.note}</p>}
+                </div>
+              )
+            })()}
             {/* NO CREATOR COUNTS FROM TRYBE (Seb's check, 2026-10-21): said where it matters, never a sort that quietly does nothing. */}
             {live?.creatorsKnown === false && (sortBy === 'creators' || !!filters.maxCreators) && (
               <p className="text-[12px] mb-3 rounded-lg px-2.5 py-1.5" style={{ background: 'rgba(180,83,9,0.10)', color: AMBER }}>
@@ -2500,6 +2577,11 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
                         {b.website && <a href={b.website} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} className="text-[12px] inline-flex items-center gap-0.5" style={soft}><Globe size={11} /> {siteName(b.website)} <ExternalLink size={10} /></a>}
                       </span>
                       {taken && takenWhy(b.status) && <span className="block text-[12.5px] mt-1" style={{ color: 'var(--text)' }}>{takenWhy(b.status)}</span>}
+                      {b.proof && (
+                        <span className="block text-[12px] mt-1" style={{ color: GREEN }}>
+                          <Check size={11} className="inline -mt-0.5" /> Ad spend: {b.proof.spend.join(', ')}. <Check size={11} className="inline -mt-0.5" /> Samples: {b.proof.samples}.
+                        </span>
+                      )}
                       <span className="flex flex-wrap items-center gap-1.5 mt-1.5">
                         <NewChip on={b.is_new} />
                         {sortBy !== 'picks' && <VerdictChip score={b.pick} read={b.pick_read} />}
