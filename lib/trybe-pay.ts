@@ -37,6 +37,69 @@ export function ruleText(r: unknown): string {
   return clean(r.displayText) || value || clean(r.text) || clean(r.label) || clean(r.description) || clean(r.title)
 }
 
+// ── TRYBE'S PAY RULES AS IT SENDS THEM NOW ──────────────────────────────────
+// Seb's check, 2026-11-06: 0 of 8,354 brands had a pay line in MVP's copy.
+// TRYBE's brand list carries each brand's pay under program.rules, one rule
+// per way it pays (FLAT_PER_APPROVED_SUBMISSION, PERCENTAGE_GMV,
+// META_ANALYTICS, FLAT_PER_ORDER), each with its own words (displayText:
+// "$100.00 per submission", "15% of GMV"), and MVP looked everywhere else.
+// One brand in five pays in another currency (AUD, EUR, GBP, CAD and more).
+
+/** About how many US dollars one unit of each currency is worth (2026-11).
+ *  Only to put brands side by side: every converted figure says "about", and
+ *  the brand's own amount is kept next to it. */
+export const USD_PER: Record<string, number> = {
+  USD: 1, AUD: 0.66, CAD: 0.72, EUR: 1.08, GBP: 1.27, NZD: 0.59, SEK: 0.095, NOK: 0.092, DKK: 0.145, CHF: 1.13,
+  JPY: 0.0066, INR: 0.012, ZAR: 0.055, MXN: 0.054, PLN: 0.25, AED: 0.272, ILS: 0.27, PHP: 0.017, MAD: 0.1, TRY: 0.029,
+}
+// Only signs no other currency shares: a "$" in "C$" or "A$" would read as dollars.
+const SIGN: Record<string, string> = { EUR: '€', GBP: '£', JPY: '¥', INR: '₹' }
+const amountWords = (n: number) => (n >= 100 ? Math.round(n).toLocaleString('en-US') : n.toFixed(2).replace(/\.00$/, ''))
+
+/** The brand's currency on TRYBE (brand.currency), USD when it does not say. Pure. */
+export function payCurrency(raw: unknown): string {
+  const brand = isObj(raw) && isObj(raw.brand) ? raw.brand : null
+  const c = brand && typeof brand.currency === 'string' ? brand.currency.trim().toUpperCase() : ''
+  return /^[A-Z]{3}$/.test(c) ? c : 'USD'
+}
+
+/** Each active rule under program.rules, in words MVP's pay reader takes. A
+ *  flat amount in another currency is said in that currency with about how
+ *  many dollars ("100 CAD per approved video (about $72)"), so it is never
+ *  read as dollars; a currency MVP has no rate for is said without dollars
+ *  and stays out of the dollar figure. A percent is the same in any
+ *  currency, so TRYBE's own words are kept. Pure. */
+export function programRuleLines(raw: unknown): string[] {
+  if (!isObj(raw)) return []
+  const program = isObj(raw.program) ? raw.program : null
+  const rules = program && Array.isArray(program.rules) ? program.rules : []
+  const cur = payCurrency(raw)
+  const out: string[] = []
+  for (const r of rules.slice(0, 12)) {
+    if (!isObj(r) || r.isActive === false) continue
+    const type = String(r.type || '').toUpperCase()
+    const n = parseFloat(String(r.value ?? '').replace(/,/g, ''))
+    const amount = Number.isFinite(n) && n > 0 ? n : null
+    const perOrder = type === 'FLAT_PER_ORDER'
+    const flat = type === 'FLAT_PER_APPROVED_SUBMISSION' || perOrder
+    if (flat && amount != null && cur !== 'USD') {
+      const what = perOrder ? 'per order' : 'per approved video'
+      const local = SIGN[cur] ? `${SIGN[cur]}${amountWords(amount)}` : `${amountWords(amount)} ${cur}`
+      const rate = USD_PER[cur]
+      out.push(rate ? `${local} ${what} (about $${amountWords(amount * rate)})` : `${local} ${what}, not counted in dollars`)
+      continue
+    }
+    const words = ruleText(r)
+    if (words) { out.push(words); continue }
+    if (amount == null) continue
+    if (type === 'FLAT_PER_APPROVED_SUBMISSION') out.push(`$${amountWords(amount)} per approved video`)
+    else if (perOrder) out.push(`$${amountWords(amount)} per order`)
+    else if (type === 'PERCENTAGE_GMV') out.push(`${amount}% of GMV`)
+    else if (type === 'META_ANALYTICS') out.push(`${amount}% of sales from its ads`)
+  }
+  return out
+}
+
 /** Every pay line in a TRYBE brand entry: its commission rules (on the entry,
  *  its brand, or its programs), then commissionRate and perSubmission, then a
  *  pay line MVP kept before. Duplicates once. Pure. */
@@ -44,6 +107,8 @@ export function payLines(raw: unknown, kept?: string | null): string[] {
   const out: string[] = []
   const add = (s: string) => { const t = s.trim(); if (t && !out.some((x) => x.toLowerCase() === t.toLowerCase())) out.push(t) }
   if (isObj(raw)) {
+    // TRYBE's own rules first, the way it sends them now.
+    for (const l of programRuleLines(raw)) add(l)
     const brand = isObj(raw.brand) ? raw.brand : null
     const programs = [raw.programs, brand?.programs].find(Array.isArray) as unknown[] | undefined
     const ruleLists = [raw.commissionRules, brand?.commissionRules, ...(programs || []).map((p) => (isObj(p) ? p.commissionRules : null))]

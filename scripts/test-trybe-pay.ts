@@ -8,7 +8,7 @@
 
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { ruleText, payLines, readTerm, estimatePay, payReadOf } from '../lib/trybe-pay'
+import { ruleText, payLines, readTerm, estimatePay, payReadOf, payCurrency, USD_PER } from '../lib/trybe-pay'
 import { readDirectoryItem } from '../lib/trybe-directory'
 import { payPasses } from '../lib/trybe-outreach'
 import { crowdOf, mergeSnapshot, pickBaseline, isNewBrand, readFilters, filterCheck, readDirStats } from '../lib/trybe-finder'
@@ -95,6 +95,38 @@ check('each collection writes the day\'s snapshot and a failure never fails it',
 const O = read('components/labs/TrybeOutreach.tsx')
 check('brand cards show NEW, the crowd word, the pay figure and statics', /<NewChip on=\{b\.is_new\} \/>/.test(O) && /<CrowdChip crowd=\{b\.crowd\}/.test(O) && /<PayChip est=\{b\.pay_est\} payText=\{b\.pay_text\} \/>/.test(O) && /<StaticsChip on=\{b\.statics\} \/>/.test(O))
 check('the pay figure never goes into a message to a brand', /never put a rate in a message to a TRYBE brand/.test(read('components/labs/TrybeFinderControls.tsx')) && !/pay_est|estimatePay/.test(read('lib/trybe-outreach.ts')))
+
+// ── TRYBE'S PAY UNDER program.rules (Seb's check, 2026-11-06: 0 of 8,354
+// brands had a pay line, because TRYBE keeps pay there now). The shapes are
+// the ones his query returned.
+{
+  const entry = (currency: string, rules: unknown[]) => ({ id: 'p-1', brandId: 'b-123456', brand: { id: 'b-123456', name: 'Kestrel', currency }, program: { id: 'p-1', name: 'Base', rules }, creatorEarningsBucket: '$10K+' })
+  const flat = { type: 'FLAT_PER_APPROVED_SUBMISSION', value: '100', isActive: true, metricType: null, displayText: '$100.00 per submission' }
+  const gmv = { type: 'PERCENTAGE_GMV', value: '15', isActive: true, metricType: null, displayText: '15% of GMV', displayLabel: 'of GMV' }
+  const order = { type: 'FLAT_PER_ORDER', value: '25', isActive: true, metricType: null, displayText: '$25.00 per order (Videos only)' }
+  const off = { type: 'FLAT_PER_APPROVED_SUBMISSION', value: '999', isActive: false, displayText: '$999.00 per submission' }
+  const usd = entry('USD', [flat, gmv, order, off])
+  const lines = payLines(usd)
+  check('program.rules is read: TRYBE\'s own words, every active rule', lines.includes('$100.00 per submission') && lines.includes('15% of GMV') && lines.includes('$25.00 per order (Videos only)'))
+  check('a rule TRYBE switched off is not pay', !lines.some((l) => /999/.test(l)))
+  const e = estimatePay({ lines })
+  check('a USD brand reads $100 a video, plus 15% of sales and $25 per order', e.dollars === 100 && e.basis === 'terms' && e.plus.some((p) => /15% of the sales/.test(p)) && e.plus.some((p) => /\$25 per order/.test(p)))
+  check('the kept pay line is written at collection', /\$100\.00 per submission/.test(readDirectoryItem(usd)?.payText || ''))
+  // Another currency: never read as dollars.
+  const gbp = payLines(entry('GBP', [flat]))
+  check('a GBP brand\'s fee is said in pounds with about how many dollars', gbp[0] === '£100 per approved video (about $127)' && estimatePay({ lines: gbp }).dollars === 127)
+  const cad = payLines(entry('CAD', [{ ...order, value: '30' }]))
+  check('a CAD fee per order is never read as $30', cad[0] === '30 CAD per order (about $21.60)' && readTerm(cad[0])?.kind === 'perOrder' && readTerm(cad[0])?.amount === 21.6)
+  const odd = payLines(entry('XYZ', [flat]))
+  check('a currency MVP has no rate for stays out of the dollar figure, in words', odd[0] === '100 XYZ per approved video, not counted in dollars' && estimatePay({ lines: odd }).dollars == null)
+  check('a percent is the same in any currency: TRYBE\'s words kept', payLines(entry('EUR', [gmv]))[0] === '15% of GMV')
+  // No words from TRYBE: built from the type and value.
+  check('a rule without words is read from its type and value', payLines(entry('USD', [{ type: 'FLAT_PER_APPROVED_SUBMISSION', value: '40', isActive: true }]))[0] === '$40 per approved video'
+    && payLines(entry('USD', [{ type: 'META_ANALYTICS', value: '20', isActive: true, metricType: 'purchase_value_percentage' }]))[0] === '20% of sales from its ads')
+  check('an entry with no brand currency is taken as USD', payCurrency({ program: { rules: [] } }) === 'USD' && payCurrency(entry('gbp', [])) === 'GBP')
+  check('the rates cover every currency in Seb\'s list', ['TRY', 'ILS', 'NOK', 'AUD', 'INR', 'CHF', 'MAD', 'MXN', 'CAD', 'EUR', 'ZAR', 'NZD', 'PLN', 'SEK', 'JPY', 'GBP', 'AED', 'DKK', 'USD', 'PHP'].every((c) => USD_PER[c] > 0))
+  check('an empty pay index is never kept for 12 hours', /if \(index\.read > 0\) \{ try \{ await admin\.from\('trybe_directory_meta'\)\.upsert\(\{ key: 'pay_index'/.test(R) && /Number\(\(hit\.value as \{ read\?: unknown \} \| null\)\?\.read\) > 0/.test(R))
+}
 
 if (failed) { console.error(`\n${failed} TRYBE pay check(s) failed`); process.exit(1) }
 console.log('\nALL PASS')

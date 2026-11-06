@@ -2703,13 +2703,15 @@ Weigh posts pushed to social, and TRYBE brands they earned with or submitted to,
     let index: ReturnType<typeof payIndex> | null = null
     {
       const { data: hit } = await admin.from('trybe_directory_meta').select('value, updated_at').eq('key', 'pay_index').maybeSingle()
-      if (hit?.updated_at && Date.now() - Date.parse(hit.updated_at) < 12 * 3_600_000) index = hit.value as typeof index
+      // An index that read no brand is never kept (Seb's check, 2026-11-06:
+      // no pay was read at all for a while); it is worked out again.
+      if (hit?.updated_at && Date.now() - Date.parse(hit.updated_at) < 12 * 3_600_000 && Number((hit.value as { read?: unknown } | null)?.read) > 0) index = hit.value as typeof index
       if (!index) {
         const since = await listedSince(admin)
         const pr = await allRows<{ pay_text: string | null }>(() => { let q = admin.from('trybe_directory').select('pay_text'); if (since) q = q.gte('last_seen_at', since); return q.order('brand_id', { ascending: true }) }, 20000)
         if (!pr.error) {
           index = payIndex(pr.rows.map(r => r.pay_text))
-          try { await admin.from('trybe_directory_meta').upsert({ key: 'pay_index', value: index, updated_at: now }) } catch { /* worked out again next time */ }
+          if (index.read > 0) { try { await admin.from('trybe_directory_meta').upsert({ key: 'pay_index', value: index, updated_at: now }) } catch { /* worked out again next time */ } }
         } else readError = readError || `MVP could not read TRYBE's pay for the pay index (${pr.error.message.slice(0, 120)})`
       }
     }
