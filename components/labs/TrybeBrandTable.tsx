@@ -12,7 +12,7 @@ import { useMemo, useState, type CSSProperties } from 'react'
 import { ArrowDown, ArrowUp, ArrowUpRight, Trophy } from 'lucide-react'
 import { BrandMark } from '@/components/labs/TrybeFinderControls'
 import { BrandName } from '@/components/labs/trybe-dossier-context'
-import { GRADE } from '@/components/labs/trybe-ui'
+import { GRADE, APP, AppChip } from '@/components/labs/trybe-ui'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Row = Record<string, any>
@@ -33,7 +33,7 @@ function key(b: Row, c: Col): number | string | null {
     case 'meta': return metaOf(b)
     case 'top100': return typeof b.top100_hits === 'number' ? b.top100_hits : null
     case 'rating': return typeof b.review_rating === 'number' ? b.review_rating : null
-    case 'samples': return b.stats?.samples === true ? 1 : b.stats?.samples === false ? 0 : null
+    case 'samples': return b.proof?.app ? 0.5 : b.stats?.samples === true ? 1 : b.stats?.samples === false ? 0 : null
     case 'room': return roomRank(b.crowd?.level) || null
     case 'decides': return typeof b.review?.reviewDays === 'number' ? -b.review.reviewDays : null
   }
@@ -90,7 +90,7 @@ export default function TrybeBrandTable({ brands, picked, onPick, taken, preview
       b.name, b.website, (b.categories || []).join('; '), typeof b.pick === 'number' ? Math.round(b.pick) : '',
       b.pay_est?.dollars != null ? Math.round(b.pay_est.dollars) : '', b.pay_text || '', b.earnings_bucket || '', metaOf(b) ?? '',
       typeof b.top100_hits === 'number' ? b.top100_hits : '', typeof b.review_rating === 'number' ? b.review_rating : '', typeof b.review_count === 'number' ? b.review_count : '',
-      b.stats?.samples === true ? 'Yes' : b.stats?.samples === false ? 'No' : '', b.crowd?.level || '', typeof b.review?.reviewDays === 'number' ? b.review.reviewDays : '', whereOf(b) || '',
+      b.proof?.app ? 'App, none needed' : b.stats?.samples === true ? 'Yes' : b.stats?.samples === false ? 'No' : '', b.crowd?.level || '', typeof b.review?.reviewDays === 'number' ? b.review.reviewDays : '', whereOf(b) || '',
     ].map(cell).join(','))
     const blob = new Blob([[head.join(','), ...lines].join('\n')], { type: 'text/csv;charset=utf-8' })
     const a = document.createElement('a')
@@ -130,20 +130,23 @@ export default function TrybeBrandTable({ brands, picked, onPick, taken, preview
             const on = picked.has(b.brand_id)
             const where = whereOf(b)
             const meta = metaOf(b)
+            // An app or online service in My top 100: blue, said in words too.
+            const isApp = !!b.proof?.app
+            const edge: CSSProperties | undefined = isApp ? { boxShadow: `inset 3px 0 0 ${APP.color}` } : undefined
             return (
-              <tr key={b.brand_id} className="transition-colors hover:bg-[rgb(var(--brand-rgb)/0.04)]" style={{ borderTop: '1px solid var(--border)', background: on ? 'rgb(var(--brand-rgb) / 0.06)' : undefined, opacity: isTaken ? 0.62 : 1 }}>
+              <tr key={b.brand_id} className="transition-colors hover:bg-[rgb(var(--brand-rgb)/0.04)]" style={{ borderTop: '1px solid var(--border)', background: on ? 'rgb(var(--brand-rgb) / 0.06)' : isApp ? APP.soft : undefined, opacity: isTaken ? 0.62 : 1 }}>
                 {!preview && (
-                  <td className="pl-4 pr-1 py-2.5 align-middle">
+                  <td className="pl-4 pr-1 py-2.5 align-middle" style={edge}>
                     <input type="checkbox" className="w-4 h-4" style={{ accentColor: 'var(--accent)' }} checked={on} disabled={isTaken} aria-label={`Pick ${b.name}`} onChange={(e) => onPick(b.brand_id, e.target.checked)} />
                   </td>
                 )}
-                <td className="px-2.5 py-2.5 align-middle">
+                <td className="px-2.5 py-2.5 align-middle" style={preview ? edge : undefined}>
                   <div className="flex items-center gap-2.5 min-w-[220px] max-w-[300px]">
                     <BrandMark name={b.name} website={b.website} size={30} />
                     <div className="min-w-0">
                       <BrandName id={b.brand_id} name={b.name} className="text-[13.5px] font-semibold block truncate max-w-[240px]" style={{ color: 'var(--text)' }} />
                       <span className="text-[11px] block truncate max-w-[240px]" style={muted}>
-                        {where ? <span style={{ color: 'var(--accent-text, var(--accent))', fontWeight: 600 }}>{where}</span> : b.is_new ? <span style={{ color: 'var(--hot, #C2410C)', fontWeight: 600 }}>New on TRYBE</span> : (b.categories || []).slice(0, 2).join(', ')}
+                        {isApp && !where ? <AppChip /> : where ? <span style={{ color: 'var(--accent-text, var(--accent))', fontWeight: 600 }}>{where}</span> : b.is_new ? <span style={{ color: 'var(--hot, #C2410C)', fontWeight: 600 }}>New on TRYBE</span> : (b.categories || []).slice(0, 2).join(', ')}
                       </span>
                     </div>
                   </div>
@@ -174,7 +177,8 @@ export default function TrybeBrandTable({ brands, picked, onPick, taken, preview
                   {typeof b.review_rating === 'number' ? <span><span className="font-bold" style={{ color: 'var(--text)' }}>{b.review_rating.toFixed(1)}</span> <span className="text-[11px]" style={muted}>({b.review_count ?? 0})</span></span> : <Unknown>None</Unknown>}
                 </td>
                 <td className="px-2.5 py-2.5 align-middle whitespace-nowrap">
-                  {b.stats?.samples === true ? <Dot c="strong">Yes</Dot> : b.stats?.samples === false ? <Dot c="weak">No</Dot> : <Unknown>Not known</Unknown>}
+                  {isApp ? <span className="inline-flex items-center gap-1.5 text-[12.5px] font-semibold" style={{ color: 'var(--text)' }} title={b.proof?.samples}><span aria-hidden="true" className="w-2 h-2 rounded-full" style={{ background: APP.color }} />App, none needed</span>
+                    : b.stats?.samples === true ? <Dot c="strong">Yes</Dot> : b.stats?.samples === false ? <Dot c="weak">No</Dot> : <Unknown>Not known</Unknown>}
                 </td>
                 <td className="px-2.5 py-2.5 align-middle whitespace-nowrap">
                   {b.crowd?.level ? <Dot c={b.crowd.level === 'open' ? 'strong' : b.crowd.level === 'filling' ? 'fair' : 'weak'}>{b.crowd.level === 'open' ? 'Open' : b.crowd.level === 'filling' ? 'Filling' : 'Crowded'}</Dot> : <Unknown>Not known</Unknown>}

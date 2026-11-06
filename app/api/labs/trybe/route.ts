@@ -2060,8 +2060,8 @@ Weigh posts pushed to social, and TRYBE brands they earned with or submitted to,
     // Each brand left must show ad spend in the last 60 days and send
     // samples (lib/trybe-top100), said on it in words; every brand left out
     // is counted by why. Then fit first, quality next, proven samples last.
-    const proofBy = new Map<string, { spend: string[]; samples: string; proven: boolean }>()
-    let top100Out: { leftOut: Record<string, number>; considered: number; kept: number; provenSamples: number; toCount: Array<{ brand_id: string; name: string }>; samplesToRead: number; funnel: { found: number; listed: number; fit: number } } | null = null
+    const proofBy = new Map<string, { spend: string[]; samples: string; proven: boolean; app: boolean }>()
+    let top100Out: { leftOut: Record<string, number>; considered: number; kept: number; provenSamples: number; apps: number; toCount: Array<{ brand_id: string; name: string }>; samplesToRead: number; funnel: { found: number; listed: number; fit: number } } | null = null
     let top100Shown: typeof ranked | null = null
     if (top100) {
       const ids = ranked.map(x => x.r.brand_id)
@@ -2080,17 +2080,19 @@ Weigh posts pushed to social, and TRYBE brands they earned with or submitted to,
       // and shared by every member. What was not read in time is counted
       // and read on the next round, never taken as a no.
       const isKnown = (id: string) => mineBy.has(id) || top100.joined.has(id) || sampledMine.has(id)
+      // An app or online service (lib/trybe-sells), with no physical goods:
+      // nothing to ship, so it needs no product list read for samples.
+      const digitalOf = (id: string) => { const k = sellsBy.get(id); return !!k?.kind && k.kind !== 'physical' && !k.kinds.includes('physical') }
       await loadCatalogs(ranked.filter(x => {
         const id = String(x.r.brand_id)
-        if (isKnown(id)) return false
+        if (isKnown(id) || digitalOf(id)) return false
         const ms = memberSamples.get(id)
         return !(ms && (ms.received > 0 || ms.waitingLong > 0))
       }).map(x => String(x.r.brand_id)), true)
       const notReadYet = catalogUnread
       const samplesToRead = ranked.filter(x => notReadYet.has(String(x.r.brand_id)) && !isKnown(String(x.r.brand_id))).length
-      const leftOut = { known: 0, noMetaAds: 0, metaUnclear: 0, notCounted: 0, samplesOff: 0, samplesMissing: 0, samplesNone: 0, samplesNoneDigital: 0, samplesUnknown: 0, samplesNotRead: 0 }
-      const digitalOf = (id: string) => { const k = sellsBy.get(id); return !!k?.kind && k.kind !== 'physical' && !k.kinds.includes('physical') }
-      const kept: Array<{ x: typeof ranked[number]; proven: boolean }> = []
+      const leftOut = { known: 0, noMetaAds: 0, metaUnclear: 0, notCounted: 0, samplesOff: 0, samplesMissing: 0, samplesNone: 0, samplesUnknown: 0, samplesNotRead: 0 }
+      const kept: Array<{ x: typeof ranked[number]; proven: boolean; app: boolean }> = []
       // Fit to be checked on Meta: everything else passed, no count yet.
       const toCount: Array<typeof ranked[number]> = []
       const fourWeeks = 4 * META_ADS_FRESH_MS
@@ -2103,7 +2105,7 @@ Weigh posts pushed to social, and TRYBE brands they earned with or submitted to,
         if (!sm.ok) {
           // Not read yet is its own count: read on the next round.
           if (sm.why === 'unknown' && notReadYet.has(id)) leftOut.samplesNotRead++
-          else if (sm.why === 'none') { leftOut.samplesNone++; if (digitalOf(id)) leftOut.samplesNoneDigital++ }
+          else if (sm.why === 'none') leftOut.samplesNone++
           else leftOut[sm.why === 'off' ? 'samplesOff' : sm.why === 'missing' ? 'samplesMissing' : 'samplesUnknown']++
           continue
         }
@@ -2122,8 +2124,8 @@ Weigh posts pushed to social, and TRYBE brands they earned with or submitted to,
           else leftOut.noMetaAds++
           continue
         }
-        proofBy.set(id, { spend: spend.says, samples: sm.says, proven: sm.proven })
-        kept.push({ x, proven: sm.proven })
+        proofBy.set(id, { spend: spend.says, samples: sm.says, proven: sm.proven, app: !!sm.app })
+        kept.push({ x, proven: sm.proven, app: !!sm.app })
       }
       const all = [...kept.map(k => k.x), ...toCount]
       const maxMatch = Math.max(1, ...all.map(x => x.match))
@@ -2133,7 +2135,7 @@ Weigh posts pushed to social, and TRYBE brands they earned with or submitted to,
       toCount.sort((a, b) => fitOf(b) - fitOf(a))
       top100Shown = kept.map(k => k.x)
       top100Out = {
-        leftOut, considered: ranked.length, kept: kept.length, provenSamples: kept.slice(0, TOP100).filter(k => k.proven).length,
+        leftOut, considered: ranked.length, kept: kept.length, provenSamples: kept.slice(0, TOP100).filter(k => k.proven).length, apps: kept.slice(0, TOP100).filter(k => k.app).length,
         // Product lists still to read for samples, for the page to rank again.
         samplesToRead,
         // How the brands that fit were found: what the word search gave, how

@@ -83,7 +83,7 @@ export interface SampleSigns {
 }
 
 export type SampleVerdict =
-  | { ok: true; proven: boolean; says: string }
+  | { ok: true; proven: boolean; says: string; app?: boolean }
   | { ok: false; why: 'off' | 'missing' | 'none' | 'unknown'; says: string }
 
 /** Whether a brand sends samples, as far as MVP can tell. Proven when MVP
@@ -91,8 +91,15 @@ export type SampleVerdict =
  *  TRYBE says no, when creators asked and nothing came, or when nothing at
  *  all says. Pure. */
 export function samplesProof(s: SampleSigns): SampleVerdict {
-  if (s.received > 0) return { ok: true, proven: true, says: `sent samples to ${s.received} MVP creator${s.received === 1 ? '' : 's'}` }
+  if (s.received > 0) return { ok: true, proven: true, says: `sent samples to ${s.received} MVP creator${s.received === 1 ? '' : 's'}`, ...(s.digital ? { app: true } : {}) }
   if (s.waitingLong > 0) return { ok: false, why: 'missing', says: `${s.waitingLong} MVP creator${s.waitingLong === 1 ? '' : 's'} asked ${SAMPLE_WAIT_DAYS}+ days ago and got nothing` }
+  // APPS ARE IN (Seb, 2026-11-06: "yes let apps in"). An app or online
+  // service has nothing to ship, so there is no sample to wait for: it passes,
+  // marked as an app so the page can show it apart at a glance.
+  if (s.digital) {
+    const p = s.products
+    return { ok: true, proven: false, app: true, says: p && p.open > 0 ? `an app or online service, and ${p.open} of its ${p.total} product${p.total === 1 ? '' : 's'} on TRYBE take sample requests` : 'an app or online service: nothing to ship, so no sample to wait for' }
+  }
   if (s.trybe === false) return { ok: false, why: 'off', says: 'does not take sample requests on TRYBE' }
   if (s.trybe === true) return { ok: true, proven: false, says: 'takes sample requests on TRYBE (no MVP creator has had one yet)' }
   // TRYBE'S LIST DOES NOT SAY FOR MOST BRANDS (Seb's run, 2026-11-06: 147 of
@@ -103,9 +110,9 @@ export function samplesProof(s: SampleSigns): SampleVerdict {
   if (p && p.total > 0) return { ok: false, why: 'off', says: `none of its ${p.total} product${p.total === 1 ? '' : 's'} on TRYBE take sample requests` }
   // AN EMPTY PRODUCT LIST IS AN ANSWER (Seb's check, 2026-11-06: 45 of 599
   // read had none, Canva and Sand Cloud among them). TRYBE answers with no
-  // products at all, not paused ones, so there is nothing to ask a sample
-  // of. Most are apps and online services, said as such.
-  if (p && p.total === 0) return { ok: false, why: 'none', says: s.digital ? 'an app or online service with no products on TRYBE, so there is no sample to ask for' : 'lists no products on TRYBE, so there is nothing to ask a sample of' }
+  // products at all, not paused ones. Apps passed above; a brand left here
+  // sells physical goods (or MVP cannot tell) and has nothing to ask for.
+  if (p && p.total === 0) return { ok: false, why: 'none', says: 'lists no products on TRYBE, so there is nothing to ask a sample of' }
   return { ok: false, why: 'unknown', says: 'TRYBE does not say whether it sends samples' }
 }
 

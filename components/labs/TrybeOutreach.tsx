@@ -53,6 +53,7 @@ import TrybeDossier from '@/components/labs/TrybeDossier'
 import TrybeHome from '@/components/labs/TrybeHome'
 import TrybeNav from '@/components/labs/TrybeNav'
 import TrybeBrandTable from '@/components/labs/TrybeBrandTable'
+import { APP, AppChip } from '@/components/labs/trybe-ui'
 import { DossierCtx, BrandName } from '@/components/labs/trybe-dossier-context'
 import TrybeWorking from '@/components/labs/TrybeWorking'
 import TrybeCreate from '@/components/labs/TrybeCreate'
@@ -138,7 +139,7 @@ interface LiveBrand {
   /** Looked up by name, and not seen on TRYBE's list at the last whole collection. */
   not_listed?: boolean
   /** My top 100: its ad spend and samples, in words. */
-  proof?: { spend: string[]; samples: string; proven: boolean } | null
+  proof?: { spend: string[]; samples: string; proven: boolean; app?: boolean } | null
   products: string[]; website_read: boolean
   /** Where it stands on this creator's own list, if it is on it. */
   status: Brand['status'] | null; fit_score: number | null; fit_reason: string | null
@@ -628,7 +629,7 @@ export default function TrybeOutreach({ preview = false, v2 = false }: { preview
     /** A search by a brand's name: over all of TRYBE, the filters paused. */
     nameSearch?: { query: string; pausedFilters: boolean } | null
     /** My top 100: what was left out and why. */
-    top100?: { leftOut: { known: number; noMetaAds: number; metaUnclear: number; notCounted: number; samplesOff: number; samplesMissing: number; samplesNone?: number; samplesNoneDigital?: number; samplesUnknown: number; samplesNotRead?: number }; considered: number; kept: number; provenSamples: number; toCount?: Array<{ brand_id: string; name: string }>; samplesToRead?: number; funnel?: { found: number; listed: number; fit: number } } | null } | null>(null)
+    top100?: { leftOut: { known: number; noMetaAds: number; metaUnclear: number; notCounted: number; samplesOff: number; samplesMissing: number; samplesNone?: number; samplesUnknown: number; samplesNotRead?: number }; considered: number; kept: number; provenSamples: number; apps?: number; toCount?: Array<{ brand_id: string; name: string }>; samplesToRead?: number; funnel?: { found: number; listed: number; fit: number } } | null } | null>(null)
   // MY TOP 100 (Seb, 2026-11-05; lib/trybe-top100): MVP reads the creator's
   // work into a profile, then the list below is their 100.
   const [top100, setTop100] = useState<{ profile: { summary: string; categories: string[]; keywords: string[] }; counts: { posts: number; pushed: number; worksWith: number; submitted: number; messaged: number; samples: number; postsCapped?: boolean; messagedTotal?: number }; joined: string[]; note: string | null } | null>(null)
@@ -2512,7 +2513,7 @@ export default function TrybeOutreach({ preview = false, v2 = false }: { preview
                 t.leftOut.notCounted ? `${t.leftOut.notCounted} not checked on Meta yet` : null,
                 t.leftOut.samplesOff ? `${t.leftOut.samplesOff} that do not take sample requests` : null,
                 t.leftOut.samplesMissing ? `${t.leftOut.samplesMissing} where MVP creators asked for samples that never came` : null,
-                t.leftOut.samplesNone ? `${t.leftOut.samplesNone} that list no products on TRYBE to ask a sample of${t.leftOut.samplesNoneDigital ? ` (${t.leftOut.samplesNoneDigital === t.leftOut.samplesNone ? 'all' : t.leftOut.samplesNoneDigital} of them apps or online services)` : ''}` : null,
+                t.leftOut.samplesNone ? `${t.leftOut.samplesNone} that list no products on TRYBE to ask a sample of` : null,
                 t.leftOut.samplesUnknown ? `${t.leftOut.samplesUnknown} where TRYBE does not say whether they send samples, not even on their products` : null,
                 t.leftOut.samplesNotRead ? `${t.leftOut.samplesNotRead} not checked for samples yet` : null,
               ].filter(Boolean).join(', ') : ''
@@ -2534,8 +2535,13 @@ export default function TrybeOutreach({ preview = false, v2 = false }: { preview
                   {top100.profile.summary && <p className="text-[13px] mt-1.5">{top100.profile.summary}</p>}
                   <p className="text-[12px] mt-1" style={soft}>MVP read {read || 'what you have'}, and looked for brands selling {[...top100.profile.categories, ...top100.profile.keywords].slice(0, 12).join(', ')}.</p>
                   <p className="text-[12px] mt-1" style={soft}>
-                    Every brand here is new to you, is running Meta ads, and sends samples, each said on the brand.{t ? ` ${t.provenSamples} of them have sent samples to MVP creators already; the rest take sample requests on TRYBE.` : ''}
+                    Every brand here is new to you, is running Meta ads, and sends samples or is an app, each said on the brand.{t ? ` ${t.provenSamples} of them have sent samples to MVP creators already; the rest take sample requests on TRYBE${t.apps ? ' or are apps' : ''}.` : ''}
                   </p>
+                  {!!t?.apps && (
+                    <p className="text-[12px] mt-1.5 inline-flex items-center gap-1.5 rounded-lg px-2 py-1" style={{ background: APP.soft, border: `1px solid ${APP.line}`, color: 'var(--text)' }}>
+                      <AppChip short /> {t.apps} of these {t.apps === 1 ? 'is an app or online service' : 'are apps or online services'}, shown in blue: nothing to ship, so no sample to wait for. Ask for access when you message.
+                    </p>
+                  )}
                   {out && <p className="text-[12px] mt-1" style={soft}>Left out of {t?.considered.toLocaleString()} that fit you: {out}.</p>}
                   {funnel && <p className="text-[12px] mt-1" style={soft}>{funnel}</p>}
                   {t && n < 100 && <p className="text-[12px] mt-1" style={{ color: AMBER }}>Only {n} passed every check, so your list is {n}, not 100. MVP never pads it with brands it cannot vouch for.</p>}
@@ -2728,13 +2734,14 @@ export default function TrybeOutreach({ preview = false, v2 = false }: { preview
                 const where = liveWhere(b)
                 const hits = (p: string) => kws.some(k => p.toLowerCase().includes(k.toLowerCase()))
                 return (
-                  <label key={b.brand_id} className={`flex gap-3 rounded-xl border p-3.5 ${taken ? 'opacity-60' : 'cursor-pointer'}`} style={{ borderColor: on ? PURPLE : 'var(--border)', background: on ? 'rgb(var(--brand-rgb) / 0.04)' : undefined }}>
+                  <label key={b.brand_id} className={`flex gap-3 rounded-xl border p-3.5 ${taken ? 'opacity-60' : 'cursor-pointer'}`} style={{ borderColor: on ? PURPLE : b.proof?.app ? APP.line : 'var(--border)', borderWidth: b.proof?.app ? 1.5 : undefined, background: on ? 'rgb(var(--brand-rgb) / 0.04)' : b.proof?.app ? APP.soft : undefined }}>
                     {!preview && <input type="checkbox" className="mt-3 accent-[#7C3AED]" checked={on} disabled={taken} aria-label={`Pick ${b.name}`}
                       onChange={e => setLivePick(p => { const n = new Set(p); if (e.target.checked) n.add(b.brand_id); else n.delete(b.brand_id); return n })} />}
                     <BrandMark name={b.name} website={b.website} />
                     <span className="flex-1 min-w-0">
                       <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
                         <BrandName id={b.brand_id} name={b.name} className="text-[15px] font-semibold" />
+                        {b.proof?.app && <AppChip />}
                         <StarButton on={!!b.starred} onClick={() => void star(b)} />
                         <CompareButton on={compare.some(x => x.brand_id === b.brand_id)} full={compare.length >= COMPARE_MAX} onClick={() => flipCompare(b)} />
                         {where && <span className="text-[11px] font-semibold rounded-full px-2 py-0.5" style={{ background: 'rgb(var(--brand-rgb) / 0.10)', color: PURPLE }}>{where}</span>}
@@ -2746,7 +2753,9 @@ export default function TrybeOutreach({ preview = false, v2 = false }: { preview
                       {taken && takenWhy(b.status) && <span className="block text-[12.5px] mt-1" style={{ color: 'var(--text)' }}>{takenWhy(b.status)}</span>}
                       {b.proof && (
                         <span className="block text-[12px] mt-1" style={{ color: GREEN }}>
-                          <Check size={11} className="inline -mt-0.5" /> Ad spend: {b.proof.spend.join(', ')}. <Check size={11} className="inline -mt-0.5" /> Samples: {b.proof.samples}.
+                          <Check size={11} className="inline -mt-0.5" /> Ad spend: {b.proof.spend.join(', ')}. {b.proof.app
+                            ? <span style={{ color: APP.color }}><Check size={11} className="inline -mt-0.5" /> {b.proof.samples.charAt(0).toUpperCase() + b.proof.samples.slice(1)}.</span>
+                            : <><Check size={11} className="inline -mt-0.5" /> Samples: {b.proof.samples}.</>}
                         </span>
                       )}
                       <span className="flex flex-wrap items-center gap-1.5 mt-1.5">

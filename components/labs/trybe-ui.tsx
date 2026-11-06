@@ -9,7 +9,24 @@
 // nothing depends on colour alone.
 
 import type { CSSProperties, ReactNode } from 'react'
+import { Smartphone } from 'lucide-react'
 import type { Grade } from '@/lib/trybe-dossier'
+
+/** APPS AND ONLINE SERVICES IN MY TOP 100 (Seb, 2026-11-06: "let apps in and
+ *  color those results in a visible difference.. so we can tell right
+ *  away"). Blue: no other mark on a brand list uses it (green is proven,
+ *  amber a warning, the look's own colour a pick). Shown with a chip in words
+ *  too, so it never rests on colour alone. */
+export const APP = { color: '#2563EB', soft: 'rgba(37,99,235,0.07)', line: 'rgba(37,99,235,0.55)', chip: 'rgba(37,99,235,0.14)', word: 'App or online service' }
+
+export function AppChip({ short = false }: { short?: boolean }) {
+  return (
+    <span className="inline-flex items-center gap-1 text-[11px] font-semibold rounded-full px-2 py-0.5 whitespace-nowrap" style={{ background: APP.chip, color: 'var(--text)' }}
+      title="An app or online service: nothing to ship, so no sample to wait for. Ask it for access when you message it.">
+      <Smartphone size={11} style={{ color: APP.color }} aria-hidden="true" /> {short ? 'App' : APP.word}
+    </span>
+  )
+}
 
 /** What each grade looks like: a bar colour that reads on light and dark, and its word. */
 export const GRADE: Record<Grade, { color: string; soft: string; word: string }> = {
