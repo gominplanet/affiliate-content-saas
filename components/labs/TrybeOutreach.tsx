@@ -25,7 +25,7 @@ import { useEffectiveTier } from '@/lib/useEffectiveTier'
 import { toast } from 'sonner'
 import { Loader2, Lock, Search, Sparkles, Send, Square, ExternalLink, Check, AlertTriangle, Globe, Star, Handshake, RotateCcw, X, Trash2, Tag,
   Dumbbell, Shirt, House, UtensilsCrossed, Baby, PawPrint, Gem, Cpu, Tent, Plane, BookOpen, Church, Palette, SprayCan, Moon, Pill, HeartPulse,
-  Scissors, Droplet, Coffee, Leaf, Wand2, MessageCircle, Pencil, ChevronUp, Bell, Lightbulb, CalendarDays, Inbox, ArrowRight, Clapperboard, UploadCloud, BarChart3, Rocket, ListChecks, type LucideIcon } from 'lucide-react'
+  Scissors, Droplet, Coffee, Leaf, Wand2, MessageCircle, Pencil, ChevronUp, Bell, Lightbulb, CalendarDays, Inbox, ArrowRight, Clapperboard, UploadCloud, BarChart3, Rocket, ListChecks, LayoutDashboard, type LucideIcon } from 'lucide-react'
 import { nameKey, trybeSearchPath, brandsNamed, TRYBE_SEARCH_PARAMS } from '@/lib/trybe-name-lookup'
 import { TOP100, META_ROUND, META_ROUNDS_MAX } from '@/lib/trybe-top100'
 import { ensureTrybeTab, requestTrybeTab, requestTrybeTabOpen, requestTrybeApi, requestTrybeAccess, requestTrybeScan, requestTrybeSend, requestTrybeHarvest, requestTrybeRun, requestTrybeRunStatus, requestTrybeRunStop, type TrybeScanPass, type TrybeRun } from '@/lib/extension-frame'
@@ -50,6 +50,8 @@ import TrybeChanges, { fetchChanges, changesSummary, type ChangesRead } from '@/
 import { readJoinedBrandIds } from '@/lib/trybe-joined'
 import { type PeekActions } from '@/components/labs/TrybeBrandPeek'
 import TrybeDossier from '@/components/labs/TrybeDossier'
+import TrybeHome from '@/components/labs/TrybeHome'
+import TrybeNav from '@/components/labs/TrybeNav'
 import { DossierCtx, BrandName } from '@/components/labs/trybe-dossier-context'
 import TrybeWorking from '@/components/labs/TrybeWorking'
 import TrybeCreate from '@/components/labs/TrybeCreate'
@@ -126,7 +128,7 @@ type Access = 'checking' | 'granted' | 'not-granted' | 'no-scout' | 'old' | 'no-
 interface Directory { brands: number; listed?: number | null; firstCountAt?: string | null; joinedSinceFirst?: number | null; joinedStillListed?: number | null; withWebsite: number; websitesRead: number; lastCollectedAt: string | null; lastPartial?: { at: string; pages: number | null; totalPages: number | null } | null; categories: string[]; top100?: { at?: string; entries?: number; brands?: number; matched?: number } | null }
 /** The whole list is collected again after this long. */
 const RECOLLECT_MS = 20 * 3600_000
-export type Tab = 'create' | 'upload' | 'find' | 'stars' | 'queue' | 'sent' | 'inbox' | 'analytics' | 'submissions' | 'brands' | 'week' | 'changes' | 'working'
+export type Tab = 'home' | 'create' | 'upload' | 'find' | 'stars' | 'queue' | 'sent' | 'inbox' | 'analytics' | 'submissions' | 'brands' | 'week' | 'changes' | 'working'
 /** One brand from MVP's copy of TRYBE, as the live list shows it. */
 interface LiveBrand {
   brand_id: string; name: string; website: string | null; categories: string[]; about: string | null
@@ -358,6 +360,8 @@ const TAB_GROUPS: Array<{ id: TabGroup; label: string; says: string; color: stri
   { id: 'track', label: 'Track', says: 'Pay and news', color: '#059669' },
 ]
 const TABS: Array<{ id: Tab; label: string; icon: LucideIcon; group: TabGroup; says: string }> = [
+  // THE TRYBE HOME (the new TRYBE only, Seb 2026-11-06): what needs you, then what moved on TRYBE.
+  { id: 'home', label: 'TRYBE home', icon: LayoutDashboard, group: 'brands', says: 'What needs you today, and what moved on TRYBE this week.' },
   { id: 'create', label: 'Make videos', icon: Clapperboard, group: 'create', says: 'Pick a brand, pick the product you have, and get ten shooting scripts that follow its brief.' },
   { id: 'upload', label: 'Upload videos', icon: UploadCloud, group: 'create', says: 'Add the videos you filmed and send each one to its TRYBE brand, without leaving this page.' },
   // (How they win, once a team-only tab here, was removed 2026-10-18: its
@@ -537,7 +541,7 @@ export default function TrybeOutreach({ preview = false, v2 = false }: { preview
   const inboxDirectory = useMemo(() => brands.map((b) => ({ id: b.brand_id, name: b.name, website: b.website })), [brands])
   const [loading, setLoading] = useState(true)
   // Make videos first (Seb, 2026-10-13: brand, product, scripts, streamlined).
-  const [tab, setTab] = useState<Tab>(preview ? 'find' : 'create')
+  const [tab, setTab] = useState<Tab>(preview ? 'find' : v2 ? 'home' : 'create')
   // A Pro tab opened on the Amazon plan: said, with the way to Pro.
   const [lockedTab, setLockedTab] = useState<Tab | null>(null)
   // The tab goes into the address too, so a reload stays on it.
@@ -2196,7 +2200,7 @@ export default function TrybeOutreach({ preview = false, v2 = false }: { preview
       })()}
 
       {/* The numbers that matter today. */}
-      {!preview && <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      {!preview && !v2 && <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <Stat accent={PURPLE} label="Used of your daily cap" value={`${used} of ${savedCap}`} hint={remaining ? `${remaining} more can go now` : opensWords(freeAt)} onClick={() => setTab('sent')} />
         <Stat accent="#0E7490" label="Ready to send" value={String(queue.length)} hint={queue.length ? 'Messages written' : 'Nothing written yet'} onClick={() => setTab('queue')} />
         <Stat accent={GREEN} label="Replied this week" value={inbox || repliedCount ? String(repliedWeek) : inboxError || !canInbox ? 'Not read' : '...'} hint={inbox || repliedCount ? `${repliedCount} of ${wentCount} sent have replied` : inboxError ? 'Could not read TRYBE' : canInbox ? 'Reading TRYBE...' : 'Needs SCOUT on TRYBE'} tone={repliedWeek ? GREEN : undefined} onClick={() => setTab('sent')} />
@@ -2211,11 +2215,13 @@ export default function TrybeOutreach({ preview = false, v2 = false }: { preview
         </p>
       )}
 
-      <TrybeMenu tab={tab} lockedTab={lockedTab} preview={preview} queue={queue} history={history} unread={unread} changes={changes} go={go} />
+      {v2
+        ? <TrybeNav tab={tab} queue={queue.length} unread={unread} go={go} />
+        : <TrybeMenu tab={tab} lockedTab={lockedTab} preview={preview} queue={queue} history={history} unread={unread} changes={changes} go={go} />}
       {/* Where you are, and what it is for. */}
       {(() => {
         const t = TABS.find((x) => x.id === (lockedTab ?? tab))
-        if (!t) return null
+        if (!t || t.id === 'home') return null
         const Icon = t.icon
         // Outreach and Earnings hold two pages each: the switch between them.
         const tile = TILES.find((x) => x.tabs.includes(t.id))
@@ -2252,6 +2258,7 @@ export default function TrybeOutreach({ preview = false, v2 = false }: { preview
         ? <TrybeChanges scoutOpens={scoutOpens} onRead={(c) => { setChanges(c); setChangesError(null) }} onSeeNew={seeNew} actions={peekActions} />
         : changes ? <TrybeChanges scoutOpens={scoutOpens} initial={changes} onRead={setChanges} onSeeNew={seeNew} actions={peekActions} /> : <p className="text-[13px] inline-flex items-center gap-1.5" style={soft}><Loader2 size={13} className="animate-spin" /> Reading what changed on TRYBE...</p>)}
 
+      {tab === 'home' && v2 && <TrybeHome go={go} unread={unread} queue={queue.length} repliedWeek={repliedWeek} inboxRead={!!inbox} />}
       {tab === 'create' && <TrybeCreate canRead={canMyBrands} isAdmin={isAdmin} onFind={() => setTab('find')} />}
 
       {tab === 'upload' && <TrybeUpload inbox={inbox} canChat={canInbox} onOpenChat={(id) => { setOpenChat(o => ({ id, n: (o?.n ?? 0) + 1 })); setTab('inbox') }} />}

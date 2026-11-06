@@ -60,6 +60,7 @@ const brandKeyOf = (n: string | null | undefined) => brandKey(n)
 import { researchBrandSite } from '@/lib/trybe-research'
 import { mergeDirectory, directorySearchText, nicheScore, readCategories, siteSearchText, programOf } from '@/lib/trybe-directory'
 import { samplePool, replyPool, metaSeries, timelineOf, dossierProducts } from '@/lib/trybe-dossier'
+import { dailySeries, windowTotals, adsMovers, payMoves, payIndex, type ChangeRow } from '@/lib/trybe-home'
 import { TOP100, adSpendProof, samplesProof, sampleSignsByBrand, activityCounts, activityDigest, cleanProfile, pushesOf, readTop100Ask, catalogSamples, readCatalogSamples, CATALOG_KEEP_DAYS, CATALOG_READS_MAX, type Activity, type CatalogSamples } from '@/lib/trybe-top100'
 import {
   clampCap, countsTowardCap, sanitizeScanned, sendUrl, tidyDraft,
@@ -2656,6 +2657,67 @@ Weigh posts pushed to social, and TRYBE brands they earned with or submitted to,
       seen.add(k); return true
     }).slice(0, 10)
     return NextResponse.json({ ok: true, plans })
+  }
+
+  if (action === 'home') {
+    // THE TRYBE HOME (lib/trybe-home): what moved on TRYBE, from MVP's daily
+    // copy. The same for every member, so it is worked out once and kept 20
+    // minutes; the pay index (all listed brands' pay read) is kept 12 hours.
+    const HOME_KEY = 'home_v1'
+    if (body.fresh !== true) {
+      const { data: hit } = await admin.from('trybe_directory_meta').select('value, updated_at').eq('key', HOME_KEY).maybeSingle()
+      if (hit?.updated_at && Date.now() - Date.parse(hit.updated_at) < 20 * 60_000) return NextResponse.json({ ok: true, ...(hit.value as object), kept: true })
+    }
+    const since30 = new Date(Date.now() - 30 * 86_400_000).toISOString()
+    const ch = await allRows<ChangeRow>(() => admin.from('trybe_directory_changes').select('brand_id, kind, before, after, at').gte('at', since30).order('at', { ascending: false }).order('id', { ascending: false }), 40000)
+    if (ch.error) return NextResponse.json({ error: ch.error.message }, { status: 500 })
+    const changes = ch.rows
+    const kinds = ['new', 'left', 'back', 'pay', 'tier', 'ads', 'top100']
+    const series = dailySeries(changes, kinds, 30)
+    const totals = Object.fromEntries(kinds.map(k => [k, windowTotals(series[k], 7)]))
+    const recent = (k: string, days: number) => changes.filter(c => c.kind === k && Date.now() - Date.parse(c.at) < days * 86_400_000)
+    const movers = adsMovers(changes, 14, Date.now(), 10)
+    const pays = payMoves(changes, 14).slice(0, 40)
+    const tiers = recent('tier', 14).slice(0, 30)
+    const tops = recent('top100', 14).slice(0, 30)
+    const fresh = recent('new', 7)
+    const ids = Array.from(new Set([...movers.map(m => m.brand_id), ...pays.map(p => p.brand_id), ...tiers.map(t => t.brand_id), ...tops.map(t => t.brand_id), ...fresh.slice(0, 400).map(f => f.brand_id)]))
+    const dirBy = new Map<string, Record<string, any>>() // eslint-disable-line @typescript-eslint/no-explicit-any
+    for (let i = 0; i < ids.length; i += 200) {
+      const { data } = await admin.from('trybe_directory').select('brand_id, name, website, categories, pay_text, meta_ads, meta_ads_checked_at, earnings_bucket, top100_hits, left_at, rating:raw->>reviewRating').in('brand_id', ids.slice(i, i + 200))
+      for (const r of (data || []) as Array<Record<string, any>>) dirBy.set(String(r.brand_id), r) // eslint-disable-line @typescript-eslint/no-explicit-any
+    }
+    const card = (id: string) => { const r = dirBy.get(id); return r ? { brand_id: id, name: String(r.name || ''), website: r.website ?? null, categories: (r.categories || []).slice(0, 2), pay: r.pay_text ?? null, metaAds: typeof r.meta_ads === 'number' ? r.meta_ads : null, bucket: r.earnings_bucket ?? null, top100: r.top100_hits ?? null, rating: r.rating != null ? Number(r.rating) : null, left: !!r.left_at } : null }
+    // New brands worth a look first: the ones already running Meta ads.
+    const freshCards = fresh.map(f => ({ ...card(f.brand_id), at: f.at })).filter(c => c.brand_id && c.name && !c.left)
+      .sort((a, b) => (b.metaAds ?? -1) - (a.metaAds ?? -1) || Date.parse(b.at) - Date.parse(a.at)).slice(0, 12)
+    // The pay index, over every brand TRYBE lists now.
+    let index: ReturnType<typeof payIndex> | null = null
+    {
+      const { data: hit } = await admin.from('trybe_directory_meta').select('value, updated_at').eq('key', 'pay_index').maybeSingle()
+      if (hit?.updated_at && Date.now() - Date.parse(hit.updated_at) < 12 * 3_600_000) index = hit.value as typeof index
+      if (!index) {
+        const since = await listedSince(admin)
+        const pr = await allRows<{ pay_text: string | null }>(() => { let q = admin.from('trybe_directory').select('pay_text'); if (since) q = q.gte('last_seen_at', since); return q.order('brand_id', { ascending: true }) }, 20000)
+        if (!pr.error) {
+          index = payIndex(pr.rows.map(r => r.pay_text))
+          try { await admin.from('trybe_directory_meta').upsert({ key: 'pay_index', value: index, updated_at: now }) } catch { /* worked out again next time */ }
+        }
+      }
+    }
+    const stats = await directoryStats(admin)
+    const payload = {
+      at: now, listed: stats?.listed ?? null, total: stats?.brands ?? null, collectedAt: stats?.lastCollectedAt ?? null, joinedSinceFirst: stats?.joinedSinceFirst ?? null, firstCountAt: stats?.firstCountAt ?? null,
+      series, totals,
+      movers: movers.map(m => ({ ...card(m.brand_id), from: m.from, to: m.to, gain: m.gain, at: m.at })).filter(m => m.brand_id),
+      pays: pays.map(p => ({ ...card(p.brand_id), before: p.before, after: p.after, dir: p.dir, delta: p.delta, at: p.at })).filter(p => p.brand_id),
+      tiers: tiers.map(t => ({ ...card(t.brand_id), before: t.before, after: t.after, at: t.at })).filter(t => t.brand_id),
+      tops: tops.map(t => ({ ...card(t.brand_id), rank: t.after ? Number(t.after) || null : null, at: t.at })).filter(t => t.brand_id),
+      fresh: freshCards, newWeek: fresh.length,
+      payIndex: index,
+    }
+    try { await admin.from('trybe_directory_meta').upsert({ key: HOME_KEY, value: payload, updated_at: now }) } catch { /* worked out again next time */ }
+    return NextResponse.json({ ok: true, ...payload })
   }
 
   if (action === 'dossier') {
