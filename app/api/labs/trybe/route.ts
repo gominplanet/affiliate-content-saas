@@ -59,7 +59,7 @@ import { brandKey } from '@/lib/brand-normalize'
 const brandKeyOf = (n: string | null | undefined) => brandKey(n)
 import { researchBrandSite } from '@/lib/trybe-research'
 import { mergeDirectory, directorySearchText, nicheScore, readCategories, siteSearchText, programOf } from '@/lib/trybe-directory'
-import { TOP100, adSpendProof, samplesProof, sampleSignsByBrand, activityCounts, activityDigest, cleanProfile, pushesOf, readTop100Ask, type Activity } from '@/lib/trybe-top100'
+import { TOP100, adSpendProof, samplesProof, sampleSignsByBrand, activityCounts, activityDigest, cleanProfile, pushesOf, readTop100Ask, catalogSamples, readCatalogSamples, CATALOG_KEEP_DAYS, CATALOG_READS_MAX, type Activity, type CatalogSamples } from '@/lib/trybe-top100'
 import {
   clampCap, countsTowardCap, sanitizeScanned, sendUrl, tidyDraft,
   DRAFT_SYSTEM, draftUserPrompt, DEFAULT_DAILY_CAP, type ScannedBrand,
@@ -262,6 +262,28 @@ async function listedSince(admin: Db): Promise<string | null> {
  *  the old search (418) answers, in its old order. `got` is how many the
  *  search returned before any other filter, so "more exist" is told from the
  *  search's own limit. */
+/** BRANDS' PRODUCT LISTS ON TRYBE, for whether they take sample requests
+ *  (lib/trybe-top100 catalogSamples). TRYBE's public list, the one its brand
+ *  pages show, a few at a time until `until`. A brand TRYBE does not know
+ *  (404) has no products; one that could not be read is left out of the
+ *  answer, never taken as "none". */
+async function readSampleCatalogs(ids: string[], until: number): Promise<Map<string, CatalogSamples>> {
+  const out = new Map<string, CatalogSamples>()
+  let next = 0
+  const worker = async () => {
+    while (next < ids.length && Date.now() < until - 1500) {
+      const id = ids[next++]
+      try {
+        const res = await fetch(`https://jointrybe.com/backend/api/public/brand/${encodeURIComponent(id)}/products`, { signal: AbortSignal.timeout(Math.min(8000, Math.max(1500, until - Date.now()))), headers: { accept: 'application/json', 'user-agent': 'Mozilla/5.0 (MVP Affiliate)' } })
+        if (res.ok) out.set(id, catalogSamples(await res.json()))
+        else if (res.status === 404) out.set(id, { open: 0, total: 0 })
+      } catch { /* not read this time */ }
+    }
+  }
+  await Promise.all(Array.from({ length: 8 }, worker))
+  return out
+}
+
 async function rankDirectory(admin: Db, o: { words: string[]; user: string | null; limit: number; sort: string; since: string | null }): Promise<{ ids: string[]; got: number; error: string | null }> {
   const ids: string[] = []
   for (let from = 0; from < o.limit; from += 1000) {
@@ -1628,7 +1650,9 @@ Weigh posts pushed to social, and TRYBE brands they earned with or submitted to,
     // Best bets and Fewest creators rank a wider pool: the search keeps its
     // best keyword matches first, and small brands with few creators (the
     // best bets) would never reach the list from 400.
-    const pool = top100 || sort === 'picks' || sort === 'creators' || sort === 'spend' || sort === 'payouts' || sort === 'adsPerCreator' || readFilters(body.filters).minRating ? 1200 : 400
+    // My top 100 reads the widest pool: it is left with only the brands that
+    // pass every check, so it starts from as many fits as the search gives.
+    const pool = top100 ? 2400 : sort === 'picks' || sort === 'creators' || sort === 'spend' || sort === 'payouts' || sort === 'adsPerCreator' || readFilters(body.filters).minRating ? 1200 : 400
     // FINDER (Seb, 2026-10-14, after Rob's Oink Blue video): the creator's
     // priorities, stars and filters. Priorities sent by the page win, so a
     // change ranks at once; else the saved ones.
@@ -2001,7 +2025,7 @@ Weigh posts pushed to social, and TRYBE brands they earned with or submitted to,
     // samples (lib/trybe-top100), said on it in words; every brand left out
     // is counted by why. Then fit first, quality next, proven samples last.
     const proofBy = new Map<string, { spend: string[]; samples: string; proven: boolean }>()
-    let top100Out: { leftOut: Record<string, number>; considered: number; kept: number; provenSamples: number; toCount: Array<{ brand_id: string; name: string }> } | null = null
+    let top100Out: { leftOut: Record<string, number>; considered: number; kept: number; provenSamples: number; toCount: Array<{ brand_id: string; name: string }>; samplesToRead: number; funnel: { found: number; listed: number; fit: number } } | null = null
     let top100Shown: typeof ranked | null = null
     if (top100) {
       const ids = ranked.map(x => x.r.brand_id)
@@ -2013,18 +2037,53 @@ Weigh posts pushed to social, and TRYBE brands they earned with or submitted to,
       const memberSamples = sampleSignsByBrand(memberRows)
       const { data: mySam } = await admin.from('trybe_samples').select('brand_id').eq('user_id', ownerId).not('brand_id', 'is', null)
       const sampledMine = new Set(((mySam || []) as Array<{ brand_id: string }>).map(r => r.brand_id))
-      const leftOut = { known: 0, noMetaAds: 0, metaUnclear: 0, notCounted: 0, samplesOff: 0, samplesMissing: 0, samplesUnknown: 0 }
+      // ── SAMPLES FROM THE BRAND'S PRODUCT LIST ON TRYBE (Seb's run,
+      // 2026-11-06: 147 of the 164 brands that fit were left out because
+      // TRYBE's brand list does not say). The ones it does not say for are
+      // read from TRYBE's public product list, best fits first, kept a week
+      // and shared by every member. What was not read in time is counted
+      // and read on the next round, never taken as a no.
+      const isKnown = (id: string) => mineBy.has(id) || top100.joined.has(id) || sampledMine.has(id)
+      const catalogBy = new Map<string, CatalogSamples>()
+      const needCatalog = ranked.filter(x => {
+        const id = String(x.r.brand_id)
+        if (isKnown(id) || statsBy.get(id)?.samples != null) return false
+        const ms = memberSamples.get(id)
+        return !(ms && (ms.received > 0 || ms.waitingLong > 0))
+      }).sort((a, b) => b.match - a.match).map(x => String(x.r.brand_id))
+      for (let i = 0; i < needCatalog.length; i += 200) {
+        const { data } = await admin.from('trybe_directory_meta').select('key, value, updated_at').in('key', needCatalog.slice(i, i + 200).map(id => `samples:${id}`))
+        for (const m of (data || []) as Array<{ key: string; value: unknown; updated_at: string | null }>) {
+          const v = readCatalogSamples(m.value)
+          if (v && m.updated_at && Date.now() - Date.parse(m.updated_at) < CATALOG_KEEP_DAYS * 86_400_000) catalogBy.set(m.key.slice('samples:'.length), v)
+        }
+      }
+      const toRead = needCatalog.filter(id => !catalogBy.has(id) && /^[A-Za-z0-9-]{6,80}$/.test(id))
+      const readNow = await readSampleCatalogs(toRead.slice(0, CATALOG_READS_MAX), Date.now() + 40_000)
+      if (readNow.size) {
+        const rowsKept = Array.from(readNow.entries()).map(([id, v]) => ({ key: `samples:${id}`, value: v, updated_at: now }))
+        for (let i = 0; i < rowsKept.length; i += 200) { try { await admin.from('trybe_directory_meta').upsert(rowsKept.slice(i, i + 200)) } catch { /* read again next time */ } }
+        for (const [id, v] of Array.from(readNow.entries())) catalogBy.set(id, v)
+      }
+      const notReadYet = new Set(toRead.filter(id => !catalogBy.has(id)))
+      const samplesToRead = notReadYet.size
+      const leftOut = { known: 0, noMetaAds: 0, metaUnclear: 0, notCounted: 0, samplesOff: 0, samplesMissing: 0, samplesUnknown: 0, samplesNotRead: 0 }
       const kept: Array<{ x: typeof ranked[number]; proven: boolean }> = []
       // Fit to be checked on Meta: everything else passed, no count yet.
       const toCount: Array<typeof ranked[number]> = []
       const fourWeeks = 4 * META_ADS_FRESH_MS
       for (const x of ranked) {
         const id = x.r.brand_id
-        if (mineBy.has(id) || top100.joined.has(id) || sampledMine.has(id)) { leftOut.known++; continue }
+        if (isKnown(id)) { leftOut.known++; continue }
         // Samples first, so no brand is sent to Meta that would be left out anyway.
         const ms = memberSamples.get(id) ?? { received: 0, waitingLong: 0 }
-        const sm = samplesProof({ trybe: statsBy.get(id)?.samples ?? null, received: ms.received, waitingLong: ms.waitingLong })
-        if (!sm.ok) { leftOut[sm.why === 'off' ? 'samplesOff' : sm.why === 'missing' ? 'samplesMissing' : 'samplesUnknown']++; continue }
+        const sm = samplesProof({ trybe: statsBy.get(id)?.samples ?? null, received: ms.received, waitingLong: ms.waitingLong, products: catalogBy.get(id) ?? null })
+        if (!sm.ok) {
+          // Not read yet is its own count: read on the next round.
+          if (sm.why === 'unknown' && notReadYet.has(id)) leftOut.samplesNotRead++
+          else leftOut[sm.why === 'off' ? 'samplesOff' : sm.why === 'missing' ? 'samplesMissing' : 'samplesUnknown']++
+          continue
+        }
         const crowd = crowdBy.get(id)
         const metaAt = typeof x.r.meta_ads_checked_at === 'string' ? Date.parse(x.r.meta_ads_checked_at) : NaN
         const counted = typeof x.r.meta_ads === 'number' && Number.isFinite(metaAt) && Date.now() - metaAt < fourWeeks
@@ -2052,6 +2111,11 @@ Weigh posts pushed to social, and TRYBE brands they earned with or submitted to,
       top100Shown = kept.map(k => k.x)
       top100Out = {
         leftOut, considered: ranked.length, kept: kept.length, provenSamples: kept.slice(0, TOP100).filter(k => k.proven).length,
+        // Product lists still to read for samples, for the page to rank again.
+        samplesToRead,
+        // How the brands that fit were found: what the word search gave, how
+        // many of those TRYBE still lists, and how many fit the profile.
+        funnel: { found: searched.got, listed: rows.length, fit: matchedAll.length },
         // The best fits not yet counted on Meta, for the page to have SCOUT count.
         toCount: toCount.slice(0, 300).map(x => ({ brand_id: String(x.r.brand_id), name: String(x.r.name || '') })),
       }

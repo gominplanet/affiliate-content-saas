@@ -75,6 +75,9 @@ export interface SampleSigns {
   received: number
   /** MVP creators who asked SAMPLE_WAIT_DAYS ago or more and have nothing. */
   waitingLong: number
+  /** TRYBE's public product list for the brand: products open to sample
+   *  requests, of its active products. Null when not read. */
+  products?: CatalogSamples | null
 }
 
 export type SampleVerdict =
@@ -90,8 +93,48 @@ export function samplesProof(s: SampleSigns): SampleVerdict {
   if (s.waitingLong > 0) return { ok: false, why: 'missing', says: `${s.waitingLong} MVP creator${s.waitingLong === 1 ? '' : 's'} asked ${SAMPLE_WAIT_DAYS}+ days ago and got nothing` }
   if (s.trybe === false) return { ok: false, why: 'off', says: 'does not take sample requests on TRYBE' }
   if (s.trybe === true) return { ok: true, proven: false, says: 'takes sample requests on TRYBE (no MVP creator has had one yet)' }
+  // TRYBE'S LIST DOES NOT SAY FOR MOST BRANDS (Seb's run, 2026-11-06: 147 of
+  // 164 left out for it), so the brand's own product list on TRYBE is read:
+  // each product there is open to sample requests or not.
+  const p = s.products
+  if (p && p.open > 0) return { ok: true, proven: false, says: `${p.open} of its ${p.total} product${p.total === 1 ? '' : 's'} on TRYBE take sample requests (no MVP creator has had one yet)` }
+  if (p && p.total > 0) return { ok: false, why: 'off', says: `none of its ${p.total} product${p.total === 1 ? '' : 's'} on TRYBE take sample requests` }
   return { ok: false, why: 'unknown', says: 'TRYBE does not say whether it sends samples' }
 }
+
+/** A brand's products on TRYBE, by whether each takes sample requests. */
+export interface CatalogSamples { open: number; total: number }
+
+/** TRYBE's public product list for a brand (GET /backend/api/public/brand/
+ *  {id}/products), counted: active products, and those open to sample
+ *  requests. Only an explicit yes counts as open. Pure. */
+export function catalogSamples(json: unknown): CatalogSamples {
+  const o = json && typeof json === 'object' ? json as Record<string, unknown> : {}
+  const root = Array.isArray(o.data) ? o.data : o.data && typeof o.data === 'object' && Array.isArray((o.data as Record<string, unknown>).products) ? (o.data as Record<string, unknown>).products as unknown[] : Array.isArray(json) ? json : []
+  let open = 0, total = 0
+  for (const p of root as unknown[]) {
+    if (!p || typeof p !== 'object') continue
+    const r = p as Record<string, unknown>
+    if (r.isActive === false) continue
+    total++
+    if (r.allowSamples === true) open++
+  }
+  return { open, total }
+}
+
+/** A kept catalogue count, read back; null when it is not one. Pure. */
+export function readCatalogSamples(v: unknown): CatalogSamples | null {
+  if (!v || typeof v !== 'object') return null
+  const o = v as Record<string, unknown>
+  const n = (x: unknown) => (typeof x === 'number' && Number.isFinite(x) && x >= 0 ? Math.round(x) : null)
+  const open = n(o.open), total = n(o.total)
+  return open != null && total != null && open <= total ? { open, total } : null
+}
+
+/** How long a brand's product list on TRYBE is trusted before it is read again. */
+export const CATALOG_KEEP_DAYS = 7
+/** Product lists read on TRYBE in one ranking, at most. */
+export const CATALOG_READS_MAX = 300
 
 /** Each brand's samples as MVP creators logged them: got, and long waiting. Pure. */
 export function sampleSignsByBrand(rows: Array<{ brand_id: string | null; requested_at: string | null; received_at: string | null }>, now = Date.now()): Map<string, { received: number; waitingLong: number }> {

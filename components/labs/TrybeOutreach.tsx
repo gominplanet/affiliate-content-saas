@@ -607,7 +607,7 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
     /** A search by a brand's name: over all of TRYBE, the filters paused. */
     nameSearch?: { query: string; pausedFilters: boolean } | null
     /** My top 100: what was left out and why. */
-    top100?: { leftOut: { known: number; noMetaAds: number; metaUnclear: number; notCounted: number; samplesOff: number; samplesMissing: number; samplesUnknown: number }; considered: number; kept: number; provenSamples: number; toCount?: Array<{ brand_id: string; name: string }> } | null } | null>(null)
+    top100?: { leftOut: { known: number; noMetaAds: number; metaUnclear: number; notCounted: number; samplesOff: number; samplesMissing: number; samplesUnknown: number; samplesNotRead?: number }; considered: number; kept: number; provenSamples: number; toCount?: Array<{ brand_id: string; name: string }>; samplesToRead?: number; funnel?: { found: number; listed: number; fit: number } } | null } | null>(null)
   // MY TOP 100 (Seb, 2026-11-05; lib/trybe-top100): MVP reads the creator's
   // work into a profile, then the list below is their 100.
   const [top100, setTop100] = useState<{ profile: { summary: string; categories: string[]; keywords: string[] }; counts: { posts: number; pushed: number; worksWith: number; submitted: number; messaged: number; samples: number; postsCapped?: boolean; messagedTotal?: number }; joined: string[]; note: string | null } | null>(null)
@@ -1352,13 +1352,19 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
       setTop100Error(null)
       const ask = { action: 'browse', categories: [], keywords: [], limit: TOP100, top100: { categories: d.profile.categories, keywords: d.profile.keywords, joined } }
       let metaNote: string | null = null
+      let unread = Infinity
       for (let round = 0; round < META_ROUNDS_MAX; round++) {
-        setTop100Busy(round ? 'Ranking again with the new Meta counts' : 'Ranking TRYBE for you')
+        setTop100Busy(round ? 'Ranking again with what MVP just checked' : 'Ranking TRYBE for you and checking which brands take sample requests')
         const b = await api(ask)
         liveReq.current++
         setLive(liveOf(b)); setLiveLoading(false)
         const t = b.top100
-        if (!t || t.kept >= TOP100 || !t.toCount?.length || top100Stop.current || leftRef.current) break
+        if (!t || t.kept >= TOP100 || top100Stop.current || leftRef.current) break
+        // Product lists still to read for samples are read on the next
+        // ranking, as long as each one reads more.
+        const moreSamples = (t.samplesToRead ?? 0) > 0 && t.samplesToRead < unread
+        unread = t.samplesToRead ?? 0
+        if (!t.toCount?.length) { if (moreSamples) continue; break }
         const batch = (t.toCount as Array<{ brand_id: string; name: string }>).slice(0, META_ROUND)
         setTop100Busy(`Checking ${batch.length} more brands for Meta ads (${t.kept} of ${TOP100} so far)`)
         const run = await readMetaAds(batch.map(x => ({ brandId: x.brand_id, name: x.name })), {
@@ -2458,8 +2464,13 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
                 t.leftOut.notCounted ? `${t.leftOut.notCounted} not checked on Meta yet` : null,
                 t.leftOut.samplesOff ? `${t.leftOut.samplesOff} that do not take sample requests` : null,
                 t.leftOut.samplesMissing ? `${t.leftOut.samplesMissing} where MVP creators asked for samples that never came` : null,
-                t.leftOut.samplesUnknown ? `${t.leftOut.samplesUnknown} where TRYBE does not say whether they send samples` : null,
+                t.leftOut.samplesUnknown ? `${t.leftOut.samplesUnknown} where TRYBE does not say whether they send samples, not even on their products` : null,
+                t.leftOut.samplesNotRead ? `${t.leftOut.samplesNotRead} not checked for samples yet` : null,
               ].filter(Boolean).join(', ') : ''
+              // HOW THE BRANDS THAT FIT WERE FOUND (Seb's run, 2026-11-06:
+              // "164 that fit you" with no way to tell why so few).
+              const f = t.funnel
+              const funnel = f ? `MVP's search of TRYBE found ${f.found.toLocaleString()} brand${f.found === 1 ? '' : 's'} with these words, ${f.listed.toLocaleString()} of them still on TRYBE, and ${f.fit.toLocaleString()} that fit you.` : ''
               return (
                 <div className="mb-3 rounded-xl p-3.5" style={{ border: `1.5px solid ${GREEN}`, background: 'rgba(22,163,74,0.06)' }}>
                   <div className="flex flex-wrap items-center gap-2">
@@ -2477,6 +2488,7 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
                     Every brand here is new to you, is running Meta ads, and sends samples, each said on the brand.{t ? ` ${t.provenSamples} of them have sent samples to MVP creators already; the rest take sample requests on TRYBE.` : ''}
                   </p>
                   {out && <p className="text-[12px] mt-1" style={soft}>Left out of {t?.considered.toLocaleString()} that fit you: {out}.</p>}
+                  {funnel && <p className="text-[12px] mt-1" style={soft}>{funnel}</p>}
                   {t && n < 100 && <p className="text-[12px] mt-1" style={{ color: AMBER }}>Only {n} passed every check, so your list is {n}, not 100. MVP never pads it with brands it cannot vouch for.</p>}
                   {top100.note && <p className="text-[12px] mt-1" style={{ color: AMBER }}>{top100.note}</p>}
                 </div>
@@ -2632,6 +2644,7 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
                     return <>&ldquo;{q}&rdquo; is not in MVP&rsquo;s copy of TRYBE&rsquo;s brand list, and SCOUT could not ask TRYBE: {l.note || 'no answer'}.</>
                   })()
                   : filtersOn(filters) || nameQ.trim() ? <>No brand passes these filters. <button onClick={() => { setFilters(NO_FILTERS); setNameQ('') }} className="font-semibold underline" style={{ color: PURPLE }}>Clear filters</button></>
+                  : top100 && live.top100 ? 'No brand passed every check for your top 100 yet. The box above says what each was left out for.'
                   : hasNiche ? 'No TRYBE brands match these niches and keywords yet. Try other words.' : 'No TRYBE brands to show yet. Press Refresh from TRYBE to collect the list.'}
               </p>
             )}
