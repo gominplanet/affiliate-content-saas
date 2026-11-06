@@ -10,7 +10,7 @@
 // the creator already knows never makes the list, that every brand left out
 // is counted by why, and that the page says what MVP read and left out.
 import { readFileSync } from 'node:fs'
-import { TOP100, SAMPLE_WAIT_DAYS, adSpendProof, samplesProof, sampleSignsByBrand, pushesOf, cleanProfile, readTop100Ask, activityDigest, activityCounts, catalogSamples, readCatalogSamples, CATALOG_READS_MAX } from '../lib/trybe-top100'
+import { TOP100, SAMPLE_WAIT_DAYS, adSpendProof, samplesProof, sampleSignsByBrand, pushesOf, cleanProfile, readTop100Ask, activityDigest, activityCounts, catalogSamples, readCatalogSamples, CATALOG_READS_MAX, CATALOG_NAMES_MAX, CATALOG_REFRESH_CHUNK } from '../lib/trybe-top100'
 
 const fails: string[] = []
 const check = (name: string, ok: boolean | undefined) => { if (!ok) fails.push(name) }
@@ -66,6 +66,10 @@ const sp = (trybe: boolean | null, received: number, waitingLong: number) => sam
   check('TRYBE\'s own flag and MVP creators still come first', !samplesProof({ trybe: false, received: 0, waitingLong: 0, products: c }).ok && samplesProof({ trybe: null, received: 1, waitingLong: 0, products: { open: 0, total: 3 } }).ok && !samplesProof({ trybe: null, received: 0, waitingLong: 1, products: c }).ok)
   check('a kept count reads back, a broken one does not', readCatalogSamples({ open: 2, total: 4 })?.open === 2 && readCatalogSamples({ open: 5, total: 4 }) === null && readCatalogSamples('x') === null)
   check('a ranking reads at most a few hundred product lists', CATALOG_READS_MAX > 0 && CATALOG_READS_MAX <= 400)
+  // EVERY BRAND'S PRODUCTS, IN THE DAILY REFRESH (Seb, 2026-11-06).
+  check('a product list keeps its active products\' names, once each, and they read back', (c.names || []).length > 0 && !(c.names || []).some((n, i, a) => a.findIndex((x) => x.toLowerCase() === n.toLowerCase()) !== i)
+    && JSON.stringify(readCatalogSamples({ open: 1, total: 2, names: ['Towel', 3, ''] })?.names) === '["Towel"]' && readCatalogSamples({ open: 1, total: 2 })?.names === undefined)
+  check('names are kept to a short list', catalogSamples({ data: Array.from({ length: 60 }, (_, i) => ({ title: `P${i}`, isActive: true })) }).names?.length === CATALOG_NAMES_MAX)
 }
 check('MVP creators who got one prove it, whatever else', (() => { const v = sp(null, 3, 1); return v.ok && v.proven && /sent samples to 3 MVP creators/.test(v.says) })())
 check('MVP creators who asked long ago and got nothing put it out', (() => { const v = sp(true, 0, 2); return !v.ok && v.why === 'missing' })())
@@ -111,6 +115,19 @@ check('the page\'s filters do not apply to it', /const filters = nameOnly \|\| t
 check('a brand the creator knows never makes it: on their list, joined, or sampled', /const isKnown = \(id: string\) => mineBy\.has\(id\) \|\| top100\.joined\.has\(id\) \|\| sampledMine\.has\(id\)/.test(R) && /if \(isKnown\(id\)\) \{ leftOut\.known\+\+; continue \}/.test(R))
 check('no Meta ads, or a count not its own, no place, each counted', /else if \(spend\.why === 'unclear'\) leftOut\.metaUnclear\+\+/.test(R) && /else leftOut\.noMetaAds\+\+/.test(R))
 check('not counted on Meta yet: handed to the page to count, best fits first', /if \(spend\.why === 'notCounted'\) \{ leftOut\.notCounted\+\+; toCount\.push\(x\) \}/.test(R) && /toCount\.sort\(\(a, b\) => fitOf\(b\) - fitOf\(a\)\)/.test(R) && /toCount: toCount\.slice\(0, 300\)/.test(R))
+{
+  const at = R.indexOf("if (action === 'catalog_refresh') {")
+  const block = R.slice(at, R.indexOf("if (action === 'daily_refresh') {"))
+  check('the daily refresh reads every listed brand\'s products, team only, from MVP\'s server, gently', at > 0
+    && /if \(tier !== 'admin'\)/.test(block) && /\.is\('left_at', null\)/.test(block) && /\.gte\('updated_at', since\)/.test(block)
+    && /todo\.slice\(0, CATALOG_REFRESH_CHUNK\)/.test(block) && /workers: 4/.test(block) && CATALOG_REFRESH_CHUNK > 0 && CATALOG_REFRESH_CHUNK <= 1000)
+  check('TRYBE asking to slow down stops every reader at once, and is said', /res\.status === 429 \|\| res\.status === 403\) \{ halt = true/.test(R) && /refused: stats\.refused > 0/.test(block))
+  check('product names on TRYBE help tell what a brand sells', /catalogBy\.get\(String\(x\.r\.brand_id\)\)\?\.names/.test(R))
+  const O = read('components/labs/TrybeOutreach.tsx')
+  check('Products on TRYBE is its own step, after the brand list and before Meta ads, and says what it did',
+    O.indexOf("{ id: 'list', label:") < O.indexOf("{ id: 'products', label: 'Products on TRYBE'") && O.indexOf("{ id: 'products', label: 'Products on TRYBE'") < O.indexOf("{ id: 'meta', label: 'Meta ads'")
+    && /api\(\{ action: 'catalog_refresh' \}\)/.test(O) && /TRYBE asked MVP to slow down/.test(O) && /could not be read this time/.test(O))
+}
 check('samples are checked before Meta, so no brand is counted that would be left out anyway', R.indexOf("const sm = samplesProof({ trybe: statsBy.get(id)?.samples") < R.indexOf('const spend = adSpendProof({'))
 check('samples off, missing, or not said: no place, each counted', /else leftOut\[sm\.why === 'off' \? 'samplesOff' : sm\.why === 'missing' \? 'samplesMissing' : 'samplesUnknown'\]\+\+/.test(R))
 check('no products on TRYBE is its own count, said on the page', /else if \(sm\.why === 'none'\) leftOut\.samplesNone\+\+/.test(R) && /list no products on TRYBE to ask a sample of/.test(read('components/labs/TrybeOutreach.tsx')))

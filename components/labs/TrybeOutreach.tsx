@@ -412,7 +412,7 @@ const TILES: Tile[] = [
 ]
 
 /** A step of the daily refresh, and how it went. */
-interface DailyStep { id: 'trybe' | 'list' | 'top100' | 'meta'; label: string; state: 'waiting' | 'running' | 'done' | 'warn' | 'failed' | 'skipped'; text: string }
+interface DailyStep { id: 'trybe' | 'list' | 'top100' | 'products' | 'meta'; label: string; state: 'waiting' | 'running' | 'done' | 'warn' | 'failed' | 'skipped'; text: string }
 /** The daily refresh counts Meta ads for every brand, this many at a time
  *  (about 10 seconds a brand), asking the server for the next ones between. */
 const DAILY_META_CHUNK = 200
@@ -1642,6 +1642,7 @@ export default function TrybeOutreach({ preview = false, v2 = false }: { preview
       { id: 'trybe', label: 'TRYBE ready', state: 'waiting', text: '' },
       { id: 'top100', label: 'TRYBE\u2019s Top 100', state: 'waiting', text: '' },
       { id: 'list', label: 'TRYBE\u2019s brand list', state: 'waiting', text: '' },
+      { id: 'products', label: 'Products on TRYBE', state: 'waiting', text: '' },
       { id: 'meta', label: 'Meta ads', state: 'waiting', text: '' },
     ]
     const show = (running: boolean) => setDaily({ running, steps: steps.map((x) => ({ ...x })), at: new Date().toISOString() })
@@ -1656,9 +1657,9 @@ export default function TrybeOutreach({ preview = false, v2 = false }: { preview
       // the front and the run waits for the sign-in, then carries on.
       step('trybe', 'running', 'Checking SCOUT and TRYBE in this Chrome...')
       const ready = await trybeReady((t) => step('trybe', 'running', t))
-      if (!ready.ok) { step('trybe', 'failed', ready.text); stopRest(['top100', 'list', 'meta'], 'Not started: TRYBE was not ready.'); return }
+      if (!ready.ok) { step('trybe', 'failed', ready.text); stopRest(['top100', 'list', 'products', 'meta'], 'Not started: TRYBE was not ready.'); return }
       step('trybe', 'done', ready.text)
-      if (dailyStop.current) { stopRest(['top100', 'list', 'meta'], 'Stopped.'); return }
+      if (dailyStop.current) { stopRest(['top100', 'list', 'products', 'meta'], 'Stopped.'); return }
       // RESUMED, NOT REDONE (Seb, 2026-10-21: "if I stop it, can it resume
       // where it was the next time I run it again?"): the Top 100 and the
       // list are skipped when read in the last 12 hours, and Meta ads pick up
@@ -1677,7 +1678,7 @@ export default function TrybeOutreach({ preview = false, v2 = false }: { preview
         const t = await readTop100(false, true)
         step('top100', !t || !c.ok ? (t ? 'warn' : 'failed') : t.tone === 'ok' && c.report.tone === 'ok' ? 'done' : t.tone === 'bad' ? 'failed' : 'warn', `${t?.text || 'SCOUT cannot read TRYBE\u2019s Top 100 here (update SCOUT).'} ${filedWords}`)
       }
-      if (dailyStop.current) { stopRest(['list', 'meta'], 'Stopped.'); return }
+      if (dailyStop.current) { stopRest(['list', 'products', 'meta'], 'Stopped.'); return }
       // 2. Every brand on TRYBE, collected again. Refused for the sign-in: the
       // sign-in is renewed through the TRYBE tab and it is asked once more.
       if (fresh(directory?.lastCollectedAt) && directory?.lastCollectedAt) {
@@ -1704,8 +1705,34 @@ export default function TrybeOutreach({ preview = false, v2 = false }: { preview
           // and MVP's count of brands on TRYBE keeps them.
           [ok && d0?.directory?.listed != null ? `${Number(d0.directory.listed).toLocaleString()} brands on TRYBE${fellBack ? ' in MVP\u2019s earlier copy' : ' now'}, counting the ones you joined (TRYBE\u2019s Discover list leaves those out).` : ok ? 'Collected.' : 'Not collected.', ...notes].join(' '))
       }
+      if (dailyStop.current) { stopRest(['products', 'meta'], 'Stopped.'); return }
+      // 3. EVERY BRAND'S PRODUCTS ON TRYBE (Seb, 2026-11-06: "as much relevant
+      // and updated data as possible from trybe"): which take sample
+      // requests, and what they are. MVP's server reads TRYBE's public pages,
+      // so the TRYBE tab is not used; each is kept a week.
+      {
+        step('products', 'running', 'Reading each brand\u2019s products on TRYBE (MVP\u2019s server reads them, not your TRYBE tab)...')
+        const sum = { read: 0, open: 0, refuse: 0, none: 0, failed: 0 }
+        let left: number | null = null, listed = 0, refused = false, failedCall = ''
+        for (let round = 0; round < 40; round++) {
+          if (dailyStop.current) break
+          let r: { read: number; left: number; listed: number; open: number; refuse: number; none: number; refused: boolean; failed: number }
+          try { r = await api({ action: 'catalog_refresh' }) } catch (e) { failedCall = e instanceof Error ? e.message : 'no answer'; break }
+          left = r.left; listed = r.listed
+          sum.read += r.read; sum.open += r.open; sum.refuse += r.refuse; sum.none += r.none; sum.failed += r.failed
+          step('products', 'running', `${sum.read.toLocaleString()} brand${sum.read === 1 ? '' : 's'}\u2019 products read this run. About ${left.toLocaleString()} left, a few minutes.`)
+          if (r.refused) { refused = true; break }
+          if (!r.read || !r.left) break
+        }
+        const split = sum.read ? ` ${sum.open.toLocaleString()} take sample requests, ${sum.refuse.toLocaleString()} refuse samples on every product, ${sum.none.toLocaleString()} list no products.` : ''
+        if (failedCall) step('products', sum.read ? 'warn' : 'failed', `${sum.read ? `${sum.read.toLocaleString()} read, then it stopped: ` : 'Not read: '}${failedCall}.${split}`)
+        else if (refused) step('products', 'warn', `${sum.read.toLocaleString()} read, then TRYBE asked MVP to slow down, so it stopped. The other ${(left ?? 0).toLocaleString()} are read on the next Daily refresh.${split}`)
+        else if (dailyStop.current) step('products', 'skipped', `Stopped after ${sum.read.toLocaleString()}.${split} The rest carry on next time.`)
+        else if (!sum.read && left === 0) step('products', 'skipped', `Every brand\u2019s products on TRYBE were read in the last week: not needed again yet.`)
+        else step('products', left ? 'warn' : 'done', `${sum.read.toLocaleString()} brand${sum.read === 1 ? '' : 's'}\u2019 products read.${split}${left ? ` ${left.toLocaleString()} could not be read this time (${sum.failed.toLocaleString()} did not answer) and are tried again next time.` : ` Every one of the ${listed.toLocaleString()} brands on TRYBE\u2019s list now has its products from this week.`}`)
+      }
       if (dailyStop.current) { step('meta', 'skipped', 'Stopped.'); return }
-      // 3. Meta ads for EVERY brand (Seb: "keep it running until everything is
+      // 4. Meta ads for EVERY brand (Seb: "keep it running until everything is
       // counted"), a few hundred at a time: the server names the next ones
       // (rated first, never counted first), they are counted and saved, and
       // it asks again, until none are left or Stop. A brand Meta would not

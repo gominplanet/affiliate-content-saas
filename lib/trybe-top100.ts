@@ -117,7 +117,10 @@ export function samplesProof(s: SampleSigns): SampleVerdict {
 }
 
 /** A brand's products on TRYBE, by whether each takes sample requests. */
-export interface CatalogSamples { open: number; total: number }
+export interface CatalogSamples { open: number; total: number; /** Its active products' names, up to CATALOG_NAMES_MAX. */ names?: string[] }
+
+/** Product names kept per brand: enough to tell what it sells. */
+export const CATALOG_NAMES_MAX = 20
 
 /** TRYBE's public product list for a brand (GET /backend/api/public/brand/
  *  {id}/products), counted: active products, and those open to sample
@@ -126,14 +129,17 @@ export function catalogSamples(json: unknown): CatalogSamples {
   const o = json && typeof json === 'object' ? json as Record<string, unknown> : {}
   const root = Array.isArray(o.data) ? o.data : o.data && typeof o.data === 'object' && Array.isArray((o.data as Record<string, unknown>).products) ? (o.data as Record<string, unknown>).products as unknown[] : Array.isArray(json) ? json : []
   let open = 0, total = 0
+  const names: string[] = []
   for (const p of root as unknown[]) {
     if (!p || typeof p !== 'object') continue
     const r = p as Record<string, unknown>
     if (r.isActive === false) continue
     total++
     if (r.allowSamples === true) open++
+    const name = String(r.title ?? r.name ?? '').replace(/\s+/g, ' ').trim().slice(0, 80)
+    if (name && names.length < CATALOG_NAMES_MAX && !names.some((x) => x.toLowerCase() === name.toLowerCase())) names.push(name)
   }
-  return { open, total }
+  return names.length ? { open, total, names } : { open, total }
 }
 
 /** A kept catalogue count, read back; null when it is not one. Pure. */
@@ -142,8 +148,13 @@ export function readCatalogSamples(v: unknown): CatalogSamples | null {
   const o = v as Record<string, unknown>
   const n = (x: unknown) => (typeof x === 'number' && Number.isFinite(x) && x >= 0 ? Math.round(x) : null)
   const open = n(o.open), total = n(o.total)
-  return open != null && total != null && open <= total ? { open, total } : null
+  if (open == null || total == null || open > total) return null
+  const names = Array.isArray(o.names) ? o.names.filter((x): x is string => typeof x === 'string' && !!x.trim()).slice(0, CATALOG_NAMES_MAX) : []
+  return names.length ? { open, total, names } : { open, total }
 }
+
+/** Product lists read in one call of the daily refresh, at most. */
+export const CATALOG_REFRESH_CHUNK = 600
 
 /** How long a brand's product list on TRYBE is trusted before it is read again. */
 export const CATALOG_KEEP_DAYS = 7
