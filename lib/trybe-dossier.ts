@@ -278,6 +278,10 @@ export function scorecard(s: ScoreInput): Dimension[] {
       score = 65
       value = 'Takes requests'
       source = 'TRYBE says it takes sample requests'
+    } else if (prod && prod.total === 0) {
+      // An empty list is an answer, not a gap (most are apps): said, not graded.
+      value = 'No products listed'
+      source = 'It lists no products on TRYBE to ask a sample of'
     }
     dims.push({ id: 'samples', label: 'Sends samples', grade: gradeOf(score), score, value, source })
   }

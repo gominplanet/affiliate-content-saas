@@ -2088,7 +2088,8 @@ Weigh posts pushed to social, and TRYBE brands they earned with or submitted to,
       }).map(x => String(x.r.brand_id)), true)
       const notReadYet = catalogUnread
       const samplesToRead = ranked.filter(x => notReadYet.has(String(x.r.brand_id)) && !isKnown(String(x.r.brand_id))).length
-      const leftOut = { known: 0, noMetaAds: 0, metaUnclear: 0, notCounted: 0, samplesOff: 0, samplesMissing: 0, samplesUnknown: 0, samplesNotRead: 0 }
+      const leftOut = { known: 0, noMetaAds: 0, metaUnclear: 0, notCounted: 0, samplesOff: 0, samplesMissing: 0, samplesNone: 0, samplesNoneDigital: 0, samplesUnknown: 0, samplesNotRead: 0 }
+      const digitalOf = (id: string) => { const k = sellsBy.get(id); return !!k?.kind && k.kind !== 'physical' && !k.kinds.includes('physical') }
       const kept: Array<{ x: typeof ranked[number]; proven: boolean }> = []
       // Fit to be checked on Meta: everything else passed, no count yet.
       const toCount: Array<typeof ranked[number]> = []
@@ -2098,10 +2099,11 @@ Weigh posts pushed to social, and TRYBE brands they earned with or submitted to,
         if (isKnown(id)) { leftOut.known++; continue }
         // Samples first, so no brand is sent to Meta that would be left out anyway.
         const ms = memberSamples.get(id) ?? { received: 0, waitingLong: 0 }
-        const sm = samplesProof({ trybe: statsBy.get(id)?.samples ?? null, received: ms.received, waitingLong: ms.waitingLong, products: catalogBy.get(id) ?? null })
+        const sm = samplesProof({ trybe: statsBy.get(id)?.samples ?? null, received: ms.received, waitingLong: ms.waitingLong, products: catalogBy.get(id) ?? null, digital: digitalOf(id) })
         if (!sm.ok) {
           // Not read yet is its own count: read on the next round.
           if (sm.why === 'unknown' && notReadYet.has(id)) leftOut.samplesNotRead++
+          else if (sm.why === 'none') { leftOut.samplesNone++; if (digitalOf(id)) leftOut.samplesNoneDigital++ }
           else leftOut[sm.why === 'off' ? 'samplesOff' : sm.why === 'missing' ? 'samplesMissing' : 'samplesUnknown']++
           continue
         }

@@ -628,7 +628,7 @@ export default function TrybeOutreach({ preview = false, v2 = false }: { preview
     /** A search by a brand's name: over all of TRYBE, the filters paused. */
     nameSearch?: { query: string; pausedFilters: boolean } | null
     /** My top 100: what was left out and why. */
-    top100?: { leftOut: { known: number; noMetaAds: number; metaUnclear: number; notCounted: number; samplesOff: number; samplesMissing: number; samplesUnknown: number; samplesNotRead?: number }; considered: number; kept: number; provenSamples: number; toCount?: Array<{ brand_id: string; name: string }>; samplesToRead?: number; funnel?: { found: number; listed: number; fit: number } } | null } | null>(null)
+    top100?: { leftOut: { known: number; noMetaAds: number; metaUnclear: number; notCounted: number; samplesOff: number; samplesMissing: number; samplesNone?: number; samplesNoneDigital?: number; samplesUnknown: number; samplesNotRead?: number }; considered: number; kept: number; provenSamples: number; toCount?: Array<{ brand_id: string; name: string }>; samplesToRead?: number; funnel?: { found: number; listed: number; fit: number } } | null } | null>(null)
   // MY TOP 100 (Seb, 2026-11-05; lib/trybe-top100): MVP reads the creator's
   // work into a profile, then the list below is their 100.
   const [top100, setTop100] = useState<{ profile: { summary: string; categories: string[]; keywords: string[] }; counts: { posts: number; pushed: number; worksWith: number; submitted: number; messaged: number; samples: number; postsCapped?: boolean; messagedTotal?: number }; joined: string[]; note: string | null } | null>(null)
@@ -2512,6 +2512,7 @@ export default function TrybeOutreach({ preview = false, v2 = false }: { preview
                 t.leftOut.notCounted ? `${t.leftOut.notCounted} not checked on Meta yet` : null,
                 t.leftOut.samplesOff ? `${t.leftOut.samplesOff} that do not take sample requests` : null,
                 t.leftOut.samplesMissing ? `${t.leftOut.samplesMissing} where MVP creators asked for samples that never came` : null,
+                t.leftOut.samplesNone ? `${t.leftOut.samplesNone} that list no products on TRYBE to ask a sample of${t.leftOut.samplesNoneDigital ? ` (${t.leftOut.samplesNoneDigital === t.leftOut.samplesNone ? 'all' : t.leftOut.samplesNoneDigital} of them apps or online services)` : ''}` : null,
                 t.leftOut.samplesUnknown ? `${t.leftOut.samplesUnknown} where TRYBE does not say whether they send samples, not even on their products` : null,
                 t.leftOut.samplesNotRead ? `${t.leftOut.samplesNotRead} not checked for samples yet` : null,
               ].filter(Boolean).join(', ') : ''

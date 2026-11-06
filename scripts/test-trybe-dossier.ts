@@ -113,6 +113,8 @@ const blank: ScoreInput = { pay: { dollars: null, short: null, basis: null }, me
   check('a Meta count that is not the brand\'s own is not scored', common?.score === null && common?.value === 'Unclear')
   const stale = scorecard({ ...good, meta: { count: 38, own: true, fresh: false, top100Hits: null } }).find((x) => x.id === 'ads')
   check('an old Meta count is not scored as today\'s', stale?.score === null)
+  const empty = scorecard({ ...good, samples: { trybe: null, products: { open: 0, total: 0 }, pool: null } }).find((x) => x.id === 'samples')
+  check('a brand with no products on TRYBE says so, ungraded, never "neither says"', empty?.score === null && empty?.value === 'No products listed' && /lists no products on TRYBE/.test(empty?.source || ''))
   const shut = scorecard({ ...good, samples: { trybe: null, products: { open: 0, total: 4 }, pool: null } }).find((x) => x.id === 'samples')
   check('products that all refuse samples score zero and say so', shut?.score === 0 && /None of its 4 products/.test(shut?.source || ''))
 }

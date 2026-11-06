@@ -78,11 +78,13 @@ export interface SampleSigns {
   /** TRYBE's public product list for the brand: products open to sample
    *  requests, of its active products. Null when not read. */
   products?: CatalogSamples | null
+  /** It sells an app, software or a service and no physical goods (lib/trybe-sells). */
+  digital?: boolean
 }
 
 export type SampleVerdict =
   | { ok: true; proven: boolean; says: string }
-  | { ok: false; why: 'off' | 'missing' | 'unknown'; says: string }
+  | { ok: false; why: 'off' | 'missing' | 'none' | 'unknown'; says: string }
 
 /** Whether a brand sends samples, as far as MVP can tell. Proven when MVP
  *  creators got one; taken on TRYBE's word when none has asked yet; out when
@@ -99,6 +101,11 @@ export function samplesProof(s: SampleSigns): SampleVerdict {
   const p = s.products
   if (p && p.open > 0) return { ok: true, proven: false, says: `${p.open} of its ${p.total} product${p.total === 1 ? '' : 's'} on TRYBE take sample requests (no MVP creator has had one yet)` }
   if (p && p.total > 0) return { ok: false, why: 'off', says: `none of its ${p.total} product${p.total === 1 ? '' : 's'} on TRYBE take sample requests` }
+  // AN EMPTY PRODUCT LIST IS AN ANSWER (Seb's check, 2026-11-06: 45 of 599
+  // read had none, Canva and Sand Cloud among them). TRYBE answers with no
+  // products at all, not paused ones, so there is nothing to ask a sample
+  // of. Most are apps and online services, said as such.
+  if (p && p.total === 0) return { ok: false, why: 'none', says: s.digital ? 'an app or online service with no products on TRYBE, so there is no sample to ask for' : 'lists no products on TRYBE, so there is nothing to ask a sample of' }
   return { ok: false, why: 'unknown', says: 'TRYBE does not say whether it sends samples' }
 }
 
