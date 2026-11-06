@@ -340,7 +340,7 @@ function Pulse({ label, k, d, good }: { label: string; k: string; d: HomeRead; g
       <span className="text-[24px] font-bold leading-none" style={{ ...ui.num, ...ui.text }}>{w.now.toLocaleString()}</span>
       <span className="text-[11px] font-semibold inline-flex items-center gap-1" style={{ color: better == null ? 'var(--text-3)' : better ? '#059669' : '#DC2626' }}>
         {diff > 0 ? <TrendingUp size={11} /> : diff < 0 ? <TrendingDown size={11} /> : null}
-        {diff === 0 ? 'Same as the 7 days before' : `${diff > 0 ? '+' : ''}${diff.toLocaleString()} on the 7 days before`}
+        {diff === 0 ? 'Same as the 7 days before' : `${Math.abs(diff).toLocaleString()} ${diff > 0 ? 'more' : 'fewer'} than the 7 days before`}
       </span>
       <Spark values={d.series[k] || []} width={120} height={26} />
     </div>
