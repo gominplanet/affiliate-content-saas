@@ -87,8 +87,9 @@ const OPEN_TO: Record<PreviewFeature, 'admin' | 'labs'> = {
   trybe_outreach: 'labs',
   // THE NEW TRYBE (Seb, 2026-11-06: "I would like to wake up ... and see a
   // different Tribe feature"): the brand page, the TRYBE home and the brand
-  // table. Team only while it is checked on real data; 'labs' opens it to Pro.
-  trybe_v2: 'admin',
+  // table. Opened to Pro 2026-11-06 (Seb: "open it all to members now.. as
+  // we refine things"), after a day as team only.
+  trybe_v2: 'labs',
   // SCOUT reading TikTok Creative Center and Instagram's tag counts for the
   // hashtag engine (Seb, 2026-10-16). Admin while it is tested on real pages.
   hashtag_trends: 'admin',

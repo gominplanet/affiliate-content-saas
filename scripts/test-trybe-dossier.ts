@@ -179,7 +179,8 @@ check('brand names open the page in What changed, Best new, Most active and the 
   check('a library that did not load says so', /The hook library did not load/.test(L))
 }
 check('only with the new TRYBE switched on', /<DossierCtx\.Provider value=\{v2 \? openDossier : null\}>/.test(U))
-check('the switch is team only until it is opened', /trybe_v2: 'admin'/.test(read('lib/labs-preview.ts')) && /v2=\{canUsePreview\('trybe_v2', tier\)\}/.test(read('app/(dashboard)/trybe/page.tsx')))
+// Opened to every Pro member (Seb, 2026-11-06: "open it all to members now").
+check('the new TRYBE is open to Pro, through its switch', /trybe_v2: 'labs'/.test(read('lib/labs-preview.ts')) && /v2=\{canUsePreview\('trybe_v2', tier\)\}/.test(read('app/(dashboard)/trybe/page.tsx')))
 check('what is not read says so on the page', /Not enough read|MVP has not counted its Meta ads yet/.test(D + read('lib/trybe-dossier.ts')) && /Read it again/.test(D))
 check('every outside link names where it goes', /Its ads on Meta Ad Library/.test(D) && /Watch on TRYBE/.test(D) && /Open on TRYBE/.test(D))
 
