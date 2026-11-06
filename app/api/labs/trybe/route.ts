@@ -24,7 +24,7 @@ import { sellsOf, type SellsRead } from '@/lib/trybe-sells'
 import { outreachNiche } from '@/lib/outreach-niche'
 import { pickScore, creatorProgramOf, readTopCreatives, tallyTop, META_ADS_FRESH_MS, readPriorities, weighScore, staticsOf, bucketDollars, metaTrustOf, metaUsable } from '@/lib/trybe-pick'
 import { adsPerCreator, adsPerReview, STAR_MIN_REVIEWS } from '@/lib/brand-popularity'
-import { ratingOf, readDirStats, rawKeys, amazonOf, nameVariants, readFilters, anyFilterOn, filterCheck, spendingOf, productOnAmazon, filmedProducts, mergeSnapshot, pickBaseline, crowdOf, creatorSpendOf, snapshotKey, isNewBrand, mixPick, mixOf, SNAPSHOT_KEEP_DAYS, type AmazonOf, type AmazonFilmed, type AmazonVideoProduct, type CcCampaign, type FilterId, type Snapshot } from '@/lib/trybe-finder'
+import { ratingOf, readDirStats, rawKeys, amazonOf, nameVariants, readFilters, anyFilterOn, filterCheck, spendingOf, productOnAmazon, filmedProducts, mergeSnapshot, pickBaseline, crowdOf, creatorSpendOf, snapshotKey, isNewBrand, mixPick, mixOf, SNAPSHOT_KEEP_DAYS, type AmazonOf, type DirStats, type AmazonFilmed, type AmazonVideoProduct, type CcCampaign, type FilterId, type Snapshot } from '@/lib/trybe-finder'
 import { payLines, payReadOf, estimatePay } from '@/lib/trybe-pay'
 import { readTopWords, firstHook, keepHooks, readHooksBody, hooksBlock, type TopHook } from '@/lib/trybe-hooks'
 import { readRetainers } from '@/lib/trybe-retainer'
@@ -1904,15 +1904,49 @@ Weigh posts pushed to social, and TRYBE brands they earned with or submitted to,
     // TRYBE gave no number for stays, after the ones that pass, and is
     // counted too, so the list is never quietly short or quietly wrong.
     // WHAT IT SELLS (lib/trybe-sells), from what MVP keeps: nothing fetched.
+    // ── SAMPLES FROM EACH BRAND'S PRODUCT LIST ON TRYBE (Seb's check,
+    // 2026-11-06: TRYBE's brand list says whether a brand sends samples for 0
+    // of 8,036 brands, so "Sends samples" let every brand through and My top
+    // 100 left out 147 of 164). TRYBE's public product list says, product by
+    // product. What MVP read is kept a week and shared by every member, and
+    // is used for every search; it is read live, best matches first, when
+    // samples decide the list (the Sends samples filter, My top 100). A
+    // brand not read yet is not known, never a no.
+    const catalogBy = new Map<string, CatalogSamples>()
+    const catalogUnread = new Set<string>()
+    const loadCatalogs = async (ids: string[], live: boolean) => {
+      const need = ids.filter(id => !catalogBy.has(id) && statsBy.get(id)?.samples == null)
+      for (let i = 0; i < need.length; i += 200) {
+        const { data } = await admin.from('trybe_directory_meta').select('key, value, updated_at').in('key', need.slice(i, i + 200).map(id => `samples:${id}`))
+        for (const m of (data || []) as Array<{ key: string; value: unknown; updated_at: string | null }>) {
+          const v = readCatalogSamples(m.value)
+          if (v && m.updated_at && Date.now() - Date.parse(m.updated_at) < CATALOG_KEEP_DAYS * 86_400_000) catalogBy.set(m.key.slice('samples:'.length), v)
+        }
+      }
+      if (!live) return
+      const toRead = need.filter(id => !catalogBy.has(id) && /^[A-Za-z0-9-]{6,80}$/.test(id))
+      const readNow = await readSampleCatalogs(toRead.slice(0, CATALOG_READS_MAX), Date.now() + 40_000)
+      const kept = Array.from(readNow.entries()).map(([id, v]) => ({ key: `samples:${id}`, value: v, updated_at: now }))
+      for (let i = 0; i < kept.length; i += 200) {
+        const { error: ke } = await admin.from('trybe_directory_meta').upsert(kept.slice(i, i + 200))
+        if (ke) console.warn('[trybe] product lists not kept:', ke.message)
+      }
+      for (const [id, v] of Array.from(readNow.entries())) catalogBy.set(id, v)
+      for (const id of toRead) { if (catalogBy.has(id)) catalogUnread.delete(id); else catalogUnread.add(id) }
+    }
+    /** Whether a brand takes sample requests: TRYBE's brand list, else its product list. */
+    const samplesOf = (id: string): boolean | null => { const t = statsBy.get(id)?.samples; if (t != null) return t; const c = catalogBy.get(id); return c ? (c.open > 0 ? true : c.total > 0 ? false : null) : null }
+    const statsWith = (id: string): DirStats => ({ ...(statsBy.get(id) ?? readDirStats(null)), samples: samplesOf(id) })
+    await loadCatalogs([...matchedAll].sort((a, b) => b.match - a.match).map(x => String(x.r.brand_id)), filters.samples === true)
     const sellsBy = new Map<string, SellsRead>()
-    for (const x of matchedAll) sellsBy.set(x.r.brand_id, sellsOf({ name: x.r.name, categories: x.r.categories || [], about: x.r.about, siteText: x.r.site_text, products: x.r.site_products || [], samples: statsBy.get(x.r.brand_id)?.samples ?? null, raw: x.r.raw }))
+    for (const x of matchedAll) sellsBy.set(x.r.brand_id, sellsOf({ name: x.r.name, categories: x.r.categories || [], about: x.r.about, siteText: x.r.site_text, products: x.r.site_products || [], samples: samplesOf(x.r.brand_id), raw: x.r.raw }))
     const hiddenBy: Partial<Record<FilterId, number>> = {}
     // Of those hidden, the ones hidden for having no figure at all.
     const blankBy: Partial<Record<FilterId, number>> = {}
     const unknownBy: Partial<Record<FilterId, number>> = {}
     const unknownOf = new Map<string, number>()
     const matched = matchedAll.filter(x => {
-      const c = filterCheck({ perVideo: estBy.get(x.r.brand_id)?.dollars ?? null, creators: typeof x.r.total_creators === 'number' ? x.r.total_creators : null, stats: statsBy.get(x.r.brand_id)!, earningsBucket: x.r.earnings_bucket ?? null, amazon: amazonBy.get(x.r.brand_id) ?? null, amazonUnknown: amazonNotes.length > 0, starred: starredIds.has(x.r.brand_id), crowd: crowdBy.get(x.r.brand_id)?.level ?? null,
+      const c = filterCheck({ perVideo: estBy.get(x.r.brand_id)?.dollars ?? null, creators: typeof x.r.total_creators === 'number' ? x.r.total_creators : null, stats: statsWith(x.r.brand_id), earningsBucket: x.r.earnings_bucket ?? null, amazon: amazonBy.get(x.r.brand_id) ?? null, amazonUnknown: amazonNotes.length > 0, starred: starredIds.has(x.r.brand_id), crowd: crowdBy.get(x.r.brand_id)?.level ?? null,
         spending: spendingOf(x.r), isNew: newBy.get(x.r.brand_id), reviewDays: results.review.get(x.r.brand_id)?.reviewDays ?? null, sells: sellsBy.get(x.r.brand_id) ?? null, spend: spendBy.get(x.r.brand_id)?.dollars ?? null,
         tiktokShop: tiktokShopOf(x.r), tierUp: tierLog ? !!tierLog.get(x.r.brand_id)?.up : null,
         // A rating counts with STAR_MIN_REVIEWS reviews or more (Seb, 2026-10-24).
@@ -2044,29 +2078,14 @@ Weigh posts pushed to social, and TRYBE brands they earned with or submitted to,
       // and shared by every member. What was not read in time is counted
       // and read on the next round, never taken as a no.
       const isKnown = (id: string) => mineBy.has(id) || top100.joined.has(id) || sampledMine.has(id)
-      const catalogBy = new Map<string, CatalogSamples>()
-      const needCatalog = ranked.filter(x => {
+      await loadCatalogs(ranked.filter(x => {
         const id = String(x.r.brand_id)
-        if (isKnown(id) || statsBy.get(id)?.samples != null) return false
+        if (isKnown(id)) return false
         const ms = memberSamples.get(id)
         return !(ms && (ms.received > 0 || ms.waitingLong > 0))
-      }).sort((a, b) => b.match - a.match).map(x => String(x.r.brand_id))
-      for (let i = 0; i < needCatalog.length; i += 200) {
-        const { data } = await admin.from('trybe_directory_meta').select('key, value, updated_at').in('key', needCatalog.slice(i, i + 200).map(id => `samples:${id}`))
-        for (const m of (data || []) as Array<{ key: string; value: unknown; updated_at: string | null }>) {
-          const v = readCatalogSamples(m.value)
-          if (v && m.updated_at && Date.now() - Date.parse(m.updated_at) < CATALOG_KEEP_DAYS * 86_400_000) catalogBy.set(m.key.slice('samples:'.length), v)
-        }
-      }
-      const toRead = needCatalog.filter(id => !catalogBy.has(id) && /^[A-Za-z0-9-]{6,80}$/.test(id))
-      const readNow = await readSampleCatalogs(toRead.slice(0, CATALOG_READS_MAX), Date.now() + 40_000)
-      if (readNow.size) {
-        const rowsKept = Array.from(readNow.entries()).map(([id, v]) => ({ key: `samples:${id}`, value: v, updated_at: now }))
-        for (let i = 0; i < rowsKept.length; i += 200) { try { await admin.from('trybe_directory_meta').upsert(rowsKept.slice(i, i + 200)) } catch { /* read again next time */ } }
-        for (const [id, v] of Array.from(readNow.entries())) catalogBy.set(id, v)
-      }
-      const notReadYet = new Set(toRead.filter(id => !catalogBy.has(id)))
-      const samplesToRead = notReadYet.size
+      }).map(x => String(x.r.brand_id)), true)
+      const notReadYet = catalogUnread
+      const samplesToRead = ranked.filter(x => notReadYet.has(String(x.r.brand_id)) && !isKnown(String(x.r.brand_id))).length
       const leftOut = { known: 0, noMetaAds: 0, metaUnclear: 0, notCounted: 0, samplesOff: 0, samplesMissing: 0, samplesUnknown: 0, samplesNotRead: 0 }
       const kept: Array<{ x: typeof ranked[number]; proven: boolean }> = []
       // Fit to be checked on Meta: everything else passed, no count yet.
@@ -2215,7 +2234,7 @@ Weigh posts pushed to social, and TRYBE brands they earned with or submitted to,
           // Judged for an earlier search: said so, never shown as this one's verdict.
           fit_stale: !!m && m.fit_prefs != null && !current(r.brand_id) && (m.status === 'not_fit' || m.fit_score != null),
           pick: weighScore(pick, priorities), pick_reasons: pick.reasons, pick_read: pick.read,
-          stats: statsBy.get(r.brand_id) ?? null,
+          stats: statsBy.has(r.brand_id) ? statsWith(r.brand_id) : null,
           starred: starredIds.has(r.brand_id),
           amazon: (() => { const a = amazonBy.get(r.brand_id); return a ? amazonLive(a) : null })(),
           meta_ads: r.meta_ads ?? null, meta_ads_checked_at: r.meta_ads_checked_at ?? null,
