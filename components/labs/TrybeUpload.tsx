@@ -35,6 +35,7 @@ import { scoutAtLeast, SCOUT_TRYBE_SUBMIT_MIN_VERSION } from '@/lib/scout-versio
 import { readBrandStats, type MyBrand } from '@/lib/trybe-mybrands'
 import { browserHttp, sendDropToTrybe } from '@/lib/drop-run'
 import DropTrybePicker, { emptyChoice, choiceBlocker, type TrybeChoice } from '@/components/labs/DropTrybePicker'
+import TrybeBriefCheck from '@/components/labs/TrybeBriefCheck'
 import TrybeUploadTell from '@/components/labs/TrybeUploadTell'
 import { chatFor } from '@/components/labs/TrybeMyBrands'
 import type { Conversation } from '@/components/labs/TrybeInbox'
@@ -372,6 +373,7 @@ export default function TrybeUpload({ inbox = null, canChat = false, onOpenChat 
             {v.stage === 'ready' && (
               <div className="mt-3">
                 <DropTrybePicker brands={brands} brandsError={brandsError} value={v.choice} onChange={(c) => mark(v.key, { choice: c })} />
+                {v.choice.brandId && <TrybeBriefCheck brandId={v.choice.brandId} brandName={v.choice.brandName || 'the brand'} />}
                 {v.note && <p className="text-[12.5px] mt-2 inline-flex items-start gap-1.5" style={{ color: '#B45309' }}><AlertTriangle size={13} className="mt-0.5 flex-shrink-0" /> <span>{v.note}</span></p>}
                 <p className="text-[12px] mt-2" style={soft}>{blocker ? `${blocker} before this one can go.` : 'Ready to send.'}</p>
               </div>

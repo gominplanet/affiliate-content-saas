@@ -51,6 +51,14 @@ check('the new TRYBE opens on its home, with the new menu, and drops the old num
 check('members keep the page they know', /: <TrybeMenu tab=\{tab\}/.test(U) && /\{tab === 'home' && v2 && <TrybeHome/.test(U))
 const H = read('components/labs/TrybeHome.tsx')
 check('every brand on the home opens its page', (H.match(/<BrandName id=/g) || []).length >= 4)
+check('the home opens with best bets for the creator\'s niche, not yet on their list, each opening its page', /forYou=\{\(live\?\.brands \|\| \[\]\)\.filter\(b => !b\.status \|\| b\.status === 'new'\)/.test(U) && /Best bets for you/.test(H))
+{
+  const B = read('components/labs/TrybeBriefCheck.tsx')
+  const UP = read('components/labs/TrybeUpload.tsx')
+  check('each upload shows the brand\'s brief as a checklist before Send, once a brand is picked', /\{v\.choice\.brandId && <TrybeBriefCheck brandId=\{v\.choice\.brandId\}/.test(UP) && /Check it against \{brandName\}&rsquo;s brief before you send/.test(B))
+  check('no brief read yet is said, never an empty checklist', /No brief checklist for \{brandName\} yet/.test(B))
+  check('the checklist never blocks a send', !/disabled=\{.*ticked/.test(UP))
+}
 check('a count that failed says so, with a way to try again', /MVP could not count this week/.test(H) && /Try again/.test(H))
 check('each section says the window it covers', /Last 14 days/.test(H) && /Last 7 days next to the 7 before/.test(H))
 

@@ -42,7 +42,10 @@ const day = (iso: string) => new Date(iso).toLocaleDateString(undefined, { month
 const fmt = (n: number | null | undefined) => (n == null ? 'Not read' : n.toLocaleString())
 const val = (n: number | null, unit: '$' | '%') => (n == null ? '' : unit === '$' ? `$${Math.round(n)}` : `${Math.round(n * 10) / 10}%`)
 
-export default function TrybeHome({ go, unread, queue, repliedWeek, inboxRead }: {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type ForYou = Record<string, any>
+
+export default function TrybeHome({ go, unread, queue, repliedWeek, inboxRead, forYou = [], forYouWhy = '' }: {
   /** Open a TRYBE tab. */
   go: (tab: 'find' | 'queue' | 'inbox' | 'week' | 'changes' | 'stars' | 'sent') => void
   unread: number
@@ -50,6 +53,10 @@ export default function TrybeHome({ go, unread, queue, repliedWeek, inboxRead }:
   repliedWeek: number
   /** The inbox was read through SCOUT (so its counts are real). */
   inboxRead: boolean
+  /** Find brands' best bets for the creator's niche, not yet on their list. */
+  forYou?: ForYou[]
+  /** The niche those were found for, in words. */
+  forYouWhy?: string
 }) {
   const [d, setD] = useState<HomeRead | null>(null)
   const [err, setErr] = useState<string | null>(null)
@@ -116,6 +123,34 @@ export default function TrybeHome({ go, unread, queue, repliedWeek, inboxRead }:
           <Desk icon={Search} label="New brands this week" value={d ? d.newWeek.toLocaleString() : '…'} line="Rank them for your channel" onClick={() => go('find')} cta="Find brands" />
         </div>
       </Section>
+
+      {/* ── BEST BETS FOR YOU ─────────────────────────────────────────────── */}
+      {forYou.length > 0 && (
+        <Section title="Best bets for you" aside={forYouWhy ? `For ${forYouWhy}, not on your list yet` : 'Not on your list yet'}>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {forYou.map((b) => (
+              <div key={b.brand_id} className="rounded-2xl p-4 flex flex-col gap-2.5" style={ui.card}>
+                <div className="flex items-center gap-3 min-w-0">
+                  <BrandMark name={b.name} website={b.website} size={38} />
+                  <div className="min-w-0 flex-1">
+                    <BrandName id={b.brand_id} name={b.name} className="text-[14px] font-semibold block truncate" style={ui.text} />
+                    <span className="text-[11.5px] block truncate" style={ui.soft}>{(b.categories || []).slice(0, 2).join(', ') || 'No category'}</span>
+                  </div>
+                  {typeof b.pick === 'number' && <span className="text-[18px] font-bold shrink-0" style={{ ...ui.num, ...ui.text }} title="MVP pick, of 100">{Math.round(b.pick)}</span>}
+                </div>
+                <div className="flex gap-1.5 flex-wrap">
+                  {b.pay_est?.dollars != null ? <Tag tone="good">${Math.round(b.pay_est.dollars)} a video</Tag> : b.pay_est?.short ? <Tag>{String(b.pay_est.short).slice(0, 24)}</Tag> : null}
+                  {typeof b.meta_ads === 'number' && b.meta_fresh && b.meta_ads > 0 && <Tag tone="good">{b.meta_ads} Meta ads</Tag>}
+                  {b.stats?.samples === true && <Tag tone="good">Samples</Tag>}
+                  {b.crowd?.level === 'open' && <Tag tone="accent">Room for you</Tag>}
+                  {b.is_new && <Tag tone="accent">New</Tag>}
+                </div>
+              </div>
+            ))}
+          </div>
+          <button type="button" onClick={() => go('find')} className="self-start text-[13px] font-semibold hover:underline" style={{ color: 'var(--accent-text, var(--accent))' }}>See all of them in Find brands</button>
+        </Section>
+      )}
 
       {/* ── THE MARKET, IN NUMBERS ────────────────────────────────────────── */}
       {d && (

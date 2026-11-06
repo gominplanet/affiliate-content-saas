@@ -2265,7 +2265,9 @@ export default function TrybeOutreach({ preview = false, v2 = false }: { preview
         ? <TrybeChanges scoutOpens={scoutOpens} onRead={(c) => { setChanges(c); setChangesError(null) }} onSeeNew={seeNew} actions={peekActions} />
         : changes ? <TrybeChanges scoutOpens={scoutOpens} initial={changes} onRead={setChanges} onSeeNew={seeNew} actions={peekActions} /> : <p className="text-[13px] inline-flex items-center gap-1.5" style={soft}><Loader2 size={13} className="animate-spin" /> Reading what changed on TRYBE...</p>)}
 
-      {tab === 'home' && v2 && <TrybeHome go={go} unread={unread} queue={queue.length} repliedWeek={repliedWeek} inboxRead={!!inbox} />}
+      {tab === 'home' && v2 && <TrybeHome go={go} unread={unread} queue={queue.length} repliedWeek={repliedWeek} inboxRead={!!inbox}
+        forYou={(live?.brands || []).filter(b => !b.status || b.status === 'new').slice().sort((a, b) => (b.pick ?? -1) - (a.pick ?? -1)).slice(0, 6)}
+        forYouWhy={[...cats, ...kws].slice(0, 4).join(', ')} />}
       {tab === 'create' && <TrybeCreate canRead={canMyBrands} isAdmin={isAdmin} onFind={() => setTab('find')} />}
 
       {tab === 'upload' && <TrybeUpload inbox={inbox} canChat={canInbox} onOpenChat={(id) => { setOpenChat(o => ({ id, n: (o?.n ?? 0) + 1 })); setTab('inbox') }} />}
