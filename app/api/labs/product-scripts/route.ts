@@ -28,6 +28,7 @@ import { followShort, readTikTok } from '@/lib/buyer-sources'
 import { researchBrandSite } from '@/lib/trybe-research'
 import { pickExamples, examplesBlock, type TopScript } from '@/lib/trybe-scripts'
 import { hooksBlock, type TopHook } from '@/lib/trybe-hooks'
+import { linkInspired } from '@/lib/trybe-playbook'
 import {
   PRODUCT_SCRIPT_SYSTEM, linkKind, storeOf, factsBlock, cleanReviews, reviewsBlock, reviewCorpus,
   parseProductScripts, tiktokReviewsFrom, type ProductFacts, type ReadReport,
@@ -124,11 +125,11 @@ export async function POST(req: NextRequest) {
   // ── WHAT WINS ON TRYBE, AS EXAMPLES ──────────────────────────────────────
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const admin = createAdminClient() as any
-  let examples: Array<Pick<TopScript, 'brand_id' | 'brand_name' | 'best_rank' | 'category' | 'script' | 'state'>> = []
+  let examples: Array<Pick<TopScript, 'brand_id' | 'brand_name' | 'best_rank' | 'category' | 'script' | 'state' | 'video_url'>> = []
   let hooks: TopHook[] = []
   try {
     const [{ data: ex }, { data: hk }] = await Promise.all([
-      admin.from('trybe_top_scripts').select('brand_id,brand_name,best_rank,category,script,state').eq('state', 'ready').not('best_rank', 'is', null).order('best_rank', { ascending: true }).limit(200),
+      admin.from('trybe_top_scripts').select('brand_id,brand_name,best_rank,category,script,state,video_url').eq('state', 'ready').not('best_rank', 'is', null).order('best_rank', { ascending: true }).limit(200),
       admin.from('trybe_directory_meta').select('value').eq('key', 'top100_hooks').maybeSingle(),
     ])
     examples = pickExamples((ex ?? []) as typeof examples, { id: null, name: facts.name || '', categories: [] }, 5)
@@ -163,6 +164,8 @@ export async function POST(req: NextRequest) {
     const out = (msg.content as Array<{ type: string; text?: string }>).map((b) => (b.type === 'text' ? b.text || '' : '')).join('')
     const scripts = parseProductScripts(out, reviewCorpus(reviews))
     if (!scripts) return NextResponse.json({ error: 'The scripts came back in a shape MVP could not read. Try again.' }, { status: 502 })
+    // BUILT ON A WINNER: the named top video, checked against those given.
+    scripts.videos = linkInspired(scripts.videos, examples, 0)
     const reviewsWhy = typeof body.reviewsWhy === 'string' && ['no-scout', 'old-scout', 'scout-failed', 'none-shown'].includes(body.reviewsWhy) ? body.reviewsWhy as ReadReport['reviewsWhy'] : null
     const read: ReadReport = {
       source: link.kind === 'name' && img && !input ? 'screenshot' : link.kind,
@@ -170,7 +173,7 @@ export async function POST(req: NextRequest) {
       reviews: reviews.onPage.length, critical: reviews.critical.length, customersSay: !!reviews.customersSay,
       reviewsWhy: link.kind === 'amazon' && !reviews.onPage.length && !reviews.critical.length ? (reviewsWhy || 'scout-failed') : null,
       criticalWhy: reviews.criticalWhy ?? null,
-      screenshot: !!img, examples: examples.length, hooks: hooks.length,
+      screenshot: !!img, examples: examples.length, hooks: hooks.length, builtOn: scripts.videos.filter((v) => v.inspired).length,
     }
     return NextResponse.json({ ok: true, scripts, read, store: facts.store })
   } catch (e) {

@@ -14,7 +14,7 @@
 import TrybeTopHooks from '@/components/labs/TrybeTopHooks'
 import TrybeFilmIt, { type FilmScript } from '@/components/labs/TrybeFilmIt'
 import WhyThisHook from '@/components/labs/WhyThisHook'
-import { BuyersCard, ScriptVideoCard } from '@/components/labs/ScriptParts'
+import { BuyersCard, ScriptVideoCard, BuiltOnLine } from '@/components/labs/ScriptParts'
 import { readBuyersInChrome, shrinkPicture } from '@/lib/buyer-read-client'
 import { linkKind, buyerReportWords } from '@/lib/product-scripts'
 import { SCOUT_AMAZON_REVIEWS_MIN_VERSION } from '@/lib/scout-version'
@@ -22,7 +22,7 @@ import { useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { Loader2, Copy, Check, Clapperboard, ChevronDown, ChevronUp, RotateCcw, Trophy, Play, AlertTriangle, Printer, FileText, Target, Type, ImagePlus, X } from 'lucide-react'
 import { requestTrybeApi } from '@/lib/extension-frame'
-import { scriptFor, ideaText, planText, HOOK_STYLE_WORDS, VIDEO_IDEAS, OPENER_VIDEOS, type VideoPlan } from '@/lib/trybe-playbook'
+import { scriptFor, ideaText, planText, HOOK_STYLE_WORDS, VIDEO_IDEAS, OPENER_VIDEOS, BUILT_ON_VIDEOS, type VideoPlan } from '@/lib/trybe-playbook'
 import { readBrandCard, readPromotedProducts, mergeProducts, readSampleRequests, sampleStage, brandPageUrl, type PromotedProduct } from '@/lib/trybe-brand-page'
 import { readTopVideos, readScript, keysOf, type TopVideo } from '@/lib/trybe-mybrands'
 import { withTeamWords, type WinnerVideo } from '@/lib/trybe-scripts'
@@ -547,6 +547,7 @@ export default function TrybeVideoIdeas({ brandId, name, plan: initial, canRead,
               {/* HOW MANY OPEN WITH A PROVEN OPENER, read from the hooks
                   themselves, so a plan short of them says so. Only on plans
                   made since MVP asked for them (they carry who it is for). */}
+              {plan.videos.some((v) => v.who || v.why?.length) && <BuiltOnLine videos={plan.videos} asked={BUILT_ON_VIDEOS} />}
               {plan.videos.some((v) => v.who || v.why?.length) && (() => {
                 const n = plan.videos!.filter((v) => v.opener).length
                 return <p className="mt-0.5 text-[12px]" style={{ color: n >= OPENER_VIDEOS ? GREEN : AMBER }}>{n === 0 ? 'None of these open with one of your proven openers. Press New scripts to try again.' : `${n} of ${plan.videos!.length} open with one of your proven openers${n < OPENER_VIDEOS ? `, fewer than the ${OPENER_VIDEOS} MVP asked for` : ''}.`}</p>

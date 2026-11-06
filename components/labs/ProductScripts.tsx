@@ -12,9 +12,9 @@ import { useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { Loader2, Clapperboard, Copy, Check, ImagePlus, X, Printer, ChevronDown, ChevronUp } from 'lucide-react'
 import TrybeFilmIt, { type FilmScript } from '@/components/labs/TrybeFilmIt'
-import { BuyersCard, ScriptVideoCard } from '@/components/labs/ScriptParts'
+import { BuyersCard, ScriptVideoCard, BuiltOnLine } from '@/components/labs/ScriptParts'
 import { HOOK_STYLE_WORDS } from '@/lib/trybe-playbook'
-import { PRODUCT_VIDEOS, PRODUCT_OPENER_VIDEOS, productVideoText, productScriptsText, readWords, type ProductScripts as Scripts, type ReadReport } from '@/lib/product-scripts'
+import { PRODUCT_VIDEOS, PRODUCT_OPENER_VIDEOS, PRODUCT_BUILT_ON, productVideoText, productScriptsText, readWords, type ProductScripts as Scripts, type ReadReport } from '@/lib/product-scripts'
 import { SCOUT_AMAZON_REVIEWS_MIN_VERSION } from '@/lib/scout-version'
 import { readBuyersInChrome, shrinkPicture } from '@/lib/buyer-read-client'
 
@@ -177,6 +177,7 @@ export default function ProductScripts({ embedded = false }: { embedded?: boolea
 
           <div>
             <p className="text-[11px] font-bold uppercase tracking-wider" style={soft}>{result.scripts.videos.length} videos{result.scripts.product ? `: ${result.scripts.product}` : ''}</p>
+            <BuiltOnLine videos={result.scripts.videos} asked={PRODUCT_BUILT_ON} examples={result.read.examples} />
             <p className="mt-0.5 text-[12px]" style={{ color: openers >= PRODUCT_OPENER_VIDEOS ? GREEN : AMBER }}>
               {openers === 0 ? 'None of these open with one of your proven openers. Write them again for another try.' : `${openers} of ${result.scripts.videos.length} open with one of your proven openers${openers < PRODUCT_OPENER_VIDEOS ? `, fewer than the ${PRODUCT_OPENER_VIDEOS} MVP asked for` : ''}.`}
             </p>

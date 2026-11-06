@@ -16,7 +16,7 @@
 // (scripts/test-product-scripts.ts).
 
 import { scrubBanned } from '@/lib/scrub'
-import { HOOK_STYLE_WORDS, SCRIPT_CHECKLIST, readVideoIdeas, whyText, readTheBuyers, BUYERS_JSON, videoJson, scriptCraft, readBuyersFrom, quotedFrom, type VideoIdea, type BuyerRead, type BuyerReport } from '@/lib/trybe-playbook'
+import { HOOK_STYLE_WORDS, SCRIPT_CHECKLIST, readVideoIdeas, whyText, readTheBuyers, BUYERS_JSON, videoJson, scriptCraft, readBuyersFrom, quotedFrom, inspiredWords, type VideoIdea, type BuyerRead, type BuyerReport } from '@/lib/trybe-playbook'
 import { asinFromAmazonUrl } from '@/lib/asin'
 import { isTikTokProductUrl } from '@/lib/tiktok-product'
 
@@ -24,6 +24,8 @@ import { isTikTokProductUrl } from '@/lib/tiktok-product'
 export const PRODUCT_VIDEOS = 5
 /** Of the five, how many open with one of MVP's proven openers. */
 export const PRODUCT_OPENER_VIDEOS = 2
+/** Of the five, how many are built on a named top TRYBE video. */
+export const PRODUCT_BUILT_ON = 1
 /** Words said a second at a normal speaking pace, for the length shown. */
 export const WORDS_PER_SECOND = 2.6
 
@@ -174,7 +176,7 @@ Return ONLY JSON, no markdown:
 }
 Write exactly ${PRODUCT_VIDEOS} videos with ${PRODUCT_VIDEOS} clearly different angles and ${PRODUCT_VIDEOS} different styles: versus (a playful side by side), before_after (a visual contrast), negative (the one thing you did not like at first, then why you kept it), stat (a surprising true fact from PRODUCT or the reviews only), problem, reaction, pov, myth. Each video calls out a different WHO or a different moment, taken from "buyers".
 ${scriptCraft({
-  count: PRODUCT_VIDEOS, openers: PRODUCT_OPENER_VIDEOS,
+  count: PRODUCT_VIDEOS, openers: PRODUCT_OPENER_VIDEOS, builtOn: PRODUCT_BUILT_ON,
   digFrom: 'PRODUCT and the SCREENSHOT',
   calloutFrom: 'PRODUCT and the reviews',
   examples: 'WINNING TRYBE ADS or HOOKS WINNING ON TRYBE',
@@ -224,6 +226,7 @@ export function productVideoText(v: VideoIdea, n: number): string {
     `${n}. ${v.angle || HOOK_STYLE_WORDS[v.style]} (${HOOK_STYLE_WORDS[v.style]}), about ${secs} seconds`,
     v.who ? `For ${v.who}${v.when ? `, when ${v.when}` : ''}` : '',
     v.onScreen ? `ON SCREEN: ${v.onScreen}` : '',
+    v.inspired ? `BUILT ON: ${inspiredWords(v.inspired)}${v.inspired.frame ? `. Kept: ${v.inspired.frame}` : ''}` : '',
     v.shot ? `FIRST 2 SECONDS: ${v.shot}` : '',
     ...say.flatMap((l, i) => [`SCENE ${i + 1}`, `  Say: ${l}`, shots[i] ? `  Show: ${shots[i]}` : '']),
     ...shots.slice(say.length).map((b) => `EXTRA SHOT: ${b}`),
@@ -259,6 +262,8 @@ export interface ReadReport {
   screenshot: boolean
   examples: number
   hooks: number
+  /** How many videos are built on a named top TRYBE video. */
+  builtOn?: number
 }
 
 export function readWords(r: ReadReport, scoutMin: string): string {

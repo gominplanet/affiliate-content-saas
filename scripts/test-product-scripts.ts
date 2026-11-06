@@ -16,7 +16,7 @@ import {
   linkKind, storeOf, factsBlock, cleanReviews, reviewsBlock, reviewCorpus, quotedFrom, parseProductScripts, secondsOf,
   productVideoText, productScriptsText, readWords, PRODUCT_SCRIPT_SYSTEM, PRODUCT_VIDEOS, PRODUCT_OPENER_VIDEOS, SHORT_HOSTS, tiktokReviewsFrom, buyerReportWords,
 } from '../lib/product-scripts'
-import { PROVEN_OPENERS, SCRIPT_CHECKLIST, VIDEO_PLAN_SYSTEM, clipAtWord, parseVideoPlan } from '../lib/trybe-playbook'
+import { PROVEN_OPENERS, SCRIPT_CHECKLIST, VIDEO_PLAN_SYSTEM, clipAtWord, parseVideoPlan, linkInspired, inspiredWords } from '../lib/trybe-playbook'
 import { scrubBanned } from '../lib/scrub'
 
 const fails: string[] = []
@@ -195,6 +195,30 @@ check('SCOUT reads the words and stars, never a reviewer\'s name or picture', /\
   const ON = read('components/labs/TrybeOutreach.tsx'), NV = read('components/labs/TrybeNav.tsx')
   check('Video Scripts sits inside TRYBE\'s Make videos, by its own switch', /\{ label: 'Video Scripts', icon: Wand2, tabs: \['anyscripts'\], gate: 'anyScripts' \}/.test(NV) && /\{ label: 'Brand scripts', icon: Clapperboard, tabs: \['create'\] \}/.test(NV) && /active\.items\.filter\(shown\)\.map/.test(NV)
     && /tab === 'anyscripts' && \(canAnyScripts \? <ProductScripts embedded \/>/.test(ON) && /const canAnyScripts = canUsePreview\('product_scripts'/.test(ON) && /anyScripts=\{canAnyScripts\}/.test(ON))
+
+  // ── BUILT ON A WINNER (Seb, 2026-11-06: "will MVP look at the top
+  // submissions ... give at least one inspiration or one script that is
+  // inspired by the top submissions?") ─────────────────────────────────────
+  check('both writers build some videos on a named top video and say what they kept', /At least 2 of the 10 videos are each built on one of the WINNING TRYBE ADS/.test(VIDEO_PLAN_SYSTEM('')) && /At least 1 of the 5 videos is built on one of the WINNING TRYBE ADS/.test(sys)
+    && [sys, VIDEO_PLAN_SYSTEM('')].every((x) => /"inspiredBy": "the WINNING TRYBE AD/.test(x) && /"frame": "what you kept from it/.test(x) && /never two videos on the same one/.test(x)))
+  {
+    const ex = [{ best_rank: 12, category: 'Fitness', video_url: 'https://cdn.example/v12.mp4' }, { best_rank: null, category: null, video_url: null }]
+    const vids = [
+      { angle: 'a', style: 'problem' as const, hook: 'h', shot: '', beats: [], cta: '', forBrief: '', inspiredBy: 'Ad 1', frame: 'opens on the mess, product at second 4' },
+      { angle: 'b', style: 'pov' as const, hook: 'h', shot: '', beats: [], cta: '', forBrief: '', inspiredBy: 'Ad 1', frame: 'same again' },
+      { angle: 'c', style: 'myth' as const, hook: 'h', shot: '', beats: [], cta: '', forBrief: '', inspiredBy: 'Ad 7', frame: 'made up' },
+      { angle: 'd', style: 'stat' as const, hook: 'h', shot: '', beats: [], cta: '', forBrief: '', inspiredBy: 'Ad 2', frame: '' },
+      { angle: 'e', style: 'versus' as const, hook: 'h', shot: '', beats: [], cta: '', forBrief: '', inspiredBy: 'Video 1', frame: 'side by side' },
+    ]
+    const linked = linkInspired(vids, ex, 1)
+    check('a named top video is linked to the real one, with its place, category and video', JSON.stringify(linked[0].inspired) === JSON.stringify({ kind: 'top100', rank: 12, category: 'Fitness', video: 'https://cdn.example/v12.mp4', frame: 'opens on the mess, product at second 4' }) && inspiredWords(linked[0].inspired!) === '#12 in TRYBE\u2019s Top 100, Fitness')
+    check('a second video on the same one, or a name MVP never gave, is not shown as built on a winner', !linked[1].inspired && !linked[2].inspired && !('inspiredBy' in linked[1]) && !('frame' in linked[2]))
+    check('a top video from a brand page and the brand\'s own best video are said as such', linked[3].inspired?.kind === 'brand_page' && linked[3].inspired.video === null && linked[4].inspired?.kind === 'brand_best' && /brand\u2019s own best videos on TRYBE/.test(inspiredWords(linked[4].inspired)))
+    check('a copied video says what it is built on', /BUILT ON: #12 in TRYBE\u2019s Top 100, Fitness\. Kept: opens on the mess/.test(productVideoText({ ...linked[0], say: ['h', 'two'] }, 1)))
+  }
+  const TRr = read('app/api/labs/trybe/route.ts'), PRr = read('app/api/labs/product-scripts/route.ts'), SP = read('components/labs/ScriptParts.tsx')
+  check('both routes link each named winner to the top videos they gave, with the video', /parsed\.videos = linkInspired\(parsed\.videos, examples, winners\.length\)/.test(TRr) && /scripts\.videos = linkInspired\(scripts\.videos, examples, 0\)/.test(PRr) && /select\('brand_id,brand_name,best_rank,category,script,state,video_url'\)/.test(TRr) && /select\('brand_id,brand_name,best_rank,category,script,state,video_url'\)/.test(PRr))
+  check('each card shows Built on a winner, which one, what was kept, and the video; the plan says how many', /Built on a winner/.test(SP) && /<b>Built on<\/b> \{inspiredWords\(v\.inspired\)\}/.test(SP) && /Watch that video/.test(SP) && /<BuiltOnLine videos=\{plan\.videos\} asked=\{BUILT_ON_VIDEOS\} \/>/.test(read('components/labs/TrybeVideoIdeas.tsx')) && /<BuiltOnLine videos=\{result\.scripts\.videos\} asked=\{PRODUCT_BUILT_ON\}/.test(P) && /No top TRYBE videos with words were on hand/.test(SP))
   const words = [P.match(/>[^<>{}]{12,}</g) || []].flat().join(' ')
   check('no dashes in the page\'s words', !/[–—]| - /.test(words))
 

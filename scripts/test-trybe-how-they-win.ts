@@ -124,7 +124,7 @@ check('a worse day never demotes a video', bestRank(71, 3) === 3 && bestRank(3, 
 
 // ── MAKE VIDEOS WRITES FROM THE WINNING ADS ──────────────────────────────────
 check('the video plan reads the Top 100 words and picks examples for the brand',
-  /\.from\('trybe_top_scripts'\)\.select\('brand_id,brand_name,best_rank,category,script,state'\)\.eq\('state', 'ready'\)/.test(R)
+  /\.from\('trybe_top_scripts'\)\.select\('brand_id,brand_name,best_rank,category,script,state(?:,video_url)?'\)\.eq\('state', 'ready'\)/.test(R)
     && /pickExamples\(/.test(R) && /\$\{examplesText \? `\\n\\n\$\{examplesText\}` : ''\}/.test(R))
 check('and says how many it used, on both answers', (R.match(/fromTop100: examples\.length, fromRanked: examples\.filter\(\(x\) => x\.best_rank != null\)\.length/g) || []).length === 2)
 check('the page says it on the plan, Top 100 ads apart from brand page videos', /winning ad\$\{ranked === 1 \? '' : 's'\} from TRYBE’s Top 100/.test(V) && /top video\$\{fromPages === 1 \? '' : 's'\} from brands’ own TRYBE pages/.test(V))

@@ -175,7 +175,19 @@ export interface VideoIdea {
   objection?: string
   /** Which of MVP's proven openers it starts with, when it does. */
   opener?: string
+  /** BUILT ON A WINNER (Seb, 2026-11-06: "will MVP look at the top
+   *  submissions ... give at least one script that is inspired by the top
+   *  submissions"): the top video this one follows, and what it kept. Set
+   *  only when the model named one MVP had given it (linkInspired). */
+  inspired?: Inspired
+  /** The model's own words for it, before MVP checks them. */
+  inspiredBy?: string
+  frame?: string
 }
+
+/** A top video a script is built on: TRYBE's Top 100, a top video on the
+ *  brand's own TRYBE page, or one of the brand's own best videos. */
+export interface Inspired { kind: 'top100' | 'brand_page' | 'brand_best'; rank: number | null; category: string | null; video: string | null; frame: string }
 
 /** OPENERS THAT STOP THE SCROLL (Seb's list, 2026-11-06). Each is the start of
  *  a hook, finished with who it is for, the moment or the real reason: never
@@ -194,6 +206,8 @@ export const PROVEN_OPENERS = [
 ] as const
 /** Of the ten videos, how many start with a proven opener. */
 export const OPENER_VIDEOS = 4
+/** Of the ten videos, how many are built on a named top video. */
+export const BUILT_ON_VIDEOS = 2
 
 const plainWords = (t: string) => t.toLowerCase().replace(/[\u2018\u2019]/g, "'").replace(/[^a-z0-9' ]+/g, ' ').replace(/\s+/g, ' ').trim()
 /** The proven opener a hook really starts with, read from the hook itself
@@ -288,6 +302,8 @@ export const videoJson = (o: { say: string; broll: string; cta: string; forBrief
     "onScreen": "the text on screen in the first 2 seconds, under 6 words, never the same words as the hook",
     "shot": "what the camera shows in the first 2 seconds, with movement",
     "objection": "the one doubt a buyer has about this product that this video answers (from \\"doubts\\"), in under 10 words",
+    "inspiredBy": "the WINNING TRYBE AD (\"Ad 3\") or the brand's own best VIDEO (\"Video 2\") this video is built on, or \"\" when it is built on none",
+    "frame": "what you kept from it, under 15 words (\"opens on the mess, product at second 4, ends on a dare\"), or \"\"",
     "say": ["${o.say}"],
     "broll": ["${o.broll}"],
     "cta": "${o.cta}",
@@ -295,7 +311,7 @@ export const videoJson = (o: { say: string; broll: string; cta: string; forBrief
   }`
 
 /** The craft every script follows, whoever asked for it. */
-export function scriptCraft(o: { count: number; openers: number; digFrom: string; calloutFrom: string; examples: string; skeletonExtra?: string; factsFrom: string }): string {
+export function scriptCraft(o: { count: number; openers: number; builtOn: number; digFrom: string; calloutFrom: string; examples: string; skeletonExtra?: string; factsFrom: string }): string {
   return `WHY THIS HOOK: THE FIVE WS, THEN THE FIVE WHYS. Before writing each video, decide WHO it calls out, WHEN in their day it bites, WHERE they are, and WHAT the problem is in their own words. Then dig the WHY: start from the surface problem the product solves ("razor bumps"), ask why that matters ("they itch, they look bad"), and ask again until you reach a moment in someone's life and a feeling ("you don't want people staring at your neck at dinner"). Write that ladder in "why". Every video aims at a different WHO or a different moment, so the ${o.count} angles really differ. Dig from the reviews first when they are given: the moment a buyer describes is worth more than any you imagine. Then from ${o.digFrom}, and from everyday life; never a medical claim, never a promise the product cannot keep.
 THE HOOK OPENS ON THE DEEPEST WHY, NEVER THE SURFACE. Not "Tired of razor bumps?" but "If date night means hoping nobody looks at your neck, watch this." Call out the WHO in the first words ("If you're on your feet all day", "Moms who pack lunches at 6am", "Guys who shave every morning") and put them in the WHEN. Call out only people the product is really for, as ${o.calloutFrom} show them. Specific beats clever: a real place, a real time, a real person in their life. Say it the way the buyer would, in their words, never the brand's.
 PROVEN OPENERS (MVP's list): ${PROVEN_OPENERS.map((x) => `"${x}"`).join(', ')}. At least ${o.openers} of the ${o.count} videos start their hook with one of these, word for word, and finish the same sentence with the WHO, the moment or the deepest why ("Nobody mentions this about shaving the night before a date", "I wish I knew this earlier, back when 12 hour shifts wrecked my feet", "Pause for a second if your kid's lunch comes home uneaten"). Never say an opener bare, never two videos on the same opener. A hook that starts with "I" turns to the viewer ("you") in the very next line. Name the opener used in "opener".
@@ -304,6 +320,7 @@ DRIVE THE KNIFE, THEN THE RELIEF. Line 1 is the hook. Line 2 makes the viewer fe
 WEAK POINTS ARE ANSWERED, NEVER HIDDEN AND NEVER DENIED. A doubt buyers share (from CRITICAL REVIEWS when given) is answered plainly in the video that takes it on: what it is, and why the product still wins for the right person, or who it is not for. One video is the negative style built on the most common real doubt. Never claim the product fixes something the reviews say it does not.
 A NEW SCENE EVERY 3 SECONDS: every line said has its own shot in "broll", in the same order (the first shot is filmed under the first line), so the picture changes with every sentence and the creator can film scene by scene.
 STEAL THE SKELETON, NEVER THE WORDS. When ${o.examples} are given, notice the frame each one uses (the order, the kind of opening, the turn, the proof, the ask) and reuse frames with this product's own WHO and WHY. Never copy their sentences, never name their brands, never borrow their numbers.${o.skeletonExtra ? ` ${o.skeletonExtra}` : ''}
+BUILT ON A WINNER. At least ${o.builtOn} of the ${o.count} videos ${o.builtOn === 1 ? 'is' : 'are each'} built on one of the WINNING TRYBE ADS ("Ad 1", "Ad 2"...) or one of the brand's own best VIDEOS ("Video 1"...) given below: keep its frame (the kind of opening, the order, the turn, the proof, the ask) and tell it with this product's own WHO and WHY, in new words. Prefer the best placed and the ones closest to this product, and never two videos on the same one. Name it in "inspiredBy" and say what you kept in "frame". When none are given, leave both empty.
 THE SCRIPT IS WORDS TO SAY, NOT DIRECTIONS. Every line of "say" is a sentence the creator speaks to camera, word for word, never a description like "show it working" or "talk about the bags". Short and plain: everyday words, contractions, no lists, no commas strung together, nothing a person would stumble on. A creator memorizes one line, films it, then the next, so each line stands on its own and makes sense cut together. Write them the way the WINNING VIDEOS and WINNING TRYBE ADS below talk when they are given: the same short sentences, the same kind of opening, how fast they get to the product, the proof, the ask.
 B-ROLL IS WHAT THE CAMERA FILMS UNDER THE WORDS: close-ups of the product working, the result, hands using it, the before and after, the place. Each shot is one line with movement ("Slow push in as the bag shrinks around the steak"), never a line of speech.
 WRITE FOR THE VIEWER (TRYBE's co-founder, Lukas Pakter: "switch from I to you"). Nobody knows a UGC creator, so the video is about what the product does for the person watching. Hooks and beats talk to them: "you", "your", "if you...". A story hook may start with a personal moment, but it turns to the viewer by its second sentence. Never "I'm obsessed", never a list of what the creator likes.
@@ -340,7 +357,7 @@ Return ONLY JSON, no markdown:
 Write exactly ${VIDEO_IDEAS} videos with ${VIDEO_IDEAS} clearly different angles, using every style at least once: versus (a playful side by side, like "boomer versus Gen Z", "cheap one versus this"), before_after (a visual contrast), negative (the one thing you did not like at first, then why you kept it), stat (a surprising true fact from BRAND or BRIEF only), problem, reaction, pov, myth. Every shot moves something: pouring, sliding, opening, comparing side by side.
 Write 3 calls to action. Use kind "sale" or "bundle" ONLY when BRAND lists something on sale or a bundle; otherwise use social_proof or urgency that claims nothing false (never "sold out", never numbers, never ratings that are not in BRAND). A video's own cta follows the same rule. Urgency only when it is true.
 ${scriptCraft({
-  count: VIDEO_IDEAS, openers: OPENER_VIDEOS,
+  count: VIDEO_IDEAS, openers: OPENER_VIDEOS, builtOn: BUILT_ON_VIDEOS,
   digFrom: 'what BRAND, BRIEF, the BRAND\'S OWN META ADS and the WINNING videos say about the people who buy it',
   calloutFrom: 'BRAND, BRIEF and the reviews',
   examples: 'WINNING VIDEOS, WINNING TRYBE ADS or the BRAND\'S OWN META ADS',
@@ -410,6 +427,38 @@ export function parseVideoPlan(text: string, corpus = ''): VideoPlan | null {
   return plan
 }
 
+/** Each video's top video, when the model named one MVP gave it: "Ad N" is
+ *  the Nth winning TRYBE ad in the prompt, "Video N" the brand's Nth own best
+ *  video. A name MVP did not give is dropped, never shown as a winner, and so
+ *  is a second video on the same one. Pure. */
+export function linkInspired(videos: VideoIdea[], examples: Array<{ best_rank: number | null; category: string | null; video_url?: string | null }>, winners: number): VideoIdea[] {
+  const used = new Set<string>()
+  return videos.map(({ inspiredBy, frame, ...v }) => {
+    const m = String(inspiredBy || '').match(/^\s*(ad|video)\s*#?\s*(\d+)\s*$/i)
+    if (!m) return v
+    const n = Number(m[2])
+    const key = `${m[1].toLowerCase()}${n}`
+    if (used.has(key)) return v
+    let inspired: Inspired | null = null
+    if (/^ad$/i.test(m[1]) && n >= 1 && n <= examples.length) {
+      const e = examples[n - 1]
+      inspired = { kind: e.best_rank != null ? 'top100' : 'brand_page', rank: e.best_rank ?? null, category: e.category ?? null, video: /^https:\/\//.test(String(e.video_url || '')) ? String(e.video_url) : null, frame: frame || '' }
+    } else if (/^video$/i.test(m[1]) && n >= 1 && n <= winners) {
+      inspired = { kind: 'brand_best', rank: null, category: null, video: null, frame: frame || '' }
+    }
+    if (!inspired) return v
+    used.add(key)
+    return { ...v, inspired }
+  })
+}
+
+/** The top video a script is built on, in words. Pure. */
+export function inspiredWords(i: Inspired): string {
+  return i.kind === 'top100' ? `#${i.rank} in TRYBE’s Top 100${i.category ? `, ${i.category}` : ''}`
+    : i.kind === 'brand_page' ? 'a top video on its brand’s TRYBE page'
+    : 'one of this brand’s own best videos on TRYBE'
+}
+
 /** Text cut to a length at a word, never through one ("ignores th" on the
  *  first Video Scripts set), with "…" saying it was cut. Pure. */
 export function clipAtWord(t: string, max: number): string {
@@ -453,6 +502,7 @@ export function readVideoIdeas(raw: unknown, max = 12): VideoIdea[] {
       beats: beats.length ? beats : say.slice(1, -1).length ? say.slice(1, -1) : say,
       ...(say.length ? { say } : {}), ...(broll.length ? { broll } : {}),
       cta: s(x.cta, 140) || (say.length > 1 ? say[say.length - 1] : ''), forBrief: s(x.forBrief, 120),
+      ...(s(x.inspiredBy, 20) ? { inspiredBy: s(x.inspiredBy, 20) } : {}), ...(s(x.frame, 140) ? { frame: s(x.frame, 140) } : {}),
       ...five,
     }
   }).filter((v) => v.hook && (v.beats.length || v.say?.length)).slice(0, max)
@@ -502,6 +552,7 @@ export function ideaText(v: VideoIdea, n: number): string {
       ...(v.broll || []).map((b) => `- ${b}`),
       v.shot ? `FIRST 2 SECONDS: ${v.shot}` : '',
       v.onScreen ? `ON SCREEN: ${v.onScreen}` : '',
+      v.inspired ? `BUILT ON: ${inspiredWords(v.inspired)}${v.inspired.frame ? `. Kept: ${v.inspired.frame}` : ''}` : '',
       whyText(v),
       v.objection ? `THE DOUBT IT ANSWERS: ${v.objection}` : '',
       v.forBrief ? `FOR THE BRIEF: ${v.forBrief}` : '',

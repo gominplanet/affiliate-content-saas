@@ -6,9 +6,9 @@
 'use client'
 
 import type { ReactNode } from 'react'
-import { Clapperboard, Copy, Check, Target, Type, Users, Heart, HelpCircle, Quote } from 'lucide-react'
+import { Clapperboard, Copy, Check, Target, Type, Users, Heart, HelpCircle, Quote, Trophy } from 'lucide-react'
 import WhyThisHook from '@/components/labs/WhyThisHook'
-import { HOOK_STYLE_WORDS, type VideoIdea, type BuyerRead } from '@/lib/trybe-playbook'
+import { HOOK_STYLE_WORDS, inspiredWords, type VideoIdea, type BuyerRead } from '@/lib/trybe-playbook'
 import { secondsOf } from '@/lib/product-scripts'
 
 const PURPLE = 'var(--accent)'
@@ -59,10 +59,19 @@ export function ScriptVideoCard({ v, n, copied, onCopy, onFilm, footer }: { v: V
             <span className="text-[14px] font-semibold">{v.angle || HOOK_STYLE_WORDS[v.style]}</span>
             <span className="text-[10px] font-bold rounded-full px-1.5 py-0.5" style={{ background: 'rgb(var(--brand-rgb) / 0.10)', color: PURPLE }}>{HOOK_STYLE_WORDS[v.style]}</span>
             {v.opener && <span className="text-[10px] font-bold rounded-full px-1.5 py-0.5" style={{ background: GREEN, color: '#fff' }} title="This hook starts with one of MVP's proven openers">Proven opener</span>}
+            {v.inspired && <span className="text-[10px] font-bold rounded-full px-1.5 py-0.5" style={{ background: '#F59E0B', color: '#fff' }} title="Built on the frame of a top TRYBE video">Built on a winner</span>}
             <span className="text-[10px] font-bold rounded-full px-1.5 py-0.5 border" style={{ borderColor: fits ? GREEN : AMBER, color: fits ? GREEN : AMBER }} title="Counted from the words to say, at a normal speaking pace">about {secs} seconds{fits ? '' : ', over a minute'}</span>
           </div>
           {(v.who || v.when) && (
             <p className="mt-1 text-[12.5px]"><Target size={12} className="inline -mt-0.5 mr-1" style={{ color: PURPLE }} /><b>For</b> {v.who || 'the buyer'}{v.when ? <>, <b>when</b> {v.when}</> : null}</p>
+          )}
+          {/* BUILT ON A WINNER: which top video, what was kept, and the video. */}
+          {v.inspired && (
+            <p className="mt-1 text-[12.5px]">
+              <Trophy size={12} className="inline -mt-0.5 mr-1" style={{ color: '#F59E0B' }} />
+              <b>Built on</b> {inspiredWords(v.inspired)}{v.inspired.frame ? <>: {v.inspired.frame}</> : null}
+              {v.inspired.video && <> <a href={v.inspired.video} target="_blank" rel="noopener noreferrer" className="font-semibold underline underline-offset-2" style={{ color: PURPLE }}>Watch that video</a></>}
+            </p>
           )}
           {v.onScreen && (
             <p className="mt-1.5 flex flex-wrap items-center gap-1.5">
@@ -99,4 +108,11 @@ export function ScriptVideoCard({ v, n, copied, onCopy, onFilm, footer }: { v: V
       </div>
     </li>
   )
+}
+
+/** How many videos are built on a top video, said under the openers line. */
+export function BuiltOnLine({ videos, asked, examples }: { videos: VideoIdea[]; asked: number; examples?: number | null }) {
+  const n = videos.filter((v) => v.inspired).length
+  if (examples === 0) return <p className="mt-0.5 text-[12px]" style={{ color: 'var(--text-soft)' }}>No top TRYBE videos with words were on hand, so none of these is built on one.</p>
+  return <p className="mt-0.5 text-[12px]" style={{ color: n >= asked ? GREEN : AMBER }}>{n === 0 ? 'None of these came back built on a top TRYBE video. Write them again for another try.' : `${n} of ${videos.length} ${n === 1 ? 'is' : 'are'} built on a top TRYBE video, marked Built on a winner${n < asked ? `, fewer than the ${asked} MVP asked for` : ''}.`}</p>
 }
