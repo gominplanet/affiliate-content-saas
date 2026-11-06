@@ -1,6 +1,6 @@
 /**
  * /video-scripts — Video Scripts (LABS, admin while it is tried). Any product
- * in, five 30 to 40 second scripts out; see lib/product-scripts.ts.
+ * in, five short scripts out (under a minute, shorter is better); see lib/product-scripts.ts.
  */
 'use client'
 

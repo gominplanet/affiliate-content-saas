@@ -1,7 +1,8 @@
 // © 2026 Gominplanet / MVP Affiliate — proprietary & confidential.
 //
 // VIDEO SCRIPTS (Labs). Any product in: a TikTok Shop or Amazon link, any
-// product page, a screenshot, or its name. Five 30 to 40 second videos out,
+// product page, a screenshot, or its name. Five short videos out (under a
+// minute, shorter is better),
 // scene by scene, written the way TRYBE's scripts are (lib/product-scripts).
 // SCOUT reads an Amazon product and its reviews in the creator's own Chrome;
 // what went in is said under the button, never implied.
@@ -139,7 +140,7 @@ export default function ProductScripts() {
         <p className="text-[11px] font-semibold uppercase tracking-[0.12em]" style={{ color: 'var(--text-faint)' }}>Labs · Make videos</p>
         <h1 className="text-[24px] font-semibold tracking-tight" style={{ color: 'var(--text)' }}>Video Scripts</h1>
         <p className="text-[13px] max-w-2xl" style={soft}>
-          Drop in any product: a TikTok Shop or Amazon link, a product page, a screenshot, or just its name. MVP reads who buys it and why, then writes {PRODUCT_VIDEOS} videos of 30 to 40 seconds, scene by scene, each opening on the real reason someone needs it.
+          Drop in any product: a TikTok Shop or Amazon link, a product page, a screenshot, or just its name. MVP reads who buys it and why, then writes {PRODUCT_VIDEOS} short videos, scene by scene, under a minute each and nothing wasted, each opening on the real reason someone needs it.
         </p>
       </header>
 
@@ -264,7 +265,8 @@ function VideoCard({ v, n, copied, onCopy, onFilm }: { v: VideoIdea; n: number; 
   const say = v.say?.length ? v.say : [v.hook, ...v.beats, v.cta].filter(Boolean)
   const shots = v.broll || []
   const secs = secondsOf(say)
-  const fits = secs >= 28 && secs <= 42
+  // Under a minute is fine, shorter is better (Seb, 2026-11-06).
+  const fits = secs <= 60
   return (
     <li className="rounded-xl border px-3.5 py-3" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
       <div className="flex items-start gap-2.5">
@@ -274,7 +276,7 @@ function VideoCard({ v, n, copied, onCopy, onFilm }: { v: VideoIdea; n: number; 
             <span className="text-[14px] font-semibold">{v.angle || HOOK_STYLE_WORDS[v.style]}</span>
             <span className="text-[10px] font-bold rounded-full px-1.5 py-0.5" style={{ background: 'rgb(var(--brand-rgb) / 0.10)', color: PURPLE }}>{HOOK_STYLE_WORDS[v.style]}</span>
             {v.opener && <span className="text-[10px] font-bold rounded-full px-1.5 py-0.5" style={{ background: GREEN, color: '#fff' }} title="This hook starts with one of MVP's proven openers">Proven opener</span>}
-            <span className="text-[10px] font-bold rounded-full px-1.5 py-0.5 border" style={{ borderColor: fits ? GREEN : AMBER, color: fits ? GREEN : AMBER }} title="Counted from the words to say, at a normal speaking pace">about {secs} seconds{fits ? '' : secs > 42 ? ', a little long' : ', a little short'}</span>
+            <span className="text-[10px] font-bold rounded-full px-1.5 py-0.5 border" style={{ borderColor: fits ? GREEN : AMBER, color: fits ? GREEN : AMBER }} title="Counted from the words to say, at a normal speaking pace">about {secs} seconds{fits ? '' : ', over a minute'}</span>
           </div>
           {(v.who || v.when) && (
             <p className="mt-1 text-[12.5px]"><Target size={12} className="inline -mt-0.5 mr-1" style={{ color: PURPLE }} /><b>For</b> {v.who || 'the buyer'}{v.when ? <>, <b>when</b> {v.when}</> : null}</p>
