@@ -2295,6 +2295,11 @@ export default function TrybeOutreach({ preview = false, v2 = false }: { preview
       )}
 
       {tab === 'find' && !lockedTab && (<>
+        {/* THE SETUP, FOLDED (the new TRYBE): once the core message is saved,
+            the intro video, your stage and the message fold into one line, so
+            Find brands starts with finding brands. Open it to change any. */}
+        {(() => {
+          const setup = (<>
         {/* The intro video for requests (lib/trybe-intro): every Pro member (Seb, 2026-10-24).
             The core message is the request itself, so the card says where it stands and opens it. */}
         {!preview && <TrybeIntroVideo core={core} onWriteCore={() => { setEditingCore(true); window.setTimeout(() => document.getElementById('trybe-core-message')?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 50) }} />}
@@ -2324,6 +2329,19 @@ export default function TrybeOutreach({ preview = false, v2 = false }: { preview
           </>)}
           {coreHits.length > 0 && <p className="text-[12px] mt-2 font-semibold" style={{ color: '#B45309' }}>Your core message says {quoteHits(coreHits)}, which reads as talk about pay or rates. TRYBE brands set the pay, so MVP will not write requests from it until {coreHits.length === 1 ? 'that part is' : 'those parts are'} out.</p>}
         </div>}
+          </>)
+          if (!(v2 && !preview && core.trim() && !editingCore)) return setup
+          return (
+            <details className={card} style={cardStyle}>
+              <summary className="cursor-pointer flex flex-wrap items-center gap-x-3 gap-y-1 list-none [&::-webkit-details-marker]:hidden">
+                <span className="text-[14px] font-semibold">Your outreach setup</span>
+                <span className="text-[12px]" style={soft}>Core message saved{savedCap ? `, ${savedCap} messages a day at most` : ''}. Your intro video and your stage are in here too.</span>
+                <span className="ml-auto text-[12px] font-semibold" style={{ color: PURPLE }}>Open</span>
+              </summary>
+              <div className="mt-4 space-y-4">{setup}</div>
+            </details>
+          )
+        })()}
 
         {/* 2. Find brands. Seb, 2026-10-07: one click on a niche shows its
             brands, but make it very visible that searching a keyword is the

@@ -59,6 +59,7 @@ check('the home opens with best bets for the creator\'s niche, not yet on their 
   check('no brief read yet is said, never an empty checklist', /No brief checklist for \{brandName\} yet/.test(B))
   check('the checklist never blocks a send', !/disabled=\{.*ticked/.test(UP))
 }
+check('Find brands in the new TRYBE starts with finding brands: the saved setup folds into one line, open to change', /if \(!\(v2 && !preview && core\.trim\(\) && !editingCore\)\) return setup/.test(U) && /Your outreach setup/.test(U))
 check('a count that failed says so, with a way to try again', /MVP could not count this week/.test(H) && /Try again/.test(H))
 check('each section says the window it covers', /Last 14 days/.test(H) && /Last 7 days next to the 7 before/.test(H))
 
