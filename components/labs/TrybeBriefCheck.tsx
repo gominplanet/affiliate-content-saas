@@ -19,7 +19,7 @@ const cache = new Map<string, Promise<Plan | null>>()
 function latestPlan(brandId: string): Promise<Plan | null> {
   let p = cache.get(brandId)
   if (!p) {
-    p = fetch('/api/labs/trybe', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'ideas', brandId }) })
+    p = fetch('/api/labs/trybe', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'ideas', brandId, withCopies: true }) })
       .then(async (r) => {
         const j = await r.json().catch(() => null)
         if (!r.ok) throw new Error(j?.error || `MVP answered ${r.status}`)

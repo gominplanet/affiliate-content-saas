@@ -108,6 +108,9 @@ async function metaPagesOf(admin: Db, ids: string[]): Promise<Map<string, { id: 
 
 /** A database update Seb has not run yet: named for an admin, who can run
  *  it; said plainly to a creator, who cannot. */
+/** Saved script sets listed at once on Brand scripts, newest first. */
+const SAVED_SCRIPTS_MAX = 60
+
 function setupWords(tier: string | null | undefined, adminText: string): string {
   return tier === 'admin' ? adminText : 'TRYBE is finishing an update on MVP. Try again in a few minutes.'
 }
@@ -1617,22 +1620,29 @@ export async function POST(request: Request) {
       if (parsed.videos) parsed.videos = linkInspired(parsed.videos, examples, winners.length)
       const builtOn = parsed.videos?.filter((v) => v.inspired).length ?? 0
       const plan = { ...honestCtas(parsed, onSale), ...(briefState ? { brief: briefState } : {}), ...(buyerReport ? { buyerReport } : {}) }
+      // KEPT UNTIL YOU CLEAR IT (Seb, 2026-11-06: "make sure ... that we
+      // actually save them, even if we refresh or leave"): every plan goes to
+      // the saved ideas, a sample's too, so Your saved scripts lists it.
+      const keepIdea = async (keptPlan: Record<string, unknown>): Promise<string | null> => {
+        try {
+          const { data: ins, error: idErr } = await admin.from('trybe_ideas').insert({ user_id: ownerId, brand_id: lookupId || '', brand_name: String(row.name || '') || null, product: product || plan.product || null, plan: keptPlan }).select('id').single()
+          return idErr ? null : ((ins as { id: string } | null)?.id ?? null)
+        } catch { return null }
+      }
       if (sample) {
         let kept = true
         try {
           const { error: smUp } = await admin.from('trybe_samples').update({ ideas: { ...plan, onSale, products: products.slice(0, 15) }, ideas_at: now, updated_at: now }).eq('user_id', ownerId).eq('id', sampleId)
           if (smUp) kept = false
         } catch { kept = false }
-        return NextResponse.json({ ok: true, plan, onSale, products: products.slice(0, 15), saved: kept, onList: true, fromWinners: winners.length, fromTop100: examples.length, fromRanked: examples.filter((x) => x.best_rank != null).length, fromMetaAds: metaAds.length, metaAdsLongest: metaAds[0]?.days ?? null, fromTrybeProducts: trybeProducts.length, builtOn, examplesGiven: examples.length, fromCompetitors: rivalAds.length, fromAmazonListing: !!amazonText })
+        const ideaId = await keepIdea({ ...plan, onSale, products: products.slice(0, 15) })
+        return NextResponse.json({ ok: true, plan, onSale, products: products.slice(0, 15), saved: kept || !!ideaId, ideaId, onList: true, fromWinners: winners.length, fromTop100: examples.length, fromRanked: examples.filter((x) => x.best_rank != null).length, fromMetaAds: metaAds.length, metaAdsLongest: metaAds[0]?.days ?? null, fromTrybeProducts: trybeProducts.length, builtOn, examplesGiven: examples.length, fromCompetitors: rivalAds.length, fromAmazonListing: !!amazonText })
       }
       // KEPT FOR EVERY BRAND (migration 429): a brand joined on TRYBE directly
       // has no row on the MVP list, and its ideas used to be lost.
       const keptPlan = { ...plan, onSale, products: products.slice(0, 15) }
-      let ideasKept = false
-      try {
-        const { error: idErr } = await admin.from('trybe_ideas').insert({ user_id: ownerId, brand_id: brandId, brand_name: row.name || null, product: product || plan.product || null, plan: keptPlan })
-        ideasKept = !idErr
-      } catch { /* said below */ }
+      const ideaId = await keepIdea(keptPlan)
+      const ideasKept = !!ideaId
       let saved = !!own
       if (own) {
         try {
@@ -1640,7 +1650,7 @@ export async function POST(request: Request) {
           if (upErr) saved = false
         } catch { saved = false }
       }
-      return NextResponse.json({ ok: true, plan, onSale, products: products.slice(0, 15), saved: saved || ideasKept, onList: !!own || ideasKept, fromWinners: winners.length, fromTop100: examples.length, fromRanked: examples.filter((x) => x.best_rank != null).length, fromMetaAds: metaAds.length, metaAdsLongest: metaAds[0]?.days ?? null, fromTrybeProducts: trybeProducts.length, builtOn, examplesGiven: examples.length, fromCompetitors: rivalAds.length, fromAmazonListing: !!amazonText })
+      return NextResponse.json({ ok: true, plan, onSale, products: products.slice(0, 15), saved: saved || ideasKept, ideaId, onList: !!own || ideasKept, fromWinners: winners.length, fromTop100: examples.length, fromRanked: examples.filter((x) => x.best_rank != null).length, fromMetaAds: metaAds.length, metaAdsLongest: metaAds[0]?.days ?? null, fromTrybeProducts: trybeProducts.length, builtOn, examplesGiven: examples.length, fromCompetitors: rivalAds.length, fromAmazonListing: !!amazonText })
     } catch (e) {
       return NextResponse.json({ error: e instanceof Error ? `MVP could not plan the videos: ${e.message}` : 'MVP could not plan the videos.' }, { status: 502 })
     }
@@ -2798,17 +2808,21 @@ Weigh posts pushed to social, and TRYBE brands they earned with or submitted to,
     // ideas table was missing, while the plan sat on the brand's row, and a
     // plan made for a sample never reached the saved ideas at all). A read
     // that fails is said only when no place gave a plan.
+    // The script pages read the saved ideas alone, so a script you cleared
+    // never comes back from an older copy; the brief checklist (withCopies)
+    // reads the copies too, for the brief they carry.
     if (!brandId) return NextResponse.json({ error: 'Bad request' }, { status: 400 })
     type Kept = { id: string; product: string | null; plan: unknown; created_at: string }
     const found: Kept[] = []
     const failed: string[] = []
-    const [ideasRead, samplesRead, brandRead] = await Promise.all([
-      admin.from('trybe_ideas').select('id, product, plan, created_at').eq('user_id', ownerId).eq('brand_id', brandId).order('created_at', { ascending: false }).limit(40),
-      admin.from('trybe_samples').select('id, product, ideas, ideas_at').eq('user_id', ownerId).eq('brand_id', brandId).not('ideas', 'is', null).order('ideas_at', { ascending: false }).limit(20),
-      admin.from('trybe_brands').select('video_plan, video_plan_at').eq('user_id', ownerId).eq('brand_id', brandId).maybeSingle(),
-    ])
+    const ideasRead = await admin.from('trybe_ideas').select('id, product, plan, created_at').eq('user_id', ownerId).eq('brand_id', brandId).order('created_at', { ascending: false }).limit(40)
     if (ideasRead.error) failed.push(/does not exist|schema cache/i.test(ideasRead.error.message) ? setupWords(tier, 'Saved ideas need migration 429 in Supabase first') : ideasRead.error.message)
     else found.push(...((ideasRead.data || []) as Kept[]))
+    const copies = body.withCopies === true || !!ideasRead.error
+    const [samplesRead, brandRead] = copies ? await Promise.all([
+      admin.from('trybe_samples').select('id, product, ideas, ideas_at').eq('user_id', ownerId).eq('brand_id', brandId).not('ideas', 'is', null).order('ideas_at', { ascending: false }).limit(20),
+      admin.from('trybe_brands').select('video_plan, video_plan_at').eq('user_id', ownerId).eq('brand_id', brandId).maybeSingle(),
+    ]) : [{ data: [], error: null }, { data: null, error: null }]
     if (samplesRead.error) failed.push(samplesRead.error.message)
     else for (const r of (samplesRead.data || []) as Array<{ id: string; product: string | null; ideas: unknown; ideas_at: string | null }>) found.push({ id: `sample:${r.id}`, product: r.product, plan: r.ideas, created_at: r.ideas_at || '' })
     if (brandRead.error) failed.push(brandRead.error.message)
@@ -2824,6 +2838,70 @@ Weigh posts pushed to social, and TRYBE brands they earned with or submitted to,
       seen.add(k); return true
     }).slice(0, 10)
     return NextResponse.json({ ok: true, plans, ...(!plans.length && failed.length ? { why: failed[0].replace(/[.\s]+$/, '') } : {}) })
+  }
+
+  // ── YOUR SAVED SCRIPTS (Seb, 2026-11-06: "make sure that under brand
+  // scripts ... we actually save them, even if we refresh or leave, and then
+  // just let users delete it manually if they no longer want to do it, or if
+  // they've actually shot it, maybe a tick box and it deletes it"). Every
+  // plan Brand scripts writes is kept in the saved ideas (video_plan); here
+  // they are listed, a script is cleared one at a time (Shot it, or Delete),
+  // a whole set at once, and either is undone by writing the set back.
+  if (action === 'saved_scripts') {
+    const { data, error } = await admin.from('trybe_ideas').select('id, brand_id, brand_name, product, plan, created_at').eq('user_id', ownerId).order('created_at', { ascending: false }).limit(SAVED_SCRIPTS_MAX)
+    if (error) return NextResponse.json({ error: /does not exist|schema cache/i.test(error.message) ? setupWords(tier, 'Saved scripts need migration 429 in Supabase first') : error.message }, { status: 500 })
+    const sets = ((data || []) as Array<{ id: string; brand_id: string; brand_name: string | null; product: string | null; plan: { videos?: unknown[] } | null; created_at: string }>)
+      .filter(r => Array.isArray(r.plan?.videos) && r.plan!.videos!.length > 0)
+    return NextResponse.json({ ok: true, sets, more: (data || []).length >= SAVED_SCRIPTS_MAX })
+  }
+
+  if (action === 'script_done') {
+    // One script cleared from its set: the one at `index` when its hook still
+    // matches, else the first with that hook. The last one clears the set.
+    const ideaId = typeof body.ideaId === 'string' && /^[0-9a-f-]{36}$/i.test(body.ideaId) ? body.ideaId : ''
+    const index = Number.isInteger(body.index) ? Number(body.index) : -1
+    const hook = typeof body.hook === 'string' ? body.hook : ''
+    if (!ideaId) return NextResponse.json({ error: 'Bad request' }, { status: 400 })
+    const { data: idea, error } = await admin.from('trybe_ideas').select('id, plan').eq('user_id', ownerId).eq('id', ideaId).maybeSingle()
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (!idea) return NextResponse.json({ ok: true, left: 0, gone: true })
+    const plan = (idea.plan || {}) as { videos?: Array<{ hook?: string }> }
+    const videos = Array.isArray(plan.videos) ? [...plan.videos] : []
+    const at = index >= 0 && index < videos.length && (!hook || videos[index]?.hook === hook) ? index : videos.findIndex(v => v?.hook === hook)
+    if (at < 0) return NextResponse.json({ ok: true, left: videos.length, missing: true })
+    videos.splice(at, 1)
+    if (!videos.length) {
+      const { error: de } = await admin.from('trybe_ideas').delete().eq('user_id', ownerId).eq('id', ideaId)
+      if (de) return NextResponse.json({ error: `Not cleared: ${de.message}` }, { status: 500 })
+      return NextResponse.json({ ok: true, left: 0 })
+    }
+    const { error: ue } = await admin.from('trybe_ideas').update({ plan: { ...plan, videos } }).eq('user_id', ownerId).eq('id', ideaId)
+    if (ue) return NextResponse.json({ error: `Not cleared: ${ue.message}` }, { status: 500 })
+    return NextResponse.json({ ok: true, left: videos.length })
+  }
+
+  if (action === 'idea_delete') {
+    const ideaId = typeof body.ideaId === 'string' && /^[0-9a-f-]{36}$/i.test(body.ideaId) ? body.ideaId : ''
+    if (!ideaId) return NextResponse.json({ error: 'Bad request' }, { status: 400 })
+    const { error } = await admin.from('trybe_ideas').delete().eq('user_id', ownerId).eq('id', ideaId)
+    if (error) return NextResponse.json({ error: `Not deleted: ${error.message}` }, { status: 500 })
+    return NextResponse.json({ ok: true })
+  }
+
+  if (action === 'idea_restore') {
+    // UNDO: the set written back as it was before the press. Only your own
+    // set, and only a plan of a sensible size.
+    const ideaId = typeof body.ideaId === 'string' && /^[0-9a-f-]{36}$/i.test(body.ideaId) ? body.ideaId : ''
+    const plan = body.plan && typeof body.plan === 'object' && Array.isArray((body.plan as { videos?: unknown }).videos) ? body.plan : null
+    if (!ideaId || !plan || JSON.stringify(plan).length > 400_000) return NextResponse.json({ error: 'Bad request' }, { status: 400 })
+    const { data: there, error: re } = await admin.from('trybe_ideas').select('user_id').eq('id', ideaId).maybeSingle()
+    if (re) return NextResponse.json({ error: re.message }, { status: 500 })
+    if (there && there.user_id !== ownerId) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+    const { error: we } = there
+      ? await admin.from('trybe_ideas').update({ plan }).eq('user_id', ownerId).eq('id', ideaId)
+      : await admin.from('trybe_ideas').insert({ id: ideaId, user_id: ownerId, brand_id: String(body.brandId || '').slice(0, 80), brand_name: typeof body.brandName === 'string' ? body.brandName.slice(0, 120) : null, product: typeof body.product === 'string' ? body.product.slice(0, 140) : null, plan, ...(typeof body.createdAt === 'string' && !Number.isNaN(Date.parse(body.createdAt)) ? { created_at: body.createdAt } : {}) })
+    if (we) return NextResponse.json({ error: `Not put back: ${we.message}` }, { status: 500 })
+    return NextResponse.json({ ok: true })
   }
 
   if (action === 'home') {

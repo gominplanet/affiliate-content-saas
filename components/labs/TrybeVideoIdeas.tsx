@@ -15,6 +15,7 @@ import TrybeTopHooks from '@/components/labs/TrybeTopHooks'
 import TrybeFilmIt, { type FilmScript } from '@/components/labs/TrybeFilmIt'
 import WhyThisHook from '@/components/labs/WhyThisHook'
 import { BuyersCard, ScriptVideoCard, BuiltOnLine } from '@/components/labs/ScriptParts'
+import { ScriptDoneBar, clearSavedScript, restoreSavedSet } from '@/components/labs/TrybeSavedScripts'
 import { readBuyersInChrome, shrinkPicture } from '@/lib/buyer-read-client'
 import { linkKind, buyerReportWords } from '@/lib/product-scripts'
 import { SCOUT_AMAZON_REVIEWS_MIN_VERSION } from '@/lib/scout-version'
@@ -224,6 +225,13 @@ export default function TrybeVideoIdeas({ brandId, name, plan: initial, canRead,
   const shotRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => { setPlan(initial) }, [initial])
+  // WHICH SAVED SET THIS PLAN IS (Your saved scripts): a script shot or not
+  // wanted is cleared from it here too. A sample's plan is kept on the sample
+  // as well (This week), so it is cleared from Your saved scripts only.
+  const [savedId, setSavedId] = useState<string | null>(null)
+  const [savedAt, setSavedAt] = useState<string | null>(null)
+  const [clearing, setClearing] = useState<number | null>(null)
+  const isSavedId = (id: string | null | undefined) => !!id && /^[0-9a-f-]{36}$/i.test(id)
 
   // IDEAS KEPT FOR EVERY BRAND (migration 429): the newest plan per product,
   // read when this brand opens, so ideas made for a brand joined on TRYBE
@@ -272,7 +280,7 @@ export default function TrybeVideoIdeas({ brandId, name, plan: initial, canRead,
     if (!fixedProduct || autoDone.current || kept === null) return
     autoDone.current = true
     const match = kept.find((k) => sameProduct(k.product, fixedProduct))
-    if (match) { setPlan(match.plan); setPlanOpen(true); setPlanNote({ tone: 'ok', text: `Your saved ideas for ${fixedProduct}, from ${new Date(match.created_at).toLocaleDateString([], { month: 'short', day: 'numeric' })}. Press New scripts for a fresh set.` }) }
+    if (match) { setPlan(match.plan); setPlanOpen(true); if (isSavedId(match.id)) { setSavedId(match.id); setSavedAt(match.created_at) } setPlanNote({ tone: 'ok', text: `Your saved ideas for ${fixedProduct}, from ${new Date(match.created_at).toLocaleDateString([], { month: 'short', day: 'numeric' })}. Press New scripts for a fresh set.` }) }
     else if (auto) void makePlan(fixedProduct)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [kept, fixedProduct, auto])
@@ -327,8 +335,9 @@ export default function TrybeVideoIdeas({ brandId, name, plan: initial, canRead,
       const b0 = { state: s0 }
       const p = { ...(d.plan as VideoPlan), onSale: d.onSale || [], products: d.products || [] }
       setPlan(p); setPlanOpen(true)
+      setSavedId(!sampleId && isSavedId(d.ideaId) ? d.ideaId : null); setSavedAt(new Date().toISOString())
       onPlan?.(p)
-      if (!sampleId && d.saved) setKept((ks) => [{ id: `new-${Date.now()}`, product: product || p.product || null, plan: p, created_at: new Date().toISOString() }, ...(ks || []).filter((k) => (k.product || '').toLowerCase() !== (product || p.product || '').toLowerCase())])
+      if (!sampleId && d.saved) setKept((ks) => [{ id: isSavedId(d.ideaId) ? d.ideaId : `new-${Date.now()}`, product: product || p.product || null, plan: p, created_at: new Date().toISOString() }, ...(ks || []).filter((k) => (k.product || '').toLowerCase() !== (product || p.product || '').toLowerCase())])
       const spoken = Math.min(bestSpoken, Number(d.fromWinners) || 0), captions = (Number(d.fromWinners) || 0) - spoken
       const fromWin = d.fromWinners ? `Planned from ${[spoken ? `the words of ${spoken}` : '', captions ? `the captions of ${captions}` : ''].filter(Boolean).join(' and ')} of their best video${d.fromWinners === 1 ? '' : 's'}.` : ''
       const briefSaid = b0.state === 'text' ? 'Planned from their creative brief.'
@@ -357,6 +366,33 @@ export default function TrybeVideoIdeas({ brandId, name, plan: initial, canRead,
       else if (from) setPlanNote({ tone: 'ok', text: from })
     } catch (e) { setPlanNote({ tone: 'warn', text: e instanceof Error ? (/abort|timed? ?out/i.test(e.message) ? 'The scripts took too long to write. Try again.' : e.message) : 'MVP could not plan the videos.' }) }
     finally { setPlanning(false); setStep(null) }
+  }
+
+  // SHOT IT OR DELETE (Seb, 2026-11-06): off this list and Your saved
+  // scripts at once, with a few seconds to undo. A clear that failed leaves
+  // the script where it is and says so.
+  async function clearHere(i: number, how: 'shot' | 'delete') {
+    const v = plan?.videos?.[i]
+    if (!plan || !v || !savedId) return
+    const before = plan
+    setClearing(i)
+    try {
+      await clearSavedScript(savedId, i, v)
+      const next = { ...before, videos: (before.videos || []).filter((_, j) => j !== i) }
+      setPlan(next)
+      setKept((ks) => (ks || []).map((k) => (k.id === savedId ? { ...k, plan: next } : k)).filter((k) => (k.plan?.videos?.length ?? 1) > 0))
+      const label = v.angle || HOOK_STYLE_WORDS[v.style]
+      const id = savedId
+      toast.success(how === 'shot' ? `Shot it: "${label}" is off your list.` : `Deleted "${label}".`, {
+        duration: 8000,
+        action: { label: 'Undo', onClick: () => {
+          void restoreSavedSet({ id, brand_id: brandId, brand_name: name, product: fixedProduct || before.product || null, plan: before, created_at: savedAt || undefined })
+            .then(() => { setPlan(before); setKept((ks) => (ks || []).some((k) => k.id === id) ? (ks || []).map((k) => (k.id === id ? { ...k, plan: before } : k)) : [{ id, product: fixedProduct || before.product || null, plan: before, created_at: savedAt || new Date().toISOString() }, ...(ks || [])]); toast.success('Put back.') })
+            .catch((e) => toast.error(`Not put back: ${e instanceof Error ? e.message : 'MVP did not answer'}`))
+        } },
+      })
+    } catch (e) { toast.error(`Not cleared: ${e instanceof Error ? e.message : 'MVP did not answer'}. It is still on your list.`) }
+    finally { setClearing(null) }
   }
 
   const copyText = async (key: string, text: string) => {
@@ -557,6 +593,7 @@ export default function TrybeVideoIdeas({ brandId, name, plan: initial, canRead,
           {/* WHO BUYS IT, as the script agent read the buyers, and what it read. */}
           {plan.buyerReport && <p className="text-[12px]" style={{ color: plan.buyerReport.reviews || plan.buyerReport.critical || plan.buyerReport.customersSay ? GREEN : AMBER }}>{buyerReportWords(plan.buyerReport, SCOUT_AMAZON_REVIEWS_MIN_VERSION)}</p>}
           {plan.buyers && <BuyersCard b={plan.buyers} fromReviews={!!(plan.buyerReport && (plan.buyerReport.reviews || plan.buyerReport.critical || plan.buyerReport.customersSay))} />}
+          {savedId && plan.videos && plan.videos.length === 0 && <p className="text-[12.5px]" style={{ color: GREEN }}>Every script in this set is cleared. Press New scripts for a fresh set.</p>}
           {plan.videos && plan.videos.length > 0 && (
             <div>
               <p className="text-[11px] font-bold uppercase tracking-wider" style={soft}>{plan.videos.length} videos, {plan.videos.length} angles{plan.product ? `: ${plan.product}` : ''}</p>
@@ -573,7 +610,10 @@ export default function TrybeVideoIdeas({ brandId, name, plan: initial, canRead,
                   // THE SCRIPT AGENT'S CARD (the same as Video Scripts): scene by scene.
                   <ScriptVideoCard key={i} v={v} n={i + 1} copied={copiedKey === `v${i}`} onCopy={() => void copyText(`v${i}`, ideaText(v, i + 1))}
                     onFilm={() => setFilming({ title: `${i + 1}. ${v.angle || HOOK_STYLE_WORDS[v.style]}`, say: v.say!, broll: v.broll || [], shot: v.shot || null, forBrief: v.forBrief || null, onScreen: v.onScreen || null })}
-                    footer={v.forBrief ? <p className="mt-1.5 text-[12.5px]" style={{ color: GREEN }}>For the brief: {v.forBrief}</p> : null} />
+                    footer={<>
+                      {v.forBrief && <p className="mt-1.5 text-[12.5px]" style={{ color: GREEN }}>For the brief: {v.forBrief}</p>}
+                      {savedId && <ScriptDoneBar busy={clearing === i} onShot={() => void clearHere(i, 'shot')} onDelete={() => void clearHere(i, 'delete')} />}
+                    </>} />
                 ) : (
                   <li key={i} className="rounded-lg border px-2.5 py-2" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
                     <div className="flex items-start gap-2">

@@ -17,6 +17,7 @@ import { requestTrybeApi } from '@/lib/extension-frame'
 import { readBrandStats, byBrandName, type MyBrand } from '@/lib/trybe-mybrands'
 import { brandPageUrl } from '@/lib/trybe-brand-page'
 import TrybeVideoIdeas, { loadBrandPage, type BrandPage } from '@/components/labs/TrybeVideoIdeas'
+import TrybeSavedScripts from '@/components/labs/TrybeSavedScripts'
 import { AmazonLine, ProductAmazon, AmazonFilmedList } from '@/components/labs/TrybeFinderControls'
 import { useTrybeAmazon } from '@/components/labs/useTrybeAmazon'
 import { shrinkPicture } from '@/lib/buyer-read-client'
@@ -138,8 +139,14 @@ export default function TrybeCreate({ canRead, isAdmin, onFind, start, onStarted
     </ol>
   )
 
+  // Saved scripts need no SCOUT: they are kept on MVP.
   if (!canRead) {
-    return <div className={card} style={cardStyle}><p className="text-[15px] font-semibold">Make videos needs SCOUT on TRYBE</p><p className="text-[13.5px] mt-1" style={soft}>Install SCOUT, allow it on TRYBE and sign in to TRYBE in this Chrome. MVP then shows the brands you work with and the products they want videos of.</p></div>
+    return (
+      <div className="space-y-4">
+        <div className={card} style={cardStyle}><p className="text-[15px] font-semibold">Make videos needs SCOUT on TRYBE</p><p className="text-[13.5px] mt-1" style={soft}>Install SCOUT, allow it on TRYBE and sign in to TRYBE in this Chrome. MVP then shows the brands you work with and the products they want videos of.</p></div>
+        <TrybeSavedScripts />
+      </div>
+    )
   }
 
   return (
@@ -147,6 +154,9 @@ export default function TrybeCreate({ canRead, isAdmin, onFind, start, onStarted
       {steps()}
       {/* A failed Amazon match is said, so it never reads as "not on Amazon". */}
       {amz.error && <p className="text-[12.5px] inline-flex items-start gap-1.5" style={{ color: AMBER }}><AlertTriangle size={13} className="mt-0.5 shrink-0" /> {amz.error.replace(/\.$/, '')}. The Amazon lines below may be missing.</p>}
+
+      {/* YOUR SAVED SCRIPTS: every set written, kept until you clear it. */}
+      {step === 1 && <TrybeSavedScripts />}
 
       {/* 1. The brand */}
       {step === 1 && (
