@@ -10,7 +10,7 @@
 import { useEffect, useState } from 'react'
 import { Loader2, Sparkles, AlertTriangle, ChevronDown } from 'lucide-react'
 import TrybeLink from '@/components/labs/TrybeLink'
-import { BrandName } from '@/components/labs/trybe-dossier-context'
+import { BrandName, useBrandOpen } from '@/components/labs/trybe-dossier-context'
 import TrybeBrandPeek, { type PeekActions } from '@/components/labs/TrybeBrandPeek'
 import { VerdictChip, CrowdChip, PayChip, type LivePayEst } from '@/components/labs/TrybeFinderControls'
 import type { CrowdRead } from '@/lib/trybe-finder'
@@ -23,6 +23,8 @@ interface NewBrand { brand_id: string; name: string; pick?: number; pick_read?: 
 
 export default function TrybeBestNew({ scoutOpens, onSeeAll, actions }: { scoutOpens: boolean; onSeeAll?: () => void; actions?: PeekActions }) {
   const [open, setOpen] = useState<string | null>(null)
+  // A press anywhere on a row opens the brand's page (Seb, 2026-11-06).
+  const onOpen = useBrandOpen()
   const [list, setList] = useState<NewBrand[] | null>(null)
   const [total, setTotal] = useState(0)
   const [error, setError] = useState<string | null>(null)
@@ -58,7 +60,7 @@ export default function TrybeBestNew({ scoutOpens, onSeeAll, actions }: { scoutO
           {list.map((b, i) => {
             const why = (b.pick_reasons || []).find((r) => r.tone === 'good')?.text
             return (
-              <li key={b.brand_id} className="py-2 flex flex-wrap items-center gap-x-2 gap-y-1" style={{ borderColor: 'var(--border)' }}>
+              <li key={b.brand_id} className={`py-2 flex flex-wrap items-center gap-x-2 gap-y-1${onOpen ? ' cursor-pointer transition-colors hover:bg-[rgb(var(--brand-rgb)/0.05)]' : ''}`} style={{ borderColor: 'var(--border)' }} onClick={onOpen?.(b.brand_id, b.name)}>
                 <span className="text-[12px] font-bold tabular-nums w-4" style={soft}>{i + 1}</span>
                 <BrandName id={b.brand_id} name={b.name} className="text-[13.5px] font-semibold" />
                 <VerdictChip score={b.pick} read={b.pick_read} />
@@ -69,7 +71,7 @@ export default function TrybeBestNew({ scoutOpens, onSeeAll, actions }: { scoutO
                   {open === b.brand_id ? 'Hide' : actions ? 'Details and message' : 'Details'} <ChevronDown size={13} className={open === b.brand_id ? 'rotate-180' : ''} />
                 </button>
                 {why && <span className="basis-full pl-6 text-[12px]" style={soft}>{why}</span>}
-                {open === b.brand_id && <div className="basis-full pl-6"><TrybeBrandPeek brandId={b.brand_id} name={b.name} actions={actions} /></div>}
+                {open === b.brand_id && <div className="basis-full pl-6 cursor-auto" data-own-click><TrybeBrandPeek brandId={b.brand_id} name={b.name} actions={actions} /></div>}
               </li>
             )
           })}

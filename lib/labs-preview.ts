@@ -9,7 +9,7 @@
 import { normalizeTier } from '@/lib/tier'
 import { canSeeNav } from '@/lib/feature-access'
 
-export type PreviewFeature = 'on_sale' | 'amazon_live' | 'comparison' | 'shorts_mode' | 'first_comment' | 'brand_recap' | 'deal_aftercare' | 'post_refresh' | 'facebook_reels' | 'whole_video' | 'sold_campaigns' | 'liftoff_split' | 'earnings' | 'live_followup' | 'video_plan' | 'studio_upload' | 'facebook_setup' | 'group_queue' | 'trybe_outreach' | 'hashtag_trends' | 'drop' | 'video_qr' | 'deals_import' | 'review_edit' | 'creator_look' | 'new_look' | 'trybe_v2'
+export type PreviewFeature = 'on_sale' | 'amazon_live' | 'comparison' | 'shorts_mode' | 'first_comment' | 'brand_recap' | 'deal_aftercare' | 'post_refresh' | 'facebook_reels' | 'whole_video' | 'sold_campaigns' | 'liftoff_split' | 'earnings' | 'live_followup' | 'video_plan' | 'studio_upload' | 'facebook_setup' | 'group_queue' | 'trybe_outreach' | 'hashtag_trends' | 'drop' | 'video_qr' | 'deals_import' | 'product_scripts' | 'review_edit' | 'creator_look' | 'new_look' | 'trybe_v2'
 
 /** Who may use each preview feature: 'admin' while testing, 'labs' once open to Pro. */
 const OPEN_TO: Record<PreviewFeature, 'admin' | 'labs'> = {
@@ -108,6 +108,11 @@ const OPEN_TO: Record<PreviewFeature, 'admin' | 'labs'> = {
   // 2026-10-19). Opened to Pro the same day, after Seb's 494 MB Black Friday
   // file read (Seb: "make sure that the Deals Hub works for users").
   deals_import: 'labs',
+  // Video Scripts: any product (a TikTok Shop or Amazon link, a page, a
+  // screenshot or a name) in, five 30 to 40 second scripts out, written the
+  // TRYBE way (Alejandro, via Seb 2026-11-06). Admin while it is tried on
+  // the live site; one word here opens it to Pro.
+  product_scripts: 'admin',
 }
 
 /** Every preview feature. A check can then ask which are still admin only

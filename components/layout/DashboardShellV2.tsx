@@ -805,6 +805,10 @@ export default function DashboardShellV2({
         // Plan this video: a joined Creator Connections campaign turned into a
         // filming plan. Admin only while it is tested (lib/labs-preview video_plan).
         { href: '/plan-video', icon: <ClipboardList size={15} />, label: 'Plan This Video', gate: isAdmin, badge: 'New' },
+        // Video Scripts: any product (TikTok Shop, Amazon, a page, a screenshot)
+        // into five short scripts, scene by scene. Labs is the team's alone; opening
+        // it to Pro (lib/labs-preview product_scripts) moves it to Make videos.
+        { href: '/video-scripts', icon: <Clapperboard size={15} />, label: 'Video Scripts', gate: isAdmin, badge: 'New' },
       ],
     },
     {

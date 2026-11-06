@@ -13,11 +13,12 @@
 
 import TrybeTopHooks from '@/components/labs/TrybeTopHooks'
 import TrybeFilmIt, { type FilmScript } from '@/components/labs/TrybeFilmIt'
-import { Fragment, useEffect, useRef, useState } from 'react'
+import WhyThisHook from '@/components/labs/WhyThisHook'
+import { useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { Loader2, Copy, Check, Clapperboard, ChevronDown, ChevronUp, RotateCcw, Trophy, Play, AlertTriangle, Printer, FileText, Target, Type } from 'lucide-react'
 import { requestTrybeApi } from '@/lib/extension-frame'
-import { scriptFor, ideaText, planText, HOOK_STYLE_WORDS, VIDEO_IDEAS, OPENER_VIDEOS, type VideoPlan, type VideoIdea } from '@/lib/trybe-playbook'
+import { scriptFor, ideaText, planText, HOOK_STYLE_WORDS, VIDEO_IDEAS, OPENER_VIDEOS, type VideoPlan } from '@/lib/trybe-playbook'
 import { readBrandCard, readPromotedProducts, mergeProducts, readSampleRequests, sampleStage, brandPageUrl, type PromotedProduct } from '@/lib/trybe-brand-page'
 import { readTopVideos, readScript, keysOf, type TopVideo } from '@/lib/trybe-mybrands'
 import { withTeamWords, type WinnerVideo } from '@/lib/trybe-scripts'
@@ -628,36 +629,3 @@ export default function TrybeVideoIdeas({ brandId, name, plan: initial, canRead,
   )
 }
 
-/** WHY THIS HOOK (Seb, 2026-11-06): who the video calls out, the moment, the
- *  place, the problem in the buyer's words, and the whys dug down to the
- *  real reason the hook opens on. Nothing shows on plans made before. */
-function WhyThisHook({ v }: { v: VideoIdea }) {
-  const rows: Array<[string, string]> = ([['Who', v.who], ['When', v.when], ['Where', v.where], ['In their words', v.what]] as Array<[string, string | undefined]>)
-    .filter((r): r is [string, string] => !!r[1])
-  if (!rows.length && !v.why?.length && !v.objection) return null
-  return (
-    <details className="mt-2 rounded-lg border px-2.5 py-1.5" style={{ borderColor: 'rgb(var(--brand-rgb) / 0.25)', background: 'rgb(var(--brand-rgb) / 0.05)' }}>
-      <summary className="cursor-pointer text-[11px] font-bold uppercase tracking-wider" style={{ color: PURPLE }}>Why this hook works</summary>
-      {rows.length > 0 && (
-        <dl className="mt-1.5 grid gap-x-3 gap-y-0.5 text-[12.5px]" style={{ gridTemplateColumns: 'auto 1fr' }}>
-          {rows.map(([k, t]) => (<Fragment key={k}><dt className="font-bold" style={{ color: 'var(--text-soft)' }}>{k}</dt><dd>{t}</dd></Fragment>))}
-        </dl>
-      )}
-      {v.why && v.why.length > 0 && (<>
-        <span className="block mt-2 text-[11px] font-bold uppercase tracking-wider" style={{ color: 'var(--text-soft)' }}>Dug down to the real reason</span>
-        <ol className="mt-1 space-y-1">
-          {v.why.map((w, j) => {
-            const last = j === v.why!.length - 1
-            return (
-              <li key={j} className="flex items-start gap-2 text-[12.5px]">
-                <span className="shrink-0 w-5 h-5 rounded-full inline-flex items-center justify-center text-[10px] font-bold" style={last ? { background: 'var(--accent)', color: '#fff' } : { background: 'rgb(var(--brand-rgb) / 0.12)', color: PURPLE }}>{j + 1}</span>
-                <span className={last ? 'font-semibold' : ''}>{w}{last && <span className="ml-1.5 text-[10px] font-bold rounded-full px-1.5 py-0.5 align-middle" style={{ background: 'rgb(var(--brand-rgb) / 0.12)', color: PURPLE }}>The hook opens here</span>}</span>
-              </li>
-            )
-          })}
-        </ol>
-      </>)}
-      {v.objection && <span className="block mt-2 text-[12.5px]"><b>The doubt it answers:</b> {v.objection}</span>}
-    </details>
-  )
-}

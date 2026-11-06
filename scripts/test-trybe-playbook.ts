@@ -177,7 +177,7 @@ check('the plan asks for ten videos across Cole\'s styles and never invents a sa
 
   const r = read('app/api/labs/trybe/route.ts')
   check('the plan reads the brand\'s own Meta ads and its TRYBE products, and says how many went in', /metaAds = brandAdsForPlan\(/.test(r) && /key', `samples:\$\{lookupId\}`\)/.test(r) && /\$\{metaAdsText \? `\\n\\n\$\{metaAdsText\}` : ''\}/.test(r) && /\$\{trybeText \? `\\n\\n\$\{trybeText\}` : ''\}/.test(r) && (r.match(/fromMetaAds: metaAds\.length, metaAdsLongest: metaAds\[0\]\?\.days \?\? null, fromTrybeProducts: trybeProducts\.length/g) || []).length === 2)
-  const ui = read('components/labs/TrybeVideoIdeas.tsx')
+  const ui = read('components/labs/TrybeVideoIdeas.tsx') + read('components/labs/WhyThisHook.tsx')
   check('each video shows who it is for, the screen words, a proven opener, and why the hook works', /<WhyThisHook v=\{v\} \/>/.test(ui) && /Why this hook works/.test(ui) && /Dug down to the real reason/.test(ui) && /The hook opens here/.test(ui) && /On screen, first 2 seconds/.test(ui) && /Proven opener/.test(ui) && /The doubt it answers:/.test(ui))
   check('the plan says how many open with a proven opener, and when it fell short', /open with one of your proven openers\$\{n < OPENER_VIDEOS \? `, fewer than the \$\{OPENER_VIDEOS\} MVP asked for` : ''\}/.test(ui) && /None of these open with one of your proven openers/.test(ui))
   check('the note says how many of the brand\'s Meta ads went in', /of the brand's own Meta ads/.test(ui) && /product\$\{tp === 1 \? '' : 's'\} it lists on TRYBE/.test(ui))

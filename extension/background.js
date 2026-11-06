@@ -7060,7 +7060,82 @@ async function harvestAmazonProductInPage(wantAsin) {
   }
 }
 
-async function scanAmazonProductForAsin(asin, callerTabId) {
+// ── BUYER REVIEWS FOR VIDEO SCRIPTS (1.58.0) ────────────────────────────────
+// Video Scripts (Alejandro, via Seb 2026-11-06: "read the reviews and find the
+// weakness points"): the words and stars of the reviews the product page
+// shows, Amazon's own "Customers say" summary, and the critical reviews from
+// the reviews page, read in the creator's own session. Never a reviewer's
+// name or picture: only what was written about the product. Runs IN the page.
+function harvestAmazonReviewsInPage() {
+  try {
+    const clean = (s) => (s || '').replace(/\s+/g, ' ').trim()
+    const out = []
+    const seen = new Set()
+    document.querySelectorAll('[data-hook="review"], [id^="customer_review-"]').forEach((el) => {
+      if (out.length >= 12) return
+      const starEl = el.querySelector('[data-hook="review-star-rating"], [data-hook="cmps-review-star-rating"], .review-rating')
+      const sm = clean(starEl ? starEl.textContent : '').match(/(\d(?:\.\d)?)\s*out of\s*5/i)
+      const titleEl = el.querySelector('[data-hook="review-title"]')
+      let title = ''
+      if (titleEl) {
+        const spans = titleEl.querySelectorAll('span')
+        title = clean(spans.length ? spans[spans.length - 1].textContent : titleEl.textContent).replace(/^\d(?:\.\d)? out of 5 stars\s*/i, '')
+      }
+      const bodyEl = el.querySelector('[data-hook="review-body"]')
+      const body = clean(bodyEl ? bodyEl.textContent : '').replace(/\s*Read more$/i, '')
+      if (!body || body.length < 15) return
+      const key = body.slice(0, 80)
+      if (seen.has(key)) return
+      seen.add(key)
+      out.push({ stars: sm ? Number(sm[1]) : null, title: title.slice(0, 140), body: body.slice(0, 700) })
+    })
+    const sumEl = document.querySelector('#product-summary p, #cr-product-insights-cards p, [data-hook="cr-product-insights-cards"] p')
+    const customersSay = clean(sumEl ? sumEl.textContent : '').slice(0, 900)
+    const aspects = []
+    document.querySelectorAll('#cr-insights-widget-aspects [role="button"], #cr-insights-widget-aspects button, [data-hook="cr-insights-widget-aspects"] a').forEach((b) => {
+      const t = clean(b.textContent)
+      if (t && t.length < 40 && aspects.length < 12 && aspects.indexOf(t) < 0) aspects.push(t)
+    })
+    const bodyText = document.body ? document.body.innerText : ''
+    return {
+      ok: true, reviews: out, customersSay, aspects,
+      signIn: /\/ap\/signin/.test(location.href),
+      captcha: /Enter the characters you see below|Robot Check|To discuss automated access/i.test(bodyText),
+    }
+  } catch (e) {
+    return { ok: false, reviews: [], customersSay: '', aspects: [] }
+  }
+}
+
+/** The product page's reviews, then the critical ones from the reviews page,
+ *  in the tab already open on the product. Says why the critical ones are
+ *  missing when they are: signed out of Amazon, a robot check, or none shown. */
+async function amazonReviewsInTab(tabId, asin) {
+  const reviews = { onPage: [], critical: [], customersSay: '', aspects: [], criticalWhy: null }
+  try {
+    const r1 = await chrome.scripting.executeScript({ target: { tabId }, func: harvestAmazonReviewsInPage })
+    const a = r1 && r1[0] && r1[0].result
+    if (a && a.ok) { reviews.onPage = a.reviews || []; reviews.customersSay = a.customersSay || ''; reviews.aspects = a.aspects || [] }
+  } catch (e) {}
+  try {
+    const loaded = waitForTabLoad(tabId, 20000)
+    await chrome.tabs.update(tabId, { url: `https://www.amazon.com/product-reviews/${asin}/?filterByStar=critical&sortBy=recent&reviewerType=all_reviews` })
+    await loaded
+    await _sleep(1200)
+    const r2 = await chrome.scripting.executeScript({ target: { tabId }, func: harvestAmazonReviewsInPage })
+    const b = r2 && r2[0] && r2[0].result
+    if (!b || !b.ok) reviews.criticalWhy = 'not-read'
+    else if (b.signIn) reviews.criticalWhy = 'signed-out'
+    else if (b.captcha) reviews.criticalWhy = 'captcha'
+    else {
+      reviews.critical = (b.reviews || []).filter((x) => x.stars == null || x.stars <= 3)
+      if (!reviews.critical.length) reviews.criticalWhy = 'none-shown'
+    }
+  } catch (e) { reviews.criticalWhy = 'not-read' }
+  return reviews
+}
+
+async function scanAmazonProductForAsin(asin, callerTabId, withReviews) {
   if (!/^[A-Za-z0-9]{10}$/.test(asin || '')) return { ok: false, error: 'bad-asin' }
   const url = `https://www.amazon.com/dp/${asin}`
   let tabId = null
@@ -7081,7 +7156,10 @@ async function scanAmazonProductForAsin(asin, callerTabId) {
       func: harvestAmazonProductInPage,
       args: [asin],
     })
-    return (results && results[0] && results[0].result) || { ok: false, error: 'no-result' }
+    const read = (results && results[0] && results[0].result) || { ok: false, error: 'no-result' }
+    // Video Scripts asks for the buyers' words too (1.58.0).
+    if (!withReviews || !read.ok) return read
+    return { ...read, reviews: await amazonReviewsInTab(tabId, asin) }
   } catch (e) {
     return { ok: false, error: 'scan-failed' }
   } finally {
@@ -12358,8 +12436,9 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
     // Open the product page in the user's logged-in browser and read its
     // details — the fallback when MVP's server scrape is IP-blocked.
     const callerTabId = sender && sender.tab ? sender.tab.id : null
-    const timeout = setTimeout(() => sendResponse({ ok: false, error: 'timeout' }), 60000)
-    scanAmazonProductForAsin(msg.asin, callerTabId)
+    const withReviews = msg.reviews === true
+    const timeout = setTimeout(() => sendResponse({ ok: false, error: 'timeout' }), withReviews ? 100000 : 60000)
+    scanAmazonProductForAsin(msg.asin, callerTabId, withReviews)
       .then((res) => { clearTimeout(timeout); sendResponse(res) })
       .catch((e) => { clearTimeout(timeout); sendResponse({ ok: false, error: e && e.message ? e.message : 'error' }) })
     return true // async response — keep the channel open

@@ -8,7 +8,7 @@
  *     store installs to "update" — isScoutOutdated survives only as a
  *     low-level helper, not a user-facing gate.
  */
-export const SCOUT_LATEST_VERSION = '1.57.0'
+export const SCOUT_LATEST_VERSION = '1.58.0'
 
 /** One-line "what's new". No longer shown in a nag (store installs auto-update);
  *  kept as a changelog note for whoever bumps the version. */
@@ -73,6 +73,12 @@ export const SCOUT_TRYBE_MORNING_MIN_VERSION = '1.56.0'
  *  the Ad Library's search suggestions, then counted there (Seb, 2026-11-06:
  *  "search for meta ads the right way"). Older SCOUT counts by the exact name. */
 export const SCOUT_META_PAGE_MIN_VERSION = '1.57.0'
+
+/** SCOUT reads an Amazon product's reviews for Video Scripts: the reviews the
+ *  product page shows, Amazon's "Customers say" summary, and the critical
+ *  reviews (Alejandro, via Seb 2026-11-06: "read the reviews and find the
+ *  weakness points"). Older SCOUT reads the product without its reviews. */
+export const SCOUT_AMAZON_REVIEWS_MIN_VERSION = '1.58.0'
 
 /** SCOUT opens TRYBE behind MVP's tab by itself as the first step of any
  *  TRYBE request, upload, brand list read or Send all run that finds it

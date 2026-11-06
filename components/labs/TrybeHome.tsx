@@ -12,12 +12,12 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Loader2, AlertTriangle, Inbox, Send, Package, Search, TrendingUp, TrendingDown, Sparkles, Trophy, ArrowUpRight, RefreshCw } from 'lucide-react'
 import { ui, Section, Tag, Spark } from '@/components/labs/trybe-ui'
-import { BrandName } from '@/components/labs/trybe-dossier-context'
+import { BrandName, BrandOpen } from '@/components/labs/trybe-dossier-context'
 import { BrandMark } from '@/components/labs/TrybeFinderControls'
 import { useTrybeAds } from '@/components/labs/useTrybeAds'
 import { changeLine, CHANGE_WORDS, type ChangeKind } from '@/lib/trybe-changes'
 
-interface Card { brand_id: string; name: string; website: string | null; categories: string[]; pay: string | null; metaAds: number | null; bucket: string | null; top100: number | null; rating: number | null }
+interface Card { brand_id: string; name: string; website: string | null; categories: string[]; pay: string | null; metaAds: number | null; bucket: string | null; top100: number | null; rating: number | null; /** Whether the count is the brand's own (lib/trybe-pick metaTrustOf). */ metaTrust?: 'own' | 'capped' | 'mixed' | 'unchecked' }
 interface HomeRead {
   at: string; listed: number | null; total: number | null; collectedAt: string | null; joinedSinceFirst: number | null; firstCountAt: string | null
   series: Record<string, number[]>; totals: Record<string, { now: number; before: number }>
@@ -160,7 +160,7 @@ export default function TrybeHome({ go, unread, queue, repliedWeek, inboxRead, f
         <Section title="Best bets for you" aside={forYouWhy ? `For ${forYouWhy}, not on your list yet` : 'Not on your list yet'}>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
             {forYou.map((b) => (
-              <div key={b.brand_id} className="rounded-2xl p-4 flex flex-col gap-2.5" style={ui.card}>
+              <BrandOpen key={b.brand_id} id={b.brand_id} name={b.name} lift className="rounded-2xl p-4 flex flex-col gap-2.5" style={ui.card}>
                 <div className="flex items-center gap-3 min-w-0">
                   <BrandMark name={b.name} website={b.website} size={38} />
                   <div className="min-w-0 flex-1">
@@ -176,7 +176,7 @@ export default function TrybeHome({ go, unread, queue, repliedWeek, inboxRead, f
                   {b.crowd?.level === 'open' && <Tag tone="accent">Room for you</Tag>}
                   {b.is_new && <Tag tone="accent">New</Tag>}
                 </div>
-              </div>
+              </BrandOpen>
             ))}
           </div>
           <button type="button" onClick={() => go('find')} className="self-start text-[13px] font-semibold hover:underline" style={{ color: 'var(--accent-text, var(--accent))' }}>See all of them in Find brands</button>
@@ -188,13 +188,13 @@ export default function TrybeHome({ go, unread, queue, repliedWeek, inboxRead, f
         <Section title="Your brands this week" aside={<button type="button" onClick={() => go('changes')} className="font-semibold hover:underline" style={{ color: 'var(--accent-text, var(--accent))' }}>Every change</button>}>
           <div className="rounded-2xl overflow-hidden" style={ui.card}>
             {yours.slice(0, 8).map((c, i) => (
-              <div key={`${c.brand_id}${c.kind}${i}`} className="flex items-start gap-3 px-4 py-3" style={{ borderTop: i ? '1px solid var(--border)' : undefined }}>
+              <BrandOpen key={`${c.brand_id}${c.kind}${i}`} id={c.brand_id} name={c.name || ''} className="flex items-start gap-3 px-4 py-3" style={{ borderTop: i ? '1px solid var(--border)' : undefined }}>
                 <span className="text-[12px] w-14 shrink-0 pt-0.5" style={{ ...ui.soft, ...ui.num }}>{day(c.at)}</span>
                 <div className="min-w-0 flex-1">
                   {c.name ? <BrandName id={c.brand_id} name={c.name} className="text-[13.5px] font-semibold" style={ui.text} /> : <span className="text-[13.5px] font-semibold" style={ui.text}>A brand MVP no longer lists</span>}
                   <span className="text-[12px] block" style={ui.mid}><span className="font-semibold">{CHANGE_WORDS[c.kind]}:</span> {changeLine(c)}</span>
                 </div>
-              </div>
+              </BrandOpen>
             ))}
           </div>
           <p className="text-[11.5px]" style={ui.soft}>Brands on your list: messaged, written to, or joined.</p>
@@ -223,7 +223,7 @@ export default function TrybeHome({ go, unread, queue, repliedWeek, inboxRead, f
               {d.movers.map((m, i) => {
                 const max = Math.max(...d.movers.map((x) => x.to), 1)
                 return (
-                  <div key={m.brand_id} className="flex items-center gap-3 px-4 py-3" style={{ borderTop: i ? '1px solid var(--border)' : undefined }}>
+                  <BrandOpen key={m.brand_id} id={m.brand_id} name={m.name} className="flex items-center gap-3 px-4 py-3" style={{ borderTop: i ? '1px solid var(--border)' : undefined }}>
                     <span className="w-5 text-[12px] font-bold text-right shrink-0" style={{ ...ui.num, ...ui.soft }}>{i + 1}</span>
                     <BrandMark name={m.name} website={m.website} size={34} />
                     <div className="min-w-0 flex-1">
@@ -240,7 +240,7 @@ export default function TrybeHome({ go, unread, queue, repliedWeek, inboxRead, f
                       <span className="text-[15px] font-bold block" style={{ ...ui.num, ...ui.text }}>+{m.gain}</span>
                       <span className="text-[11px] block" style={{ ...ui.num, ...ui.soft }}>{m.from} to {m.to} ads</span>
                     </span>
-                  </div>
+                  </BrandOpen>
                 )
               })}
             </div>
@@ -289,7 +289,7 @@ export default function TrybeHome({ go, unread, queue, repliedWeek, inboxRead, f
         <Section title="New on TRYBE this week" aside="The ones already running Meta ads first">
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
             {d.fresh.slice(0, 9).map((c) => (
-              <div key={c.brand_id} className="rounded-2xl p-4 flex flex-col gap-2.5" style={ui.card}>
+              <BrandOpen key={c.brand_id} id={c.brand_id} name={c.name} lift className="rounded-2xl p-4 flex flex-col gap-2.5" style={ui.card}>
                 <div className="flex items-center gap-3 min-w-0">
                   <BrandMark name={c.name} website={c.website} size={38} />
                   <div className="min-w-0">
@@ -299,10 +299,10 @@ export default function TrybeHome({ go, unread, queue, repliedWeek, inboxRead, f
                 </div>
                 <p className="text-[12.5px] line-clamp-2 min-h-[2.4em]" style={ui.mid}>{c.pay || 'TRYBE shows no pay for it yet'}</p>
                 <div className="flex gap-1.5 flex-wrap">
-                  {c.metaAds != null ? <Tag tone={c.metaAds > 0 ? 'good' : 'plain'}>{c.metaAds > 0 ? `${c.metaAds} Meta ads` : 'No Meta ads'}</Tag> : <Tag>Meta ads not counted</Tag>}
+                  {c.metaTrust === 'capped' ? <Tag>Meta ads: name too common to count</Tag> : c.metaTrust === 'mixed' ? <Tag>Meta ads: mostly other advertisers</Tag> : c.metaAds != null ? <Tag tone={c.metaAds > 0 ? 'good' : 'plain'}>{c.metaAds > 0 ? `${c.metaAds.toLocaleString('en-US')} Meta ads` : 'No Meta ads'}</Tag> : <Tag>Meta ads not counted</Tag>}
                   {c.rating != null && <Tag>{c.rating.toFixed(1)} &#9733;</Tag>}
                 </div>
-              </div>
+              </BrandOpen>
             ))}
           </div>
         </Section>
@@ -409,14 +409,14 @@ function Pulse({ label, k, d, good }: { label: string; k: string; d: HomeRead; g
 
 function Row({ c, right, sub, first }: { c: Card; right: React.ReactNode; sub: string; first: boolean }) {
   return (
-    <div className="flex items-center gap-3 px-4 py-3" style={{ borderTop: first ? undefined : '1px solid var(--border)' }}>
+    <BrandOpen id={c.brand_id} name={c.name} className="flex items-center gap-3 px-4 py-3" style={{ borderTop: first ? undefined : '1px solid var(--border)' }}>
       <BrandMark name={c.name} website={c.website} size={30} />
       <div className="min-w-0 flex-1">
         <BrandName id={c.brand_id} name={c.name} className="text-[13.5px] font-semibold block truncate" style={ui.text} />
         <span className="text-[11.5px] block truncate" style={ui.soft}>{[c.categories[0], sub].filter(Boolean).join(' · ')}</span>
       </div>
       {right}
-    </div>
+    </BrandOpen>
   )
 }
 
@@ -425,7 +425,7 @@ function MoveList({ rows, empty, icon }: { rows: HomeRead['pays']; empty: string
   return (
     <div className="rounded-2xl overflow-hidden" style={ui.card}>
       {rows.map((p, i) => (
-        <div key={`${p.brand_id}${i}`} className="flex items-start gap-3 px-4 py-3" style={{ borderTop: i ? '1px solid var(--border)' : undefined }}>
+        <BrandOpen key={`${p.brand_id}${i}`} id={p.brand_id} name={p.name} className="flex items-start gap-3 px-4 py-3" style={{ borderTop: i ? '1px solid var(--border)' : undefined }}>
           <BrandMark name={p.name} website={p.website} size={30} />
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2 flex-wrap">
@@ -438,7 +438,7 @@ function MoveList({ rows, empty, icon }: { rows: HomeRead['pays']; empty: string
             </span>
             {p.delta && <span className="text-[11px] block mt-0.5 truncate" style={ui.soft}>Now: {p.after}</span>}
           </div>
-        </div>
+        </BrandOpen>
       ))}
     </div>
   )

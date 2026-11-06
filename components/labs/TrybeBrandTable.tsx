@@ -11,7 +11,7 @@
 import { useMemo, useState, type CSSProperties } from 'react'
 import { ArrowDown, ArrowUp, ArrowUpRight, Trophy } from 'lucide-react'
 import { BrandMark } from '@/components/labs/TrybeFinderControls'
-import { BrandName } from '@/components/labs/trybe-dossier-context'
+import { BrandName, useBrandOpen } from '@/components/labs/trybe-dossier-context'
 import { GRADE, APP, AppChip } from '@/components/labs/trybe-ui'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -66,6 +66,9 @@ export default function TrybeBrandTable({ brands, picked, onPick, taken, preview
   whereOf: (b: Row) => string | null
 }) {
   const [sort, setSort] = useState<{ col: Col; desc: boolean } | null>(null)
+  // A press anywhere on a row opens the brand's page; the pick box and the
+  // links in a row keep their own job (Seb, 2026-11-06).
+  const onOpen = useBrandOpen()
   const rows = useMemo(() => {
     if (!sort) return brands
     const out = [...brands]
@@ -134,9 +137,9 @@ export default function TrybeBrandTable({ brands, picked, onPick, taken, preview
             const isApp = !!b.proof?.app
             const edge: CSSProperties | undefined = isApp ? { boxShadow: `inset 3px 0 0 ${APP.color}` } : undefined
             return (
-              <tr key={b.brand_id} className="transition-colors hover:bg-[rgb(var(--brand-rgb)/0.04)]" style={{ borderTop: '1px solid var(--border)', background: on ? 'rgb(var(--brand-rgb) / 0.06)' : isApp ? APP.soft : undefined, opacity: isTaken ? 0.62 : 1 }}>
+              <tr key={b.brand_id} className={`transition-colors hover:bg-[rgb(var(--brand-rgb)/0.04)]${onOpen ? ' cursor-pointer' : ''}`} onClick={onOpen?.(b.brand_id, b.name)} style={{ borderTop: '1px solid var(--border)', background: on ? 'rgb(var(--brand-rgb) / 0.06)' : isApp ? APP.soft : undefined, opacity: isTaken ? 0.62 : 1 }}>
                 {!preview && (
-                  <td className="pl-4 pr-1 py-2.5 align-middle" style={edge}>
+                  <td className="pl-4 pr-1 py-2.5 align-middle" style={edge} data-own-click>
                     <input type="checkbox" className="w-4 h-4" style={{ accentColor: 'var(--accent)' }} checked={on} disabled={isTaken} aria-label={`Pick ${b.name}`} onChange={(e) => onPick(b.brand_id, e.target.checked)} />
                   </td>
                 )}

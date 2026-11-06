@@ -72,6 +72,22 @@ check('the home says what changed this week on brands already on your list, newe
 check('a count that failed says so, with a way to try again', /MVP could not count this week/.test(H) && /Try again/.test(H))
 check('each section says the window it covers', /Last 14 days/.test(H) && /Last 7 days next to the 7 before/.test(H))
 
+// THE WHOLE CARD OPENS THE BRAND (Seb, 2026-11-06: "make the card clickable
+// because people are probably just going to click on the card itself").
+{
+  const C = read('components/labs/trybe-dossier-context.tsx')
+  const HH = read('components/labs/TrybeHome.tsx')
+  check('a press anywhere on a card opens the brand, a control inside keeps its own job, a text selection selects', /export function useBrandOpen\(\)/.test(C) && /const OWN_JOB = 'a, button, input, select, textarea, label, summary/.test(C) && /if \(inner && inner !== e\.currentTarget && e\.currentTarget\.contains\(inner\)\) return/.test(C) && /!sel\.isCollapsed/.test(C))
+  check('every brand card and row on the home opens the brand', (HH.match(/<BrandOpen /g) || []).length >= 5 && /<BrandOpen key=\{c\.brand_id\} id=\{c\.brand_id\} name=\{c\.name\} lift/.test(HH) && /function Row[\s\S]{0,120}<BrandOpen id=\{c\.brand_id\}/.test(HH))
+  check('Find brands, Best new and What changed rows open the brand too, the pick box still picks', /onClick=\{onOpen\?\.\(b\.brand_id, b\.name\)\}/.test(read('components/labs/TrybeBrandTable.tsx')) && /data-own-click>\s*<input type="checkbox"/.test(read('components/labs/TrybeBrandTable.tsx'))
+    && /onClick=\{onOpen\?\.\(b\.brand_id, b\.name\)\}/.test(read('components/labs/TrybeBestNew.tsx')) && /data-own-click><TrybeBrandPeek/.test(read('components/labs/TrybeBestNew.tsx')) && /onOpen\?\.\(c\.brand_id, c\.name\)/.test(read('components/labs/TrybeChanges.tsx')))
+  // A count that is Meta's cap for a common name is never shown as the brand's
+  // (Seb's home, 2026-11-06: LIFT., Nights and Magnetic each read "50000 Meta ads").
+  const R = read('app/api/labs/trybe/route.ts')
+  check('the home never shows a capped or mixed Meta count as the brand\'s', /metaAds: metaUsable\(r\), metaTrust: metaTrustOf\(/.test(R) && /meta_ads_own, meta_ads_sample, meta_ads_checked_at, earnings_bucket/.test(R) && /m\.metaTrust !== 'capped' && m\.metaTrust !== 'mixed'/.test(R)
+    && /c\.metaTrust === 'capped' \? <Tag>Meta ads: name too common to count<\/Tag>/.test(HH) && /Meta ads: mostly other advertisers/.test(HH))
+}
+
 if (fails.length) {
   console.error(`\n❌ trybe-home: ${fails.length} failure(s)\n`)
   for (const f of fails) console.error(`   • ${f}`)

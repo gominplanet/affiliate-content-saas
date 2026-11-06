@@ -292,11 +292,33 @@ export function parseVideoPlan(text: string): VideoPlan | null {
     return { kind, line: s(x.line, 140) }
   }).filter((c) => c.line).slice(0, 4)
   const f = (o.funnel || {}) as Record<string, unknown>
-  const videos: VideoIdea[] = (Array.isArray(o.videos) ? o.videos : []).map((v) => {
+  const videos = readVideoIdeas(o.videos)
+  const lines = (v: unknown, n: number) => (Array.isArray(v) ? v : []).map((x) => s(x, 160)).filter(Boolean).slice(0, n)
+  const plan: VideoPlan = {
+    product: s(o.product, 140),
+    body: typeof o.body === 'string' ? scrubBanned(o.body).slice(0, 900) : '',
+    // The hook-swap list: the model's own, or each video's hook.
+    hooks: hooks.length ? hooks : videos.map((v) => ({ style: v.style, line: v.hook, shot: v.shot })),
+    ctas,
+    funnel: { top: s(f.top, 240), middle: s(f.middle, 240), bottom: s(f.bottom, 240) },
+    ...(videos.length ? { videos, wants: lines(o.wants, 6), avoid: lines(o.avoid, 4) } : {}),
+  }
+  if (!plan.body || plan.hooks.length < 3) return null
+  return plan
+}
+
+/** Whole videos from the model's answer, every line scrubbed: the script,
+ *  its B-roll, and why the hook works. Shared by TRYBE's plan and Video
+ *  Scripts (lib/product-scripts). Pure. */
+export function readVideoIdeas(raw: unknown, max = 12): VideoIdea[] {
+  const s = (v: unknown, n: number) => (typeof v === 'string' ? scrubBanned(v.replace(/\s+/g, ' ')).slice(0, n) : '')
+  return (Array.isArray(raw) ? raw : []).map((v) => {
     const x = (v || {}) as Record<string, unknown>
     const style = (HOOK_STYLES as readonly string[]).includes(String(x.style)) ? x.style as HookStyle : 'reaction'
-    const say = (Array.isArray(x.say) ? x.say : []).map((b) => s(b, 160)).filter(Boolean).slice(0, 8)
-    const broll = (Array.isArray(x.broll) ? x.broll : []).map((b) => s(b, 180)).filter(Boolean).slice(0, 7)
+    // Up to 12 lines: a 30 to 40 second Video Scripts video runs longer
+    // than TRYBE's 5 to 7.
+    const say = (Array.isArray(x.say) ? x.say : []).map((b) => s(b, 160)).filter(Boolean).slice(0, 12)
+    const broll = (Array.isArray(x.broll) ? x.broll : []).map((b) => s(b, 180)).filter(Boolean).slice(0, 12)
     const beats = (Array.isArray(x.beats) ? x.beats : []).map((b) => s(b, 200)).filter(Boolean).slice(0, 5)
     const hook = s(x.hook, 160) || say[0] || ''
     // WHY THIS HOOK: kept only when the model said it. The opener is read
@@ -321,19 +343,7 @@ export function parseVideoPlan(text: string): VideoPlan | null {
       cta: s(x.cta, 140) || (say.length > 1 ? say[say.length - 1] : ''), forBrief: s(x.forBrief, 120),
       ...five,
     }
-  }).filter((v) => v.hook && (v.beats.length || v.say?.length)).slice(0, 12)
-  const lines = (v: unknown, n: number) => (Array.isArray(v) ? v : []).map((x) => s(x, 160)).filter(Boolean).slice(0, n)
-  const plan: VideoPlan = {
-    product: s(o.product, 140),
-    body: typeof o.body === 'string' ? scrubBanned(o.body).slice(0, 900) : '',
-    // The hook-swap list: the model's own, or each video's hook.
-    hooks: hooks.length ? hooks : videos.map((v) => ({ style: v.style, line: v.hook, shot: v.shot })),
-    ctas,
-    funnel: { top: s(f.top, 240), middle: s(f.middle, 240), bottom: s(f.bottom, 240) },
-    ...(videos.length ? { videos, wants: lines(o.wants, 6), avoid: lines(o.avoid, 4) } : {}),
-  }
-  if (!plan.body || plan.hooks.length < 3) return null
-  return plan
+  }).filter((v) => v.hook && (v.beats.length || v.say?.length)).slice(0, max)
 }
 
 /** A sale call to action with nothing on sale is dropped: the plan never

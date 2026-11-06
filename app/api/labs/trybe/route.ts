@@ -2751,7 +2751,8 @@ Weigh posts pushed to social, and TRYBE brands they earned with or submitted to,
     const series = dailySeries(changes, kinds, 30)
     const totals = Object.fromEntries(kinds.map(k => [k, windowTotals(series[k], 7)]))
     const recent = (k: string, days: number) => changes.filter(c => c.kind === k && Date.now() - Date.parse(c.at) < days * 86_400_000)
-    const movers = adsMovers(changes, 14, Date.now(), 10)
+    // More than shown: a capped or mixed count is dropped below.
+    const movers = adsMovers(changes, 14, Date.now(), 25)
     const pays = payMoves(changes, 14).slice(0, 40)
     const tiers = recent('tier', 14).slice(0, 30)
     const tops = recent('top100', 14).slice(0, 30)
@@ -2762,11 +2763,15 @@ Weigh posts pushed to social, and TRYBE brands they earned with or submitted to,
     // no member is shown an empty week that is really a failed read.
     let readError: string | null = null
     for (let i = 0; i < ids.length; i += 200) {
-      const { data, error: de } = await admin.from('trybe_directory').select('brand_id, name, website, categories, pay_text, meta_ads, meta_ads_checked_at, earnings_bucket, top100_hits, left_at, rating:raw->>reviewRating').in('brand_id', ids.slice(i, i + 200))
+      const { data, error: de } = await admin.from('trybe_directory').select('brand_id, name, website, categories, pay_text, meta_ads, meta_ads_own, meta_ads_sample, meta_ads_checked_at, earnings_bucket, top100_hits, left_at, rating:raw->>reviewRating').in('brand_id', ids.slice(i, i + 200))
       if (de) { readError = `MVP could not read the brands behind these changes (${de.message.slice(0, 120)})`; break }
       for (const r of (data || []) as Array<Record<string, any>>) dirBy.set(String(r.brand_id), r) // eslint-disable-line @typescript-eslint/no-explicit-any
     }
-    const card = (id: string) => { const r = dirBy.get(id); return r ? { brand_id: id, name: String(r.name || ''), website: r.website ?? null, categories: (r.categories || []).slice(0, 2), pay: r.pay_text ?? null, metaAds: typeof r.meta_ads === 'number' ? r.meta_ads : null, bucket: r.earnings_bucket ?? null, top100: r.top100_hits ?? null, rating: r.rating != null ? Number(r.rating) : null, left: !!r.left_at } : null }
+    // A COUNT THAT IS NOT THE BRAND'S OWN IS NEVER SHOWN AS ONE (Seb's home,
+    // 2026-11-06: LIFT., Nights and Magnetic all read "50000 Meta ads", Meta's
+    // cap for a name search on a common word). Capped and mixed counts are
+    // said as such, ranked after real counts, and kept out of the movers.
+    const card = (id: string) => { const r = dirBy.get(id); return r ? { brand_id: id, name: String(r.name || ''), website: r.website ?? null, categories: (r.categories || []).slice(0, 2), pay: r.pay_text ?? null, metaAds: metaUsable(r), metaTrust: metaTrustOf({ count: typeof r.meta_ads === 'number' ? r.meta_ads : null, own: typeof r.meta_ads_own === 'number' ? r.meta_ads_own : null, sample: typeof r.meta_ads_sample === 'number' ? r.meta_ads_sample : null }), bucket: r.earnings_bucket ?? null, top100: r.top100_hits ?? null, rating: r.rating != null ? Number(r.rating) : null, left: !!r.left_at } : null }
     // New brands worth a look first: the ones already running Meta ads.
     const freshCards = fresh.map(f => ({ ...card(f.brand_id), at: f.at })).filter(c => c.brand_id && c.name && !c.left)
       .sort((a, b) => (b.metaAds ?? -1) - (a.metaAds ?? -1) || Date.parse(b.at) - Date.parse(a.at)).slice(0, 12)
@@ -2790,7 +2795,7 @@ Weigh posts pushed to social, and TRYBE brands they earned with or submitted to,
     const payload = {
       at: now, listed: stats?.listed ?? null, total: stats?.brands ?? null, collectedAt: stats?.lastCollectedAt ?? null, joinedSinceFirst: stats?.joinedSinceFirst ?? null, firstCountAt: stats?.firstCountAt ?? null,
       series, totals,
-      movers: movers.map(m => ({ ...card(m.brand_id), from: m.from, to: m.to, gain: m.gain, at: m.at })).filter(m => m.brand_id),
+      movers: movers.map(m => ({ ...card(m.brand_id), from: m.from, to: m.to, gain: m.gain, at: m.at })).filter(m => m.brand_id && m.metaTrust !== 'capped' && m.metaTrust !== 'mixed').slice(0, 10),
       pays: pays.map(p => ({ ...card(p.brand_id), before: p.before, after: p.after, dir: p.dir, delta: p.delta, at: p.at })).filter(p => p.brand_id),
       tiers: tiers.map(t => ({ ...card(t.brand_id), before: t.before, after: t.after, at: t.at })).filter(t => t.brand_id),
       tops: tops.map(t => ({ ...card(t.brand_id), rank: t.after ? Number(t.after) || null : null, at: t.at })).filter(t => t.brand_id),

@@ -1753,12 +1753,28 @@ export interface ScrapedAmazonProduct {
   images: string[]
 }
 
+/** One Amazon review as SCOUT read it (1.58.0): its stars and words only. */
+export interface AmazonReview { stars: number | null; title: string; body: string }
+
+/** The buyers' words for Video Scripts (SCOUT 1.58.0): the reviews the
+ *  product page shows, Amazon's "Customers say" summary and its topics, and
+ *  the critical reviews, with why those are missing when they are. */
+export interface AmazonReviews {
+  onPage: AmazonReview[]
+  critical: AmazonReview[]
+  customersSay: string
+  aspects: string[]
+  criticalWhy: 'signed-out' | 'captcha' | 'none-shown' | 'not-read' | null
+}
+
 export interface AmazonProductResult {
   ok: boolean
   product?: ScrapedAmazonProduct | null
   signedOut?: boolean
   captcha?: boolean
   error?: string
+  /** Only when asked for, and only from SCOUT 1.58.0 or later. */
+  reviews?: AmazonReviews | null
 }
 
 /**
@@ -1768,15 +1784,15 @@ export interface AmazonProductResult {
  * succeeds where the server scrape fails because the request comes from a real
  * residential IP, not a datacenter. Best-effort: resolves, never throws.
  */
-export async function requestAmazonProduct(asin: string): Promise<AmazonProductResult> {
+export async function requestAmazonProduct(asin: string, opts: { reviews?: boolean } = {}): Promise<AmazonProductResult> {
   if (!asin) return { ok: false, error: 'no-asin' }
   if (!(await isExtensionAvailable())) return { ok: false, error: 'not-installed' }
-  const resp = await sendToExtension<{ ok?: boolean; product?: ScrapedAmazonProduct | null; signedOut?: boolean; captcha?: boolean; error?: string }>(
-    { type: 'MVP_AMZ_PRODUCT', asin },
-    60000,
+  const resp = await sendToExtension<{ ok?: boolean; product?: ScrapedAmazonProduct | null; signedOut?: boolean; captcha?: boolean; error?: string; reviews?: AmazonReviews | null }>(
+    { type: 'MVP_AMZ_PRODUCT', asin, ...(opts.reviews ? { reviews: true } : {}) },
+    opts.reviews ? 110000 : 60000,
   )
   if (!resp) return { ok: false, error: 'timeout' }
-  if (resp.ok) return { ok: true, product: resp.product ?? null, signedOut: resp.signedOut, captcha: resp.captcha }
+  if (resp.ok) return { ok: true, product: resp.product ?? null, signedOut: resp.signedOut, captcha: resp.captcha, reviews: resp.reviews ?? null }
   return { ok: false, error: resp.error || 'scan-failed' }
 }
 

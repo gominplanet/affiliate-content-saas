@@ -16,7 +16,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Loader2, AlertTriangle, RotateCcw, Sparkles, ChevronDown } from 'lucide-react'
 import TrybeLink from '@/components/labs/TrybeLink'
-import { BrandName } from '@/components/labs/trybe-dossier-context'
+import { BrandName, useBrandOpen } from '@/components/labs/trybe-dossier-context'
 import TrybeBestNew from '@/components/labs/TrybeBestNew'
 import TrybeBrandPeek, { type PeekActions } from '@/components/labs/TrybeBrandPeek'
 import TrybeActive from '@/components/labs/TrybeActive'
@@ -77,6 +77,8 @@ export function changesSummary(c: ChangesRead | null): string | null {
 
 export default function TrybeChanges({ scoutOpens, initial, onRead, onSeeNew, actions }: { scoutOpens: boolean; initial?: ChangesRead | null; onRead?: (c: ChangesRead) => void; onSeeNew?: () => void; actions?: PeekActions }) {
   const [data, setData] = useState<ChangesRead | null>(initial ?? null)
+  // A press anywhere on a change's line opens the brand's page (Seb, 2026-11-06).
+  const onOpen = useBrandOpen()
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [who, setWho] = useState<'yours' | 'all'>('all')
@@ -216,7 +218,7 @@ export default function TrybeChanges({ scoutOpens, initial, onRead, onSeeNew, ac
                   const isOpen = open.has(k)
                   return (
                   <li key={k} className="px-4 py-2.5" style={{ borderColor: 'var(--border)' }}>
-                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                    <div className={`flex flex-wrap items-center gap-x-3 gap-y-1${onOpen && c.name ? ' cursor-pointer rounded-lg -mx-1.5 px-1.5 transition-colors hover:bg-[rgb(var(--brand-rgb)/0.05)]' : ''}`} onClick={c.name ? onOpen?.(c.brand_id, c.name) : undefined}>
                       <span className="w-2 h-2 rounded-full shrink-0" style={{ background: changeTone(c) }} aria-hidden />
                       <span className="min-w-0 flex-1">
                         {c.name ? <BrandName id={c.brand_id} name={c.name} className="text-[13.5px] font-semibold" /> : <span className="text-[13.5px] font-semibold">A brand MVP no longer lists</span>}
