@@ -177,14 +177,22 @@ export default function TrybeDossier({ brandId, name, onClose, actions, scout = 
           {actions && (
             <div className="flex gap-2 flex-wrap mt-4">
               {status === 'drafted' || mine?.draft
-                ? <Btn kind="solid" onClick={() => void act('send')} disabled={!!busy}>{busy === 'send' ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />} Send the message now</Btn>
+                ? <Btn kind="solid" onClick={() => void act('send')} disabled={!!busy || actions.busy || !!actions.sendBlocked}
+                    title={actions.sendBlocked || (actions.busy ? 'Busy with another send or draft. This unlocks when it finishes.' : 'SCOUT sends this message on TRYBE now. It counts toward your daily sends.')}>
+                    {busy === 'send' ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />} Send the message now</Btn>
                 : status === 'sent' || status === 'already' || status === 'sending'
                   ? null
-                  : <Btn kind="solid" onClick={() => void act('message')} disabled={!!busy}>{busy === 'message' ? <Loader2 size={14} className="animate-spin" /> : <MessageCircle size={14} />} Write it a message</Btn>}
+                  : <Btn kind="solid" onClick={() => void act('message')} disabled={!!busy || actions.busy}
+                      title={actions.busy ? 'Busy with another send or draft. This unlocks when it finishes.' : 'Write this brand a message from your core message, into Ready to send'}>
+                      {busy === 'message' ? <Loader2 size={14} className="animate-spin" /> : <MessageCircle size={14} />} Write it a message</Btn>}
               {onScripts && <Btn onClick={() => onScripts(brandId, title)}><Clapperboard size={14} /> Make scripts for it</Btn>}
               <Btn href={adLibraryUrl(title)}><Megaphone size={14} /> Its ads on Meta Ad Library <ExternalLink size={12} /></Btn>
             </div>
           )}
+          {actions?.sendBlocked && (status === 'drafted' || !!mine?.draft) && (
+            <p className="text-[12px] mt-2 inline-flex items-start gap-1.5" style={{ color: GRADE.fair.color }}><AlertTriangle size={13} className="mt-0.5 shrink-0" /> {actions.sendBlocked}</p>
+          )}
+          {actions?.busy && !busy && <p className="text-[12px] mt-2" style={ui.soft}>Another send or draft is running. These buttons unlock when it finishes.</p>}
         </header>
 
         <div className="px-5 sm:px-7 py-6 flex flex-col gap-8">

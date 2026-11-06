@@ -21,11 +21,20 @@ const ago = (d: number) => new Date(Date.now() - d * DAY).toISOString()
 {
   const few = samplePool([{ user_id: 'a', requested_at: ago(30), received_at: ago(24) }])
   check('one creator\'s samples are never shown', !few.shown && few.arrivedRate == null && /Shown once 5 MVP creators/.test(few.why || ''))
-  const rows = ['a', 'b', 'c', 'd', 'e'].map((u, i) => ({ user_id: u, requested_at: ago(40), received_at: i < 4 ? ago(40 - (4 + i)) : null }))
+  // Seven creators asked 40 days ago; five got it (after 4 to 8 days), two still wait.
+  const rows = ['a', 'b', 'c', 'd', 'e', 'f', 'g'].map((u, i) => ({ user_id: u, requested_at: ago(40), received_at: i < 5 ? ago(40 - (4 + i)) : null }))
   const p = samplePool(rows)
-  check('five creators: the share that arrived, rounded to 5 points', p.shown && p.arrivedRate === 80 && p.members === POOL_MIN)
+  check('seven creators: the share that arrived, rounded to 5 points', p.shown && p.arrivedRate === 70 && p.members === POOL_MIN)
   check('the middle wait from asking to arriving', p.medianDays === 6)
-  check('a sample asked 3+ weeks ago and not here counts as waiting long', p.waitingLong === 1)
+  check('samples asked 3+ weeks ago and not here count as waiting long', p.waitingLong === 2)
+  // Five creators, four got it: the wait would be four creators' own days, and
+  // the one still waiting would be singled out. Neither is shown.
+  const four = samplePool(['a', 'b', 'c', 'd', 'e'].map((u, i) => ({ user_id: u, requested_at: ago(40), received_at: i < 4 ? ago(40 - (4 + i)) : null })))
+  check('the wait is only shown from 5 creators who got theirs', four.shown && four.arrivedRate === 80 && four.medianDays == null)
+  check('one late sample never singles anyone out', four.waitingLong === 0)
+  // Five asked, only three long enough ago: the arrival rate waits for five due.
+  const young = samplePool(['a', 'b', 'c', 'd', 'e'].map((u, i) => ({ user_id: u, requested_at: ago(i < 3 ? 40 : 5), received_at: i < 2 ? ago(33) : null })))
+  check('arrival is shown only once 5 creators asked 3+ weeks ago', young.shown && young.arrivedRate == null && /asked it 3 or more weeks ago/.test(young.why || ''))
   const fresh = samplePool(['a', 'b', 'c', 'd', 'e'].map((u) => ({ user_id: u, requested_at: ago(3), received_at: null })))
   check('samples asked days ago are not counted as missing yet', fresh.shown && fresh.arrivedRate == null && fresh.waitingLong === 0)
   const lopsided = samplePool([...['a', 'b', 'c', 'd', 'e'].map((u) => ({ user_id: u, requested_at: ago(30), received_at: ago(25) })), ...Array.from({ length: 8 }, () => ({ user_id: 'a', requested_at: ago(30), received_at: null }))])
@@ -34,9 +43,11 @@ const ago = (d: number) => new Date(Date.now() - d * DAY).toISOString()
 
 // ── REPLIES ──────────────────────────────────────────────────────────────────
 {
-  const rows = ['a', 'b', 'c', 'd', 'e', 'f'].map((u, i) => ({ user_id: u, status: 'sent', sent_at: ago(10), replied_at: i < 3 ? ago(9) : null }))
+  const rows = 'abcdefghij'.split('').map((u, i) => ({ user_id: u, status: 'sent', sent_at: ago(10), replied_at: i < 5 ? ago(9) : null }))
   const r = replyPool(rows)
   check('the share of members\' messages it answered, and how fast', r.shown && r.rate === 50 && r.medianDays === 1)
+  const three = replyPool(rows.slice(0, 3).concat(rows.slice(5, 8)))
+  check('how fast is only shown from 5 creators who got an answer', three.shown && three.rate === 50 && three.medianDays == null)
   check('drafts and removed rows are not messages', !replyPool([...rows.slice(0, 4), { user_id: 'z', status: 'drafted', sent_at: null, replied_at: null }]).shown)
 }
 
@@ -120,6 +131,18 @@ const blank: ScoreInput = { pay: { dollars: null, short: null, basis: null }, me
 
 // ── WIRED IN ─────────────────────────────────────────────────────────────────
 const R = read('app/api/labs/trybe/route.ts')
+check('the one looking is never one of the five (samples and replies)', /trybe_samples'\)\.select\('user_id, requested_at, received_at'\)\.eq\('brand_id', brandId\)\.neq\('user_id', ownerId\)/.test(R) && /trybe_brands'\)\.select\('user_id, status, sent_at, replied_at'\)\.eq\('brand_id', brandId\)\.neq\('user_id', ownerId\)/.test(R))
+check('a home with a failed read is said and never kept for 20 minutes', /readError/.test(R) && /if \(!readError\)/.test(R) && /readError/.test(read('components/labs/TrybeHome.tsx')))
+{
+  const O = read('components/labs/TrybeOutreach.tsx')
+  check('a new brand page starts fresh (keyed by brand)', /<TrybeDossier key=\{dossierOf\.id\}/.test(O))
+  check('the home tab only opens with the new TRYBE switched on', /if \(t === 'home' && !v2\) return/.test(O))
+  check('Make scripts for it opens Make videos on that brand', /setScriptsFor\(\{ id, name: nm \}\)/.test(O) && /start=\{scriptsFor\}/.test(O) && /start\?: \{ id: string; name: string \}/.test(read('components/labs/TrybeCreate.tsx')))
+  const D = read('components/labs/TrybeDossier.tsx')
+  check('the brand page waits while another send runs, and says why a send cannot start', /actions\.busy/.test(D) && /actions\.sendBlocked/.test(D))
+  const B = read('components/labs/TrybeBriefCheck.tsx')
+  check('a brief checklist that did not load says so and is tried again', /cache\.delete\(brandId\)/.test(B) && /Could not read \{brandName\}/.test(B))
+}
 check('one action reads the rest of the brand page', /if \(action === 'dossier'\)/.test(R) && /samplePool\(/.test(R) && /replyPool\(/.test(R) && /metaSeries\(changes/.test(R) && /timelineOf\(changes\)/.test(R))
 check('members\' results leave out the one looking', /poolBrands\(memQ\.rows, \{ exclude: ownerId \}\)/.test(R))
 check('TRYBE\'s public brand page and products are read, kept a day, and feed the samples count too', /backend\/api\/public\/brand\/\$\{encodeURIComponent\(brandId\)\}/.test(R) && /key: pubKey/.test(R) && /key: `samples:\$\{brandId\}`/.test(R))

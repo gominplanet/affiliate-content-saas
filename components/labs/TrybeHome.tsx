@@ -29,6 +29,8 @@ interface HomeRead {
   newWeek: number
   payIndex: { brands: number; read: number; rows: Array<{ kind: string; label: string; brands: number; share: number; median: number | null; p25: number | null; p75: number | null; unit: '$' | '%' }>; flatBands: Array<{ label: string; n: number }> } | null
   kept?: boolean
+  /** A read behind the home failed: said, never shown as a quiet week. */
+  readError?: string | null
 }
 
 const ago = (iso: string | null) => {
@@ -84,7 +86,9 @@ export default function TrybeHome({ go, unread, queue, repliedWeek, inboxRead, f
   useEffect(() => { void load() }, [load])
   useEffect(() => {
     fetch('/api/labs/trybe/samples', { cache: 'no-store' }).then((r) => (r.ok ? r.json() : null)).then((j) => {
-      const list = (j?.samples || []) as Array<{ received_at: string | null; filmed_at: string | null; submitted_at: string | null; requested_at: string | null; done?: boolean | null }>
+      // A failed read is not an empty list: the card says Not read.
+      if (!j || !Array.isArray(j.samples)) { setSamples(null); return }
+      const list = j.samples as Array<{ received_at: string | null; filmed_at: string | null; submitted_at: string | null; requested_at: string | null; done?: boolean | null }>
       const open = list.filter((s) => !s.submitted_at && !s.done)
       setSamples({
         here: open.filter((s) => s.received_at && !s.filmed_at).length,
@@ -96,10 +100,10 @@ export default function TrybeHome({ go, unread, queue, repliedWeek, inboxRead, f
 
   const t = d?.totals || {}
   const headline = d ? [
-    t.new ? `${t.new.now.toLocaleString()} new brand${t.new.now === 1 ? '' : 's'}` : null,
-    t.pay ? `${t.pay.now} pay change${t.pay.now === 1 ? '' : 's'}` : null,
-    t.tier ? `${t.tier.now} climbed a payout tier` : null,
-    t.top100 ? `${t.top100.now} entered the Top 100` : null,
+    t.new?.now ? `${t.new.now.toLocaleString()} new brand${t.new.now === 1 ? '' : 's'}` : null,
+    t.pay?.now ? `${t.pay.now} pay change${t.pay.now === 1 ? '' : 's'}` : null,
+    t.tier?.now ? `${t.tier.now} climbed a payout tier` : null,
+    t.top100?.now ? `${t.top100.now} entered the Top 100` : null,
   ].filter(Boolean) : []
 
   return (
@@ -121,6 +125,7 @@ export default function TrybeHome({ go, unread, queue, repliedWeek, inboxRead, f
           </button>
         </div>
         {err && <p className="mt-3 text-[13px] inline-flex items-center gap-1.5" style={{ color: 'var(--text)' }}><AlertTriangle size={14} style={{ color: '#F59E0B' }} /> MVP could not count this week: {err}. <button type="button" className="font-semibold underline" onClick={() => void load(true)}>Try again</button></p>}
+        {d?.readError && <p className="mt-3 text-[13px] inline-flex items-center gap-1.5" style={{ color: 'var(--text)' }}><AlertTriangle size={14} style={{ color: '#F59E0B' }} /> Part of this week did not load: {d.readError}. The lists below may be short. <button type="button" className="font-semibold underline" onClick={() => void load(true)}>Count again</button></p>}
       </div>
 
       {/* ── WHAT NEEDS YOU ────────────────────────────────────────────────── */}

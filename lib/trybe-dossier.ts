@@ -45,31 +45,40 @@ export interface SamplePool {
 /** Members' sample requests to one brand, pooled. Pure. */
 export function samplePool(rows: Array<{ user_id: string; requested_at: string | null; received_at: string | null }>, now = Date.now()): SamplePool {
   const asked = rows.filter((r) => r.requested_at || r.received_at)
-  const by = new Map<string, number>()
-  for (const r of asked) by.set(r.user_id, (by.get(r.user_id) || 0) + 1)
-  const members = by.size
-  const total = asked.length
-  const fair = members >= POOL_MIN && total > 0 && Array.from(by.values()).every((n) => n / total <= POOL_MAX_SHARE)
-  // Only asks old enough to have arrived count toward the rate.
-  const due = asked.filter((r) => r.received_at || (r.requested_at && now - Date.parse(r.requested_at) >= SAMPLE_WAIT_DAYS * DAY))
-  const arrived = due.filter((r) => r.received_at)
-  const days = arrived
-    .filter((r) => r.requested_at && r.received_at)
-    .map((r) => (Date.parse(r.received_at as string) - Date.parse(r.requested_at as string)) / DAY)
-    .filter((d) => Number.isFinite(d) && d >= 0 && d < 120)
-    .sort((a, b) => a - b)
-  const median = days.length ? days[Math.floor(days.length / 2)] : null
-  const waitingLong = asked.filter((r) => !r.received_at && r.requested_at && now - Date.parse(r.requested_at) >= SAMPLE_WAIT_DAYS * DAY).length
-  if (!fair) {
+  const members = fairPool(asked).members
+  if (!fairPool(asked).fair) {
     return { shown: false, members: Math.min(members, POOL_MIN), arrivedRate: null, medianDays: null, waitingLong: 0,
       why: members < POOL_MIN ? `Shown once ${POOL_MIN} MVP creators have asked it for a sample.` : 'Not shown yet: one creator is most of these requests.' }
   }
+  // Only asks old enough to have arrived count toward the rate, and that
+  // set must itself be POOL_MIN creators with no one most of it: a rate from
+  // the one creator who asked weeks ago is that creator's own result.
+  const due = asked.filter((r) => r.received_at || (r.requested_at && now - Date.parse(r.requested_at) >= SAMPLE_WAIT_DAYS * DAY))
+  const arrived = due.filter((r) => r.received_at)
+  const timed = arrived.filter((r) => {
+    const d = r.requested_at && r.received_at ? (Date.parse(r.received_at) - Date.parse(r.requested_at)) / DAY : NaN
+    return Number.isFinite(d) && d >= 0 && d < 120
+  })
+  const days = timed.map((r) => (Date.parse(r.received_at as string) - Date.parse(r.requested_at as string)) / DAY).sort((a, b) => a - b)
+  const waiting = asked.filter((r) => !r.received_at && r.requested_at && now - Date.parse(r.requested_at) >= SAMPLE_WAIT_DAYS * DAY).length
+  const dueOk = fairPool(due).fair
   return {
     shown: true, members: POOL_MIN,
-    arrivedRate: due.length ? to5(arrived.length / due.length) : null,
-    medianDays: median == null ? null : Math.max(1, Math.round(median)),
-    waitingLong, why: null,
+    arrivedRate: dueOk ? to5(arrived.length / due.length) : null,
+    medianDays: fairPool(timed).fair && days.length ? Math.max(1, Math.round(days[Math.floor(days.length / 2)])) : null,
+    // Two or more, so one late sample never singles anyone out.
+    waitingLong: dueOk && waiting >= 2 ? waiting : 0,
+    why: dueOk ? null : `Arrival is shown once ${POOL_MIN} MVP creators asked it 3 or more weeks ago.`,
   }
+}
+
+/** Whether a set of members' rows can be shown: POOL_MIN creators or more,
+ *  and no one creator more than POOL_MAX_SHARE of the rows. Pure. */
+export function fairPool(rows: Array<{ user_id: string }>): { fair: boolean; members: number } {
+  const by = new Map<string, number>()
+  for (const r of rows) by.set(r.user_id, (by.get(r.user_id) || 0) + 1)
+  const members = by.size
+  return { fair: members >= POOL_MIN && rows.length > 0 && Array.from(by.values()).every((n) => n / rows.length <= POOL_MAX_SHARE), members }
 }
 
 // ── REPLIES, AS MVP CREATORS SAW THEM ───────────────────────────────────────
@@ -87,20 +96,16 @@ export interface ReplyPool {
 /** Members' requests to one brand and whether it answered, pooled. Pure. */
 export function replyPool(rows: Array<{ user_id: string; status: string | null; sent_at: string | null; replied_at: string | null }>): ReplyPool {
   const sent = rows.filter((r) => (r.status === 'sent' || r.status === 'already') && r.sent_at)
-  const by = new Map<string, number>()
-  for (const r of sent) by.set(r.user_id, (by.get(r.user_id) || 0) + 1)
-  const members = by.size
-  const fair = members >= POOL_MIN && Array.from(by.values()).every((n) => n / sent.length <= POOL_MAX_SHARE)
-  if (!fair) {
-    return { shown: false, members: Math.min(members, POOL_MIN), rate: null, medianDays: null,
-      why: members < POOL_MIN ? `Shown once ${POOL_MIN} MVP creators have messaged it.` : 'Not shown yet: one creator is most of these messages.' }
+  const pool = fairPool(sent)
+  if (!pool.fair) {
+    return { shown: false, members: Math.min(pool.members, POOL_MIN), rate: null, medianDays: null,
+      why: pool.members < POOL_MIN ? `Shown once ${POOL_MIN} MVP creators have messaged it.` : 'Not shown yet: one creator is most of these messages.' }
   }
   const replied = sent.filter((r) => r.replied_at)
-  const days = replied
-    .map((r) => (Date.parse(r.replied_at as string) - Date.parse(r.sent_at as string)) / DAY)
-    .filter((d) => Number.isFinite(d) && d >= 0 && d < 90)
-    .sort((a, b) => a - b)
-  return { shown: true, members: POOL_MIN, rate: to5(replied.length / sent.length), medianDays: days.length ? Math.round(days[Math.floor(days.length / 2)] * 10) / 10 : null, why: null }
+  const timed = replied.filter((r) => { const d = (Date.parse(r.replied_at as string) - Date.parse(r.sent_at as string)) / DAY; return Number.isFinite(d) && d >= 0 && d < 90 })
+  const days = timed.map((r) => (Date.parse(r.replied_at as string) - Date.parse(r.sent_at as string)) / DAY).sort((a, b) => a - b)
+  // How fast only from POOL_MIN creators who got an answer, never one creator's own wait.
+  return { shown: true, members: POOL_MIN, rate: to5(replied.length / sent.length), medianDays: fairPool(timed).fair && days.length ? Math.round(days[Math.floor(days.length / 2)] * 10) / 10 : null, why: null }
 }
 
 // ── META ADS OVER TIME ──────────────────────────────────────────────────────

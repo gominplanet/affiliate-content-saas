@@ -530,6 +530,7 @@ export default function TrybeOutreach({ preview = false, v2 = false }: { preview
   // THE NEW TRYBE (Seb, 2026-11-06): team only first (labs-preview
   // 'trybe_v2'), so members keep the page they know until it is opened to them.
   const [dossierOf, setDossierOf] = useState<{ id: string; name: string } | null>(null)
+  const [scriptsFor, setScriptsFor] = useState<{ id: string; name: string } | null>(null)
   const openDossier = useCallback((id: string, name: string) => setDossierOf({ id, name }), [])
   // Find brands as a table or as cards (the new TRYBE), kept for the next visit.
   const [listView, setListView] = useState<'table' | 'cards'>('table')
@@ -559,9 +560,13 @@ export default function TrybeOutreach({ preview = false, v2 = false }: { preview
   }, [preview, router])
   const onTabQuery = useCallback((t: string | null) => {
     if (!t || !TABS.some(x => x.id === t)) return
+    // The home is the new TRYBE's: an address with it, opened without the switch, opens as before.
+    if (t === 'home' && !v2) return
     if (preview) { if (t !== 'find') setLockedTab(t as Tab); else setLockedTab(null); return }
     setLockedTab(null); setTab(t as Tab)
-  }, [preview])
+  }, [preview, v2])
+  // Switched off while on the home (View as a member): back to the page's usual first tab, never a blank page.
+  useEffect(() => { if (!v2 && tab === 'home') setTab(preview ? 'find' : 'create') }, [v2, tab, preview])
   const [core, setCore] = useState('')
   const [cap, setCap] = useState(20)
   // The cap the server holds, for the tile and Send all; `cap` is the input.
@@ -2030,7 +2035,7 @@ export default function TrybeOutreach({ preview = false, v2 = false }: { preview
 
   return (
     <DossierCtx.Provider value={v2 ? openDossier : null}>
-    {dossierOf && <TrybeDossier brandId={dossierOf.id} name={dossierOf.name} onClose={() => setDossierOf(null)} actions={peekActions} scout={scoutOpens} onScripts={() => { setDossierOf(null); go('create') }}
+    {dossierOf && <TrybeDossier key={dossierOf.id} brandId={dossierOf.id} name={dossierOf.name} onClose={() => setDossierOf(null)} actions={peekActions} scout={scoutOpens} onScripts={(id, nm) => { setDossierOf(null); setScriptsFor({ id, name: nm }); go('create') }}
       canDetails={access === 'granted' && scoutAtLeast(scoutVersion, SCOUT_TRYBE_PLAYBOOK_MIN_VERSION)} isAdmin={isAdmin} />}
     <div className="max-w-6xl mx-auto px-4 py-8 space-y-6" style={{ color: 'var(--text)' }}>
       <Suspense fallback={null}><TabQueryWatcher onTab={onTabQuery} /></Suspense>
@@ -2269,7 +2274,7 @@ export default function TrybeOutreach({ preview = false, v2 = false }: { preview
         forYou={(live?.brands || []).filter(b => !b.status || b.status === 'new').slice().sort((a, b) => (b.pick ?? -1) - (a.pick ?? -1)).slice(0, 6)}
         forYouWhy={[...cats, ...kws].slice(0, 4).join(', ')} canMoney={canMyBrands}
         yours={(changes?.changes || []).filter(c => c.yours).slice().sort((a, b) => Date.parse(b.at) - Date.parse(a.at))} />}
-      {tab === 'create' && <TrybeCreate canRead={canMyBrands} isAdmin={isAdmin} onFind={() => setTab('find')} />}
+      {tab === 'create' && <TrybeCreate canRead={canMyBrands} isAdmin={isAdmin} onFind={() => setTab('find')} start={scriptsFor} onStarted={() => setScriptsFor(null)} />}
 
       {tab === 'upload' && <TrybeUpload inbox={inbox} canChat={canInbox} onOpenChat={(id) => { setOpenChat(o => ({ id, n: (o?.n ?? 0) + 1 })); setTab('inbox') }} />}
 

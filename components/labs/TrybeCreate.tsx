@@ -24,7 +24,12 @@ const PURPLE = 'var(--accent)'
 const GREEN = '#16A34A'
 const AMBER = '#B45309'
 
-export default function TrybeCreate({ canRead, isAdmin, onFind }: { canRead: boolean; isAdmin: boolean; onFind: () => void }) {
+export default function TrybeCreate({ canRead, isAdmin, onFind, start, onStarted }: {
+  canRead: boolean; isAdmin: boolean; onFind: () => void
+  /** Opened from a brand's page ("Make scripts for it"): start on that brand. */
+  start?: { id: string; name: string } | null
+  onStarted?: () => void
+}) {
   const [brands, setBrands] = useState<MyBrand[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [q, setQ] = useState('')
@@ -80,6 +85,18 @@ export default function TrybeCreate({ canRead, isAdmin, onFind }: { canRead: boo
   }
   const leaveBrand = () => { picking.current = null; setBrand(null); setProduct(null); setPage(null); setPageLoading(false) }
 
+  // FROM A BRAND'S PAGE: that brand is picked as soon as your brands load.
+  // Scripts are made for brands you work with on TRYBE, so one that is not
+  // among them is said by name, never silently dropped back to the list.
+  const [startMiss, setStartMiss] = useState<string | null>(null)
+  useEffect(() => {
+    if (!start || !brands) return
+    const b = brands.find((x) => x.id === start.id)
+    if (b) { setStartMiss(null); void pickBrand(b) } else setStartMiss(start.name)
+    onStarted?.()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [start, brands])
+
   // A to Z (Seb, 2026-10-22), whatever order TRYBE sends them in.
   const shown = useMemo(() => (brands || []).filter((b) => !q.trim() || b.name.toLowerCase().includes(q.trim().toLowerCase())).sort(byBrandName), [brands, q])
   const step = !brand ? 1 : !product ? 2 : 3
@@ -124,6 +141,7 @@ export default function TrybeCreate({ canRead, isAdmin, onFind }: { canRead: boo
       {/* 1. The brand */}
       {step === 1 && (
         <section className={card} style={cardStyle}>
+          {startMiss && <p className="text-[13px] mb-3 inline-flex items-start gap-1.5" style={{ color: AMBER }}><AlertTriangle size={14} className="mt-0.5 shrink-0" /> {startMiss} is not one of the brands you work with on TRYBE yet, so MVP cannot open its brief for scripts. Message it first, or pick one of yours below.</p>}
           <div className="flex flex-wrap items-center gap-3 mb-3">
             <h2 className="text-[20px] font-bold">Which brand are you making videos for?</h2>
             {(brands?.length ?? 0) > 8 && (

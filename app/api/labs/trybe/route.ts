@@ -2683,8 +2683,12 @@ Weigh posts pushed to social, and TRYBE brands they earned with or submitted to,
     const fresh = recent('new', 7)
     const ids = Array.from(new Set([...movers.map(m => m.brand_id), ...pays.map(p => p.brand_id), ...tiers.map(t => t.brand_id), ...tops.map(t => t.brand_id), ...fresh.slice(0, 400).map(f => f.brand_id)]))
     const dirBy = new Map<string, Record<string, any>>() // eslint-disable-line @typescript-eslint/no-explicit-any
+    // A read that failed is said on the page and the home is not kept, so
+    // no member is shown an empty week that is really a failed read.
+    let readError: string | null = null
     for (let i = 0; i < ids.length; i += 200) {
-      const { data } = await admin.from('trybe_directory').select('brand_id, name, website, categories, pay_text, meta_ads, meta_ads_checked_at, earnings_bucket, top100_hits, left_at, rating:raw->>reviewRating').in('brand_id', ids.slice(i, i + 200))
+      const { data, error: de } = await admin.from('trybe_directory').select('brand_id, name, website, categories, pay_text, meta_ads, meta_ads_checked_at, earnings_bucket, top100_hits, left_at, rating:raw->>reviewRating').in('brand_id', ids.slice(i, i + 200))
+      if (de) { readError = `MVP could not read the brands behind these changes (${de.message.slice(0, 120)})`; break }
       for (const r of (data || []) as Array<Record<string, any>>) dirBy.set(String(r.brand_id), r) // eslint-disable-line @typescript-eslint/no-explicit-any
     }
     const card = (id: string) => { const r = dirBy.get(id); return r ? { brand_id: id, name: String(r.name || ''), website: r.website ?? null, categories: (r.categories || []).slice(0, 2), pay: r.pay_text ?? null, metaAds: typeof r.meta_ads === 'number' ? r.meta_ads : null, bucket: r.earnings_bucket ?? null, top100: r.top100_hits ?? null, rating: r.rating != null ? Number(r.rating) : null, left: !!r.left_at } : null }
@@ -2702,7 +2706,7 @@ Weigh posts pushed to social, and TRYBE brands they earned with or submitted to,
         if (!pr.error) {
           index = payIndex(pr.rows.map(r => r.pay_text))
           try { await admin.from('trybe_directory_meta').upsert({ key: 'pay_index', value: index, updated_at: now }) } catch { /* worked out again next time */ }
-        }
+        } else readError = readError || `MVP could not read TRYBE's pay for the pay index (${pr.error.message.slice(0, 120)})`
       }
     }
     const stats = await directoryStats(admin)
@@ -2715,8 +2719,9 @@ Weigh posts pushed to social, and TRYBE brands they earned with or submitted to,
       tops: tops.map(t => ({ ...card(t.brand_id), rank: t.after ? Number(t.after) || null : null, at: t.at })).filter(t => t.brand_id),
       fresh: freshCards, newWeek: fresh.length,
       payIndex: index,
+      readError,
     }
-    try { await admin.from('trybe_directory_meta').upsert({ key: HOME_KEY, value: payload, updated_at: now }) } catch { /* worked out again next time */ }
+    if (!readError) { try { await admin.from('trybe_directory_meta').upsert({ key: HOME_KEY, value: payload, updated_at: now }) } catch { /* worked out again next time */ } }
     return NextResponse.json({ ok: true, ...payload })
   }
 
@@ -2733,8 +2738,9 @@ Weigh posts pushed to social, and TRYBE brands they earned with or submitted to,
       admin.from('trybe_directory').select('brand_id, name, website, categories, about, first_seen_at, last_seen_at, left_at, meta_ads, meta_ads_checked_at').eq('brand_id', brandId).maybeSingle(),
       admin.from('trybe_directory_changes').select('kind, before, after, at').eq('brand_id', brandId).order('at', { ascending: false }).limit(200),
       memberRows(admin, [brandId]),
-      admin.from('trybe_samples').select('user_id, requested_at, received_at').eq('brand_id', brandId).limit(2000),
-      admin.from('trybe_brands').select('user_id, status, sent_at, replied_at').eq('brand_id', brandId).limit(5000),
+      // Other creators only: the one looking is never one of the five (poolBrands does the same).
+      admin.from('trybe_samples').select('user_id, requested_at, received_at').eq('brand_id', brandId).neq('user_id', ownerId).limit(1000),
+      admin.from('trybe_brands').select('user_id, status, sent_at, replied_at').eq('brand_id', brandId).neq('user_id', ownerId).in('status', ['sent', 'already']).not('sent_at', 'is', null).limit(1000),
       admin.from('trybe_top_scripts').select('submission_id, creator, best_rank, seconds, hook, thumbnail, video_url, category').eq('brand_id', brandId).order('best_rank', { ascending: true, nullsFirst: false }).limit(12),
       admin.from('trybe_brands').select('status, sent_at, replied_at, drafted_at, fit_score, fit_reason').eq('user_id', ownerId).eq('brand_id', brandId).maybeSingle(),
       admin.from('trybe_samples').select('product, requested_at, received_at, filmed_at, submitted_at').eq('user_id', ownerId).eq('brand_id', brandId).order('requested_at', { ascending: false }).limit(20),
@@ -2760,7 +2766,8 @@ Weigh posts pushed to social, and TRYBE brands they earned with or submitted to,
       const products = 'json' in p ? dossierProducts(p.json) : []
       pub = { logo, description: typeof bd?.description === 'string' ? bd.description.slice(0, 600) : null, products, read: 'json' in p,
         error: 'json' in p ? null : p.status === 404 ? 'TRYBE has no public product list for this brand.' : 'TRYBE\u2019s product list did not answer.' }
-      if (pub.read || logo) { try { await admin.from('trybe_directory_meta').upsert({ key: pubKey, value: pub, updated_at: now }) } catch { /* read again next time */ } }
+      // Kept only when the product list was read: a failed read is asked again next time, never kept for a day.
+      if (pub.read) { try { await admin.from('trybe_directory_meta').upsert({ key: pubKey, value: pub, updated_at: now }) } catch { /* read again next time */ } }
       // The product list's samples count, for Find brands and My top 100 too.
       if (pub.read) { try { await admin.from('trybe_directory_meta').upsert({ key: `samples:${brandId}`, value: { open: products.filter(x => x.samples).length, total: products.length }, updated_at: now }) } catch { /* kept next time */ } }
     }

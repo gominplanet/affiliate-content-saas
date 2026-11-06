@@ -13,14 +13,20 @@ import { ClipboardCheck, Ban } from 'lucide-react'
 
 interface Plan { product?: string | null; plan?: { wants?: string[]; avoid?: string[]; brief?: 'text' | 'link_only' | 'none'; product?: string } | null }
 
+// Only a read that worked is kept: a failed one is said as failed (never as
+// "no checklist yet") and tried again next time.
 const cache = new Map<string, Promise<Plan | null>>()
 function latestPlan(brandId: string): Promise<Plan | null> {
   let p = cache.get(brandId)
   if (!p) {
     p = fetch('/api/labs/trybe', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'ideas', brandId }) })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((j) => ((j?.plans || []) as Plan[]).find((x) => (x.plan?.wants?.length || 0) + (x.plan?.avoid?.length || 0) > 0) ?? null)
-      .catch(() => null)
+      .then(async (r) => {
+        const j = await r.json().catch(() => null)
+        if (!r.ok) throw new Error(j?.error || `MVP answered ${r.status}`)
+        if (j?.why) throw new Error(String(j.why))
+        return ((j?.plans || []) as Plan[]).find((x) => (x.plan?.wants?.length || 0) + (x.plan?.avoid?.length || 0) > 0) ?? null
+      })
+    p.catch(() => { cache.delete(brandId) })
     cache.set(brandId, p)
   }
   return p
@@ -28,8 +34,15 @@ function latestPlan(brandId: string): Promise<Plan | null> {
 
 export default function TrybeBriefCheck({ brandId, brandName }: { brandId: string; brandName: string }) {
   const [plan, setPlan] = useState<Plan | null | undefined>(undefined)
+  const [error, setError] = useState<string | null>(null)
   const [ticked, setTicked] = useState<Set<number>>(new Set())
-  useEffect(() => { let live = true; setPlan(undefined); setTicked(new Set()); void latestPlan(brandId).then((p) => { if (live) setPlan(p) }); return () => { live = false } }, [brandId])
+  useEffect(() => {
+    let live = true
+    setPlan(undefined); setError(null); setTicked(new Set())
+    latestPlan(brandId).then((p) => { if (live) setPlan(p) }).catch((e) => { if (live) setError(e instanceof Error ? e.message : 'the read did not finish') })
+    return () => { live = false }
+  }, [brandId])
+  if (error) return <p className="text-[12px] mt-2" style={{ color: '#B45309' }}>Could not read {brandName}&rsquo;s brief checklist: {error}. Check the brief on TRYBE before you send.</p>
   if (plan === undefined) return null
   if (!plan) return <p className="text-[12px] mt-2" style={{ color: 'var(--text-3)' }}>No brief checklist for {brandName} yet. Make videos reads its brief when it writes your scripts, and the checklist shows here.</p>
   const wants = plan.plan?.wants || []
