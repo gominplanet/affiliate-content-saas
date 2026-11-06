@@ -49,7 +49,7 @@ check('a brand MVP has not collected is planned from what its TRYBE page said', 
 check('the product or the brief is enough when the website does not answer', /!products\.length && !summary && !row\.about && !product && !briefText/.test(ROUTE))
 
 // Notes that say what happened.
-check('captions are never called the words of a video', /const winnerSpoken = /.test(IDEAS) && /`the captions of \$\{captions\}`/.test(IDEAS))
+check('captions are never called the words of a video', /const bestSpoken = /.test(IDEAS) && /`the captions of \$\{captions\}`/.test(IDEAS))
 check('a brand page video is never called a Top 100 ad', /fromRanked: examples\.filter/.test(ROUTE) && /from brands’ own TRYBE pages/.test(IDEAS))
 check('the brand’s own videos are read on their own, not cut by the first 400', /\.eq\('brand_id', lookupId\)\.limit\(20\)/.test(ROUTE))
 check('a failed save says it was not saved, never "not on your list"', !/is not on your MVP list, so these ideas/.test(IDEAS) && /could not be saved, so they will be gone next visit/.test(IDEAS))

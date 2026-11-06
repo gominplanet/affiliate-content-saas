@@ -179,7 +179,10 @@ async function api(body: Record<string, unknown>) {
   return d
 }
 
-export default function TrybeVideoIdeas({ brandId, name, plan: initial, canRead, isAdmin = false, emphasize = false, onPlan, sampleId, product: fixedProduct, page: givenPage, auto = false }: {
+export default function TrybeVideoIdeas({ brandId, name, plan: initial, canRead, isAdmin = false, emphasize = false, onPlan, sampleId, product: fixedProduct, page: givenPage, auto = false, buyerLink: givenLink = '', buyerShot: givenShot = null }: {
+  /** Where it sells and a screenshot of its reviews, given in the step before. */
+  buyerLink?: string
+  buyerShot?: string | null
   /** Make videos (TrybeCreate): the product the creator picked. The ideas
    *  are about it; its saved ideas show, else MVP writes them at once. */
   product?: string
@@ -216,8 +219,8 @@ export default function TrybeVideoIdeas({ brandId, name, plan: initial, canRead,
   // screenshot, read by the script agent before it writes. The product's
   // own link on TRYBE is used when it is one.
   const [buyerOpen, setBuyerOpen] = useState(false)
-  const [buyerLink, setBuyerLink] = useState('')
-  const [buyerShot, setBuyerShot] = useState<string | null>(null)
+  const [buyerLink, setBuyerLink] = useState(givenLink)
+  const [buyerShot, setBuyerShot] = useState<string | null>(givenShot)
   const shotRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => { setPlan(initial) }, [initial])
@@ -250,7 +253,6 @@ export default function TrybeVideoIdeas({ brandId, name, plan: initial, canRead,
   const winnerWords = (winners?.videos || []).map((v) => v.words || v.caption || '').filter((t) => t.length >= 12)
   // Of those, the ones with real spoken words: a caption is not a script and
   // is never said to be one.
-  const winnerSpoken = (winners?.videos || []).filter((v) => (v.words || '').length >= 12).length
 
   // STEP 1, BEFORE ANY PLAN: the brand's page (brief and products), and the
   // product the creator has on hand (Seb, 2026-10-13: "the user needs to
@@ -300,16 +302,26 @@ export default function TrybeVideoIdeas({ brandId, name, plan: initial, canRead,
       const b = page || (canRead && brandId ? await loadBrandPage(brandId) : null)
       if (b && !page) setPage(b)
       const state = b ? b.state : 'unread'
+      // THE BRAND'S OWN BEST VIDEOS ON TRYBE, every time (Seb, 2026-11-06:
+      // "utilize all of the data that is possible to get ... reading
+      // transcripts from Tribe"): read here when they were not opened yet.
+      let w = winners
+      if (!w && canRead && brandId) {
+        setStep('Reading the brand\'s best videos on TRYBE')
+        try { w = await loadWinners(brandId, isAdmin); setWinners(w) } catch { w = null }
+      }
+      const bestWords = (w?.videos || []).map((v) => v.words || v.caption || '').filter((t) => t.length >= 12)
+      const bestSpoken = (w?.videos || []).filter((v) => (v.words || '').length >= 12).length
       // THE BUYERS: the link given, or the product's own link on TRYBE when it
       // is an Amazon or TikTok Shop one. Amazon's reviews are read by SCOUT.
       const ownLink = (b?.products || []).find((x) => x.url && (!product || sameProduct(x.name, product)) && ['amazon', 'tiktok'].includes(linkKind(x.url).kind))?.url || ''
       const link = buyerLink.trim() || ownLink
       const got = link ? await readBuyersInChrome(link, (u) => api({ action: 'buyer_resolve', url: u }), setStep) : null
-      const buyerBits = got && (got.kind === 'amazon' || got.kind === 'tiktok') ? { buyerUrl: got.url, ...(got.reviews ? { reviews: got.reviews } : {}), ...(got.reviewsWhy ? { reviewsWhy: got.reviewsWhy } : {}) } : {}
+      const buyerBits = got && (got.kind === 'amazon' || got.kind === 'tiktok') ? { buyerUrl: got.url, ...(got.amazon ? { amazon: got.amazon } : {}), ...(got.reviews ? { reviews: got.reviews } : {}), ...(got.reviewsWhy ? { reviewsWhy: got.reviewsWhy } : {}) } : {}
       setStep(`Writing ${VIDEO_IDEAS} scripts${product ? ` for ${product}` : ''} from ${b?.brief ? 'the brief, ' : ''}${got?.kind === 'amazon' || got?.kind === 'tiktok' ? 'what its buyers say, ' : ''}the brand and its website. This takes about a minute.`)
       // What TRYBE's own page says about the brand goes too, so a brand MVP's
       // directory has not collected yet is still planned, not refused.
-      const d = await api({ action: 'video_plan', brandId, brandName: name, ...(b?.website ? { website: b.website } : {}), ...(b?.products.length ? { knownProducts: b.products.slice(0, 15).map((x) => x.name) } : {}), ...(sampleId ? { sampleId } : {}), ...(product ? { product } : {}), winners: winnerWords, ...(b?.brief ? { brief: b.brief } : state !== 'unread' ? { briefState: state } : {}) , ...buyerBits, ...(buyerShot ? { image: buyerShot } : {}) })
+      const d = await api({ action: 'video_plan', brandId, brandName: name, ...(b?.website ? { website: b.website } : {}), ...(b?.products.length ? { knownProducts: b.products.slice(0, 15).map((x) => x.name) } : {}), ...(sampleId ? { sampleId } : {}), ...(product ? { product } : {}), winners: bestWords, ...(b?.brief ? { brief: b.brief } : state !== 'unread' ? { briefState: state } : {}) , ...buyerBits, ...(buyerShot ? { image: buyerShot } : {}) })
       setPicking(false)
       const s0 = state as string
       const b0 = { state: s0 }
@@ -317,7 +329,7 @@ export default function TrybeVideoIdeas({ brandId, name, plan: initial, canRead,
       setPlan(p); setPlanOpen(true)
       onPlan?.(p)
       if (!sampleId && d.saved) setKept((ks) => [{ id: `new-${Date.now()}`, product: product || p.product || null, plan: p, created_at: new Date().toISOString() }, ...(ks || []).filter((k) => (k.product || '').toLowerCase() !== (product || p.product || '').toLowerCase())])
-      const spoken = Math.min(winnerSpoken, Number(d.fromWinners) || 0), captions = (Number(d.fromWinners) || 0) - spoken
+      const spoken = Math.min(bestSpoken, Number(d.fromWinners) || 0), captions = (Number(d.fromWinners) || 0) - spoken
       const fromWin = d.fromWinners ? `Planned from ${[spoken ? `the words of ${spoken}` : '', captions ? `the captions of ${captions}` : ''].filter(Boolean).join(' and ')} of their best video${d.fromWinners === 1 ? '' : 's'}.` : ''
       const briefSaid = b0.state === 'text' ? 'Planned from their creative brief.'
         : b0.state === 'link_only' ? `MVP could not read their brief${b?.briefWhy ? ` (${b.briefWhy.replace(/\.$/, '')})` : ''}: check these ideas against it.`
@@ -334,7 +346,11 @@ export default function TrybeVideoIdeas({ brandId, name, plan: initial, canRead,
       const fromMeta = metaN ? `Read ${metaN} of the brand's own Meta ads${longest != null ? ` (the longest running ${longest} day${longest === 1 ? '' : 's'})` : ''} for who it sells to.` : ''
       const tp = Number(d.fromTrybeProducts) || 0
       const fromTrybe = tp ? `Knows the ${tp} product${tp === 1 ? '' : 's'} it lists on TRYBE.` : ''
-      const from = [briefSaid, fromWin, fromTop, fromMeta, fromTrybe].filter(Boolean).join(' ')
+      // COMPETING VIDEOS AND THE AMAZON LISTING that went in, said the same way.
+      const rivals = Number(d.fromCompetitors) || 0
+      const fromRivals = rivals ? `Studied ${rivals} competing brand${rivals === 1 ? '' : 's'}' longest running Meta ads in its category.` : ''
+      const fromListing = d.fromAmazonListing ? 'Read its Amazon listing.' : ''
+      const from = [briefSaid, fromWin, fromTop, fromMeta, fromRivals, fromTrybe, fromListing].filter(Boolean).join(' ')
       // A plan that did not save says so: every brand's plans are kept now
       // (migration 429), so "not on your list" was never the reason.
       if (!d.saved) setPlanNote({ tone: 'warn', text: `${from ? `${from} ` : ''}These scripts are shown but could not be saved, so they will be gone next visit. Copy or print what you want to keep.` })

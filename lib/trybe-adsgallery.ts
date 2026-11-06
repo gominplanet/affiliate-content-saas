@@ -389,3 +389,64 @@ export function brandAdsBlock(ads: PlanAd[]): string {
     ...lines,
   ].join('\n')
 }
+
+// ── COMPETING VIDEOS (Seb, 2026-11-06: "whether it's reading competing
+// videos ... get all of that information together") ───────────────────────
+// The longest running Meta ads of OTHER brands in the same TRYBE category:
+// what this category's buyers already respond to. One per brand, so four
+// ads are four brands. Their frames only: the block names no brand.
+
+/** Competing ads given to one plan. */
+export const PLAN_COMPETITOR_ADS = 4
+
+/** Other brands' own ads in these categories, the longest running first. Pure. */
+export function competitorAdsForPlan(g: Pick<Gallery, 'ads'> | null | undefined, hooks: AdHooks | null | undefined, brandId: string, catsOf: Record<string, string[]>, want: string[], now: number, n = PLAN_COMPETITOR_ADS): Array<PlanAd & { brand: string; brandId: string }> {
+  const wanted = new Set(want.map((c) => c.toLowerCase()))
+  if (!wanted.size) return []
+  const picked = brandAdsLike(g, hooks, now)
+    .filter((a) => a.brandId !== brandId && (catsOf[a.brandId] || []).some((c) => wanted.has(c.toLowerCase())))
+  const seen = new Set<string>()
+  const out: Array<PlanAd & { brand: string; brandId: string }> = []
+  for (const a of picked) {
+    if (seen.has(a.brandId)) continue
+    seen.add(a.brandId)
+    out.push(a)
+    if (out.length >= n) break
+  }
+  return out
+}
+
+/** Every brand's own ads with words, as plan ads, the longest running first. */
+function brandAdsLike(g: Pick<Gallery, 'ads'> | null | undefined, hooks: AdHooks | null | undefined, now: number): Array<PlanAd & { brand: string; brandId: string }> {
+  const clean = (t: string | null | undefined, max: number) => String(t || '').replace(PLAYER_CLOCK, '').replace(/\s+/g, ' ').trim().slice(0, max)
+  return (g?.ads || [])
+    .filter((a) => ownAd(a, a.brand))
+    .map((a) => {
+      const h = hooks?.[a.id]
+      return {
+        id: a.id, brandId: a.brandId, brand: a.brand, days: ranDays(a, now), video: !!a.video, paid: !!a.paid, cta: a.cta ? clean(a.cta, 40) : null,
+        spoken: h?.state === 'ready' ? clean(h.hook, 200) || null : null,
+        script: h?.state === 'ready' ? clean(h.script, 450) || null : null,
+        text: clean(a.body, 300),
+      }
+    })
+    .filter((a) => a.spoken || a.script || a.text)
+    .sort((a, b) => (b.days ?? -1) - (a.days ?? -1))
+}
+
+/** The prompt block: competing brands' ads as frames, every brand's name
+ *  taken out. '' when there are none. Pure. */
+export function competitorAdsBlock(ads: Array<PlanAd & { brand: string }>): string {
+  if (!ads.length) return ''
+  const hide = (t: string, brand: string) => (brand.trim().length >= 3 ? t.replace(new RegExp(brand.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), 'the brand') : t)
+  const lines = ads.map((a, i) => {
+    const tag = [a.days != null ? `running ${a.days} day${a.days === 1 ? '' : 's'}${a.days >= LONG_RUN_DAYS ? ', a keeper' : ''}` : 'start date not read', a.video ? 'a video' : 'a picture'].join(', ')
+    const said = a.script ? ` Said in the video: "${hide(a.script, a.brand)}"` : a.spoken ? ` Says first: "${hide(a.spoken, a.brand)}"` : ''
+    const shown = a.text ? ` Written on the ad: "${hide(a.text, a.brand)}"` : ''
+    return `Competing ad ${i + 1} (${tag}).${said}${shown}`
+  })
+  return [
+    `COMPETING BRANDS' META ADS (other brands in this brand's category, the ads they keep paying to run, longest first). They show what this category's buyers already stop for. Learn the frames and the moments they open on; never copy their sentences, never name them, and never borrow their claims, prices or results.`,
+    ...lines,
+  ].join('\n')
+}

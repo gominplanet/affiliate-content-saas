@@ -37,7 +37,7 @@ import { winnersForPlan, winnersBlock, readScript } from '@/lib/trybe-mybrands'
 import { directoryChanges, adsChange, poolBrands, type Change, type MemberRow } from '@/lib/trybe-changes'
 import { topDayKey, topDayOf, TOP_DAYS_KEEP } from '@/lib/trybe-topdays'
 import { activeKeys, activeRows, activeBy, rankActive, categoryCounts, latestTierChanges, type ActiveBy, type ActiveRow } from '@/lib/trybe-active'
-import { GALLERY_KEY, readCardsBody, readAdCard, mergeGallery, type Gallery, type MetaAd, brandsWithAds, GALLERY_MAX, ownAd, HOOKS_KEY, withHooks, type AdHooks, brandAdsForPlan, brandAdsBlock, type PlanAd } from '@/lib/trybe-adsgallery'
+import { GALLERY_KEY, readCardsBody, readAdCard, mergeGallery, type Gallery, type MetaAd, brandsWithAds, GALLERY_MAX, ownAd, HOOKS_KEY, withHooks, type AdHooks, brandAdsForPlan, brandAdsBlock, type PlanAd, competitorAdsForPlan, competitorAdsBlock } from '@/lib/trybe-adsgallery'
 import { hearMetaAds } from '@/lib/meta-ad-hear'
 import { transcriptionConfigured } from '@/lib/shorts-transcribe'
 import {
@@ -1546,6 +1546,7 @@ export async function POST(request: Request) {
     // lists on TRYBE for creators. Any failure plans without them, and the
     // answer says how many went in.
     let metaAds: PlanAd[] = []
+    let rivalAds: ReturnType<typeof competitorAdsForPlan> = []
     let trybeProducts: string[] = []
     if (lookupId) {
       try {
@@ -1555,11 +1556,28 @@ export async function POST(request: Request) {
           admin.from('trybe_directory_meta').select('value').eq('key', `samples:${lookupId}`).maybeSingle(),
         ])
         metaAds = brandAdsForPlan((gRow?.value || null) as Gallery | null, (hRow?.value || null) as AdHooks | null, lookupId, String(row.name || ''), Date.now())
+        // COMPETING VIDEOS (Seb, 2026-11-06: "whether it's reading competing
+        // videos"): other brands in its categories, their longest running ads.
+        const myCats = Array.isArray(row.categories) ? (row.categories as string[]) : []
+        const gal = (gRow?.value || null) as Gallery | null
+        const others = Array.from(new Set((gal?.ads || []).map((a) => a.brandId).filter((id) => id && id !== lookupId))).slice(0, 300)
+        if (myCats.length && others.length) {
+          const catsOf: Record<string, string[]> = {}
+          const { data: oc } = await admin.from('trybe_directory').select('brand_id, categories').in('brand_id', others)
+          for (const r of (oc || []) as Array<{ brand_id: string; categories: string[] | null }>) catsOf[r.brand_id] = r.categories || []
+          rivalAds = competitorAdsForPlan(gal, (hRow?.value || null) as AdHooks | null, lookupId, catsOf, myCats, Date.now())
+        }
         const names = (sRow?.value as { names?: unknown } | null)?.names
         trybeProducts = (Array.isArray(names) ? names : []).filter((x): x is string => typeof x === 'string' && !!x.trim()).map((x) => x.trim().slice(0, 120)).slice(0, 12)
       } catch { metaAds = []; trybeProducts = [] }
     }
     const metaAdsText = brandAdsBlock(metaAds)
+    const rivalAdsText = competitorAdsBlock(rivalAds)
+    // THE PRODUCT'S OWN AMAZON LISTING, as SCOUT read it with its reviews.
+    const az = body.amazon && typeof body.amazon === 'object' ? body.amazon as { title?: unknown; bullets?: unknown; description?: unknown } : null
+    const amazonText = az && typeof az.title === 'string' && az.title.trim()
+      ? [`THE PRODUCT ON AMAZON (its own listing, read by SCOUT): ${az.title.trim().slice(0, 200)}`, ...(Array.isArray(az.bullets) ? az.bullets : []).filter((x): x is string => typeof x === 'string' && !!x.trim()).slice(0, 8).map((x) => `- ${x.trim().slice(0, 260)}`), typeof az.description === 'string' && az.description.trim() ? `Description: ${az.description.trim().slice(0, 900)}` : ''].filter(Boolean).join('\n')
+      : ''
     // THE BUYERS, READ BY THE SCRIPT AGENT (Seb, 2026-11-06: "this agent
     // should be the one doing the work"): the product's reviews (Amazon's read
     // by SCOUT in the creator's Chrome and sent by the page, TikTok Shop's read
@@ -1588,7 +1606,7 @@ export async function POST(request: Request) {
         system: VIDEO_PLAN_SYSTEM(BANNED_RULE),
         messages: [{ role: 'user', content: [
           ...(shot ? [{ type: 'image' as const, source: { type: 'base64' as const, media_type: `image/${shot[1]}` as 'image/jpeg' | 'image/png' | 'image/webp', data: shot[2] } }] : []),
-          { type: 'text' as const, text: `BRAND:\n${brandBlock({ name: row.name, categories: row.categories || [], about: row.about, siteSummary: summary, products, onSale, payText: row.pay_text })}${briefText ? `\n\nBRIEF (the brand's own creative brief on TRYBE):\n${briefText}` : ''}${product ? `\n\nTHE PRODUCT ON HAND: ${product}. The creator has this one in hand, so every video is about it and shows it.` : ''}${trybeText ? `\n\n${trybeText}` : ''}${metaAdsText ? `\n\n${metaAdsText}` : ''}${winners.length ? `\n\n${winnersBlock(winners)}` : ''}${examplesText ? `\n\n${examplesText}` : ''}${hooksText ? `\n\n${hooksText}` : ''}${shot ? '\n\nSCREENSHOT: attached above, of the product or its reviews. Read the product and anything buyers say in it.' : ''}${buyersText ? `\n\n${buyersText}` : ''}` },
+          { type: 'text' as const, text: `BRAND:\n${brandBlock({ name: row.name, categories: row.categories || [], about: row.about, siteSummary: summary, products, onSale, payText: row.pay_text })}${briefText ? `\n\nBRIEF (the brand's own creative brief on TRYBE):\n${briefText}` : ''}${product ? `\n\nTHE PRODUCT ON HAND: ${product}. The creator has this one in hand, so every video is about it and shows it.` : ''}${trybeText ? `\n\n${trybeText}` : ''}${amazonText ? `\n\n${amazonText}` : ''}${metaAdsText ? `\n\n${metaAdsText}` : ''}${rivalAdsText ? `\n\n${rivalAdsText}` : ''}${winners.length ? `\n\n${winnersBlock(winners)}` : ''}${examplesText ? `\n\n${examplesText}` : ''}${hooksText ? `\n\n${hooksText}` : ''}${shot ? '\n\nSCREENSHOT: attached above, of the product or its reviews. Read the product and anything buyers say in it.' : ''}${buyersText ? `\n\n${buyersText}` : ''}` },
         ] }],
       })
       try { const u = usageFromAnthropic(msg); recordUsage({ userId, tier, feature: 'trybe_video_plan', model: MODEL, input: u.input, output: u.output }) } catch { /* best-effort */ }
@@ -1605,7 +1623,7 @@ export async function POST(request: Request) {
           const { error: smUp } = await admin.from('trybe_samples').update({ ideas: { ...plan, onSale, products: products.slice(0, 15) }, ideas_at: now, updated_at: now }).eq('user_id', ownerId).eq('id', sampleId)
           if (smUp) kept = false
         } catch { kept = false }
-        return NextResponse.json({ ok: true, plan, onSale, products: products.slice(0, 15), saved: kept, onList: true, fromWinners: winners.length, fromTop100: examples.length, fromRanked: examples.filter((x) => x.best_rank != null).length, fromMetaAds: metaAds.length, metaAdsLongest: metaAds[0]?.days ?? null, fromTrybeProducts: trybeProducts.length, builtOn, examplesGiven: examples.length })
+        return NextResponse.json({ ok: true, plan, onSale, products: products.slice(0, 15), saved: kept, onList: true, fromWinners: winners.length, fromTop100: examples.length, fromRanked: examples.filter((x) => x.best_rank != null).length, fromMetaAds: metaAds.length, metaAdsLongest: metaAds[0]?.days ?? null, fromTrybeProducts: trybeProducts.length, builtOn, examplesGiven: examples.length, fromCompetitors: rivalAds.length, fromAmazonListing: !!amazonText })
       }
       // KEPT FOR EVERY BRAND (migration 429): a brand joined on TRYBE directly
       // has no row on the MVP list, and its ideas used to be lost.
@@ -1622,7 +1640,7 @@ export async function POST(request: Request) {
           if (upErr) saved = false
         } catch { saved = false }
       }
-      return NextResponse.json({ ok: true, plan, onSale, products: products.slice(0, 15), saved: saved || ideasKept, onList: !!own || ideasKept, fromWinners: winners.length, fromTop100: examples.length, fromRanked: examples.filter((x) => x.best_rank != null).length, fromMetaAds: metaAds.length, metaAdsLongest: metaAds[0]?.days ?? null, fromTrybeProducts: trybeProducts.length, builtOn, examplesGiven: examples.length })
+      return NextResponse.json({ ok: true, plan, onSale, products: products.slice(0, 15), saved: saved || ideasKept, onList: !!own || ideasKept, fromWinners: winners.length, fromTop100: examples.length, fromRanked: examples.filter((x) => x.best_rank != null).length, fromMetaAds: metaAds.length, metaAdsLongest: metaAds[0]?.days ?? null, fromTrybeProducts: trybeProducts.length, builtOn, examplesGiven: examples.length, fromCompetitors: rivalAds.length, fromAmazonListing: !!amazonText })
     } catch (e) {
       return NextResponse.json({ error: e instanceof Error ? `MVP could not plan the videos: ${e.message}` : 'MVP could not plan the videos.' }, { status: 502 })
     }

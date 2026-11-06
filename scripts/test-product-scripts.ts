@@ -18,6 +18,7 @@ import {
 } from '../lib/product-scripts'
 import { PROVEN_OPENERS, SCRIPT_CHECKLIST, VIDEO_PLAN_SYSTEM, clipAtWord, parseVideoPlan, linkInspired, inspiredWords } from '../lib/trybe-playbook'
 import { scrubBanned } from '../lib/scrub'
+import { competitorAdsForPlan, competitorAdsBlock } from '../lib/trybe-adsgallery'
 
 const fails: string[] = []
 const check = (name: string, ok: boolean | undefined) => { if (!ok) fails.push(name) }
@@ -193,8 +194,14 @@ check('SCOUT reads the words and stars, never a reviewer\'s name or picture', /\
   check('TRYBE says what its writer read about the buyers', /^Written from what its buyers say: 8 reviews from the Amazon page through SCOUT, 2 critical reviews\. Looked at your screenshot\.$/.test(buyerReportWords({ reviews: 8, critical: 2, customersSay: false, by: 'scout', source: 'amazon', screenshot: true }, '1.58.0'))
     && /No reviews read: your SCOUT is older than 1\.58\.0/.test(buyerReportWords({ reviews: 0, critical: 0, customersSay: false, by: null, source: 'amazon', why: 'old-scout', screenshot: false }, '1.58.0')))
   const ON = read('components/labs/TrybeOutreach.tsx'), NV = read('components/labs/TrybeNav.tsx')
-  check('Video Scripts sits inside TRYBE\'s Make videos, by its own switch', /\{ label: 'Video Scripts', icon: Wand2, tabs: \['anyscripts'\], gate: 'anyScripts' \}/.test(NV) && /\{ label: 'Brand scripts', icon: Clapperboard, tabs: \['create'\] \}/.test(NV) && /active\.items\.filter\(shown\)\.map/.test(NV)
-    && /tab === 'anyscripts' && \(canAnyScripts \? <ProductScripts embedded \/>/.test(ON) && /const canAnyScripts = canUsePreview\('product_scripts'/.test(ON) && /anyScripts=\{canAnyScripts\}/.test(ON))
+  // ONE SCRIPT TAB IN TRYBE (Seb, 2026-11-06: "Under Tribe, it should only be
+  // brand scripts ... You choose your brand, you choose your product, and
+  // then it gives you the scripts that we discussed").
+  const CR = read('components/labs/TrybeCreate.tsx')
+  check('TRYBE has one script tab, Brand scripts, and no Video Scripts tab', /\{ label: 'Brand scripts', icon: Clapperboard, tabs: \['create'\] \}/.test(NV) && !/Video Scripts|anyscripts/.test(NV) && !/anyscripts|<ProductScripts/.test(ON))
+  check('the product step takes where it sells before the scripts are written, and the agent gets it', /Where it sells <span/.test(CR) && /placeholder="Its Amazon or TikTok Shop link"/.test(CR) && /Screenshot of its reviews/.test(CR)
+    && /buyerLink=\{link\} buyerShot=\{buyerShot\}/.test(CR) && /useState\(givenLink\)/.test(TV) && /useState<string \| null>\(givenShot\)/.test(TV))
+  check('the product filmed on Amazon gives its own listing, and a new product clears the last one\'s', /const asin = amz\.product\(brand\.name, product\)\?\.products\?\.\[0\]\?\.asin/.test(CR) && /https:\/\/www\.amazon\.com\/dp\/\$\{asin\}/.test(CR) && /useEffect\(\(\) => \{ if \(!product\) \{ setBuyerLink\(''\); setBuyerShot\(null\) \} \}, \[product\]\)/.test(CR))
 
   // ── BUILT ON A WINNER (Seb, 2026-11-06: "will MVP look at the top
   // submissions ... give at least one inspiration or one script that is
@@ -219,6 +226,24 @@ check('SCOUT reads the words and stars, never a reviewer\'s name or picture', /\
   const TRr = read('app/api/labs/trybe/route.ts'), PRr = read('app/api/labs/product-scripts/route.ts'), SP = read('components/labs/ScriptParts.tsx')
   check('both routes link each named winner to the top videos they gave, with the video', /parsed\.videos = linkInspired\(parsed\.videos, examples, winners\.length\)/.test(TRr) && /scripts\.videos = linkInspired\(scripts\.videos, examples, 0\)/.test(PRr) && /select\('brand_id,brand_name,best_rank,category,script,state,video_url'\)/.test(TRr) && /select\('brand_id,brand_name,best_rank,category,script,state,video_url'\)/.test(PRr))
   check('each card shows Built on a winner, which one, what was kept, and the video; the plan says how many', /Built on a winner/.test(SP) && /<b>Built on<\/b> \{inspiredWords\(v\.inspired\)\}/.test(SP) && /Watch that video/.test(SP) && /<BuiltOnLine videos=\{plan\.videos\} asked=\{BUILT_ON_VIDEOS\} \/>/.test(read('components/labs/TrybeVideoIdeas.tsx')) && /<BuiltOnLine videos=\{result\.scripts\.videos\} asked=\{PRODUCT_BUILT_ON\}/.test(P) && /No top TRYBE videos with words were on hand/.test(SP))
+
+  // ── EVERY SOURCE IN (Seb, 2026-11-06: "utilize all of the data that is
+  // possible to get, whether it's reading reviews, ... competing videos, ...
+  // transcripts from Tribe, ... the briefs, ... the website") ───────────────
+  {
+    const now = Date.parse('2026-11-06T12:00:00Z')
+    const ad = (id: string, brandId: string, brand: string, started: string, body: string) => ({ id, brandId, brand, page: brand, startedText: null, started, body, opening: '', paid: false, video: true, versions: false, preview: null, readAt: '2026-11-05T00:00:00Z', cta: 'Shop now' })
+    const g = { ads: [ad('1', 'b-me', 'Oink', '2026-01-01', 'Our own ad words here.'), ad('2', 'b-rival', 'Snoutly', '2026-03-01', 'Snoutly bacon crisps in five minutes.'), ad('3', 'b-rival', 'Snoutly', '2026-02-01', 'Snoutly again, older.'), ad('4', 'b-far', 'Shoe Co', '2026-01-01', 'Shoe Co walks all day.'), ad('5', 'b-rival2', 'Porky', '2026-09-01', 'Porky makes Sunday easy.')] }
+    const rivals = competitorAdsForPlan(g, {}, 'b-me', { 'b-rival': ['Food & Drink'], 'b-rival2': ['food & drink'], 'b-far': ['Shoes'] }, ['Food & Drink'], now)
+    check('competing videos are other brands in its category, one ad each, the longest running first', rivals.map((a) => a.id).join(',') === '3,5' && !rivals.some((a) => a.brandId === 'b-me' || a.brandId === 'b-far'))
+    const rb = competitorAdsBlock(rivals)
+    check('competing ads go in as frames, their brands never named', /^COMPETING BRANDS' META ADS/.test(rb) && !/Snoutly|Porky/.test(rb) && /the brand again, older/.test(rb) && /never name them, and never borrow their claims/.test(rb) && competitorAdsBlock([]) === '')
+  }
+  check('TRYBE\'s writer is told to use the competing ads and the Amazon listing', /COMPETING BRANDS' META ADS show what this category's buyers already stop for/.test(VIDEO_PLAN_SYSTEM('')) && /THE PRODUCT ON AMAZON/.test(VIDEO_PLAN_SYSTEM('')))
+  check('TRYBE\'s writer reads every source: the brief, the website, its products, its pay, the Top 100 words, the week\'s hooks, its own and competing Meta ads, the Amazon listing and the reviews',
+    /BRIEF \(the brand's own creative brief on TRYBE\)/.test(TR) && /researchBrandSite\(row\.website\)/.test(TR) && /PRODUCTS THE BRAND LISTS ON TRYBE/.test(TR) && /payText: row\.pay_text/.test(TR) && /examplesBlock\(examples/.test(TR) && /hooksBlock\(topHooks\.hooks/.test(TR)
+    && /\$\{metaAdsText \? /.test(TR) && /\$\{rivalAdsText \? /.test(TR) && /\$\{amazonText \? /.test(TR) && /\$\{buyersText \? /.test(TR) && /rivalAds = competitorAdsForPlan\(/.test(TR) && (TR.match(/fromCompetitors: rivalAds\.length, fromAmazonListing: !!amazonText/g) || []).length === 2)
+  check('the brand\'s own best videos on TRYBE are read every time before writing, and what went in is said', /if \(!w && canRead && brandId\) \{/.test(TV) && /winners: bestWords/.test(TV) && /Studied \$\{rivals\} competing brand/.test(TV) && /Read its Amazon listing\./.test(TV) && /amazon: got\.amazon/.test(TV))
   const words = [P.match(/>[^<>{}]{12,}</g) || []].flat().join(' ')
   check('no dashes in the page\'s words', !/[–—]| - /.test(words))
 

@@ -12,13 +12,14 @@
 //      saved per brand and product (TrybeVideoIdeas does the writing).
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Loader2, ArrowLeft, Search, Check, FileText, ExternalLink, AlertTriangle } from 'lucide-react'
+import { Loader2, ArrowLeft, Search, Check, FileText, ExternalLink, AlertTriangle, ImagePlus, X } from 'lucide-react'
 import { requestTrybeApi } from '@/lib/extension-frame'
 import { readBrandStats, byBrandName, type MyBrand } from '@/lib/trybe-mybrands'
 import { brandPageUrl } from '@/lib/trybe-brand-page'
 import TrybeVideoIdeas, { loadBrandPage, type BrandPage } from '@/components/labs/TrybeVideoIdeas'
 import { AmazonLine, ProductAmazon, AmazonFilmedList } from '@/components/labs/TrybeFinderControls'
 import { useTrybeAmazon } from '@/components/labs/useTrybeAmazon'
+import { shrinkPicture } from '@/lib/buyer-read-client'
 
 const PURPLE = 'var(--accent)'
 const GREEN = '#16A34A'
@@ -38,6 +39,15 @@ export default function TrybeCreate({ canRead, isAdmin, onFind, start, onStarted
   const [pageLoading, setPageLoading] = useState(false)
   const [typed, setTyped] = useState('')
   const [product, setProduct] = useState<string | null>(null)
+  // WHERE IT SELLS, BEFORE THE SCRIPTS ARE WRITTEN (Seb, 2026-11-06: "You
+  // choose your brand, you choose your product, and then it gives you the
+  // scripts"): the product's Amazon or TikTok Shop link, or a screenshot of
+  // its reviews, for the script agent to read its buyers. Cleared with the
+  // product, so one product's reviews never write another's scripts.
+  const [buyerLink, setBuyerLink] = useState('')
+  const [buyerShot, setBuyerShot] = useState<string | null>(null)
+  const shotRef = useRef<HTMLInputElement>(null)
+  useEffect(() => { if (!product) { setBuyerLink(''); setBuyerShot(null) } }, [product])
   const [onHand, setOnHand] = useState<'idle' | 'saving' | 'done'>('idle')
   const [onHandErr, setOnHandErr] = useState<string | null>(null)
   // THE AMAZON MATCH (Seb, 2026-10-14): each brand you work with, and each
@@ -221,6 +231,19 @@ export default function TrybeCreate({ canRead, isAdmin, onFind, start, onStarted
               <input value={typed} onChange={(e) => setTyped(e.target.value)} placeholder={page?.products.length ? 'Or type another product you have' : 'The product you have'} className="flex-1 min-w-[14rem] rounded-xl border bg-transparent px-3 py-2 text-[13.5px]" style={{ borderColor: 'var(--border)', color: 'var(--text)' }} />
               <button type="submit" disabled={!typed.trim()} className="rounded-xl px-4 py-2 text-[13.5px] font-semibold disabled:opacity-50" style={{ background: PURPLE, color: '#fff' }}>Use this product</button>
             </form>
+            {/* WHERE IT SELLS (optional): read for its buyers before writing. */}
+            <div className="mt-3 rounded-xl border px-3.5 py-3" style={{ borderColor: 'var(--border)' }}>
+              <p className="text-[13px] font-semibold">Where it sells <span className="font-normal" style={soft}>(optional, so the scripts start from what its buyers say)</span></p>
+              <div className="mt-1.5 flex flex-wrap gap-2">
+                <input value={buyerLink} onChange={(e) => setBuyerLink(e.target.value)} placeholder="Its Amazon or TikTok Shop link" className="flex-1 min-w-[14rem] rounded-xl border bg-transparent px-3 py-2 text-[13.5px]" style={{ borderColor: 'var(--border)' }} />
+                <button type="button" onClick={() => shotRef.current?.click()} className="inline-flex items-center gap-1.5 rounded-xl border px-3 py-2 text-[13px] font-semibold" style={{ borderColor: 'var(--border)' }}>
+                  <ImagePlus size={14} /> {buyerShot ? 'Screenshot added' : 'Screenshot of its reviews'}
+                </button>
+                {buyerShot && <button type="button" onClick={() => setBuyerShot(null)} className="inline-flex items-center gap-1 text-[12.5px]" style={soft}><X size={13} /> Remove</button>}
+                <input ref={shotRef} type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) void shrinkPicture(f).then(setBuyerShot, () => setBuyerShot(null)) }} />
+              </div>
+              <p className="mt-1 text-[12px]" style={soft}>Amazon reviews are read by SCOUT in this Chrome; TikTok Shop reviews by MVP. When you filmed this product on Amazon, MVP uses that listing by itself.</p>
+            </div>
             {/* The brief, said in one line, with the way to open it. */}
             <div className="mt-4 rounded-xl px-3.5 py-2.5 text-[13px] flex flex-wrap items-center gap-x-3 gap-y-1" style={{ background: page?.brief ? 'rgba(22,163,74,0.08)' : 'rgba(180,83,9,0.08)' }}>
               <FileText size={14} style={{ color: page?.brief ? GREEN : AMBER }} />
@@ -261,8 +284,14 @@ export default function TrybeCreate({ canRead, isAdmin, onFind, start, onStarted
               </div>
             )
           })()}
-          <p className="text-[13.5px] mt-0.5 mb-3" style={soft}>Ten videos, each as short lines to say one at a time, with the B-roll to film. Copy one, or print them all and start shooting.</p>
-          <TrybeVideoIdeas key={`${brand.id}|${product}`} brandId={brand.id} name={brand.name} plan={null} canRead={canRead} isAdmin={isAdmin} product={product} page={page} auto emphasize />
+          <p className="text-[13.5px] mt-0.5 mb-3" style={soft}>Ten videos written from the brief, what its buyers say and TRYBE&rsquo;s top videos, scene by scene. Copy one, or print them all and start shooting.</p>
+          {(() => {
+            // The product's Amazon listing when you filmed it on Amazon: its
+            // buyers' reviews are read from there unless you gave a link.
+            const asin = amz.product(brand.name, product)?.products?.[0]?.asin
+            const link = buyerLink.trim() || (asin ? `https://www.amazon.com/dp/${asin}` : '')
+            return <TrybeVideoIdeas key={`${brand.id}|${product}`} brandId={brand.id} name={brand.name} plan={null} canRead={canRead} isAdmin={isAdmin} product={product} page={page} auto emphasize buyerLink={link} buyerShot={buyerShot} />
+          })()}
         </section>
       )}
     </div>
