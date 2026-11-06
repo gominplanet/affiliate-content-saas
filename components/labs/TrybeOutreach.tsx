@@ -49,6 +49,8 @@ import TrybeWeek from '@/components/labs/TrybeWeek'
 import TrybeChanges, { fetchChanges, changesSummary, type ChangesRead } from '@/components/labs/TrybeChanges'
 import { readJoinedBrandIds } from '@/lib/trybe-joined'
 import { type PeekActions } from '@/components/labs/TrybeBrandPeek'
+import TrybeDossier from '@/components/labs/TrybeDossier'
+import { DossierCtx, BrandName } from '@/components/labs/trybe-dossier-context'
 import TrybeWorking from '@/components/labs/TrybeWorking'
 import TrybeCreate from '@/components/labs/TrybeCreate'
 import TrybeStage from '@/components/labs/TrybeStage'
@@ -517,7 +519,11 @@ function sentShows(r: { b: { name: string; status: string }; reply: string; rq?:
   return r.reply !== 'replied' && (WENT as string[]).includes(r.b.status)
 }
 
-export default function TrybeOutreach({ preview = false }: { preview?: boolean } = {}) {
+export default function TrybeOutreach({ preview = false, v2 = false }: { preview?: boolean; v2?: boolean } = {}) {
+  // THE NEW TRYBE (Seb, 2026-11-06): team only first (labs-preview
+  // 'trybe_v2'), so members keep the page they know until it is opened to them.
+  const [dossierOf, setDossierOf] = useState<{ id: string; name: string } | null>(null)
+  const openDossier = useCallback((id: string, name: string) => setDossierOf({ id, name }), [])
   // The new look (lib/look, behind Labs): the shared header card.
   const teal = useLook() === 'teal'
   const [brands, setBrands] = useState<Brand[]>([])
@@ -2013,6 +2019,8 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
   const repliedWeek = sentRows.filter(r => r.reply === 'replied' && (r.b.replied_at ? Date.parse(r.b.replied_at) >= weekAgo : true)).length
 
   return (
+    <DossierCtx.Provider value={v2 ? openDossier : null}>
+    {dossierOf && <TrybeDossier brandId={dossierOf.id} name={dossierOf.name} onClose={() => setDossierOf(null)} actions={peekActions} scout={scoutOpens} onScripts={() => { setDossierOf(null); go('create') }} />}
     <div className="max-w-6xl mx-auto px-4 py-8 space-y-6" style={{ color: 'var(--text)' }}>
       <Suspense fallback={null}><TabQueryWatcher onTab={onTabQuery} /></Suspense>
       {teal ? (
@@ -2666,7 +2674,7 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
                     <BrandMark name={b.name} website={b.website} />
                     <span className="flex-1 min-w-0">
                       <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                        <span className="text-[15px] font-semibold">{b.name}</span>
+                        <BrandName id={b.brand_id} name={b.name} className="text-[15px] font-semibold" />
                         <StarButton on={!!b.starred} onClick={() => void star(b)} />
                         <CompareButton on={compare.some(x => x.brand_id === b.brand_id)} full={compare.length >= COMPARE_MAX} onClick={() => flipCompare(b)} />
                         {where && <span className="text-[11px] font-semibold rounded-full px-2 py-0.5" style={{ background: 'rgb(var(--brand-rgb) / 0.10)', color: PURPLE }}>{where}</span>}
@@ -3059,7 +3067,7 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
                 <BrandMark name={b.name} website={b.website} size={36} />
                 <div className="flex-1 min-w-0">
                   <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px]">
-                    <span className="text-[14px] font-semibold">{b.name}</span>
+                    <BrandName id={b.brand_id} name={b.name} className="text-[14px] font-semibold" />
                     <TrybeLink brandId={b.brand_id} name={b.name} scout={scoutOpens} />
                     {rq && <span className="text-[11px] font-semibold rounded-full px-2 py-0.5" style={{ background: REQUEST_WORDS[rq.state].bg, color: REQUEST_WORDS[rq.state].color }} title="Where this request stands in your TRYBE requests">{REQUEST_WORDS[rq.state].label}</span>}
                     {reply === 'replied' && <span className="text-[11px] font-semibold rounded-full px-2 py-0.5" style={{ background: 'rgba(22,163,74,0.12)', color: GREEN }}>Replied{b.replied_at ? ` ${new Date(b.replied_at).toLocaleDateString()}` : ''}</span>}
@@ -3117,6 +3125,7 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
         </div>
       )}
     </div>
+    </DossierCtx.Provider>
   )
 }
 
@@ -3144,7 +3153,7 @@ function QueueRow({ b, busy, disabled, onSave, onRemove, onRewrite, rewriting, o
         <BrandMark name={b.name} website={b.website} size={36} />
         <div className="flex-1 min-w-0">
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-            <span className="text-[14px] font-semibold">{b.name}</span>
+            <BrandName id={b.brand_id} name={b.name} className="text-[14px] font-semibold" />
             {promotes && <span className="text-[11px] font-semibold rounded-full px-2 py-0.5" style={{ background: 'rgba(22,163,74,0.12)', color: GREEN }}>You already promote them</span>}
             {b.pay_text && <span className="text-[11px] font-semibold rounded-md px-2 py-0.5" style={{ background: 'rgba(22,163,74,0.10)', color: GREEN }}>{b.pay_text}</span>}
             {/* EARLIER WORDS (review 2026-10-24): written before the core message last changed. */}

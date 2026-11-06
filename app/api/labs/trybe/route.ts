@@ -59,6 +59,7 @@ import { brandKey } from '@/lib/brand-normalize'
 const brandKeyOf = (n: string | null | undefined) => brandKey(n)
 import { researchBrandSite } from '@/lib/trybe-research'
 import { mergeDirectory, directorySearchText, nicheScore, readCategories, siteSearchText, programOf } from '@/lib/trybe-directory'
+import { samplePool, replyPool, metaSeries, timelineOf, dossierProducts } from '@/lib/trybe-dossier'
 import { TOP100, adSpendProof, samplesProof, sampleSignsByBrand, activityCounts, activityDigest, cleanProfile, pushesOf, readTop100Ask, catalogSamples, readCatalogSamples, CATALOG_KEEP_DAYS, CATALOG_READS_MAX, type Activity, type CatalogSamples } from '@/lib/trybe-top100'
 import {
   clampCap, countsTowardCap, sanitizeScanned, sendUrl, tidyDraft,
@@ -2655,6 +2656,69 @@ Weigh posts pushed to social, and TRYBE brands they earned with or submitted to,
       seen.add(k); return true
     }).slice(0, 10)
     return NextResponse.json({ ok: true, plans })
+  }
+
+  if (action === 'dossier') {
+    // ONE BRAND, EVERYTHING MVP KNOWS (lib/trybe-dossier). The page reads the
+    // brand's listing signals with 'browse' by id, and this for the rest:
+    // its logo and products on TRYBE (public), what happened to it on TRYBE,
+    // its Meta ads over time, its Top 100 videos, and MVP creators' pooled
+    // results, samples and replies (shown only past POOL_MIN), plus where it
+    // stands with this creator. Each part that could not be read says so.
+    if (!/^[A-Za-z0-9-]{6,80}$/.test(brandId)) return NextResponse.json({ error: 'Bad request' }, { status: 400 })
+    const fail = (e: { message?: string } | null | undefined) => (e ? String(e.message || 'could not be read').slice(0, 160) : null)
+    const [dirQ, chQ, memQ, samQ, outQ, topQ, mineQ, mySamQ] = await Promise.all([
+      admin.from('trybe_directory').select('brand_id, name, website, categories, about, first_seen_at, last_seen_at, left_at, meta_ads, meta_ads_checked_at').eq('brand_id', brandId).maybeSingle(),
+      admin.from('trybe_directory_changes').select('kind, before, after, at').eq('brand_id', brandId).order('at', { ascending: false }).limit(200),
+      memberRows(admin, [brandId]),
+      admin.from('trybe_samples').select('user_id, requested_at, received_at').eq('brand_id', brandId).limit(2000),
+      admin.from('trybe_brands').select('user_id, status, sent_at, replied_at').eq('brand_id', brandId).limit(5000),
+      admin.from('trybe_top_scripts').select('submission_id, creator, best_rank, seconds, hook, thumbnail, video_url, category').eq('brand_id', brandId).order('best_rank', { ascending: true, nullsFirst: false }).limit(12),
+      admin.from('trybe_brands').select('status, sent_at, replied_at, drafted_at, fit_score, fit_reason').eq('user_id', ownerId).eq('brand_id', brandId).maybeSingle(),
+      admin.from('trybe_samples').select('product, requested_at, received_at, filmed_at, submitted_at').eq('user_id', ownerId).eq('brand_id', brandId).order('requested_at', { ascending: false }).limit(20),
+    ])
+    const dir = dirQ.data as Record<string, any> | null // eslint-disable-line @typescript-eslint/no-explicit-any
+    // TRYBE's own public brand page and product list: the logo, and each
+    // product open to samples or not. Kept a day, shared by every member.
+    const pubKey = `dossier_pub:${brandId}`
+    let pub: { logo: string | null; description: string | null; products: ReturnType<typeof dossierProducts>; read: boolean; error: string | null } | null = null
+    {
+      const { data: hit } = await admin.from('trybe_directory_meta').select('value, updated_at').eq('key', pubKey).maybeSingle()
+      if (hit?.updated_at && Date.now() - Date.parse(hit.updated_at) < 86_400_000) pub = hit.value as typeof pub
+    }
+    if (!pub) {
+      const head = { accept: 'application/json', 'user-agent': 'Mozilla/5.0 (MVP Affiliate)' }
+      const base = `https://jointrybe.com/backend/api/public/brand/${encodeURIComponent(brandId)}`
+      const [b, p] = await Promise.all([
+        fetch(base, { signal: AbortSignal.timeout(10_000), headers: head }).then(async r => (r.ok ? r.json() : null)).catch(() => null),
+        fetch(`${base}/products`, { signal: AbortSignal.timeout(10_000), headers: head }).then(async r => (r.ok ? { ok: true, json: await r.json() } : { ok: false, status: r.status })).catch(() => ({ ok: false, status: 0 })),
+      ])
+      const bd = b && typeof b === 'object' && (b as Record<string, unknown>).data && typeof (b as Record<string, unknown>).data === 'object' ? (b as { data: Record<string, unknown> }).data : null
+      const logo = typeof bd?.logoUrl === 'string' && /^https:\/\//i.test(bd.logoUrl) ? bd.logoUrl : null
+      const products = 'json' in p ? dossierProducts(p.json) : []
+      pub = { logo, description: typeof bd?.description === 'string' ? bd.description.slice(0, 600) : null, products, read: 'json' in p,
+        error: 'json' in p ? null : p.status === 404 ? 'TRYBE has no public product list for this brand.' : 'TRYBE\u2019s product list did not answer.' }
+      if (pub.read || logo) { try { await admin.from('trybe_directory_meta').upsert({ key: pubKey, value: pub, updated_at: now }) } catch { /* read again next time */ } }
+      // The product list's samples count, for Find brands and My top 100 too.
+      if (pub.read) { try { await admin.from('trybe_directory_meta').upsert({ key: `samples:${brandId}`, value: { open: products.filter(x => x.samples).length, total: products.length }, updated_at: now }) } catch { /* kept next time */ } }
+    }
+    const changes = ((chQ.data || []) as Array<{ kind: string; before: string | null; after: string | null; at: string }>)
+    const pooled = memQ.error ? null : poolBrands(memQ.rows, { exclude: ownerId }).get(brandId) ?? null
+    const mine = mineQ.data as Record<string, any> | null // eslint-disable-line @typescript-eslint/no-explicit-any
+    return NextResponse.json({
+      ok: true,
+      brand: dir ? { id: brandId, name: dir.name, website: dir.website ?? null, categories: dir.categories || [], about: dir.about ?? null, firstSeen: dir.first_seen_at ?? null, lastSeen: dir.last_seen_at ?? null, left: !!dir.left_at } : null,
+      pub,
+      timeline: timelineOf(changes).slice(0, 40),
+      meta: metaSeries(changes, { count: typeof dir?.meta_ads === 'number' ? dir.meta_ads : null, at: dir?.meta_ads_checked_at ?? null }),
+      pool: pooled ? { approvalRate: pooled.approvalRate, payPerApproved: pooled.payPerApproved, reviewDays: pooled.reviewDays, slowShare: pooled.slowShare, why: pooled.why } : null,
+      poolError: memQ.error ? fail({ message: memQ.error }) : null,
+      samples: samQ.error ? null : samplePool((samQ.data || []) as Array<{ user_id: string; requested_at: string | null; received_at: string | null }>),
+      replies: outQ.error ? null : replyPool((outQ.data || []) as Array<{ user_id: string; status: string | null; sent_at: string | null; replied_at: string | null }>),
+      top: topQ.error ? [] : ((topQ.data || []) as Array<Record<string, any>>).map(t => ({ id: String(t.submission_id), creator: t.creator ?? null, rank: t.best_rank ?? null, seconds: t.seconds ?? null, hook: t.hook ?? null, thumbnail: typeof t.thumbnail === 'string' && /^https:\/\//.test(t.thumbnail) ? t.thumbnail : null, video: typeof t.video_url === 'string' && /^https:\/\//.test(t.video_url) ? t.video_url : null })), // eslint-disable-line @typescript-eslint/no-explicit-any
+      you: { status: mine?.status ?? null, sentAt: mine?.sent_at ?? null, repliedAt: mine?.replied_at ?? null, draftedAt: mine?.drafted_at ?? null, fit: typeof mine?.fit_score === 'number' ? mine.fit_score : null, fitReason: mine?.fit_reason ?? null,
+        samples: ((mySamQ.data || []) as Array<Record<string, any>>).map(x => ({ product: String(x.product || ''), requestedAt: x.requested_at ?? null, receivedAt: x.received_at ?? null, filmedAt: x.filmed_at ?? null, submittedAt: x.submitted_at ?? null })) }, // eslint-disable-line @typescript-eslint/no-explicit-any
+    })
   }
 
   if (action === 'brand_products') {

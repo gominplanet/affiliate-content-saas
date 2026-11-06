@@ -9,7 +9,7 @@
 import { normalizeTier } from '@/lib/tier'
 import { canSeeNav } from '@/lib/feature-access'
 
-export type PreviewFeature = 'on_sale' | 'amazon_live' | 'comparison' | 'shorts_mode' | 'first_comment' | 'brand_recap' | 'deal_aftercare' | 'post_refresh' | 'facebook_reels' | 'whole_video' | 'sold_campaigns' | 'liftoff_split' | 'earnings' | 'live_followup' | 'video_plan' | 'studio_upload' | 'facebook_setup' | 'group_queue' | 'trybe_outreach' | 'hashtag_trends' | 'drop' | 'video_qr' | 'deals_import' | 'review_edit' | 'creator_look' | 'new_look'
+export type PreviewFeature = 'on_sale' | 'amazon_live' | 'comparison' | 'shorts_mode' | 'first_comment' | 'brand_recap' | 'deal_aftercare' | 'post_refresh' | 'facebook_reels' | 'whole_video' | 'sold_campaigns' | 'liftoff_split' | 'earnings' | 'live_followup' | 'video_plan' | 'studio_upload' | 'facebook_setup' | 'group_queue' | 'trybe_outreach' | 'hashtag_trends' | 'drop' | 'video_qr' | 'deals_import' | 'review_edit' | 'creator_look' | 'new_look' | 'trybe_v2'
 
 /** Who may use each preview feature: 'admin' while testing, 'labs' once open to Pro. */
 const OPEN_TO: Record<PreviewFeature, 'admin' | 'labs'> = {
@@ -85,6 +85,10 @@ const OPEN_TO: Record<PreviewFeature, 'admin' | 'labs'> = {
   // message per brand, the creator approves the Ready to send list, SCOUT sends it slowly.
   // Opened to Pro 2026-10-08, in Find products (Seb: "unlock TRYBE for pro users").
   trybe_outreach: 'labs',
+  // THE NEW TRYBE (Seb, 2026-11-06: "I would like to wake up ... and see a
+  // different Tribe feature"): the brand page, the TRYBE home and the brand
+  // table. Team only while it is checked on real data; 'labs' opens it to Pro.
+  trybe_v2: 'admin',
   // SCOUT reading TikTok Creative Center and Instagram's tag counts for the
   // hashtag engine (Seb, 2026-10-16). Admin while it is tested on real pages.
   hashtag_trends: 'admin',
