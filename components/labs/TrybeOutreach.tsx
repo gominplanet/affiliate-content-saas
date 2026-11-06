@@ -36,6 +36,7 @@ import { TRYBE_OPEN_URL, TRYBE_NOT_OPEN, TRYBE_NOT_OPEN_WORDS, trybeTabWords, ty
 import { nextGapMs, prefsKey, CATEGORY_SUGGESTIONS, DAILY_FIND, SCAN_READ, SHORT_RUN_UNDER, SHORT_GAP_MS, MAX_DAILY_CAP, termsHits, quoteHits } from '@/lib/trybe-outreach'
 import TrybeInbox, { fetchTrybeInbox, lastIsMine, type Conversation } from '@/components/labs/TrybeInbox'
 import { reportTrybeInbox, inboxSnapshot } from '@/lib/trybe-alerts'
+import { useTrybeAlerts } from '@/components/layout/useTrybeAlerts'
 import { readDiscoveryPage, requestState, acceptRate, type BrandFlags, type RequestState } from '@/lib/trybe-invites'
 import TrybeLink from '@/components/labs/TrybeLink'
 import { SCOUT_TRYBE_OWN_TAB_MIN_VERSION, SCOUT_TRYBE_TAB_OPEN_MIN_VERSION, SCOUT_TRYBE_FIND_MIN_VERSION, SCOUT_TRYBE_HARVEST_MIN_VERSION, SCOUT_TRYBE_BACKGROUND_SEND_MIN_VERSION, SCOUT_TRYBE_RUNNER_MIN_VERSION, SCOUT_TRYBE_HIDDEN_SEND_MIN_VERSION, SCOUT_TRYBE_INBOX_MIN_VERSION, SCOUT_TRYBE_OPEN_BRAND_MIN_VERSION, SCOUT_TRYBE_PLAYBOOK_MIN_VERSION, SCOUT_TRYBE_MYBRANDS_MIN_VERSION, SCOUT_TRYBE_MORNING_MIN_VERSION, SCOUT_STORE_LISTING_URL, scoutAtLeast } from '@/lib/scout-version'
@@ -614,6 +615,8 @@ export default function TrybeOutreach({ preview = false, v2 = false }: { preview
   const searchRef = useRef<HTMLInputElement>(null)
   // The TRYBE inbox, for the unread count and which sent brands answered.
   const [inbox, setInbox] = useState<{ convos: Conversation[]; me: string[]; myName: string } | null>(null)
+  // The unread count MVP last saved, the one the sidebar shows (navUnread).
+  const savedUnread = useTrybeAlerts(!preview, '/trybe')
   const [inboxError, setInboxError] = useState<string | null>(null)
   const [openChat, setOpenChat] = useState<{ id: string; n: number } | null>(null)
   const [editingCore, setEditingCore] = useState(false)
@@ -2086,6 +2089,10 @@ export default function TrybeOutreach({ preview = false, v2 = false }: { preview
 
   // Chats with new messages, not messages, and no group chats (lib/trybe-alerts).
   const unread = inboxSnapshot(inbox?.convos || []).unread
+  // THE SAME NUMBER AS THE SIDEBAR (Seb, 2026-11-06): until this page has
+  // read the inbox itself, the count MVP last saved, the one the sidebar
+  // shows, so the menu here never says nothing while the sidebar says 2.
+  const navUnread = inbox ? unread : savedUnread
   const sentRows = history.map(b => {
     // The chat is shown for any brand; it counts as a reply only per replyConvo.
     const c = inbox ? convoFor(b.name, inbox.convos) : null
@@ -2329,8 +2336,8 @@ export default function TrybeOutreach({ preview = false, v2 = false }: { preview
       )}
 
       {v2
-        ? <TrybeNav tab={tab} queue={queue.length} unread={unread} go={go} />
-        : <TrybeMenu tab={tab} lockedTab={lockedTab} preview={preview} queue={queue} history={history} unread={unread} changes={changes} go={go} />}
+        ? <TrybeNav tab={tab} queue={queue.length} unread={navUnread} go={go} />
+        : <TrybeMenu tab={tab} lockedTab={lockedTab} preview={preview} queue={queue} history={history} unread={navUnread} changes={changes} go={go} />}
       {/* Where you are, and what it is for. */}
       {(() => {
         const t = TABS.find((x) => x.id === (lockedTab ?? tab))

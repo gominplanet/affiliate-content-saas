@@ -68,8 +68,15 @@ export default function TrybeNav({ tab, queue, unread, go }: { tab: Tab; queue: 
               <span className="shrink-0 grid place-items-center w-8 h-8 rounded-lg" style={on ? { background: 'rgba(255,255,255,0.18)' } : { background: 'var(--surface)', color: 'var(--accent-text, var(--accent))' }}>
                 <Icon size={16} />
               </span>
-              <span className="min-w-0">
-                <span className="block text-[14px] font-bold leading-tight">{g.label}</span>
+              <span className="min-w-0 flex-1">
+                <span className="flex items-center gap-1.5 text-[14px] font-bold leading-tight">
+                  {g.label}
+                  {/* THE SIDEBAR'S RED NUMBER, HERE TOO (Seb, 2026-11-06: "the
+                      little number 2 should also be duplicated where it says
+                      get brands ... so people know where to go to clear
+                      that number"): the same unread replies, in the same red. */}
+                  {g.items.some((it) => it.count === 'unread') && unread > 0 && <UnreadDot n={unread} />}
+                </span>
                 {/* What waits shows at every width; the plain hint only where it fits. */}
                 <span className={`${waiting > 0 ? 'block' : 'hidden sm:block'} text-[11.5px] leading-tight mt-0.5 truncate`} style={{ color: on ? 'rgba(255,255,255,0.85)' : waiting > 0 ? 'var(--accent-text, var(--accent))' : 'var(--text-3)', fontWeight: waiting > 0 ? 600 : 400 }}>
                   {waiting > 0 ? <>{waiting} waiting<span className="hidden sm:inline"> on you</span></> : g.hint}
@@ -104,12 +111,23 @@ export default function TrybeNav({ tab, queue, unread, go }: { tab: Tab; queue: 
                   : { background: 'var(--surface)', color: 'var(--text)', border: '1px solid rgb(var(--brand-rgb) / 0.30)', outlineColor: 'var(--accent)' }}>
                 <Icon size={16} style={on ? undefined : { color: 'var(--accent-text, var(--accent))' }} />
                 {it.label}
-                {n > 0 && <span className="text-[11px] font-bold rounded-full px-1.5 min-w-[20px] text-center" style={on ? { background: '#fff', color: 'var(--accent)' } : { background: 'var(--accent)', color: '#fff' }}>{n}</span>}
+                {n > 0 && (it.count === 'unread' ? <UnreadDot n={n} />
+                  : <span className="text-[11px] font-bold rounded-full px-1.5 min-w-[20px] text-center" style={on ? { background: '#fff', color: 'var(--accent)' } : { background: 'var(--accent)', color: '#fff' }}>{n}</span>)}
               </button>
             )
           })}
         </div>
       )}
     </nav>
+  )
+}
+
+/** Unread replies: the sidebar's red pill, so the two read as one number. */
+function UnreadDot({ n }: { n: number }) {
+  return (
+    <span className="text-[11px] tabular-nums min-w-[18px] h-[18px] px-1.5 rounded-full font-bold inline-flex shrink-0 items-center justify-center text-white"
+      style={{ backgroundColor: '#ff3b30' }} aria-label={`${n} unread repl${n === 1 ? 'y' : 'ies'}`}>
+      {n > 99 ? '99+' : n}
+    </span>
   )
 }
