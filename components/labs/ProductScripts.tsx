@@ -245,7 +245,7 @@ function BuyersCard({ s, read }: { s: Scripts; read: ReadReport }) {
   return (
     <section className="rounded-xl border px-4 py-3" style={{ borderColor: 'rgb(var(--brand-rgb) / 0.25)', background: 'rgb(var(--brand-rgb) / 0.05)' }}>
       <p className="text-[12px] font-bold uppercase tracking-wider" style={{ color: PURPLE }}>Who buys it, and why</p>
-      <p className="text-[12px]" style={{ color: 'var(--text-soft)' }}>{fromReviews ? 'Read from the reviews MVP read for this product.' : 'MVP read no reviews for this product, so this comes from the product itself.'}</p>
+      <p className="text-[12px]" style={{ color: 'var(--text-soft)' }}>{fromReviews ? 'Read from the reviews MVP read for this product.' : 'No reviews were read for this product (the line above says why), so this comes from the listing itself.'}</p>
       <div className="mt-2 grid gap-3 sm:grid-cols-3">
         {col(<Users size={11} />, 'Who buys it', b.who)}
         {col(<Heart size={11} />, 'What they love', b.loves, GREEN)}

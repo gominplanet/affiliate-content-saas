@@ -306,7 +306,7 @@ export function readWords(r: ReadReport, scoutMin: string): string {
     parts.push('TikTok Shop showed no reviews for it.')
   } else if (r.source === 'amazon') {
     const why = r.reviewsWhy === 'no-scout' ? 'SCOUT is not in this Chrome'
-      : r.reviewsWhy === 'old-scout' ? `reading them needs SCOUT ${scoutMin}, which Chrome brings once the Web Store has it`
+      : r.reviewsWhy === 'old-scout' ? `your SCOUT is older than ${scoutMin}, the version that reads Amazon reviews; Chrome brings it once the Web Store approves it`
       : r.reviewsWhy === 'none-shown' ? 'the page showed none'
       : 'SCOUT could not read them'
     parts.push(`No reviews read: ${why}.`)
