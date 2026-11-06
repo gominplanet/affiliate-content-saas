@@ -14,6 +14,7 @@ import { Loader2, AlertTriangle, Inbox, Send, Package, Search, TrendingUp, Trend
 import { ui, Section, Tag, Spark } from '@/components/labs/trybe-ui'
 import { BrandName } from '@/components/labs/trybe-dossier-context'
 import { BrandMark } from '@/components/labs/TrybeFinderControls'
+import { useTrybeAds } from '@/components/labs/useTrybeAds'
 
 interface Card { brand_id: string; name: string; website: string | null; categories: string[]; pay: string | null; metaAds: number | null; bucket: string | null; top100: number | null; rating: number | null }
 interface HomeRead {
@@ -45,9 +46,9 @@ const val = (n: number | null, unit: '$' | '%') => (n == null ? '' : unit === '$
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type ForYou = Record<string, any>
 
-export default function TrybeHome({ go, unread, queue, repliedWeek, inboxRead, forYou = [], forYouWhy = '' }: {
+export default function TrybeHome({ go, unread, queue, repliedWeek, inboxRead, forYou = [], forYouWhy = '', canMoney = false }: {
   /** Open a TRYBE tab. */
-  go: (tab: 'find' | 'queue' | 'inbox' | 'week' | 'changes' | 'stars' | 'sent') => void
+  go: (tab: 'find' | 'queue' | 'inbox' | 'week' | 'changes' | 'stars' | 'sent' | 'analytics') => void
   unread: number
   queue: number
   repliedWeek: number
@@ -57,7 +58,12 @@ export default function TrybeHome({ go, unread, queue, repliedWeek, inboxRead, f
   forYou?: ForYou[]
   /** The niche those were found for, in words. */
   forYouWhy?: string
+  /** SCOUT can read the creator's own TRYBE earnings and ad results. */
+  canMoney?: boolean
 }) {
+  // YOUR TRYBE, LAST 30 DAYS: the same read as Earnings, shared, so opening
+  // Earnings after this reads nothing twice.
+  const ads = useTrybeAds(canMoney, '30d')
   const [d, setD] = useState<HomeRead | null>(null)
   const [err, setErr] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
@@ -123,6 +129,23 @@ export default function TrybeHome({ go, unread, queue, repliedWeek, inboxRead, f
           <Desk icon={Search} label="New brands this week" value={d ? d.newWeek.toLocaleString() : '…'} line="Rank them for your channel" onClick={() => go('find')} cta="Find brands" />
         </div>
       </Section>
+
+      {/* ── YOUR TRYBE, LAST 30 DAYS ──────────────────────────────────────── */}
+      {canMoney && (
+        <Section title="Your TRYBE, last 30 days" aside={<button type="button" onClick={() => go('analytics')} className="font-semibold hover:underline" style={{ color: 'var(--accent-text, var(--accent))' }}>Open Earnings</button>}>
+          {ads.month ? (
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+              <Money label="Earned" value={ads.month.earned != null ? `$${Math.round(ads.month.earned).toLocaleString()}` : 'Not read'} line={ads.week?.earned != null ? `$${Math.round(ads.week.earned).toLocaleString()} in the last 7 days` : 'From TRYBE’s Analytics'} />
+              <Money label="Running as ads" value={ads.month.liveAds != null ? String(ads.month.liveAds) : 'Not read'} line="Your videos brands run now" />
+              <Money label="Brands spent" value={ads.month.spend != null ? `$${Math.round(ads.month.spend).toLocaleString()}` : 'Not read'} line="Running your videos as ads" />
+              <Money label="Hook rate" value={ads.month.hookRate != null ? `${Math.round(ads.month.hookRate * 10) / 10}%` : 'Not read'} line="Stopped scrolling in 3 seconds" />
+              <Money label="Click rate" value={ads.month.ctr != null ? `${Math.round(ads.month.ctr * 100) / 100}%` : 'Not read'} line="Clicked through to the brand" />
+              <Money label="Watched" value={ads.month.avgWatchSec != null ? `${Math.round(ads.month.avgWatchSec)}s` : 'Not read'} line={ads.month.avgWatchPct != null ? `${Math.round(ads.month.avgWatchPct)}% of a video, on average` : 'Average watch time'} />
+            </div>
+          ) : ads.loading ? <p className="text-[13px] inline-flex items-center gap-2" style={ui.soft}><Loader2 size={14} className="animate-spin" /> Reading your earnings from TRYBE through SCOUT&hellip;</p>
+            : <Empty>{ads.problem?.text || 'MVP could not read your earnings from TRYBE yet.'}</Empty>}
+        </Section>
+      )}
 
       {/* ── BEST BETS FOR YOU ─────────────────────────────────────────────── */}
       {forYou.length > 0 && (
@@ -327,6 +350,17 @@ function Desk({ icon: Icon, label, value, line, hot, onClick, cta }: { icon: typ
       <span className="text-[12.5px] font-semibold" style={ui.text}>{label}</span>
       <span className="text-[11.5px] leading-snug" style={ui.soft}>{line}</span>
     </button>
+  )
+}
+
+function Money({ label, value, line }: { label: string; value: string; line: string }) {
+  const read = value !== 'Not read'
+  return (
+    <div className="rounded-2xl p-4 flex flex-col gap-1" style={ui.card}>
+      <span className="text-[11.5px] font-semibold" style={ui.mid}>{label}</span>
+      <span className="font-bold leading-tight" style={{ ...ui.num, ...ui.text, fontSize: read ? 22 : 15, opacity: read ? 1 : 0.55 }}>{value}</span>
+      <span className="text-[11px] leading-snug" style={ui.soft}>{line}</span>
+    </div>
   )
 }
 

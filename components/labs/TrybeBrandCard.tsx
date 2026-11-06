@@ -11,6 +11,7 @@
 // search on TRYBE, instead of showing nothing.
 
 import { useEffect, useMemo, useState } from 'react'
+import { BrandName } from '@/components/labs/trybe-dossier-context'
 import { ExternalLink, Globe, Handshake, Loader2, FileText, ChevronDown, Megaphone, Search } from 'lucide-react'
 import { requestTrybeApi } from '@/lib/extension-frame'
 import { readBrandStats } from '@/lib/trybe-mybrands'
@@ -110,7 +111,7 @@ export default function TrybeBrandCard({ chatName, chatRaw, directory, canStats,
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         {card?.logo && <img src={card.logo} alt="" className="w-7 h-7 rounded-full object-cover bg-white" />}
-        <span className="text-[13px] font-semibold">{card?.name || brand.name}</span>
+        <BrandName id={brand.id} name={card?.name || brand.name} className="text-[13px] font-semibold" />
         {card?.pay && <span className="text-[11.5px] rounded-full px-2 py-0.5" style={{ background: 'rgba(22,163,74,0.12)', color: '#15803d' }}>{card.pay}</span>}
         <span className="ml-auto flex flex-wrap items-center gap-x-3 gap-y-1">
           <a href={page} target="_blank" rel="noopener noreferrer" className={link} style={{ color: PURPLE }}

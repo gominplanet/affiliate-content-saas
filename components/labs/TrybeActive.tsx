@@ -13,6 +13,7 @@ import { Loader2, AlertTriangle, ChevronDown, Users, TrendingUp } from 'lucide-r
 import TrybeLink from '@/components/labs/TrybeLink'
 import TrybeBrandPeek, { type PeekActions } from '@/components/labs/TrybeBrandPeek'
 import { BrandMark, PaidOutChip } from '@/components/labs/TrybeFinderControls'
+import { BrandName } from '@/components/labs/trybe-dossier-context'
 
 const PURPLE = 'var(--accent)'
 const GREEN = '#16A34A'
@@ -98,7 +99,7 @@ export default function TrybeActive({ scoutOpens, actions }: { scoutOpens: boole
                   <BrandMark name={b.name} website={b.website} size={38} />
                   <div className="min-w-[10rem] flex-1">
                     <p className="text-[14.5px] font-semibold leading-tight flex flex-wrap items-center gap-1.5">
-                      {b.name}
+                      <BrandName id={b.brand_id} name={b.name} />
                       {b.status && STATUS_WORDS[b.status] && <span className="text-[10.5px] font-bold rounded-full px-1.5 py-0.5" style={{ background: 'rgb(var(--brand-rgb) / 0.10)', color: PURPLE }}>{STATUS_WORDS[b.status]}</span>}
                     </p>
                     {b.categories.length > 0 && <p className="text-[12px]" style={soft}>{b.categories.slice(0, 2).join(' · ')}</p>}

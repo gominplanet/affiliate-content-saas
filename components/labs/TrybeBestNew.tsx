@@ -10,6 +10,7 @@
 import { useEffect, useState } from 'react'
 import { Loader2, Sparkles, AlertTriangle, ChevronDown } from 'lucide-react'
 import TrybeLink from '@/components/labs/TrybeLink'
+import { BrandName } from '@/components/labs/trybe-dossier-context'
 import TrybeBrandPeek, { type PeekActions } from '@/components/labs/TrybeBrandPeek'
 import { VerdictChip, CrowdChip, PayChip, type LivePayEst } from '@/components/labs/TrybeFinderControls'
 import type { CrowdRead } from '@/lib/trybe-finder'
@@ -59,7 +60,7 @@ export default function TrybeBestNew({ scoutOpens, onSeeAll, actions }: { scoutO
             return (
               <li key={b.brand_id} className="py-2 flex flex-wrap items-center gap-x-2 gap-y-1" style={{ borderColor: 'var(--border)' }}>
                 <span className="text-[12px] font-bold tabular-nums w-4" style={soft}>{i + 1}</span>
-                <span className="text-[13.5px] font-semibold">{b.name}</span>
+                <BrandName id={b.brand_id} name={b.name} className="text-[13.5px] font-semibold" />
                 <VerdictChip score={b.pick} read={b.pick_read} />
                 <CrowdChip crowd={b.crowd} />
                 <PayChip est={b.pay_est} payText={b.pay_text} />

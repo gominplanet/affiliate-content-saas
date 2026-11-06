@@ -2766,6 +2766,20 @@ Weigh posts pushed to social, and TRYBE brands they earned with or submitted to,
     }
     const changes = ((chQ.data || []) as Array<{ kind: string; before: string | null; after: string | null; at: string }>)
     const pooled = memQ.error ? null : poolBrands(memQ.rows, { exclude: ownerId }).get(brandId) ?? null
+    // SIMILAR BRANDS (TrybeDaily has them): still on TRYBE, in its categories,
+    // the ones spending most on Meta ads first, then the best rated.
+    let similar: Array<{ brand_id: string; name: string; website: string | null; pay: string | null; metaAds: number | null; rating: number | null; category: string | null }> = []
+    {
+      const cats = ((dir?.categories || []) as string[]).filter(Boolean).slice(0, 3)
+      if (cats.length) {
+        const since = await listedSince(admin)
+        let q = admin.from('trybe_directory').select('brand_id, name, website, pay_text, meta_ads, meta_ads_checked_at, categories, rating:raw->>reviewRating').overlaps('categories', cats).neq('brand_id', brandId).is('left_at', null)
+        if (since) q = q.gte('last_seen_at', since)
+        const { data: sim } = await q.order('meta_ads', { ascending: false, nullsFirst: false }).limit(24)
+        similar = ((sim || []) as Array<Record<string, any>>).map(r => ({ brand_id: String(r.brand_id), name: String(r.name || ''), website: r.website ?? null, pay: r.pay_text ?? null, metaAds: typeof r.meta_ads === 'number' && r.meta_ads_checked_at && Date.now() - Date.parse(r.meta_ads_checked_at) < 28 * 86_400_000 ? r.meta_ads : null, rating: r.rating != null ? Number(r.rating) : null, category: ((r.categories || []) as string[]).find(c => cats.includes(c)) ?? null })) // eslint-disable-line @typescript-eslint/no-explicit-any
+          .filter(r => r.name).sort((a, b) => (b.metaAds ?? -1) - (a.metaAds ?? -1) || (b.rating ?? 0) - (a.rating ?? 0)).slice(0, 6)
+      }
+    }
     const mine = mineQ.data as Record<string, any> | null // eslint-disable-line @typescript-eslint/no-explicit-any
     return NextResponse.json({
       ok: true,
@@ -2777,6 +2791,7 @@ Weigh posts pushed to social, and TRYBE brands they earned with or submitted to,
       poolError: memQ.error ? fail({ message: memQ.error }) : null,
       samples: samQ.error ? null : samplePool((samQ.data || []) as Array<{ user_id: string; requested_at: string | null; received_at: string | null }>),
       replies: outQ.error ? null : replyPool((outQ.data || []) as Array<{ user_id: string; status: string | null; sent_at: string | null; replied_at: string | null }>),
+      similar,
       top: topQ.error ? [] : ((topQ.data || []) as Array<Record<string, any>>).map(t => ({ id: String(t.submission_id), creator: t.creator ?? null, rank: t.best_rank ?? null, seconds: t.seconds ?? null, hook: t.hook ?? null, thumbnail: typeof t.thumbnail === 'string' && /^https:\/\//.test(t.thumbnail) ? t.thumbnail : null, video: typeof t.video_url === 'string' && /^https:\/\//.test(t.video_url) ? t.video_url : null })), // eslint-disable-line @typescript-eslint/no-explicit-any
       you: { status: mine?.status ?? null, sentAt: mine?.sent_at ?? null, repliedAt: mine?.replied_at ?? null, draftedAt: mine?.drafted_at ?? null, fit: typeof mine?.fit_score === 'number' ? mine.fit_score : null, fitReason: mine?.fit_reason ?? null,
         samples: ((mySamQ.data || []) as Array<Record<string, any>>).map(x => ({ product: String(x.product || ''), requestedAt: x.requested_at ?? null, receivedAt: x.received_at ?? null, filmedAt: x.filmed_at ?? null, submittedAt: x.submitted_at ?? null })) }, // eslint-disable-line @typescript-eslint/no-explicit-any

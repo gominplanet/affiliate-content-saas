@@ -143,6 +143,8 @@ check('a brief link names where it goes', /Open its brief on \{siteName\(live\.b
   check('Film it shows one line at a time, then the B-roll to tick off, and moves by keys or a tap', /lines\[at\]/.test(F) && /Now the B-roll/.test(F) && /ArrowRight/.test(F) && /aria-label="Next line"/.test(F))
   check('the brand page and Film it sit above the dashboard, whatever box opened them', /createPortal\(/.test(F) && /createPortal\(/.test(D) && /zIndex: 1001/.test(F) && /zIndex: 1000/.test(D))
 }
+check('brands like it: still on TRYBE, in its categories, biggest Meta advertisers first, each opening its page', /\.overlaps\('categories', cats\)\.neq\('brand_id', brandId\)\.is\('left_at', null\)/.test(R) && /Brands like it/.test(D) && /<BrandName id=\{x\.brand_id\}/.test(D))
+check('brand names open the page in What changed, Best new, Most active and the inbox too', ['components/labs/TrybeChanges.tsx', 'components/labs/TrybeBestNew.tsx', 'components/labs/TrybeActive.tsx', 'components/labs/TrybeBrandCard.tsx'].every((f) => /<BrandName id=/.test(read(f))))
 check('only with the new TRYBE switched on', /<DossierCtx\.Provider value=\{v2 \? openDossier : null\}>/.test(U))
 check('the switch is team only until it is opened', /trybe_v2: 'admin'/.test(read('lib/labs-preview.ts')) && /v2=\{canUsePreview\('trybe_v2', tier\)\}/.test(read('app/(dashboard)/trybe/page.tsx')))
 check('what is not read says so on the page', /Not enough read|MVP has not counted its Meta ads yet/.test(D + read('lib/trybe-dossier.ts')) && /Read it again/.test(D))

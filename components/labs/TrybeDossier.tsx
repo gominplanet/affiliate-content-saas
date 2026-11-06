@@ -23,6 +23,7 @@ import { adLibraryUrl } from '@/lib/trybe-pick'
 import { CHANGE_WORDS } from '@/lib/trybe-changes'
 import { GRADE, ui, Section, Tag, Meter, ScoreRing, Figure, AreaChart, Btn } from '@/components/labs/trybe-ui'
 import TrybeLink from '@/components/labs/TrybeLink'
+import { BrandName } from '@/components/labs/trybe-dossier-context'
 import type { PeekActions } from '@/components/labs/TrybeBrandPeek'
 
 /** What the brand page reads, from 'browse' by id (the listing) and 'dossier' (the rest). */
@@ -38,6 +39,7 @@ interface DossierRead {
   samples: SamplePool | null
   replies: ReplyPool | null
   top: Array<{ id: string; creator: string | null; rank: number | null; seconds: number | null; hook: string | null; thumbnail: string | null; video: string | null }>
+  similar?: Array<{ brand_id: string; name: string; website: string | null; pay: string | null; metaAds: number | null; rating: number | null; category: string | null }>
   you: { status: string | null; sentAt: string | null; repliedAt: string | null; draftedAt: string | null; fit: number | null; fitReason: string | null; samples: Array<{ product: string; requestedAt: string | null; receivedAt: string | null; filmedAt: string | null; submittedAt: string | null }> }
 }
 
@@ -383,6 +385,27 @@ export default function TrybeDossier({ brandId, name, onClose, actions, scout = 
             </Section>
           )}
 
+          {/* ── SIMILAR BRANDS ───────────────────────────────────────────── */}
+          {d?.similar && d.similar.length > 0 && (
+            <Section title="Brands like it" aside="Still on TRYBE, in its categories, the biggest Meta advertisers first">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {d.similar.map((x) => (
+                  <div key={x.brand_id} className="rounded-xl px-3.5 py-3 flex items-center gap-3" style={ui.card}>
+                    <Logo src={null} name={x.name} website={x.website} small />
+                    <div className="min-w-0 flex-1">
+                      <BrandName id={x.brand_id} name={x.name} className="text-[13.5px] font-semibold block truncate" style={ui.text} />
+                      <span className="text-[11.5px] block truncate" style={ui.soft}>{[x.category, x.pay].filter(Boolean).join(' \u00b7 ') || 'No pay shown'}</span>
+                    </div>
+                    <span className="text-right shrink-0">
+                      {x.metaAds != null && <span className="text-[12.5px] font-bold block" style={{ ...ui.num, ...ui.text }}>{x.metaAds} ads</span>}
+                      {x.rating != null && <span className="text-[11px] block" style={ui.soft}>{x.rating.toFixed(1)} &#9733;</span>}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </Section>
+          )}
+
           {/* ── ABOUT ────────────────────────────────────────────────────── */}
           {(d?.pub?.description || d?.brand?.about || listing?.about) && (
             <Section title="About it">
@@ -398,14 +421,14 @@ export default function TrybeDossier({ brandId, name, onClose, actions, scout = 
 }
 
 /** The brand's logo from TRYBE, its website's icon, or its first letter. */
-function Logo({ src, name, website }: { src: string | null; name: string; website: string | null }) {
+function Logo({ src, name, website, small = false }: { src: string | null; name: string; website: string | null; small?: boolean }) {
   const [bad, setBad] = useState(0)
   let host = ''
   try { host = website ? new URL(/^https?:/i.test(website) ? website : `https://${website}`).hostname : '' } catch { host = '' }
   const tries = [src, host ? `https://www.google.com/s2/favicons?domain=${encodeURIComponent(host)}&sz=128` : null].filter(Boolean) as string[]
   const url = tries[bad]
-  const box = 'w-14 h-14 sm:w-16 sm:h-16 rounded-2xl shrink-0'
-  if (!url) return <span className={`${box} flex items-center justify-center text-[24px] font-bold`} style={{ background: 'rgb(var(--brand-rgb) / 0.12)', color: 'var(--accent-text, var(--accent))', ...ui.num }} aria-hidden="true">{(name.trim()[0] || '?').toUpperCase()}</span>
+  const box = small ? 'w-9 h-9 rounded-lg shrink-0' : 'w-14 h-14 sm:w-16 sm:h-16 rounded-2xl shrink-0'
+  if (!url) return <span className={`${box} flex items-center justify-center ${small ? 'text-[15px]' : 'text-[24px]'} font-bold`} style={{ background: 'rgb(var(--brand-rgb) / 0.12)', color: 'var(--accent-text, var(--accent))', ...ui.num }} aria-hidden="true">{(name.trim()[0] || '?').toUpperCase()}</span>
   // eslint-disable-next-line @next/next/no-img-element
   return <img src={url} alt="" onError={() => setBad((n) => n + 1)} className={`${box} object-contain p-1.5`} style={{ background: '#fff', border: '1px solid var(--border)' }} />
 }
