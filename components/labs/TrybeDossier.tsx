@@ -34,6 +34,8 @@ interface DossierRead {
   pub: { logo: string | null; description: string | null; products: DossierProduct[]; read: boolean; error: string | null } | null
   timeline: TimelineItem[]
   meta: SeriesPoint[]
+  /** Its own advertiser Page on Meta, when SCOUT found it (1.57.0). */
+  metaPage?: { id: string; name: string | null } | null
   pool: { approvalRate: number | null; payPerApproved: number | null; reviewDays: number | null; slowShare: number | null; why: string | null } | null
   poolError: string | null
   samples: SamplePool | null
@@ -186,7 +188,7 @@ export default function TrybeDossier({ brandId, name, onClose, actions, scout = 
                       title={actions.busy ? 'Busy with another send or draft. This unlocks when it finishes.' : 'Write this brand a message from your core message, into Ready to send'}>
                       {busy === 'message' ? <Loader2 size={14} className="animate-spin" /> : <MessageCircle size={14} />} Write it a message</Btn>}
               {onScripts && <Btn onClick={() => onScripts(brandId, title)}><Clapperboard size={14} /> Make scripts for it</Btn>}
-              <Btn href={adLibraryUrl(title)}><Megaphone size={14} /> Its ads on Meta Ad Library <ExternalLink size={12} /></Btn>
+              <Btn href={adLibraryUrl(title, d?.metaPage?.id)} title={d?.metaPage?.id ? `Its own Facebook Page${d.metaPage.name ? ` (${d.metaPage.name})` : ''} on Meta's Ad Library` : `Ads that name "${title}" on Meta's Ad Library`}><Megaphone size={14} /> {d?.metaPage?.id ? 'Its own Page on Meta Ad Library' : 'Its ads on Meta Ad Library'} <ExternalLink size={12} /></Btn>
             </div>
           )}
           {actions?.sendBlocked && (status === 'drafted' || !!mine?.draft) && (

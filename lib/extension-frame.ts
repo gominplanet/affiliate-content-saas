@@ -1348,12 +1348,19 @@ export interface MetaAdsResult { ok: boolean; error?: string; results?: Array<{ 
   /** SCOUT 1.51.0, asked with `cards`: the words of up to 8 ad cards, as the page showed them. Absent from an older SCOUT. */
   cards?: Array<{ text: string; video: boolean; preview: string | null; /** SCOUT 1.53.9: the video file on Meta's servers. */ videoUrl?: string | null }>
   /** SCOUT 1.53.8: how many of the brand's ads it looked at before copying the 8 running longest. */
-  cardsSeen?: number | null }>; /** Brands SCOUT had no time left for. */ notReached?: string[] }
+  cardsSeen?: number | null
+  /** SCOUT 1.57.0: counted on the brand's own advertiser Page ('page') or by
+   *  its exact name ('phrase'); the Page it used or found, and why none. */
+  basis?: 'page' | 'phrase'; pageId?: string | null; pageName?: string | null; pageWhy?: string | null; pageSeen?: string[] | null }>; /** Brands SCOUT had no time left for. */ notReached?: string[] }
+
+/** One brand for SCOUT to count: with the Page MVP knows for it, or asked to
+ *  look for one (SCOUT 1.57.0; an older SCOUT counts by the name). */
+export interface MetaAdsBrand { brandId: string; name: string; pageId?: string | null; findPage?: boolean }
 
 /** SCOUT 1.45.0+: how many active Meta ads mention each brand, read from
  *  Meta's public Ad Library in SCOUT's own window (up to 25 at a time). The
  *  page text is returned as read; lib/trybe-pick readAdLibraryCount reads it. */
-export async function requestMetaAdsCounts(brands: Array<{ brandId: string; name: string }>, cards = false): Promise<MetaAdsResult> {
+export async function requestMetaAdsCounts(brands: MetaAdsBrand[], cards = false): Promise<MetaAdsResult> {
   const res = await sendToExtension<MetaAdsResult>({ type: 'MVP_TRYBE_META_ADS', brands: brands.slice(0, 25), ...(cards ? { cards: true } : {}) }, 300_000)
   return res || { ok: false, error: 'SCOUT did not answer.' }
 }

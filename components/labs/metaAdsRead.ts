@@ -7,7 +7,7 @@
 // `cards` (the MVP team, SCOUT 1.51.0) the words of each brand's ad cards go
 // too, for the gallery every member sees (app/api/labs/trybe 'meta_ads').
 
-import { requestMetaAdsCounts } from '@/lib/extension-frame'
+import { requestMetaAdsCounts, type MetaAdsBrand } from '@/lib/extension-frame'
 import { readAdLibraryCount, metaOwnOf, metaTrustOf, sameAsBefore } from '@/lib/trybe-pick'
 
 export interface MetaAdsRun {
@@ -38,9 +38,30 @@ export interface MetaAdsRun {
    *  member counted them this week (a member never replaces a recent count). */
   saved: number
   kept: number
+  /** SCOUT 1.57.0: counts taken on the brand's own advertiser Page, and by
+   *  its exact name; of those looked for, the ones with no Page found, and why. */
+  byPage: number
+  byPhrase: number
+  pageMissed: number
+  pageWhys: Record<string, number>
 }
 
-async function save(results: Array<{ brandId: string; name: string; count: number; cards?: unknown; own?: number; sample?: number }>): Promise<{ galleryAds: number; cardsMissed: number; saved: number; kept: number; notOwn: number }> {
+/** A brand from MVP's list to count, with the Page MVP keeps for it (or that
+ *  it should be looked for). Pure. */
+export function metaBrandOf(b: { brand_id: string; name: string; page_id?: string | null; find_page?: boolean }): MetaAdsBrand {
+  return { brandId: b.brand_id, name: b.name, ...(b.page_id ? { pageId: b.page_id } : {}), ...(b.find_page ? { findPage: true } : {}) }
+}
+const PAGE_WHY: Record<string, string> = {
+  'no-advertiser-named-so': 'Meta suggested no advertiser with that name',
+  'no-suggestions': 'Meta showed no suggestions',
+  'several-advertisers-named-so': 'more than one advertiser has that name',
+  'no-search-box': "SCOUT did not find Meta's search box",
+  'pressed-no-page': 'the suggestion did not open a Page',
+  'page-not-read': "the Page's count did not show",
+}
+
+type SaveRow = { brandId: string; name: string; count: number; cards?: unknown; own?: number; sample?: number; basis?: 'page' | 'phrase'; pageId?: string | null; pageName?: string | null; pageWhy?: string | null }
+async function save(results: SaveRow[]): Promise<{ galleryAds: number; cardsMissed: number; saved: number; kept: number; notOwn: number }> {
   const r = await fetch('/api/labs/trybe', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'meta_ads', results }), signal: AbortSignal.timeout(60_000) })
   const d = await r.json().catch(() => ({}))
   if (!r.ok) throw new Error(d.error || `Saving the Meta ad counts failed (${r.status})`)
@@ -48,8 +69,8 @@ async function save(results: Array<{ brandId: string; name: string; count: numbe
   return { galleryAds: Number(d.galleryAds) || 0, cardsMissed: Number(d.cardsMissed) || 0, saved: typeof d.saved === 'number' ? d.saved : results.length, kept: Number(d.kept) || 0, notOwn: Number(d.notOwnAds) || 0 }
 }
 
-export async function readMetaAds(brands: Array<{ brandId: string; name: string }>, opts: { cards?: boolean; onProgress?: (done: number, total: number) => void; gone?: () => boolean; stop?: () => boolean } = {}): Promise<MetaAdsRun> {
-  const run: MetaAdsRun = { total: brands.length, read: 0, noCount: 0, couldNot: 0, late: 0, notEnglish: '', stopped: '', cardsAsked: !!opts.cards, cardsSent: false, galleryAds: 0, cardsMissed: 0, looked: 0, picked: false, notOwn: 0, capped: 0, mixed: 0, doubled: 0, saved: 0, kept: 0 }
+export async function readMetaAds(brands: MetaAdsBrand[], opts: { cards?: boolean; onProgress?: (done: number, total: number) => void; gone?: () => boolean; stop?: () => boolean } = {}): Promise<MetaAdsRun> {
+  const run: MetaAdsRun = { total: brands.length, read: 0, noCount: 0, couldNot: 0, late: 0, notEnglish: '', stopped: '', cardsAsked: !!opts.cards, cardsSent: false, galleryAds: 0, cardsMissed: 0, looked: 0, picked: false, notOwn: 0, capped: 0, mixed: 0, doubled: 0, saved: 0, kept: 0, byPage: 0, byPhrase: 0, pageMissed: 0, pageWhys: {} }
   for (let i = 0; i < brands.length; i += 8) {
     if (opts.gone?.()) { run.stopped = 'You left the page.'; break }
     if (opts.stop?.()) { run.stopped = 'Stopped. Press again to carry on where it stopped.'; break }
@@ -64,13 +85,18 @@ export async function readMetaAds(brands: Array<{ brandId: string; name: string 
           : `SCOUT could not read Meta's Ad Library: ${r.error || 'no answer'}.`
       break
     }
-    const ok: Array<{ brandId: string; name: string; count: number; cards?: unknown; own?: number; sample?: number }> = []
+    const ok: SaveRow[] = []
     let prevText: string | null = null
     for (const x of r.results || []) {
       if (Array.isArray(x.cards)) run.cardsSent = true
       if (typeof x.cardsSeen === 'number') { run.looked += x.cardsSeen; run.picked = true }
       const count = x.text ? readAdLibraryCount(x.text) : null
-      const check = Array.isArray(x.cards) ? metaOwnOf(x.cards as Array<{ text?: unknown }>, x.name) : null
+      // On the brand's own Page every ad is its own (SCOUT 1.57.0).
+      const onPage = x.basis === 'page'
+      const check = onPage ? { own: Math.max(1, Array.isArray(x.cards) ? x.cards.length : 0), sample: Math.max(1, Array.isArray(x.cards) ? x.cards.length : 0) }
+        : Array.isArray(x.cards) ? metaOwnOf(x.cards as Array<{ text?: unknown }>, x.name) : null
+      const page = { ...(x.basis ? { basis: x.basis } : {}), ...(x.pageId ? { pageId: x.pageId } : {}), ...(x.pageName ? { pageName: x.pageName } : {}), ...(x.pageWhy ? { pageWhy: x.pageWhy } : {}) }
+      if (x.pageWhy && !onPage) { run.pageMissed++; const k = x.pageWhy.replace(/:.*$/, ''); run.pageWhys[k] = (run.pageWhys[k] || 0) + 1 }
       const doubled = sameAsBefore(prevText, x.text, count)
       prevText = x.text ?? null
       if (doubled) run.doubled++
@@ -80,7 +106,9 @@ export async function readMetaAds(brands: Array<{ brandId: string; name: string 
         else if (t === 'mixed') run.mixed++
         // A check of 0 cards goes too: it marks the brand tried, so it is not
         // offered again on every press.
-        ok.push({ brandId: x.brandId, name: x.name, count, ...(check ? { own: check.own, sample: check.sample } : {}), ...(opts.cards && Array.isArray(x.cards) ? { cards: x.cards } : {}) })
+        if (onPage) run.byPage++
+        else if (x.basis === 'phrase') run.byPhrase++
+        ok.push({ brandId: x.brandId, name: x.name, count, ...(check ? { own: check.own, sample: check.sample } : {}), ...(opts.cards && Array.isArray(x.cards) ? { cards: x.cards } : {}), ...page })
       }
       else if (/^not-english/.test(x.error || '')) run.notEnglish = (x.error || '').replace(/^not-english\s*/, '')
       else if (/^could-not-open/.test(x.error || '')) run.couldNot++
@@ -100,12 +128,13 @@ export async function readMetaAds(brands: Array<{ brandId: string; name: string 
  *  `onChunk` told, so the page can rank what is counted while the rest is
  *  read. A stop, a page left or a SCOUT that cannot go on ends it; what was
  *  counted is kept. */
-export async function readMetaAdsAll(brands: Array<{ brandId: string; name: string }>, opts: { cards?: boolean; onProgress?: (done: number, total: number) => void; gone?: () => boolean; stop?: () => boolean; onChunk?: () => Promise<void> | void } = {}): Promise<MetaAdsRun> {
-  const all: MetaAdsRun = { total: brands.length, read: 0, noCount: 0, couldNot: 0, late: 0, notEnglish: '', stopped: '', cardsAsked: !!opts.cards, cardsSent: false, galleryAds: 0, cardsMissed: 0, looked: 0, picked: false, notOwn: 0, capped: 0, mixed: 0, doubled: 0, saved: 0, kept: 0 }
+export async function readMetaAdsAll(brands: MetaAdsBrand[], opts: { cards?: boolean; onProgress?: (done: number, total: number) => void; gone?: () => boolean; stop?: () => boolean; onChunk?: () => Promise<void> | void } = {}): Promise<MetaAdsRun> {
+  const all: MetaAdsRun = { total: brands.length, read: 0, noCount: 0, couldNot: 0, late: 0, notEnglish: '', stopped: '', cardsAsked: !!opts.cards, cardsSent: false, galleryAds: 0, cardsMissed: 0, looked: 0, picked: false, notOwn: 0, capped: 0, mixed: 0, doubled: 0, saved: 0, kept: 0, byPage: 0, byPhrase: 0, pageMissed: 0, pageWhys: {} }
   const CHUNK = 40
   for (let i = 0; i < brands.length; i += CHUNK) {
     const r = await readMetaAds(brands.slice(i, i + CHUNK), { cards: opts.cards, gone: opts.gone, stop: opts.stop, onProgress: (done) => opts.onProgress?.(Math.min(brands.length, i + done), brands.length) })
-    for (const k of ['read', 'noCount', 'couldNot', 'late', 'galleryAds', 'cardsMissed', 'looked', 'notOwn', 'capped', 'mixed', 'doubled', 'saved', 'kept'] as const) all[k] += r[k]
+    for (const k of ['read', 'noCount', 'couldNot', 'late', 'galleryAds', 'cardsMissed', 'looked', 'notOwn', 'capped', 'mixed', 'doubled', 'saved', 'kept', 'byPage', 'byPhrase', 'pageMissed'] as const) all[k] += r[k]
+    for (const [k, v] of Object.entries(r.pageWhys)) all.pageWhys[k] = (all.pageWhys[k] || 0) + v
     all.cardsSent = all.cardsSent || r.cardsSent
     all.picked = all.picked || r.picked
     all.notEnglish = all.notEnglish || r.notEnglish
@@ -118,6 +147,11 @@ export async function readMetaAdsAll(brands: Array<{ brandId: string; name: stri
 /** What the run did, in words, and how it went. */
 export function metaAdsWords(run: MetaAdsRun, scoutVersion?: string | null): { tone: 'ok' | 'warn' | 'bad'; text: string } {
   const parts = [`Meta ads read for ${run.read} of ${run.total} brand${run.total === 1 ? '' : 's'}${run.kept ? `: ${run.saved} saved, ${run.kept} kept as they were because another member counted ${run.kept === 1 ? 'it' : 'them'} this week` : ''}.`]
+  // HOW EACH WAS COUNTED (SCOUT 1.57.0): on the brand's own Page, or by its name.
+  if (run.byPage || run.byPhrase) {
+    const why = Object.entries(run.pageWhys).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${v} because ${PAGE_WHY[k] || k}`).join(', ')
+    parts.push(`${run.byPage} counted on the brand\u2019s own Facebook Page, ${run.byPhrase} by the brand\u2019s exact name${run.pageMissed ? ` (no Page used for ${run.pageMissed}: ${why})` : ''}.`)
+  }
   if (run.noCount) parts.push(`${run.noCount} showed no result count on Meta's page, so ${run.noCount === 1 ? 'it stays' : 'they stay'} not read.`)
   if (run.couldNot) parts.push(`SCOUT could not open Meta's page for ${run.couldNot}.`)
   if (run.late) parts.push(`SCOUT ran out of time before ${run.late}; press again to read ${run.late === 1 ? 'it' : 'them'}.`)

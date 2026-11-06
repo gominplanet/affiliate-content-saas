@@ -15366,6 +15366,68 @@ function metaAdsUrl(name) {
   const q = encodeURIComponent('"' + String(name || '').replace(/"/g, '').trim() + '"')
   return 'https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=US&is_targeted_country=false&media_type=all&q=' + q + '&search_type=keyword_exact_phrase'
 }
+// 1.57.0 COUNTED BY THE BRAND'S OWN PAGE (Seb, 2026-11-06: "we need to be
+// able to search for meta ads the right way"). An exact-phrase search counts
+// every ad whose words carry the name: it misses the brand's ads that do not
+// spell it out, and counts other advertisers who mention it. The brand's own
+// advertiser Page counts every ad it runs and only those. Its address:
+function metaAdsPageUrl(pageId) {
+  return 'https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=US&is_targeted_country=false&media_type=all&search_type=page&view_all_page_id=' + encodeURIComponent(String(pageId || ''))
+}
+function metaPageIdIn(url) {
+  const m = String(url || '').match(/[?&]view_all_page_id=(\d{5,})/)
+  return m ? m[1] : null
+}
+// In page, alone: the brand's Page found the way a person finds it, by typing
+// its name into the Ad Library's search box and taking, among the advertisers
+// Meta suggests, the one with the brand's own name. Only a suggestion with
+// exactly that name (letters and numbers, ignoring "Co.", "Inc" and the like)
+// is taken; two different advertisers with that name are left alone, never
+// guessed between. Nothing else is pressed. Answers the Page's id when the
+// suggestion's address carries it, or that the suggestion was pressed, for
+// SCOUT to read the id from the tab's address.
+async function metaFindPageInPage(name) {
+  const norm = (s) => String(s || '').toLowerCase().replace(/&/g, ' and ').replace(/\b(the|co|company|inc|llc|ltd|limited|corp|corporation|official)\b/g, ' ').replace(/[^a-z0-9]+/g, '')
+  const want = norm(name)
+  if (!want) return { why: 'no-name' }
+  const box = Array.from(document.querySelectorAll('input')).find((i) => i.type !== 'radio' && /keyword|advertiser/i.test(String(i.placeholder || '') + ' ' + String(i.getAttribute('aria-label') || '')))
+  if (!box) return { why: 'no-search-box' }
+  // A React box: its own value setter, then the events it listens for.
+  const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set
+  try { box.focus(); box.click() } catch (e) {}
+  setter.call(box, '')
+  box.dispatchEvent(new Event('input', { bubbles: true }))
+  setter.call(box, String(name))
+  box.dispatchEvent(new Event('input', { bubbles: true }))
+  box.dispatchEvent(new Event('change', { bubbles: true }))
+  const firstLine = (el) => String(el.innerText || el.textContent || '').split('\n').map((t) => t.trim()).filter(Boolean)[0] || ''
+  const linkIn = (el) => (el.matches('a[href*="view_all_page_id="]') ? el : el.querySelector('a[href*="view_all_page_id="]') || el.closest('a[href*="view_all_page_id="]'))
+  const idOf = (el) => { const a = linkIn(el); const m = a ? String(a.href || '').match(/[?&]view_all_page_id=(\d{5,})/) : null; return m ? m[1] : null }
+  const seen = []
+  const until = Date.now() + 9000
+  while (Date.now() < until) {
+    await new Promise((r) => setTimeout(r, 450))
+    // Suggestions: options in the list, and any link to an advertiser's Page.
+    // An advertiser suggestion carries its picture; those are looked at first.
+    const all = Array.from(document.querySelectorAll('[role="option"], [role="listbox"] a, a[href*="view_all_page_id="]'))
+    const outer = all.filter((el) => !all.some((o) => o !== el && o.contains(el)))
+    outer.sort((a, b) => (b.querySelector('img') ? 1 : 0) - (a.querySelector('img') ? 1 : 0))
+    for (const el of outer) { const l = firstLine(el); if (l && !seen.includes(l) && seen.length < 8) seen.push(l.slice(0, 80)) }
+    const named = outer.filter((el) => norm(firstLine(el)) === want)
+    if (!named.length) continue
+    const ids = Array.from(new Set(named.map(idOf).filter(Boolean)))
+    if (ids.length > 1) return { why: 'several-advertisers-named-so', seen }
+    if (ids.length === 1) return { pageId: ids[0], pageName: firstLine(named[0]).slice(0, 120), seen }
+    // No address on the suggestion: two of them is two advertisers, unknown which.
+    const withPicture = named.filter((el) => el.querySelector('img'))
+    if (withPicture.length > 1) return { why: 'several-advertisers-named-so', seen }
+    const pick = withPicture[0] || named[0]
+    try { pick.click() } catch (e) { return { why: 'could-not-press', seen } }
+    return { pressed: true, pageName: firstLine(pick).slice(0, 120), seen }
+  }
+  return { why: seen.length ? 'no-advertiser-named-so' : 'no-suggestions', seen }
+}
+
 // In page, alone: wait for the count to show, then hand back the words.
 // 1.51.0: with `withCards`, the words of up to 8 ad cards too, whether each
 // plays a video, and its preview picture (MVP's ads gallery). MVP reads the
@@ -15469,8 +15531,9 @@ async function metaAdsCounts({ brands, endsAt, cards }) {
     if (!has) has = await askFacebookAccess()
   } finally { if (!has) metaAdsRunning = false }
   if (!has) return { ok: false, error: 'no-access' }
+  // 1.57.0: a Page MVP already knows for the brand, or whether to look for one.
   const list = (Array.isArray(brands) ? brands : []).slice(0, META_ADS_MAX)
-    .map((b) => ({ brandId: String((b && b.brandId) || '').slice(0, 80), name: String((b && b.name) || '').slice(0, 120) }))
+    .map((b) => ({ brandId: String((b && b.brandId) || '').slice(0, 80), name: String((b && b.name) || '').slice(0, 120), pageId: /^\d{5,30}$/.test(String((b && b.pageId) || '')) ? String(b.pageId) : null, findPage: !!(b && b.findPage) }))
     .filter((b) => b.brandId && b.name)
   const results = []
   const notReached = []
@@ -15486,17 +15549,51 @@ async function metaAdsCounts({ brands, endsAt, cards }) {
       if (Date.now() > deadline - 50000) { notReached.push(b.brandId); continue }
       try {
         // The tab may have been closed by hand: a new one, not an error per brand.
-        if (tab) { try { await chrome.tabs.get(tab.id) } catch (e) { tab = null } }
-        if (!tab) tab = await openWorkTab(metaAdsUrl(b.name))
-        else await chrome.tabs.update(tab.id, { url: metaAdsUrl(b.name) })
-        await waitForTabLoad(tab.id, 25000)
-        await _sleep(1500)
-        const res = await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: metaAdsReadInPage, args: [cards === true] })
-        const got = res && res[0] ? res[0].result : null
+        const go = async (url) => {
+          if (tab) { try { await chrome.tabs.get(tab.id) } catch (e) { tab = null } }
+          if (!tab) tab = await openWorkTab(url)
+          else await chrome.tabs.update(tab.id, { url })
+          await waitForTabLoad(tab.id, 25000)
+          await _sleep(1500)
+        }
+        const read = async () => {
+          const res = await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: metaAdsReadInPage, args: [cards === true] })
+          return res && res[0] ? res[0].result : null
+        }
+        // 1.57.0: by the brand's own Page when MVP knows it or SCOUT finds it;
+        // else by the exact name, as before. Each result says which.
+        let got = null, basis = 'phrase', pageId = b.pageId, pageName = null, pageWhy = null, pageSeen = null
+        if (pageId) {
+          await go(metaAdsPageUrl(pageId))
+          got = await read()
+          if (got && got.text) basis = 'page'
+          else { pageWhy = 'page-not-read'; await go(metaAdsUrl(b.name)); got = await read() }
+        } else {
+          await go(metaAdsUrl(b.name))
+          got = await read()
+          if (b.findPage && !(got && got.lang && !/^en/.test(got.lang))) {
+            let f = null
+            try { const fr = await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: metaFindPageInPage, args: [b.name] }); f = fr && fr[0] ? fr[0].result : null } catch (e) { f = { why: 'could-not-look: ' + (e && e.message ? e.message : 'error') } }
+            pageSeen = f && Array.isArray(f.seen) ? f.seen.slice(0, 6) : null
+            let found = f && f.pageId ? String(f.pageId) : null
+            // Pressed a suggestion with no address on it: its id is in the tab's address once Meta opens it.
+            if (!found && f && f.pressed) {
+              for (let k = 0; k < 16 && !found; k++) { await _sleep(500); try { const t = await chrome.tabs.get(tab.id); found = metaPageIdIn(t.url) } catch (e) {} }
+              if (!found) pageWhy = 'pressed-no-page'
+            }
+            if (found) {
+              pageId = found; pageName = f && f.pageName ? String(f.pageName).slice(0, 120) : null
+              const byName = got
+              await go(metaAdsPageUrl(found))
+              const onPage = await read()
+              if (onPage && onPage.text) { got = onPage; basis = 'page' } else { got = byName; pageWhy = 'page-not-read' }
+            } else if (!pageWhy) pageWhy = (f && f.why) || 'not-found'
+          }
+        }
         const why = got && got.text ? null
           : got && got.lang && !/^en/.test(got.lang) ? 'not-english (' + got.lang + ')'
             : 'count-not-shown' + (got && got.title ? ' (' + got.title + ')' : '')
-        results.push({ brandId: b.brandId, name: b.name, text: got && got.text ? got.text : null, error: why, ...(cards === true ? { cards: got && Array.isArray(got.cards) ? got.cards : [], cardsSeen: got && typeof got.cardsSeen === 'number' ? got.cardsSeen : null } : {}) })
+        results.push({ brandId: b.brandId, name: b.name, text: got && got.text ? got.text : null, error: why, basis, pageId: pageId || null, pageName, pageWhy, pageSeen, ...(cards === true ? { cards: got && Array.isArray(got.cards) ? got.cards : [], cardsSeen: got && typeof got.cardsSeen === 'number' ? got.cardsSeen : null } : {}) })
       } catch (e) {
         results.push({ brandId: b.brandId, name: b.name, text: null, error: 'could-not-open: ' + (e && e.message ? e.message : 'error') })
       }

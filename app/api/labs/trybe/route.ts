@@ -87,6 +87,23 @@ const RESEARCH_TTL_MS = 14 * 24 * 3600_000
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Db = any
 
+// Each brand's own advertiser Page on Meta (SCOUT 1.57.0), kept as
+// `metapage:<brand id>` in trybe_directory_meta: { id, name, at, why }. A
+// brand SCOUT found no Page for is looked for again after a month.
+const META_PAGE_RETRY_MS = 30 * 86_400_000
+async function metaPagesOf(admin: Db, ids: string[]): Promise<Map<string, { id: string | null; name: string | null; at: string }>> {
+  const out = new Map<string, { id: string | null; name: string | null; at: string }>()
+  for (let i = 0; i < ids.length; i += 200) {
+    const { data, error } = await admin.from('trybe_directory_meta').select('key, value, updated_at').in('key', ids.slice(i, i + 200).map(id => `metapage:${id}`))
+    if (error) break
+    for (const m of (data || []) as Array<{ key: string; value: { id?: unknown; name?: unknown } | null; updated_at: string }>) {
+      const id = typeof m.value?.id === 'string' && /^\d{5,30}$/.test(m.value.id) ? m.value.id : null
+      out.set(m.key.slice('metapage:'.length), { id, name: typeof m.value?.name === 'string' ? m.value.name : null, at: m.updated_at })
+    }
+  }
+  return out
+}
+
 /** A database update Seb has not run yet: named for an admin, who can run
  *  it; said plainly to a creator, who cannot. */
 function setupWords(tier: string | null | undefined, adminText: string): string {
@@ -1257,7 +1274,27 @@ export async function POST(request: Request) {
     // How many active Meta ads mention each brand, as SCOUT read Meta's Ad
     // Library in the creator's own Chrome. Shared; a count kept less than six
     // days is not replaced, so one member cannot rewrite every brand's count.
-    const list = (Array.isArray(body.results) ? body.results : []).slice(0, 40) as Array<{ brandId?: unknown; count?: unknown; name?: unknown; cards?: unknown; own?: unknown; sample?: unknown }>
+    const list = (Array.isArray(body.results) ? body.results : []).slice(0, 40) as Array<{ brandId?: unknown; count?: unknown; name?: unknown; cards?: unknown; own?: unknown; sample?: unknown; basis?: unknown; pageId?: unknown; pageName?: unknown; pageWhy?: unknown }>
+    // THE BRAND'S OWN PAGE (SCOUT 1.57.0): kept when SCOUT found or used one,
+    // and a look that found none is kept too, so it is not looked for again
+    // for a month. A Page already kept is never replaced by "none found".
+    {
+      const pageRows: Array<{ key: string; value: { id: string | null; name: string | null; why: string | null }; updated_at: string }> = []
+      for (const x of list) {
+        const id = typeof x.brandId === 'string' ? x.brandId.slice(0, 80) : ''
+        const pid = typeof x.pageId === 'string' && /^\d{5,30}$/.test(x.pageId) ? x.pageId : null
+        const why = typeof x.pageWhy === 'string' ? x.pageWhy.slice(0, 120) : null
+        if (!id || (!pid && !why)) continue
+        pageRows.push({ key: `metapage:${id}`, value: { id: pid, name: typeof x.pageName === 'string' ? x.pageName.slice(0, 120) : null, why: pid ? null : why }, updated_at: now })
+      }
+      if (pageRows.length) {
+        try {
+          const kept = await metaPagesOf(admin, pageRows.map(r => r.key.slice('metapage:'.length)))
+          const write = pageRows.filter(r => r.value.id || !kept.get(r.key.slice('metapage:'.length))?.id)
+          if (write.length) await admin.from('trybe_directory_meta').upsert(write)
+        } catch { /* the counts are saved either way */ }
+      }
+    }
     // saved: counts written; kept: counted this week already, so the older
     // count stays (the page says so, never "read" as if it was saved).
     let saved = 0, kept = 0
@@ -1315,7 +1352,8 @@ export async function POST(request: Request) {
           if (!ads.length && n !== 0) { cardsMissed++; continue }
           g = mergeGallery(g, id, nm, ads, n, now)
           // Only the brand's own go in (lib/trybe-adsgallery ownAd).
-          const own = ads.filter(a => ownAd(a, nm)).length
+          // On the brand's own Page every ad is its own (SCOUT 1.57.0).
+          const own = x.basis === 'page' ? ads.length : ads.filter(a => ownAd(a, nm)).length
           galleryAds += own; notOwnAds += ads.length - own
           changed = true
         }
@@ -2177,6 +2215,17 @@ Weigh posts pushed to social, and TRYBE brands they earned with or submitted to,
         .sort((a, b) => todoRank(a.r) - todoRank(b.r) || stars(b) - stars(a) || (Date.parse(a.r.meta_ads_checked_at) || 0) - (Date.parse(b.r.meta_ads_checked_at) || 0) || (b.r.top100_hits ?? 0) - (a.r.top100_hits ?? 0))
         .slice(0, starPool ? 3000 : 120).map(x => ({ brand_id: x.r.brand_id, name: x.r.name }))
       : undefined
+    // THE BRAND'S OWN META PAGE (SCOUT 1.57.0): the Page MVP keeps for each
+    // brand goes with it, so SCOUT counts that Page's ads; a brand with none
+    // kept, or none found in a month, is looked for.
+    if (metaTodo?.length) {
+      const pages = await metaPagesOf(admin, metaTodo.map(t => t.brand_id))
+      for (const t of metaTodo as Array<{ brand_id: string; name: string; page_id?: string | null; find_page?: boolean }>) {
+        const p = pages.get(t.brand_id)
+        if (p?.id) t.page_id = p.id
+        else if (!p || Date.now() - Date.parse(p.at) > META_PAGE_RETRY_MS) t.find_page = true
+      }
+    }
     return NextResponse.json({
       ok: true,
       matched: shown.length,
@@ -2794,8 +2843,11 @@ Weigh posts pushed to social, and TRYBE brands they earned with or submitted to,
       }
     }
     const mine = mineQ.data as Record<string, any> | null // eslint-disable-line @typescript-eslint/no-explicit-any
+    // Its own Page on Meta, when SCOUT found it (SCOUT 1.57.0): the link opens that Page.
+    const metaPage = (await metaPagesOf(admin, [brandId]).catch(() => new Map())).get(brandId)
     return NextResponse.json({
       ok: true,
+      metaPage: metaPage?.id ? { id: metaPage.id, name: metaPage.name } : null,
       brand: dir ? { id: brandId, name: dir.name, website: dir.website ?? null, categories: dir.categories || [], about: dir.about ?? null, firstSeen: dir.first_seen_at ?? null, lastSeen: dir.last_seen_at ?? null, left: !!dir.left_at } : null,
       pub,
       timeline: timelineOf(changes).slice(0, 40),

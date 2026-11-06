@@ -30,7 +30,7 @@ import { Loader2, Megaphone, Sparkles, RotateCcw, Users, Globe, ExternalLink } f
 import TrybeLink from '@/components/labs/TrybeLink'
 import { BrandName } from '@/components/labs/trybe-dossier-context'
 import { BrandMark, PayChip, StarButton, PopularityChips, RatingChip, NO_FILTERS, type LivePayEst, type LivePopularity } from '@/components/labs/TrybeFinderControls'
-import { readMetaAdsAll, metaAdsWords } from '@/components/labs/metaAdsRead'
+import { readMetaAdsAll, metaAdsWords, metaBrandOf } from '@/components/labs/metaAdsRead'
 import { metaTrustWords, adLibraryUrl, type MetaTrust } from '@/lib/trybe-pick'
 
 const COLOR = '#C026D3'
@@ -53,7 +53,7 @@ interface StarBrand extends LivePopularity {
   starred?: boolean; is_new?: boolean
 }
 interface ReadCounts { notOwn?: number; ratingKnown?: number; looked?: number; creators?: number; rankedBy?: 'perCreator' | 'perReview'; total: number; meta: number; web: number; google: number; popularityReady: boolean }
-interface Answer { brands: StarBrand[]; matched: number; hiddenMine: number; readCounts?: ReadCounts; metaTodo?: Array<{ brand_id: string; name: string }>; blankBy?: Record<string, number>; hiddenBy?: Record<string, number> }
+interface Answer { brands: StarBrand[]; matched: number; hiddenMine: number; readCounts?: ReadCounts; metaTodo?: Array<{ brand_id: string; name: string; page_id?: string | null; find_page?: boolean }>; blankBy?: Record<string, number>; hiddenBy?: Record<string, number> }
 
 /** A website's address as people say it: gentgolfers.com. */
 const hostOf = (url: string) => { try { return new URL(/^https?:/i.test(url) ? url : `https://${url}`).hostname.replace(/^www\./, '') } catch { return url } }
@@ -135,7 +135,7 @@ export default function TrybeStarBrands({ canCount, cards, scoutVersion, hasCore
     stopRef.current = false
     setNote(null); setCounting({ done: 0, total: todo.length, all })
     try {
-      const run = await readMetaAdsAll(todo.map((b) => ({ brandId: b.brand_id, name: b.name })), { cards, onProgress: (done, total) => setCounting({ done, total, all }), gone: () => left.current, stop: () => stopRef.current, onChunk: all ? () => loadRef.current() : undefined })
+      const run = await readMetaAdsAll(todo.map(metaBrandOf), { cards, onProgress: (done, total) => setCounting({ done, total, all }), gone: () => left.current, stop: () => stopRef.current, onChunk: all ? () => loadRef.current() : undefined })
       setNote(metaAdsWords(run, scoutVersion))
       await loadRef.current()
     } catch (e) {

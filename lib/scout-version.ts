@@ -8,7 +8,7 @@
  *     store installs to "update" — isScoutOutdated survives only as a
  *     low-level helper, not a user-facing gate.
  */
-export const SCOUT_LATEST_VERSION = '1.56.0'
+export const SCOUT_LATEST_VERSION = '1.57.0'
 
 /** One-line "what's new". No longer shown in a nag (store installs auto-update);
  *  kept as a changelog note for whoever bumps the version. */
@@ -68,6 +68,11 @@ export const SCOUT_TRYBE_TAB_OPEN_MIN_VERSION = '1.53.5'
  *  set (MVP_TRYBE_MORNING): it opens MVP's TRYBE page behind the creator's
  *  tabs with ?daily=auto, once a day (Seb, 2026-11-06). */
 export const SCOUT_TRYBE_MORNING_MIN_VERSION = '1.56.0'
+
+/** SCOUT counts a brand's Meta ads on its own advertiser Page: found once from
+ *  the Ad Library's search suggestions, then counted there (Seb, 2026-11-06:
+ *  "search for meta ads the right way"). Older SCOUT counts by the exact name. */
+export const SCOUT_META_PAGE_MIN_VERSION = '1.57.0'
 
 /** SCOUT opens TRYBE behind MVP's tab by itself as the first step of any
  *  TRYBE request, upload, brand list read or Send all run that finds it

@@ -305,7 +305,11 @@ export function tallyTop(entries: TopEntry[]): { byId: Map<string, { hits: numbe
 
 /** Meta's Ad Library for a brand: active ads in the US with the brand's exact
  *  name in them. */
-export function adLibraryUrl(name: string): string {
+export function adLibraryUrl(name: string, pageId?: string | null): string {
+  // THE BRAND'S OWN PAGE when MVP knows it (SCOUT 1.57.0): every ad it runs,
+  // and only its own. Else the exact name in quotes: without them Meta
+  // matches ads with any one of the words.
+  if (pageId && /^\d{5,30}$/.test(pageId)) return `https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=US&is_targeted_country=false&media_type=all&search_type=page&view_all_page_id=${pageId}`
   const q = encodeURIComponent(`"${name.replace(/"/g, '').trim()}"`)
   return `https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=US&is_targeted_country=false&media_type=all&q=${q}&search_type=keyword_exact_phrase`
 }

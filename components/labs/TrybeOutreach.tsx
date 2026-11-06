@@ -29,7 +29,7 @@ import { Loader2, Lock, Search, Sparkles, Send, Square, ExternalLink, Check, Ale
 import { nameKey, trybeSearchPath, brandsNamed, TRYBE_SEARCH_PARAMS } from '@/lib/trybe-name-lookup'
 import { TOP100, META_ROUND, META_ROUNDS_MAX } from '@/lib/trybe-top100'
 import { ensureTrybeTab, requestTrybeTab, requestTrybeTabOpen, requestTrybeMorning, type TrybeMorning, requestTrybeApi, requestTrybeAccess, requestTrybeScan, requestTrybeSend, requestTrybeHarvest, requestTrybeRun, requestTrybeRunStatus, requestTrybeRunStop, type TrybeScanPass, type TrybeRun } from '@/lib/extension-frame'
-import { readMetaAds, readMetaAdsAll, metaAdsWords, type MetaAdsRun } from '@/components/labs/metaAdsRead'
+import { readMetaAds, readMetaAdsAll, metaAdsWords, metaBrandOf, type MetaAdsRun } from '@/components/labs/metaAdsRead'
 import TrybeTabGate from '@/components/labs/TrybeTabGate'
 import TrybeStarBrands from '@/components/labs/TrybeStarBrands'
 import { TRYBE_OPEN_URL, TRYBE_NOT_OPEN, TRYBE_NOT_OPEN_WORDS, trybeTabWords, type TrybeTabState } from '@/lib/trybe-tab'
@@ -624,7 +624,7 @@ export default function TrybeOutreach({ preview = false, v2 = false }: { preview
   // filters change, no SCOUT and no website fetched.
   const [live, setLive] = useState<{ brands: LiveBrand[]; matched: number; capped: boolean; hiddenMine?: number; payUnknown?: number; payOther?: number
     hiddenBy?: Partial<Record<FilterId, number>>; blankBy?: Partial<Record<FilterId, number>>; unknownBy?: Partial<Record<FilterId, number>>; amazonNotes?: string[]; amazonVideos?: number; rawKeys?: string[]; prioritiesSaved?: boolean; starsSaved?: boolean; crowdDays?: number | null; spendKnown?: { recent: number; lifetime: number; none: number } | null
-    readCounts?: { total: number; meta: number; web: number; google: number; popularityReady: boolean; creators?: number; rankedBy?: 'perCreator' | 'perReview' }; metaTodo?: Array<{ brand_id: string; name: string }>
+    readCounts?: { total: number; meta: number; web: number; google: number; popularityReady: boolean; creators?: number; rankedBy?: 'perCreator' | 'perReview' }; metaTodo?: Array<{ brand_id: string; name: string; page_id?: string | null; find_page?: boolean }>
     /** Any brand looked at has a creator count (TRYBE's list gave none, Seb's check 2026-10-21). */
     creatorsKnown?: boolean; mix?: { small: number; mid: number; big: number; unknown: number; says: string | null } | null
     /** A search by a brand's name: over all of TRYBE, the filters paused. */
@@ -1763,18 +1763,18 @@ export default function TrybeOutreach({ preview = false, v2 = false }: { preview
       // it asks again, until none are left or Stop. A brand Meta would not
       // show a count for is tried once a run, so the run always ends.
       step('meta', 'running', 'Finding the brands to count...')
-      const total: MetaAdsRun = { total: 0, read: 0, noCount: 0, couldNot: 0, late: 0, notEnglish: '', stopped: '', cardsAsked: true, cardsSent: false, galleryAds: 0, cardsMissed: 0, looked: 0, picked: false, notOwn: 0, capped: 0, mixed: 0, doubled: 0, saved: 0, kept: 0 }
+      const total: MetaAdsRun = { total: 0, read: 0, noCount: 0, couldNot: 0, late: 0, notEnglish: '', stopped: '', cardsAsked: true, cardsSent: false, galleryAds: 0, cardsMissed: 0, looked: 0, picked: false, notOwn: 0, capped: 0, mixed: 0, doubled: 0, saved: 0, kept: 0, byPage: 0, byPhrase: 0, pageMissed: 0, pageWhys: {} }
       const tried = new Set<string>()
       let left: number | null = null
       for (;;) {
         if (dailyStop.current || leftRef.current) { total.stopped = 'Stopped. Press Daily refresh to carry on: it picks up the brands not counted yet.'; break }
         const list = await api({ action: 'browse', categories: [], keywords: [], limit: 1, sort: 'adsPerCreator', payType: 'any', includeMine: true, filters: NO_FILTERS })
         left = typeof list.metaLeft === 'number' ? list.metaLeft : left
-        const todo = ((list.metaTodo || []) as Array<{ brand_id: string; name: string }>).filter((b) => !tried.has(b.brand_id)).slice(0, DAILY_META_CHUNK)
+        const todo = ((list.metaTodo || []) as Array<{ brand_id: string; name: string; page_id?: string | null; find_page?: boolean }>).filter((b) => !tried.has(b.brand_id)).slice(0, DAILY_META_CHUNK)
         if (!todo.length) break
         for (const b of todo) tried.add(b.brand_id)
         const before = total.read
-        const run = await readMetaAdsAll(todo.map((b) => ({ brandId: b.brand_id, name: b.name })), {
+        const run = await readMetaAdsAll(todo.map(metaBrandOf), {
           cards: true, gone: () => leftRef.current, stop: () => dailyStop.current,
           onProgress: (done) => {
             const n = before + done
@@ -1783,7 +1783,8 @@ export default function TrybeOutreach({ preview = false, v2 = false }: { preview
           },
         })
         total.total += run.total
-        for (const k of ['read', 'noCount', 'couldNot', 'late', 'galleryAds', 'cardsMissed', 'capped', 'mixed', 'doubled', 'saved', 'kept'] as const) total[k] += run[k]
+        for (const k of ['read', 'noCount', 'couldNot', 'late', 'galleryAds', 'cardsMissed', 'capped', 'mixed', 'doubled', 'saved', 'kept', 'byPage', 'byPhrase', 'pageMissed'] as const) total[k] += run[k]
+        for (const [k, v] of Object.entries(run.pageWhys)) total.pageWhys[k] = (total.pageWhys[k] || 0) + v
         total.cardsSent = total.cardsSent || run.cardsSent
         if (run.notEnglish) { total.notEnglish = run.notEnglish; break }
         if (run.stopped) { total.stopped = /left the page/i.test(run.stopped) ? run.stopped : 'Stopped. Press Daily refresh to carry on: it picks up the brands not counted yet.'; break }
@@ -1847,7 +1848,7 @@ export default function TrybeOutreach({ preview = false, v2 = false }: { preview
     setMetaRun({ done: 0, total: todo.length }); setSignalNote(null)
     try {
       // The MVP team's read also copies the ads themselves for What's working (SCOUT 1.51.0).
-      const run = await readMetaAds(todo.map(b => ({ brandId: b.brand_id, name: b.name })), { cards: isAdmin, onProgress: (done, total) => setMetaRun({ done, total }), gone: () => leftRef.current })
+      const run = await readMetaAds(todo.map(metaBrandOf), { cards: isAdmin, onProgress: (done, total) => setMetaRun({ done, total }), gone: () => leftRef.current })
       setSignalNote(metaAdsWords(run, scoutVersion))
       setLiveNonce(n => n + 1)
     } catch (e) {

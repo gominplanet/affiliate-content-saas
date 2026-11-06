@@ -99,7 +99,7 @@ const ON = { on: true, origin: 'https://mvpaffiliate.io', hour: 4, minute: 0 }
   // ── WHAT SCOUT ANSWERS MVP ─────────────────────────────────────────────────
   check('the switch is answered for MVP\'s own site only, with the hour kept to a real time', /if \(msg\.type === 'MVP_TRYBE_MORNING'\) \{/.test(BG) && /\/\^MVP_\(TRYBE\|HASHTAG\)_\/\.test\(msg\.type\) && !trybeCallerOk\(sender\)/.test(BG) && /h >= 0 && h <= 23 \? h : 4/.test(BG))
   const M = JSON.parse(read('extension/manifest.json'))
-  check('SCOUT 1.56.0, with no new permission', M.version === '1.56.0' && /SCOUT_LATEST_VERSION = '1\.56\.0'/.test(read('lib/scout-version.ts')) && /SCOUT_TRYBE_MORNING_MIN_VERSION = '1\.56\.0'/.test(read('lib/scout-version.ts'))
+  check('SCOUT 1.56.0 or later, with no new permission', /^1\.(5[6-9]|[6-9]\d)\./.test(M.version) && read('lib/scout-version.ts').includes(`SCOUT_LATEST_VERSION = '${M.version}'`) && /SCOUT_TRYBE_MORNING_MIN_VERSION = '1\.56\.0'/.test(read('lib/scout-version.ts'))
     && JSON.stringify(M.permissions.slice().sort()) === JSON.stringify(['activeTab', 'alarms', 'downloads', 'scripting', 'storage', 'tabs']))
 
   // ── THE PAGE ───────────────────────────────────────────────────────────────
