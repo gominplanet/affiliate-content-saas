@@ -15,6 +15,7 @@ import { ui, Section, Tag, Spark } from '@/components/labs/trybe-ui'
 import { BrandName } from '@/components/labs/trybe-dossier-context'
 import { BrandMark } from '@/components/labs/TrybeFinderControls'
 import { useTrybeAds } from '@/components/labs/useTrybeAds'
+import { changeLine, CHANGE_WORDS, type ChangeKind } from '@/lib/trybe-changes'
 
 interface Card { brand_id: string; name: string; website: string | null; categories: string[]; pay: string | null; metaAds: number | null; bucket: string | null; top100: number | null; rating: number | null }
 interface HomeRead {
@@ -46,7 +47,7 @@ const val = (n: number | null, unit: '$' | '%') => (n == null ? '' : unit === '$
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type ForYou = Record<string, any>
 
-export default function TrybeHome({ go, unread, queue, repliedWeek, inboxRead, forYou = [], forYouWhy = '', canMoney = false }: {
+export default function TrybeHome({ go, unread, queue, repliedWeek, inboxRead, forYou = [], forYouWhy = '', canMoney = false, yours = [] }: {
   /** Open a TRYBE tab. */
   go: (tab: 'find' | 'queue' | 'inbox' | 'week' | 'changes' | 'stars' | 'sent' | 'analytics') => void
   unread: number
@@ -60,6 +61,8 @@ export default function TrybeHome({ go, unread, queue, repliedWeek, inboxRead, f
   forYouWhy?: string
   /** SCOUT can read the creator's own TRYBE earnings and ad results. */
   canMoney?: boolean
+  /** What changed this week on brands already on the creator's list (What changed's read). */
+  yours?: Array<{ brand_id: string; kind: ChangeKind; before: string | null; after: string | null; at: string; name: string | null; categories: string[] }>
 }) {
   // YOUR TRYBE, LAST 30 DAYS: the same read as Earnings, shared, so opening
   // Earnings after this reads nothing twice.
@@ -172,6 +175,24 @@ export default function TrybeHome({ go, unread, queue, repliedWeek, inboxRead, f
             ))}
           </div>
           <button type="button" onClick={() => go('find')} className="self-start text-[13px] font-semibold hover:underline" style={{ color: 'var(--accent-text, var(--accent))' }}>See all of them in Find brands</button>
+        </Section>
+      )}
+
+      {/* ── YOUR BRANDS THIS WEEK ─────────────────────────────────────────── */}
+      {yours.length > 0 && (
+        <Section title="Your brands this week" aside={<button type="button" onClick={() => go('changes')} className="font-semibold hover:underline" style={{ color: 'var(--accent-text, var(--accent))' }}>Every change</button>}>
+          <div className="rounded-2xl overflow-hidden" style={ui.card}>
+            {yours.slice(0, 8).map((c, i) => (
+              <div key={`${c.brand_id}${c.kind}${i}`} className="flex items-start gap-3 px-4 py-3" style={{ borderTop: i ? '1px solid var(--border)' : undefined }}>
+                <span className="text-[12px] w-14 shrink-0 pt-0.5" style={{ ...ui.soft, ...ui.num }}>{day(c.at)}</span>
+                <div className="min-w-0 flex-1">
+                  {c.name ? <BrandName id={c.brand_id} name={c.name} className="text-[13.5px] font-semibold" style={ui.text} /> : <span className="text-[13.5px] font-semibold" style={ui.text}>A brand MVP no longer lists</span>}
+                  <span className="text-[12px] block" style={ui.mid}><span className="font-semibold">{CHANGE_WORDS[c.kind]}:</span> {changeLine(c)}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+          <p className="text-[11.5px]" style={ui.soft}>Brands on your list: messaged, written to, or joined.</p>
         </Section>
       )}
 

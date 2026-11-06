@@ -62,6 +62,7 @@ check('the home opens with best bets for the creator\'s niche, not yet on their 
 check('Find brands in the new TRYBE starts with finding brands: the saved setup folds into one line, open to change', /if \(!\(v2 && !preview && core\.trim\(\) && !editingCore\)\) return setup/.test(U) && /Your outreach setup/.test(U))
 check('the home shows your own TRYBE money for 30 days, from the same read as Earnings', /const ads = useTrybeAds\(canMoney, '30d'\)/.test(H) && /Your TRYBE, last 30 days/.test(H) && /canMoney=\{canMyBrands\}/.test(U))
 check('an earnings read that failed says why, never zeros', /ads\.problem\?\.text \|\| 'MVP could not read your earnings from TRYBE yet\.'/.test(H) && /'Not read'/.test(H))
+check('the home says what changed this week on brands already on your list, newest first', /yours=\{\(changes\?\.changes \|\| \[\]\)\.filter\(c => c\.yours\)/.test(U) && /Your brands this week/.test(H))
 check('a count that failed says so, with a way to try again', /MVP could not count this week/.test(H) && /Try again/.test(H))
 check('each section says the window it covers', /Last 14 days/.test(H) && /Last 7 days next to the 7 before/.test(H))
 
