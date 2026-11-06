@@ -47,6 +47,7 @@ import { assertPublicHttpUrl } from '@/lib/ssrf-guard'
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { readSampleCatalogs, refreshCatalogs } from '@/lib/trybe-catalog-refresh'
 import { getAuthAndOwner } from '@/lib/agency-auth'
 import { trybeAccess, TRYBE_PREVIEW_ACTIONS } from '@/lib/labs-preview'
 import { normalizeTier } from '@/lib/tier'
@@ -61,7 +62,7 @@ import { researchBrandSite } from '@/lib/trybe-research'
 import { mergeDirectory, directorySearchText, nicheScore, readCategories, siteSearchText, programOf } from '@/lib/trybe-directory'
 import { samplePool, replyPool, metaSeries, timelineOf, dossierProducts } from '@/lib/trybe-dossier'
 import { dailySeries, windowTotals, adsMovers, payMoves, payIndex, type ChangeRow } from '@/lib/trybe-home'
-import { TOP100, adSpendProof, samplesProof, sampleSignsByBrand, activityCounts, activityDigest, cleanProfile, pushesOf, readTop100Ask, catalogSamples, readCatalogSamples, CATALOG_KEEP_DAYS, CATALOG_READS_MAX, CATALOG_REFRESH_CHUNK, type Activity, type CatalogSamples } from '@/lib/trybe-top100'
+import { TOP100, adSpendProof, samplesProof, sampleSignsByBrand, activityCounts, activityDigest, cleanProfile, pushesOf, readTop100Ask, readCatalogSamples, CATALOG_KEEP_DAYS, CATALOG_READS_MAX, CATALOG_REFRESH_CHUNK, type Activity, type CatalogSamples } from '@/lib/trybe-top100'
 import {
   clampCap, countsTowardCap, sanitizeScanned, sendUrl, tidyDraft,
   DRAFT_SYSTEM, draftUserPrompt, DEFAULT_DAILY_CAP, type ScannedBrand,
@@ -269,27 +270,6 @@ async function listedSince(admin: Db): Promise<string | null> {
  *  pages show, a few at a time until `until`. A brand TRYBE does not know
  *  (404) has no products; one that could not be read is left out of the
  *  answer, never taken as "none". */
-async function readSampleCatalogs(ids: string[], until: number, o: { workers?: number; stats?: { refused: number; failed: number } } = {}): Promise<Map<string, CatalogSamples>> {
-  const out = new Map<string, CatalogSamples>()
-  let next = 0
-  // TRYBE ASKS TO SLOW DOWN (429) OR REFUSES (403): every worker stops at
-  // once, and the caller says so, rather than knocking on.
-  let halt = false
-  const worker = async () => {
-    while (!halt && next < ids.length && Date.now() < until - 1500) {
-      const id = ids[next++]
-      try {
-        const res = await fetch(`https://jointrybe.com/backend/api/public/brand/${encodeURIComponent(id)}/products`, { signal: AbortSignal.timeout(Math.min(8000, Math.max(1500, until - Date.now()))), headers: { accept: 'application/json', 'user-agent': 'Mozilla/5.0 (MVP Affiliate)' } })
-        if (res.ok) out.set(id, catalogSamples(await res.json()))
-        else if (res.status === 404) out.set(id, { open: 0, total: 0 })
-        else if (res.status === 429 || res.status === 403) { halt = true; if (o.stats) o.stats.refused++ }
-        else if (o.stats) o.stats.failed++
-      } catch { if (o.stats) o.stats.failed++ }
-    }
-  }
-  await Promise.all(Array.from({ length: o.workers ?? 8 }, worker))
-  return out
-}
 
 async function rankDirectory(admin: Db, o: { words: string[]; user: string | null; limit: number; sort: string; since: string | null }): Promise<{ ids: string[]; got: number; error: string | null }> {
   const ids: string[] = []
@@ -1246,53 +1226,27 @@ export async function POST(request: Request) {
   if (action === 'catalog_refresh') {
     // EVERY BRAND'S PRODUCTS ON TRYBE (Seb, 2026-11-06: "i want to make sure
     // we're able to get as much relevant and updated data as possible from
-    // trybe"). A step of the daily refresh: the product list of each listed
-    // brand not read in CATALOG_KEEP_DAYS, from TRYBE's public pages, by MVP's
-    // server (the member's TRYBE sign-in is not used). Gently: four at a time,
-    // CATALOG_REFRESH_CHUNK a call, the page asking again until none is left.
-    // A brand MVP could not read stays to read next time, never a no.
+    // trybe"). A step of the daily refresh (lib/trybe-catalog-refresh): the
+    // product list of each listed brand not read in a week, from TRYBE's
+    // public pages, by MVP's server (the member's TRYBE sign-in is not used).
+    // Four at a time, CATALOG_REFRESH_CHUNK a call, the page asking again
+    // until none is left. The overnight job does the same on its own.
     if (tier !== 'admin') return NextResponse.json({ error: 'The daily refresh is for the MVP team.' }, { status: 403 })
-    const listed: string[] = []
-    for (let from = 0; from < 50_000; from += 1000) {
-      const { data, error: le } = await admin.from('trybe_directory').select('brand_id').is('left_at', null).order('brand_id').range(from, from + 999)
-      if (le) return NextResponse.json({ error: `MVP could not read its copy of TRYBE's brand list: ${le.message}` }, { status: 500 })
-      listed.push(...((data || []) as Array<{ brand_id: string }>).map(r => String(r.brand_id)))
-      if (!data || data.length < 1000) break
-    }
-    const since = new Date(Date.now() - CATALOG_KEEP_DAYS * 86_400_000).toISOString()
-    const fresh = new Set<string>()
-    for (let from = 0; from < 50_000; from += 1000) {
-      const { data, error: fe } = await admin.from('trybe_directory_meta').select('key').like('key', 'samples:%').gte('updated_at', since).order('key').range(from, from + 999)
-      if (fe) return NextResponse.json({ error: `MVP could not read which product lists it has: ${fe.message}` }, { status: 500 })
-      for (const r of (data || []) as Array<{ key: string }>) fresh.add(r.key.slice('samples:'.length))
-      if (!data || data.length < 1000) break
-    }
-    const todo = listed.filter(id => !fresh.has(id) && /^[A-Za-z0-9-]{6,80}$/.test(id))
-    const stats = { refused: 0, failed: 0 }
-    const got = await readSampleCatalogs(todo.slice(0, CATALOG_REFRESH_CHUNK), Date.now() + 45_000, { workers: 4, stats })
-    const kept = Array.from(got.entries()).map(([id, v]) => ({ key: `samples:${id}`, value: v, updated_at: now }))
-    for (let i = 0; i < kept.length; i += 200) {
-      const { error: ke } = await admin.from('trybe_directory_meta').upsert(kept.slice(i, i + 200))
-      if (ke) return NextResponse.json({ error: `Read ${got.size} product lists, but MVP could not keep them: ${ke.message}` }, { status: 500 })
-    }
-    const vals = Array.from(got.values())
-    return NextResponse.json({
-      ok: true, listed: listed.length, fresh: fresh.size, read: got.size, left: Math.max(0, todo.length - got.size),
-      open: vals.filter(v => v.open > 0).length, refuse: vals.filter(v => v.total > 0 && v.open === 0).length, none: vals.filter(v => v.total === 0).length,
-      refused: stats.refused > 0, failed: stats.failed,
-    })
+    const r = await refreshCatalogs(admin, { chunk: CATALOG_REFRESH_CHUNK, budgetMs: 45_000, workers: 4, now })
+    if (!r.ok) return NextResponse.json({ error: r.error }, { status: 500 })
+    return NextResponse.json(r)
   }
 
   if (action === 'daily_refresh') {
     if (tier !== 'admin') return NextResponse.json({ error: 'The daily refresh is for the MVP team.' }, { status: 403 })
     const KEY = 'daily_refresh'
-    const log = body.log && typeof body.log === 'object' ? body.log as { at?: unknown; steps?: unknown } : null
+    const log = body.log && typeof body.log === 'object' ? body.log as { at?: unknown; steps?: unknown; auto?: unknown } : null
     if (log) {
       const steps = (Array.isArray(log.steps) ? log.steps : []).slice(0, 6).map((x) => {
         const o = (x && typeof x === 'object' ? x : {}) as Record<string, unknown>
         return { id: String(o.id || '').slice(0, 20), label: String(o.label || '').slice(0, 60), state: String(o.state || '').slice(0, 12), text: String(o.text || '').slice(0, 600) }
       })
-      const { error: e } = await admin.from('trybe_directory_meta').upsert({ key: KEY, value: { at: now, by: ownerId, steps }, updated_at: now })
+      const { error: e } = await admin.from('trybe_directory_meta').upsert({ key: KEY, value: { at: now, by: ownerId, steps, auto: log.auto === true }, updated_at: now })
       if (e) return NextResponse.json({ error: e.message }, { status: 500 })
     }
     const { data: row } = await admin.from('trybe_directory_meta').select('value').eq('key', KEY).maybeSingle()

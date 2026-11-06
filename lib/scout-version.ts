@@ -8,7 +8,7 @@
  *     store installs to "update" — isScoutOutdated survives only as a
  *     low-level helper, not a user-facing gate.
  */
-export const SCOUT_LATEST_VERSION = '1.55.0'
+export const SCOUT_LATEST_VERSION = '1.56.0'
 
 /** One-line "what's new". No longer shown in a nag (store installs auto-update);
  *  kept as a changelog note for whoever bumps the version. */
@@ -63,6 +63,11 @@ export const SCOUT_TRYBE_OWN_TAB_MIN_VERSION = '1.53.2'
 
 /** SCOUT opens TRYBE in a tab behind MVP's when none is open (MVP_TRYBE_TAB_OPEN). */
 export const SCOUT_TRYBE_TAB_OPEN_MIN_VERSION = '1.53.5'
+
+/** SCOUT runs the team's Daily refresh by itself every morning at the hour
+ *  set (MVP_TRYBE_MORNING): it opens MVP's TRYBE page behind the creator's
+ *  tabs with ?daily=auto, once a day (Seb, 2026-11-06). */
+export const SCOUT_TRYBE_MORNING_MIN_VERSION = '1.56.0'
 
 /** SCOUT opens TRYBE behind MVP's tab by itself as the first step of any
  *  TRYBE request, upload, brand list read or Send all run that finds it

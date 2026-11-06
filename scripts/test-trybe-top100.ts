@@ -118,10 +118,15 @@ check('not counted on Meta yet: handed to the page to count, best fits first', /
 {
   const at = R.indexOf("if (action === 'catalog_refresh') {")
   const block = R.slice(at, R.indexOf("if (action === 'daily_refresh') {"))
+  const L = read('lib/trybe-catalog-refresh.ts')
   check('the daily refresh reads every listed brand\'s products, team only, from MVP\'s server, gently', at > 0
-    && /if \(tier !== 'admin'\)/.test(block) && /\.is\('left_at', null\)/.test(block) && /\.gte\('updated_at', since\)/.test(block)
-    && /todo\.slice\(0, CATALOG_REFRESH_CHUNK\)/.test(block) && /workers: 4/.test(block) && CATALOG_REFRESH_CHUNK > 0 && CATALOG_REFRESH_CHUNK <= 1000)
-  check('TRYBE asking to slow down stops every reader at once, and is said', /res\.status === 429 \|\| res\.status === 403\) \{ halt = true/.test(R) && /refused: stats\.refused > 0/.test(block))
+    && /if \(tier !== 'admin'\)/.test(block) && /refreshCatalogs\(admin, \{ chunk: CATALOG_REFRESH_CHUNK, budgetMs: 45_000, workers: 4/.test(block)
+    && /\.is\('left_at', null\)/.test(L) && /\.gte\('updated_at', since\)/.test(L) && /todo\.slice\(0, o\.chunk\)/.test(L) && CATALOG_REFRESH_CHUNK > 0 && CATALOG_REFRESH_CHUNK <= 1000)
+  check('TRYBE asking to slow down stops every reader at once, and is said', /res\.status === 429 \|\| res\.status === 403\) \{ halt = true/.test(L) && /refused: stats\.refused > 0/.test(L) && !/async function readSampleCatalogs/.test(R))
+  const C = read('app/api/cron/trybe-products/route.ts')
+  const crons = (JSON.parse(read('vercel.json')).crons || []) as Array<{ path: string; schedule: string }>
+  check('the overnight job reads products whether or not anyone is at a computer, a few passes each early morning', /Bearer \$\{secret\}/.test(C) && /refreshCatalogs\(admin/.test(C) && /if \(r\.refused\) \{ sum\.refused = true; break \}/.test(C)
+    && /key: 'products_overnight'/.test(C) && crons.some((c) => c.path === '/api/cron/trybe-products' && c.schedule === '5,35 7-9 * * *'))
   check('product names on TRYBE help tell what a brand sells', /catalogBy\.get\(String\(x\.r\.brand_id\)\)\?\.names/.test(R))
   const O = read('components/labs/TrybeOutreach.tsx')
   check('Products on TRYBE is its own step, after the brand list and before Meta ads, and says what it did',
@@ -159,7 +164,7 @@ check('a count SCOUT could not make is said, not guessed', /Meta ads: \$\{metaNo
 check('a ranking that did not come back is said, never the usual search under a "Your top" heading', /if \(!t\) \{/.test(U) && /Your top 100 did not come back/.test(U) && /The list below is your usual search, not your top 100/.test(U))
 check('the usual search waits while My top 100 ranks, so the two never race', /if \(!hasDirectory \|\| top100Busy\) return/.test(U))
 check('what was read says when it was only the latest', /postsCapped: posts\.length >= 300/.test(R) && /your latest /.test(U))
-check('brands TRYBE\'s list does not flag are read from TRYBE\'s public product list, best fits first, kept a week', /jointrybe\.com\/backend\/api\/public\/brand\/\$\{encodeURIComponent\(id\)\}\/products/.test(R) && /readSampleCatalogs\(toRead\.slice\(0, CATALOG_READS_MAX\)/.test(R) && /key: `samples:\$\{id\}`/.test(R) && /\.sort\(\(a, b\) => b\.match - a\.match\)/.test(R))
+check('brands TRYBE\'s list does not flag are read from TRYBE\'s public product list, best fits first, kept a week', /jointrybe\.com\/backend\/api\/public\/brand\/\$\{encodeURIComponent\(id\)\}\/products/.test(read('lib/trybe-catalog-refresh.ts')) && /readSampleCatalogs\(toRead\.slice\(0, CATALOG_READS_MAX\)/.test(R) && /key: `samples:\$\{id\}`/.test(R) && /\.sort\(\(a, b\) => b\.match - a\.match\)/.test(R))
 check('a product list not read in time is counted apart and read on the next round, never a no', /leftOut\.samplesNotRead\+\+/.test(R) && /samplesToRead,/.test(R) && /if \(!t\.toCount\?\.length\) \{ if \(moreSamples\) continue; break \}/.test(U) && /not checked for samples yet/.test(U))
 check('Find brands\' Sends samples filter and every brand card use the product lists too, read live when the filter is on', /stats: statsWith\(x\.r\.brand_id\), earningsBucket/.test(R) && /\.map\(x => String\(x\.r\.brand_id\)\), filters\.samples === true\)/.test(R) && /stats: statsBy\.has\(r\.brand_id\) \? statsWith\(r\.brand_id\) : null/.test(R))
 check('a product list that could not be kept is logged, not swallowed', /if \(ke\) console\.warn\('\[trybe\] product lists not kept:'/.test(R))

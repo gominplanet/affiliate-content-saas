@@ -28,7 +28,7 @@ import { Loader2, Lock, Search, Sparkles, Send, Square, ExternalLink, Check, Ale
   Scissors, Droplet, Coffee, Leaf, Wand2, MessageCircle, Pencil, ChevronUp, Bell, Lightbulb, CalendarDays, Inbox, ArrowRight, Clapperboard, UploadCloud, BarChart3, Rocket, ListChecks, LayoutDashboard, type LucideIcon } from 'lucide-react'
 import { nameKey, trybeSearchPath, brandsNamed, TRYBE_SEARCH_PARAMS } from '@/lib/trybe-name-lookup'
 import { TOP100, META_ROUND, META_ROUNDS_MAX } from '@/lib/trybe-top100'
-import { ensureTrybeTab, requestTrybeTab, requestTrybeTabOpen, requestTrybeApi, requestTrybeAccess, requestTrybeScan, requestTrybeSend, requestTrybeHarvest, requestTrybeRun, requestTrybeRunStatus, requestTrybeRunStop, type TrybeScanPass, type TrybeRun } from '@/lib/extension-frame'
+import { ensureTrybeTab, requestTrybeTab, requestTrybeTabOpen, requestTrybeMorning, type TrybeMorning, requestTrybeApi, requestTrybeAccess, requestTrybeScan, requestTrybeSend, requestTrybeHarvest, requestTrybeRun, requestTrybeRunStatus, requestTrybeRunStop, type TrybeScanPass, type TrybeRun } from '@/lib/extension-frame'
 import { readMetaAds, readMetaAdsAll, metaAdsWords, type MetaAdsRun } from '@/components/labs/metaAdsRead'
 import TrybeTabGate from '@/components/labs/TrybeTabGate'
 import TrybeStarBrands from '@/components/labs/TrybeStarBrands'
@@ -38,7 +38,7 @@ import TrybeInbox, { fetchTrybeInbox, lastIsMine, type Conversation } from '@/co
 import { reportTrybeInbox, inboxSnapshot } from '@/lib/trybe-alerts'
 import { readDiscoveryPage, requestState, acceptRate, type BrandFlags, type RequestState } from '@/lib/trybe-invites'
 import TrybeLink from '@/components/labs/TrybeLink'
-import { SCOUT_TRYBE_OWN_TAB_MIN_VERSION, SCOUT_TRYBE_TAB_OPEN_MIN_VERSION, SCOUT_TRYBE_FIND_MIN_VERSION, SCOUT_TRYBE_HARVEST_MIN_VERSION, SCOUT_TRYBE_BACKGROUND_SEND_MIN_VERSION, SCOUT_TRYBE_RUNNER_MIN_VERSION, SCOUT_TRYBE_HIDDEN_SEND_MIN_VERSION, SCOUT_TRYBE_INBOX_MIN_VERSION, SCOUT_TRYBE_OPEN_BRAND_MIN_VERSION, SCOUT_TRYBE_PLAYBOOK_MIN_VERSION, SCOUT_TRYBE_MYBRANDS_MIN_VERSION, SCOUT_STORE_LISTING_URL, scoutAtLeast } from '@/lib/scout-version'
+import { SCOUT_TRYBE_OWN_TAB_MIN_VERSION, SCOUT_TRYBE_TAB_OPEN_MIN_VERSION, SCOUT_TRYBE_FIND_MIN_VERSION, SCOUT_TRYBE_HARVEST_MIN_VERSION, SCOUT_TRYBE_BACKGROUND_SEND_MIN_VERSION, SCOUT_TRYBE_RUNNER_MIN_VERSION, SCOUT_TRYBE_HIDDEN_SEND_MIN_VERSION, SCOUT_TRYBE_INBOX_MIN_VERSION, SCOUT_TRYBE_OPEN_BRAND_MIN_VERSION, SCOUT_TRYBE_PLAYBOOK_MIN_VERSION, SCOUT_TRYBE_MYBRANDS_MIN_VERSION, SCOUT_TRYBE_MORNING_MIN_VERSION, SCOUT_STORE_LISTING_URL, scoutAtLeast } from '@/lib/scout-version'
 import { META_ADS_FRESH_MS, TOP100_FRESH_MS, type PickReason, type MetaTrust } from '@/lib/trybe-pick'
 import { type AfterState } from '@/lib/trybe-playbook'
 import TrybeAfterAccept, { type AfterBrand } from '@/components/labs/TrybeAfterAccept'
@@ -53,6 +53,7 @@ import TrybeDossier from '@/components/labs/TrybeDossier'
 import TrybeHome from '@/components/labs/TrybeHome'
 import TrybeNav from '@/components/labs/TrybeNav'
 import TrybeBrandTable from '@/components/labs/TrybeBrandTable'
+import { morningWords } from '@/lib/trybe-morning'
 import { APP, AppChip } from '@/components/labs/trybe-ui'
 import { DossierCtx, BrandName } from '@/components/labs/trybe-dossier-context'
 import TrybeWorking from '@/components/labs/TrybeWorking'
@@ -672,12 +673,24 @@ export default function TrybeOutreach({ preview = false, v2 = false }: { preview
   // by SCOUT 1.45.0, with what happened said under the list.
   const [signalNote, setSignalNote] = useState<{ tone: 'ok' | 'warn' | 'bad'; text: string } | null>(null)
   // The daily refresh (the MVP team): its steps now, or as last run.
-  const [daily, setDaily] = useState<{ running: boolean; steps: DailyStep[]; at: string } | null>(null)
+  const [daily, setDaily] = useState<{ running: boolean; steps: DailyStep[]; at: string; auto?: boolean } | null>(null)
   const dailyStop = useRef(false)
   useEffect(() => {
     if (!isAdmin || preview) return
-    void api({ action: 'daily_refresh' }).then((d) => { if (d?.last?.at && Array.isArray(d.last.steps)) setDaily((now) => now?.running ? now : { running: false, steps: d.last.steps, at: d.last.at }) }).catch(() => {})
+    void api({ action: 'daily_refresh' }).then((d) => { if (d?.last?.at && Array.isArray(d.last.steps)) setDaily((now) => now?.running ? now : { running: false, steps: d.last.steps, at: d.last.at, auto: d.last.auto === true }) }).catch(() => {})
   }, [isAdmin, preview])
+  // EVERY MORNING (Seb, 2026-11-06: "even if it's once a day ... Scout could
+  // do it automatically"). SCOUT 1.56.0 opens this page behind the team's tabs
+  // with ?daily=auto at the hour set; the switch on the Daily refresh card
+  // turns it on. What SCOUT says is shown as it is: on or off, the next run,
+  // and how the last morning went.
+  const [morning, setMorning] = useState<TrybeMorning | null>(null)
+  const [morningBusy, setMorningBusy] = useState(false)
+  const autoDaily = useRef(false)
+  const [autoAsked, setAutoAsked] = useState(false)
+  useEffect(() => {
+    try { if (/[?&]daily=auto(&|$)/.test(window.location.search)) setAutoAsked(true) } catch { /* not in a browser */ }
+  }, [])
   const [metaRun, setMetaRun] = useState<{ done: number; total: number } | null>(null)
   // Each after-a-yes panel tells the page its stage, so the counts on top
   // are the panels' own, never a second guess from the list.
@@ -1574,13 +1587,15 @@ export default function TrybeOutreach({ preview = false, v2 = false }: { preview
    *  open (SCOUT opens one next to this tab); it is signed in (the TRYBE tab
    *  comes to the front and the run waits up to 15 minutes for the sign-in,
    *  then carries on by itself). Says why when it cannot be. */
-  async function trybeReady(say: (t: string) => void): Promise<{ ok: boolean; text: string }> {
+  async function trybeReady(say: (t: string) => void, auto = false): Promise<{ ok: boolean; text: string }> {
     const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
     let a = await requestTrybeAccess(false)
     if (a.state === 'no-scout') return { ok: false, text: 'SCOUT did not answer in this Chrome. Reload this page; if it still does not answer, install SCOUT again from the Chrome Web Store.' }
     if (a.state === 'old') return { ok: false, text: `SCOUT ${a.version || ''} is too old for TRYBE. Open chrome://extensions, turn on Developer mode and press Update.` }
     setScoutVersion(a.version ?? null)
     const allow = async () => {
+      // Nobody is there to press Allow on a morning run: said, not asked.
+      if (auto) return false
       say('SCOUT needs your OK for TRYBE: press Allow on TRYBE in the small SCOUT window, then Allow in Chrome\u2019s box.')
       a = await requestTrybeAccess(true)
       setAccess(a.state)
@@ -1602,6 +1617,9 @@ export default function TrybeOutreach({ preview = false, v2 = false }: { preview
       if (!r.open) return { ok: false, text: `SCOUT could not open TRYBE (${r.error || 'no answer'}). Open jointrybe.com in this Chrome, sign in, then press Daily refresh again.` }
       for (let i = 0; i < 20 && (t === 'closed' || t === 'unknown'); i++) { await sleep(3000); t = await requestTrybeTab() }
     }
+    // A morning run never brings a tab to the front or waits for a sign-in:
+    // the creator may be at the computer doing something else.
+    if (t === 'signed-out' && auto) { setTrybeTab(t); return { ok: false, text: 'TRYBE was signed out in this Chrome, so this morning\u2019s run could not read TRYBE. Sign in to TRYBE once; the next morning picks it up.' } }
     if (t === 'signed-out') {
       await requestTrybeTabOpen(true)
       say('TRYBE is signed out: sign in on the TRYBE tab that just came to the front. The refresh carries on by itself once you are.')
@@ -1630,7 +1648,7 @@ export default function TrybeOutreach({ preview = false, v2 = false }: { preview
    *  first), checked as each brand's own, until done or Stop. Each step says
    *  what it did or why not, and the run is kept, so the next press says when
    *  it last ran and how it went. Website ranks and Google run by themselves. */
-  async function dailyRefresh() {
+  async function dailyRefresh(auto = false) {
     if (daily?.running) return
     dailyStop.current = false
     // TRYBE READY FIRST, THEN THE TOP 100, THEN THE LIST (Seb, 2026-10-22: "if
@@ -1656,16 +1674,21 @@ export default function TrybeOutreach({ preview = false, v2 = false }: { preview
       // and it is signed in. Opened by itself; a signed-out tab is brought to
       // the front and the run waits for the sign-in, then carries on.
       step('trybe', 'running', 'Checking SCOUT and TRYBE in this Chrome...')
-      const ready = await trybeReady((t) => step('trybe', 'running', t))
-      if (!ready.ok) { step('trybe', 'failed', ready.text); stopRest(['top100', 'list', 'products', 'meta'], 'Not started: TRYBE was not ready.'); return }
-      step('trybe', 'done', ready.text)
+      const ready = await trybeReady((t) => step('trybe', 'running', t), auto)
+      // TRYBE NOT READY: only the two steps that read TRYBE through your tab
+      // wait. Every brand's products (MVP's server) and Meta ads (SCOUT on
+      // Meta's Ad Library) do not need TRYBE, so they still run.
+      if (!ready.ok) step('trybe', 'failed', ready.text)
+      else step('trybe', 'done', ready.text)
       if (dailyStop.current) { stopRest(['top100', 'list', 'products', 'meta'], 'Stopped.'); return }
       // RESUMED, NOT REDONE (Seb, 2026-10-21: "if I stop it, can it resume
       // where it was the next time I run it again?"): the Top 100 and the
       // list are skipped when read in the last 12 hours, and Meta ads pick up
       // with the brands not counted yet, since every count is saved as it is read.
       // 1. TRYBE's Top 100: who is spending (and a fresh TRYBE sign-in).
-      if (fresh(directory?.top100?.at) && directory?.top100?.at) {
+      if (!ready.ok) {
+        step('top100', 'skipped', 'Not read: TRYBE was not ready.')
+      } else if (fresh(directory?.top100?.at) && directory?.top100?.at) {
         step('top100', 'skipped', `Read ${ago(directory.top100.at)}: not needed again yet.`)
       } else {
         // Filed first (Make videos' words), then counted per brand: the same
@@ -1681,7 +1704,9 @@ export default function TrybeOutreach({ preview = false, v2 = false }: { preview
       if (dailyStop.current) { stopRest(['list', 'products', 'meta'], 'Stopped.'); return }
       // 2. Every brand on TRYBE, collected again. Refused for the sign-in: the
       // sign-in is renewed through the TRYBE tab and it is asked once more.
-      if (fresh(directory?.lastCollectedAt) && directory?.lastCollectedAt) {
+      if (!ready.ok) {
+        step('list', 'skipped', 'Not collected: TRYBE was not ready.')
+      } else if (fresh(directory?.lastCollectedAt) && directory?.lastCollectedAt) {
         step('list', 'skipped', `Collected ${ago(directory.lastCollectedAt)}: not needed again yet.`)
       } else {
         step('list', 'running', 'SCOUT is collecting every brand on TRYBE, in your TRYBE tab...')
@@ -1780,10 +1805,32 @@ export default function TrybeOutreach({ preview = false, v2 = false }: { preview
       setFinding(null)
       const at = new Date().toISOString()
       setDaily({ running: false, steps: steps.map((x) => ({ ...x, state: x.state === 'waiting' || x.state === 'running' ? 'skipped' : x.state })), at })
-      await api({ action: 'daily_refresh', log: { at, steps: steps.map((x) => ({ id: x.id, label: x.label, state: x.state === 'waiting' || x.state === 'running' ? 'skipped' : x.state, text: x.text.slice(0, 600) })) } }).catch(() => null)
+      await api({ action: 'daily_refresh', log: { at, auto, steps: steps.map((x) => ({ id: x.id, label: x.label, state: x.state === 'waiting' || x.state === 'running' ? 'skipped' : x.state, text: x.text.slice(0, 600) })) } }).catch(() => null)
       setLiveNonce((n) => n + 1)
       void load()
     }
+  }
+
+  // OPENED BY SCOUT FOR THE MORNING RUN (?daily=auto): starts by itself once
+  // the page has loaded, once. The address is cleaned so a reload does not
+  // start a second run.
+  useEffect(() => {
+    if (!autoAsked || autoDaily.current || !isAdmin || preview || !directory || daily?.running) return
+    autoDaily.current = true
+    try { const u = new URL(window.location.href); u.searchParams.delete('daily'); window.history.replaceState(window.history.state, '', u.toString()) } catch { /* the run still starts */ }
+    void dailyRefresh(true)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoAsked, isAdmin, preview, directory, daily?.running])
+  const canMorning = scoutAtLeast(scoutVersion, SCOUT_TRYBE_MORNING_MIN_VERSION)
+  useEffect(() => {
+    if (!isAdmin || preview || !canMorning) return
+    let live = true
+    void requestTrybeMorning().then((m) => { if (live) setMorning(m) })
+    return () => { live = false }
+  }, [isAdmin, preview, canMorning])
+  async function setMorningRun(on: boolean, hour: number, minute: number) {
+    setMorningBusy(true)
+    try { setMorning(await requestTrybeMorning({ on, hour, minute })) } finally { setMorningBusy(false) }
   }
 
   /** How many active Meta ads mention each brand shown, read by SCOUT from
@@ -2122,16 +2169,40 @@ export default function TrybeOutreach({ preview = false, v2 = false }: { preview
       )}
 
       {/* What the daily refresh is doing, or did last time. */}
-      {isAdmin && !preview && daily && (
+      {isAdmin && !preview && (daily || canMorning) && (
         <section className="rounded-2xl border px-4 py-3 text-[13px] space-y-1.5 -mt-1" style={{ borderColor: 'rgb(var(--brand-rgb) / 0.35)', background: 'rgb(var(--brand-rgb) / 0.04)' }} aria-live="polite">
-          <p className="font-semibold flex flex-wrap items-center gap-2">
-            Daily refresh {daily.running ? 'running' : `last run ${new Date(daily.at).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}`}
-            {!daily.running && Date.now() - Date.parse(daily.at) > 30 * 3600_000 && <span style={{ color: AMBER }}>More than a day ago.</span>}
-            <span className="text-[11px] font-normal" style={soft}>Team only. Website ranks and Google searches refresh by themselves.</span>
-          </p>
-          {daily.steps.map((x) => (
-            <p key={x.id} className="flex gap-2"><span className="w-20 shrink-0 font-semibold" style={{ color: DAILY_STYLE[x.state].color }}>{DAILY_STYLE[x.state].word}</span><span><b>{x.label}</b>{x.text ? `: ${x.text}` : ''}</span></p>
-          ))}
+          {daily && (
+            <>
+              <p className="font-semibold flex flex-wrap items-center gap-2">
+                Daily refresh {daily.running ? (autoDaily.current ? 'running by itself this morning' : 'running') : `last run ${new Date(daily.at).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}${daily.auto ? ', by itself' : ''}`}
+                {!daily.running && Date.now() - Date.parse(daily.at) > 30 * 3600_000 && <span style={{ color: AMBER }}>More than a day ago.</span>}
+                <span className="text-[11px] font-normal" style={soft}>Team only. Website ranks, Google searches and every brand&rsquo;s products also refresh by themselves on MVP&rsquo;s server.</span>
+              </p>
+              {daily.steps.map((x) => (
+                <p key={x.id} className="flex gap-2"><span className="w-20 shrink-0 font-semibold" style={{ color: DAILY_STYLE[x.state].color }}>{DAILY_STYLE[x.state].word}</span><span><b>{x.label}</b>{x.text ? `: ${x.text}` : ''}</span></p>
+              ))}
+            </>
+          )}
+          {/* EVERY MORNING, BY ITSELF (SCOUT 1.56.0). */}
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 pt-2" style={daily ? { borderTop: '1px solid rgb(var(--brand-rgb) / 0.2)' } : undefined}>
+            {canMorning ? (
+              <>
+                <label className="inline-flex items-center gap-2 font-semibold cursor-pointer">
+                  <input type="checkbox" className="w-4 h-4" style={{ accentColor: 'var(--accent)' }} checked={!!morning?.on} disabled={morningBusy || !morning}
+                    onChange={(e) => void setMorningRun(e.target.checked, morning?.hour ?? 4, morning?.minute ?? 0)} />
+                  Run it by itself every morning at
+                </label>
+                <select aria-label="Hour of the morning run" value={morning?.hour ?? 4} disabled={morningBusy || !morning}
+                  onChange={(e) => void setMorningRun(!!morning?.on, Number(e.target.value), 0)}
+                  className="rounded-lg border bg-transparent px-2 py-1 text-[13px]" style={{ borderColor: 'var(--border)', color: 'var(--text)' }}>
+                  {Array.from({ length: 24 }, (_, h) => <option key={h} value={h}>{new Date(2000, 0, 1, h).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</option>)}
+                </select>
+                <span className="basis-full text-[12px]" style={soft}>{morningWords(morning)}</span>
+              </>
+            ) : (
+              <span className="text-[12px]" style={soft}>Running it by itself every morning needs SCOUT {SCOUT_TRYBE_MORNING_MIN_VERSION}. Yours is {scoutVersion || 'not known yet'}; Chrome brings it once the Web Store has it.</span>
+            )}
+          </div>
         </section>
       )}
 

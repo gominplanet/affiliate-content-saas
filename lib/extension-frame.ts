@@ -1130,6 +1130,28 @@ export async function requestTrybeTab(): Promise<TrybeTabState> {
   return !res.open ? 'closed' : res.signedIn === false ? 'signed-out' : 'open'
 }
 
+export interface TrybeMorning {
+  on: boolean
+  /** The hour and minute on this computer's clock. */
+  hour: number
+  minute: number
+  /** When it next runs (ms), null when off. */
+  next: number | null
+  /** When it last opened MVP's page for a run (ms), and how that went. */
+  lastAt: number | null
+  lastResult: 'opened' | 'signed-out' | 'could-not-open' | null
+}
+
+/** SCOUT 1.56.0+: the team's "Every morning" Daily refresh. With `set`, turns
+ *  it on or off at an hour; always answers how it stands. Null when SCOUT
+ *  did not answer. Resolves, never throws. */
+export async function requestTrybeMorning(set?: { on: boolean; hour: number; minute: number }): Promise<TrybeMorning | null> {
+  const res = await sendToExtension<{ ok?: boolean; on?: boolean; hour?: number; minute?: number; next?: number | null; lastAt?: number | null; lastResult?: string | null }>({ type: 'MVP_TRYBE_MORNING', ...(set || {}) }, 10_000)
+  if (!res || !res.ok) return null
+  const lr = res.lastResult
+  return { on: !!res.on, hour: typeof res.hour === 'number' ? res.hour : 4, minute: typeof res.minute === 'number' ? res.minute : 0, next: typeof res.next === 'number' ? res.next : null, lastAt: typeof res.lastAt === 'number' ? res.lastAt : null, lastResult: lr === 'opened' || lr === 'signed-out' || lr === 'could-not-open' ? lr : null }
+}
+
 /** SCOUT 1.53.5+: open TRYBE in a tab next to MVP's, behind it, when none is
  *  open; with `focus`, bring the TRYBE tab to the front (to sign in there).
  *  Resolves, never throws. */

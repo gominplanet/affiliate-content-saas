@@ -12453,6 +12453,23 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
     })().then(sendResponse).catch((e) => sendResponse({ open: false, error: e && e.message ? e.message : 'error' }))
     return true // async
   }
+  if (msg.type === 'MVP_TRYBE_MORNING') {
+    // 1.56.0: the team's "Every morning" switch on MVP's TRYBE page. With
+    // `on`, saves it (and the hour) for the page's own site; always answers
+    // how it stands: on, the hour, when it next runs, and how the last went.
+    let origin = ''
+    try { origin = new URL((sender && (sender.url || (sender.tab && sender.tab.url))) || '').origin } catch (e) {}
+    (async () => {
+      if (typeof msg.on === 'boolean') {
+        const h = Math.round(Number(msg.hour)), m = Math.round(Number(msg.minute))
+        await trybeMorningSave({ on: msg.on, origin, hour: h >= 0 && h <= 23 ? h : 4, minute: m >= 0 && m <= 59 ? m : 0 })
+      }
+      const next = await trybeMorningArm()
+      const st = await trybeMorningState()
+      return { ok: true, on: !!st.on, hour: st.hour == null ? 4 : st.hour, minute: st.minute || 0, next, lastAt: st.lastAt || null, lastResult: st.lastResult || null }
+    })().then(sendResponse).catch((e) => sendResponse({ ok: false, error: e && e.message ? e.message : 'error' }))
+    return true // async
+  }
   if (msg.type === 'MVP_TRYBE_TAB') {
     // 1.53.2: is a TRYBE tab open in this Chrome for SCOUT to work through,
     // and is it signed in. Nothing is opened.
@@ -15895,6 +15912,78 @@ async function trybeRunTick() {
 try { chrome.alarms.onAlarm.addListener((a) => { if (a && a.name === TRYBE_RUN_ALARM) void trybeRunTick() }) } catch (e) {}
 // After Chrome restarts, a run still on carries on.
 try { chrome.runtime.onStartup.addListener(() => { void trybeRunTick() }) } catch (e) {}
+
+// ── TRYBE EVERY MORNING (1.56.0) ─────────────────────────────────────────────
+// Seb, 2026-11-06: "even if it's once a day ... Scout could do it
+// automatically, gather all the information we need from Tribe, from Meta,
+// from all the brands, to be able to have it accessed really quickly by users
+// throughout the day until the next update the next morning."
+//
+// The MVP team turns it on from MVP's TRYBE page (Daily refresh). At the hour
+// set, on this computer's clock, SCOUT opens MVP's TRYBE page behind the
+// creator's tabs with ?daily=auto, and the page runs the same Daily refresh
+// the button does: TRYBE's Top 100 and brand list, every brand's products,
+// Meta ads. The page does the work, so the rules stay in one place; SCOUT only
+// decides when. Once a day: a computer asleep at that hour runs it when it
+// wakes, or when Chrome next starts that day. The tab of the morning before
+// is used again, so tabs never pile up, and it stays open with the result.
+const TRYBE_MORNING_KEY = 'mvpTrybeMorning'
+const TRYBE_MORNING_ALARM = 'mvp-trybe-morning'
+const TRYBE_MORNING_URL = /\/trybe\?(.*&)?daily=auto(&|$)/
+function trybeMorningDay(ms) { const d = new Date(ms); return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}` }
+function trybeMorningHourToday(st) { const d = new Date(); d.setHours(st.hour == null ? 4 : st.hour, st.minute || 0, 0, 0); return d.getTime() }
+async function trybeMorningState() {
+  try { const g = await chrome.storage.local.get(TRYBE_MORNING_KEY); return (g && g[TRYBE_MORNING_KEY]) || {} } catch (e) { return {} }
+}
+async function trybeMorningSave(patch) {
+  const next = Object.assign({}, await trybeMorningState(), patch)
+  try { await chrome.storage.local.set({ [TRYBE_MORNING_KEY]: next }) } catch (e) {}
+  return next
+}
+/** The next time it is due: today's hour when it is still to come and today's
+ *  run has not started, else tomorrow's. Null when off. */
+async function trybeMorningArm() {
+  const st = await trybeMorningState()
+  try { await chrome.alarms.clear(TRYBE_MORNING_ALARM) } catch (e) {}
+  if (!st.on || !st.origin) return null
+  let when = trybeMorningHourToday(st)
+  if (when <= Date.now() + 30000 || st.lastDay === trybeMorningDay(Date.now())) { const t = new Date(when); t.setDate(t.getDate() + 1); when = t.getTime() }
+  try { chrome.alarms.create(TRYBE_MORNING_ALARM, { when }) } catch (e) {}
+  return when
+}
+async function trybeMorningRun() {
+  const st = await trybeMorningState()
+  const today = trybeMorningDay(Date.now())
+  if (!st.on || !st.origin || Date.now() < trybeMorningHourToday(st) || st.lastDay === today) { await trybeMorningArm(); return }
+  await trybeMorningSave({ lastDay: today, lastAt: Date.now(), lastResult: 'opened' })
+  const url = `${st.origin}/trybe?daily=auto`
+  // The morning before's tab, when it is still open; else one with the address.
+  let tabId = null
+  if (st.tabId != null) { try { const t = await chrome.tabs.get(st.tabId); if (t && String(t.url || '').startsWith(st.origin)) tabId = t.id } catch (e) {} }
+  if (tabId == null) { try { const tabs = await chrome.tabs.query({ url: `${st.origin}/*` }); const t = tabs.find((x) => TRYBE_MORNING_URL.test(x.url || '')); if (t && t.id != null) tabId = t.id } catch (e) {} }
+  try {
+    if (tabId != null) await chrome.tabs.update(tabId, { url, active: false })
+    else { const t = await chrome.tabs.create({ url, active: false }); tabId = t && t.id != null ? t.id : null }
+    await trybeMorningSave({ tabId })
+  } catch (e) { await trybeMorningSave({ lastResult: 'could-not-open', tabId: null }) }
+  await trybeMorningArm()
+}
+try { chrome.alarms.onAlarm.addListener((a) => { if (a && a.name === TRYBE_MORNING_ALARM) void trybeMorningRun() }) } catch (e) {}
+// Chrome started after the hour, or the alarm was lost in a restart: today's run, once.
+try { chrome.runtime.onStartup.addListener(() => { void trybeMorningRun() }) } catch (e) {}
+try { chrome.runtime.onInstalled.addListener(() => { void trybeMorningArm() }) } catch (e) {}
+// Signed out of MVP: the tab lands on the sign-in page. Remembered, so the
+// switch on MVP's page can say why this morning did nothing.
+try {
+  chrome.tabs.onUpdated.addListener((tabId, info, tab) => {
+    if (info.status !== 'complete') return
+    void trybeMorningState().then((st) => {
+      if (st.tabId == null || st.tabId !== tabId) return
+      const u = String((tab && tab.url) || '')
+      if (u.startsWith(st.origin || '\u0000') && !/\/trybe(\?|$|#)/.test(u.slice((st.origin || '').length))) void trybeMorningSave({ lastResult: 'signed-out', tabId: null })
+    })
+  })
+} catch (e) {}
 
 
 // ── HASHTAG TRENDS (1.49.0, Labs) ────────────────────────────────────────────

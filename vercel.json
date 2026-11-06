@@ -93,6 +93,10 @@
       "schedule": "*/10 * * * *"
     },
     {
+      "path": "/api/cron/trybe-products",
+      "schedule": "5,35 7-9 * * *"
+    },
+    {
       "path": "/api/cron/trybe-top-hear",
       "schedule": "25 */2 * * *"
     },
