@@ -28,6 +28,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { Loader2, Megaphone, Sparkles, RotateCcw, Users, Globe, ExternalLink } from 'lucide-react'
 import TrybeLink from '@/components/labs/TrybeLink'
+import { BrandName } from '@/components/labs/trybe-dossier-context'
 import { BrandMark, PayChip, StarButton, PopularityChips, RatingChip, NO_FILTERS, type LivePayEst, type LivePopularity } from '@/components/labs/TrybeFinderControls'
 import { readMetaAdsAll, metaAdsWords } from '@/components/labs/metaAdsRead'
 import { metaTrustWords, adLibraryUrl, type MetaTrust } from '@/lib/trybe-pick'
@@ -277,7 +278,7 @@ export default function TrybeStarBrands({ canCount, cards, scoutVersion, hasCore
                     <BrandMark name={b.name} website={b.website} size={36} />
                     <span className="flex-1 min-w-0 space-y-1">
                       <span className="flex flex-wrap items-center gap-2">
-                        <span className="text-[15px] font-bold">{b.name}</span>
+                        <BrandName id={b.brand_id} name={b.name} className="text-[15px] font-bold" />
                         <RatingChip stars={b.review_rating} reviews={b.review_count} />
                         <StarButton on={!!b.starred} onClick={() => void star(b)} />
                       </span>

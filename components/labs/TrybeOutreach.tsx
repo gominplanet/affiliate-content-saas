@@ -52,6 +52,7 @@ import { type PeekActions } from '@/components/labs/TrybeBrandPeek'
 import TrybeDossier from '@/components/labs/TrybeDossier'
 import TrybeHome from '@/components/labs/TrybeHome'
 import TrybeNav from '@/components/labs/TrybeNav'
+import TrybeBrandTable from '@/components/labs/TrybeBrandTable'
 import { DossierCtx, BrandName } from '@/components/labs/trybe-dossier-context'
 import TrybeWorking from '@/components/labs/TrybeWorking'
 import TrybeCreate from '@/components/labs/TrybeCreate'
@@ -207,6 +208,8 @@ const PAY_SAYS: Record<LivePay, string> = {
 }
 /** On the list in a way that means it is not picked again from the live list. */
 const TAKEN: Array<Brand['status']> = ['drafted', 'sending', 'sent', 'already', 'failed']
+/** Where a brand in Find brands stands on the creator's list, in words. */
+const liveWhere = (b: LiveBrand): string | null => b.status === 'drafted' ? 'Ready to send' : b.status === 'sent' ? 'Sent' : b.status === 'sending' ? 'Sending or not confirmed' : b.status === 'already' ? 'Already requested on TRYBE' : b.status === 'failed' ? 'Last send failed: queue it again in Sent' : b.status === 'skipped' ? 'You skipped it' : b.status === 'removed' ? 'You removed it' : b.status === 'not_fit' ? (b.fit_stale ? 'AI said not a fit for an earlier search' : 'AI said not a fit') : null
 /** WHY A BRAND CANNOT BE TICKED, said beside it (Seb, 2026-11-05: "why is it
  *  like this.. i cannot select it?"). A greyed box alone does not say. */
 function takenWhy(status: string | null | undefined): string | null {
@@ -528,6 +531,9 @@ export default function TrybeOutreach({ preview = false, v2 = false }: { preview
   // 'trybe_v2'), so members keep the page they know until it is opened to them.
   const [dossierOf, setDossierOf] = useState<{ id: string; name: string } | null>(null)
   const openDossier = useCallback((id: string, name: string) => setDossierOf({ id, name }), [])
+  // Find brands as a table or as cards (the new TRYBE), kept for the next visit.
+  const [listView, setListView] = useState<'table' | 'cards'>('table')
+  useEffect(() => { try { if (localStorage.getItem('mvp.trybe.listView') === 'cards') setListView('cards') } catch { /* the table */ } }, [])
   // The new look (lib/look, behind Labs): the shared header card.
   const teal = useLook() === 'teal'
   const [brands, setBrands] = useState<Brand[]>([])
@@ -2668,11 +2674,30 @@ export default function TrybeOutreach({ preview = false, v2 = false }: { preview
                 Searching all of TRYBE for &ldquo;{live.nameSearch.query}&rdquo;{live.nameSearch.pausedFilters ? ', with your filters paused while you search by name' : ''}. A brand you already messaged shows with where it stands.
               </p>
             )}
+            {/* THE TABLE (the new TRYBE): the same search as rows to compare. */}
+            {v2 && (live?.brands || []).length > 0 && (
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <span className="text-[12px]" style={soft}>{listView === 'table' ? 'Press a heading to sort. Press a name to see everything MVP knows about the brand.' : 'Press a name to see everything MVP knows about the brand.'}</span>
+                <div role="tablist" aria-label="Show brands as" className="inline-flex rounded-xl p-1 gap-1" style={{ border: '1px solid var(--border)', background: 'var(--surface)' }}>
+                  {(['table', 'cards'] as const).map(v => (
+                    <button key={v} type="button" role="tab" aria-selected={listView === v} onClick={() => { setListView(v); try { localStorage.setItem('mvp.trybe.listView', v) } catch { /* this visit only */ } }}
+                      className="rounded-lg px-3 py-1 text-[12.5px] font-semibold" style={listView === v ? { background: 'var(--accent)', color: '#fff' } : { color: 'var(--text-2)' }}>
+                      {v === 'table' ? 'Table' : 'Cards'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+            {v2 && listView === 'table' ? (
+              <TrybeBrandTable brands={live?.brands || []} picked={livePick} taken={TAKEN} preview={preview}
+                onPick={(id, yes) => setLivePick(p => { const n = new Set(p); if (yes) n.add(id); else n.delete(id); return n })}
+                whereOf={(b) => liveWhere(b as LiveBrand)} />
+            ) : (
             <div className="space-y-2">
               {(live?.brands || []).map(b => {
                 const taken = TAKEN.includes(b.status as Brand['status'])
                 const on = livePick.has(b.brand_id)
-                const where = b.status === 'drafted' ? 'Ready to send' : b.status === 'sent' ? 'Sent' : b.status === 'sending' ? 'Sending or not confirmed' : b.status === 'already' ? 'Already requested on TRYBE' : b.status === 'failed' ? 'Last send failed: queue it again in Sent' : b.status === 'skipped' ? 'You skipped it' : b.status === 'removed' ? 'You removed it' : b.status === 'not_fit' ? (b.fit_stale ? 'AI said not a fit for an earlier search' : 'AI said not a fit') : null
+                const where = liveWhere(b)
                 const hits = (p: string) => kws.some(k => p.toLowerCase().includes(k.toLowerCase()))
                 return (
                   <label key={b.brand_id} className={`flex gap-3 rounded-xl border p-3.5 ${taken ? 'opacity-60' : 'cursor-pointer'}`} style={{ borderColor: on ? PURPLE : 'var(--border)', background: on ? 'rgb(var(--brand-rgb) / 0.04)' : undefined }}>
@@ -2749,6 +2774,7 @@ export default function TrybeOutreach({ preview = false, v2 = false }: { preview
                 )
               })}
             </div>
+            )}
             {live && (live.hiddenMine || showMine) ? (
               <p className="text-[12px] mt-3" style={soft}>
                 {showMine

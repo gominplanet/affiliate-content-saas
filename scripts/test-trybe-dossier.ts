@@ -113,6 +113,14 @@ check('members\' results leave out the one looking', /poolBrands\(memQ\.rows, \{
 check('TRYBE\'s public brand page and products are read, kept a day, and feed the samples count too', /backend\/api\/public\/brand\/\$\{encodeURIComponent\(brandId\)\}/.test(R) && /key: pubKey/.test(R) && /key: `samples:\$\{brandId\}`/.test(R))
 const U = read('components/labs/TrybeOutreach.tsx')
 check('brand names open the page in Find, Sent and Ready to send', (U.match(/<BrandName id=\{b\.brand_id\} name=\{b\.name\}/g) || []).length >= 3)
+check('and in Star brands, and on the home', /<BrandName id=\{b\.brand_id\}/.test(read('components/labs/TrybeStarBrands.tsx')))
+check('Find brands as a sortable table in the new TRYBE, cards kept as a choice', /\{v2 && listView === 'table' \? \(\s*<TrybeBrandTable/.test(U) && /localStorage\.setItem\('mvp\.trybe\.listView', v\)/.test(U))
+{
+  const T = read('components/labs/TrybeBrandTable.tsx')
+  check('the table says what it has not read, never a zero', /Not counted/.test(T) && /Not known/.test(T) && /Not shown/.test(T))
+  check('every column sorts, unknown always last', /if \(x == null\) return 1/.test(T) && /aria-sort=/.test(T))
+  check('a brand already written or sent cannot be picked again', /disabled=\{isTaken\}/.test(T))
+}
 check('only with the new TRYBE switched on', /<DossierCtx\.Provider value=\{v2 \? openDossier : null\}>/.test(U))
 check('the switch is team only until it is opened', /trybe_v2: 'admin'/.test(read('lib/labs-preview.ts')) && /v2=\{canUsePreview\('trybe_v2', tier\)\}/.test(read('app/(dashboard)/trybe/page.tsx')))
 const D = read('components/labs/TrybeDossier.tsx')
