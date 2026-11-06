@@ -21,31 +21,49 @@ export const TOP100 = 100
 export const SAMPLE_WAIT_DAYS = 21
 const DAY = 86_400_000
 
-// ── AD SPEND, PROVEN ─────────────────────────────────────────────────────────
+// ── AD SPEND, PROVEN ON META ─────────────────────────────────────────────────
+// (Seb, 2026-11-06: "the ad spend can be measured as long as we see that
+// they're spending money on meta ads. That's pretty simple.") Meta ads
+// running, counted in the last four weeks and the brand's own, is the proof.
+// A brand MVP has not counted yet is counted (the page asks SCOUT), never
+// left out for it. TRYBE's own signs are added to the words, never needed.
 
 /** What MVP knows of a brand's spending on ads. */
 export interface SpendSigns {
-  /** Meta ads running, counted in the last four weeks and the brand's own; null when not counted. */
-  metaAds: number | null
+  /** Meta ads running, from a count in the last four weeks; null when none. */
+  metaCount: number | null
+  /** That count is the brand's own (not a common word's, lib/trybe-pick metaUsable). */
+  metaOwn: boolean
   /** Videos of it in TRYBE's Top 100 (ranked by ad results); null when the Top 100 was not read. */
-  top100Hits: number | null
+  top100Hits?: number | null
   /** Videos it approved in the window (each approved video runs as its ad); null when not known. */
-  newVideos: number | null
+  newVideos?: number | null
   /** The window those videos are counted over, in days. */
-  days: number | null
+  days?: number | null
   /** Its payout tier on TRYBE went up in the last 30 days. */
-  tierUp: boolean | null
+  tierUp?: boolean | null
 }
 
-/** Proof the brand spent on ads in the last 60 days, in words, or not. Pure. */
-export function adSpendProof(s: SpendSigns): { proven: boolean; says: string[] } {
-  const says: string[] = []
-  if ((s.metaAds ?? 0) > 0) says.push(`${s.metaAds} Meta ad${s.metaAds === 1 ? '' : 's'} running`)
+export type SpendVerdict =
+  | { proven: true; says: string[] }
+  | { proven: false; why: 'notCounted' | 'unclear' | 'noAds'; says: string[] }
+
+/** Proof the brand spends on Meta ads, in words, or why not. Pure. */
+export function adSpendProof(s: SpendSigns): SpendVerdict {
+  if (s.metaCount == null) return { proven: false, why: 'notCounted', says: [] }
+  if (!s.metaOwn) return { proven: false, why: 'unclear', says: [] }
+  if (s.metaCount <= 0) return { proven: false, why: 'noAds', says: [] }
+  const says = [`${s.metaCount} Meta ad${s.metaCount === 1 ? '' : 's'} running`]
   if ((s.top100Hits ?? 0) > 0) says.push(`in TRYBE's Top 100 ads`)
   if ((s.newVideos ?? 0) > 0 && (s.days ?? 0) > 0 && (s.days as number) <= 60) says.push(`${s.newVideos} creator video${s.newVideos === 1 ? '' : 's'} approved in ${s.days} days`)
   if (s.tierUp) says.push('payout tier went up this month')
-  return { proven: says.length > 0, says }
+  return { proven: true, says }
 }
+
+/** How many brands to send SCOUT to count on Meta in one round. */
+export const META_ROUND = 40
+/** Rounds of counting before the list is shown as it stands. */
+export const META_ROUNDS_MAX = 8
 
 // ── SAMPLES, PROVEN ──────────────────────────────────────────────────────────
 

@@ -1587,7 +1587,9 @@ Weigh posts pushed to social, and TRYBE brands they earned with or submitted to,
       try { parsed = JSON.parse(text) } catch { /* said below */ }
       const profile = cleanProfile(parsed, trybeCats)
       if (!profile.categories.length && !profile.keywords.length) return NextResponse.json({ error: 'MVP read your work but could not tell what your brands sell. Pick your niches in step 2 instead.' }, { status: 502 })
-      return NextResponse.json({ ok: true, profile, counts })
+      // What was read, and whether it was all of it: the latest 300 posts and
+      // 400 messaged brands are read, said so on the page.
+      return NextResponse.json({ ok: true, profile, counts: { ...counts, postsCapped: posts.length >= 300, messagedTotal: messagedIds.length } })
     } catch (e) {
       return NextResponse.json({ error: e instanceof Error ? `MVP could not read your work: ${e.message}` : 'MVP could not read your work.' }, { status: 502 })
     }
@@ -1999,7 +2001,7 @@ Weigh posts pushed to social, and TRYBE brands they earned with or submitted to,
     // samples (lib/trybe-top100), said on it in words; every brand left out
     // is counted by why. Then fit first, quality next, proven samples last.
     const proofBy = new Map<string, { spend: string[]; samples: string; proven: boolean }>()
-    let top100Out: { leftOut: Record<string, number>; considered: number; kept: number; provenSamples: number } | null = null
+    let top100Out: { leftOut: Record<string, number>; considered: number; kept: number; provenSamples: number; toCount: Array<{ brand_id: string; name: string }> } | null = null
     let top100Shown: typeof ranked | null = null
     if (top100) {
       const ids = ranked.map(x => x.r.brand_id)
@@ -2011,33 +2013,48 @@ Weigh posts pushed to social, and TRYBE brands they earned with or submitted to,
       const memberSamples = sampleSignsByBrand(memberRows)
       const { data: mySam } = await admin.from('trybe_samples').select('brand_id').eq('user_id', ownerId).not('brand_id', 'is', null)
       const sampledMine = new Set(((mySam || []) as Array<{ brand_id: string }>).map(r => r.brand_id))
-      const leftOut = { known: 0, noSpend: 0, samplesOff: 0, samplesMissing: 0, samplesUnknown: 0 }
+      const leftOut = { known: 0, noMetaAds: 0, metaUnclear: 0, notCounted: 0, samplesOff: 0, samplesMissing: 0, samplesUnknown: 0 }
       const kept: Array<{ x: typeof ranked[number]; proven: boolean }> = []
+      // Fit to be checked on Meta: everything else passed, no count yet.
+      const toCount: Array<typeof ranked[number]> = []
       const fourWeeks = 4 * META_ADS_FRESH_MS
       for (const x of ranked) {
         const id = x.r.brand_id
         if (mineBy.has(id) || top100.joined.has(id) || sampledMine.has(id)) { leftOut.known++; continue }
+        // Samples first, so no brand is sent to Meta that would be left out anyway.
+        const ms = memberSamples.get(id) ?? { received: 0, waitingLong: 0 }
+        const sm = samplesProof({ trybe: statsBy.get(id)?.samples ?? null, received: ms.received, waitingLong: ms.waitingLong })
+        if (!sm.ok) { leftOut[sm.why === 'off' ? 'samplesOff' : sm.why === 'missing' ? 'samplesMissing' : 'samplesUnknown']++; continue }
         const crowd = crowdBy.get(id)
         const metaAt = typeof x.r.meta_ads_checked_at === 'string' ? Date.parse(x.r.meta_ads_checked_at) : NaN
+        const counted = typeof x.r.meta_ads === 'number' && Number.isFinite(metaAt) && Date.now() - metaAt < fourWeeks
         const spend = adSpendProof({
-          metaAds: Number.isFinite(metaAt) && Date.now() - metaAt < fourWeeks ? metaUsable(x.r) : null,
+          metaCount: counted ? x.r.meta_ads : null, metaOwn: counted && metaUsable(x.r) != null,
           top100Hits: x.r.top100_checked_at && typeof x.r.top100_hits === 'number' ? x.r.top100_hits : null,
           newVideos: crowd?.newVideos ?? null, days: crowd?.days ?? null,
           tierUp: tierLog ? !!tierLog.get(id)?.up : null,
         })
-        if (!spend.proven) { leftOut.noSpend++; continue }
-        const ms = memberSamples.get(id) ?? { received: 0, waitingLong: 0 }
-        const sm = samplesProof({ trybe: statsBy.get(id)?.samples ?? null, received: ms.received, waitingLong: ms.waitingLong })
-        if (!sm.ok) { leftOut[sm.why === 'off' ? 'samplesOff' : sm.why === 'missing' ? 'samplesMissing' : 'samplesUnknown']++; continue }
+        if (!spend.proven) {
+          if (spend.why === 'notCounted') { leftOut.notCounted++; toCount.push(x) }
+          else if (spend.why === 'unclear') leftOut.metaUnclear++
+          else leftOut.noMetaAds++
+          continue
+        }
         proofBy.set(id, { spend: spend.says, samples: sm.says, proven: sm.proven })
         kept.push({ x, proven: sm.proven })
       }
-      const maxMatch = Math.max(1, ...kept.map(k => k.x.match))
-      const maxPick = Math.max(1, ...kept.map(k => weighed(k.x)))
-      const scoreOf = (k: typeof kept[number]) => 0.6 * (k.x.match / maxMatch) + 0.3 * (Math.max(0, weighed(k.x)) / maxPick) + (k.proven ? 0.1 : 0)
-      kept.sort((a, b) => scoreOf(b) - scoreOf(a))
+      const all = [...kept.map(k => k.x), ...toCount]
+      const maxMatch = Math.max(1, ...all.map(x => x.match))
+      const maxPick = Math.max(1, ...all.map(x => weighed(x)))
+      const fitOf = (x: typeof ranked[number]) => 0.6 * (x.match / maxMatch) + 0.3 * (Math.max(0, weighed(x)) / maxPick)
+      kept.sort((a, b) => (fitOf(b.x) + (b.proven ? 0.1 : 0)) - (fitOf(a.x) + (a.proven ? 0.1 : 0)))
+      toCount.sort((a, b) => fitOf(b) - fitOf(a))
       top100Shown = kept.map(k => k.x)
-      top100Out = { leftOut, considered: ranked.length, kept: kept.length, provenSamples: kept.slice(0, TOP100).filter(k => k.proven).length }
+      top100Out = {
+        leftOut, considered: ranked.length, kept: kept.length, provenSamples: kept.slice(0, TOP100).filter(k => k.proven).length,
+        // The best fits not yet counted on Meta, for the page to have SCOUT count.
+        toCount: toCount.slice(0, 300).map(x => ({ brand_id: String(x.r.brand_id), name: String(x.r.name || '') })),
+      }
     }
     const shown = top100Shown ?? (includeMine ? ranked : ranked.filter(x => !isDone(x.r.brand_id)))
     const top = shown.slice(0, want)

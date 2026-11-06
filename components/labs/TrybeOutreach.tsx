@@ -27,6 +27,7 @@ import { Loader2, Lock, Search, Sparkles, Send, Square, ExternalLink, Check, Ale
   Dumbbell, Shirt, House, UtensilsCrossed, Baby, PawPrint, Gem, Cpu, Tent, Plane, BookOpen, Church, Palette, SprayCan, Moon, Pill, HeartPulse,
   Scissors, Droplet, Coffee, Leaf, Wand2, MessageCircle, Pencil, ChevronUp, Bell, Lightbulb, CalendarDays, Inbox, ArrowRight, Clapperboard, UploadCloud, BarChart3, Rocket, ListChecks, type LucideIcon } from 'lucide-react'
 import { nameKey, trybeSearchPath, brandsNamed, TRYBE_SEARCH_PARAMS } from '@/lib/trybe-name-lookup'
+import { TOP100, META_ROUND, META_ROUNDS_MAX } from '@/lib/trybe-top100'
 import { ensureTrybeTab, requestTrybeTab, requestTrybeTabOpen, requestTrybeApi, requestTrybeAccess, requestTrybeScan, requestTrybeSend, requestTrybeHarvest, requestTrybeRun, requestTrybeRunStatus, requestTrybeRunStop, type TrybeScanPass, type TrybeRun } from '@/lib/extension-frame'
 import { readMetaAds, readMetaAdsAll, metaAdsWords, type MetaAdsRun } from '@/components/labs/metaAdsRead'
 import TrybeTabGate from '@/components/labs/TrybeTabGate'
@@ -606,11 +607,15 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
     /** A search by a brand's name: over all of TRYBE, the filters paused. */
     nameSearch?: { query: string; pausedFilters: boolean } | null
     /** My top 100: what was left out and why. */
-    top100?: { leftOut: { known: number; noSpend: number; samplesOff: number; samplesMissing: number; samplesUnknown: number }; considered: number; kept: number; provenSamples: number } | null } | null>(null)
+    top100?: { leftOut: { known: number; noMetaAds: number; metaUnclear: number; notCounted: number; samplesOff: number; samplesMissing: number; samplesUnknown: number }; considered: number; kept: number; provenSamples: number; toCount?: Array<{ brand_id: string; name: string }> } | null } | null>(null)
   // MY TOP 100 (Seb, 2026-11-05; lib/trybe-top100): MVP reads the creator's
   // work into a profile, then the list below is their 100.
-  const [top100, setTop100] = useState<{ profile: { summary: string; categories: string[]; keywords: string[] }; counts: { posts: number; pushed: number; worksWith: number; submitted: number; messaged: number; samples: number }; joined: string[]; note: string | null } | null>(null)
+  const [top100, setTop100] = useState<{ profile: { summary: string; categories: string[]; keywords: string[] }; counts: { posts: number; pushed: number; worksWith: number; submitted: number; messaged: number; samples: number; postsCapped?: boolean; messagedTotal?: number }; joined: string[]; note: string | null } | null>(null)
   const [top100Busy, setTop100Busy] = useState<string | null>(null)
+  // Stop counting brands on Meta and show the list as it stands.
+  const top100Stop = useRef(false)
+  // The ranking that did not come back, said in the panel, never a stale list.
+  const [top100Error, setTop100Error] = useState<string | null>(null)
   // A NAME MVP'S COPY DOES NOT HAVE, asked of TRYBE itself (lib/trybe-name-lookup).
   const [nameLookup, setNameLookup] = useState<{ query: string; state: 'asking' | 'found' | 'none' | 'failed'; note?: string | null; names?: string[] } | null>(null)
   const lookedUp = useRef<Set<string>>(new Set())
@@ -1261,7 +1266,9 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
   const hasDirectory = !!directory && directory.brands > 0
   const catsKey = cats.join('|'), kwsKey = kws.join('|')
   useEffect(() => {
-    if (!hasDirectory) return
+    // My top 100 ranks the list itself while it runs (runTop100): the same
+    // heavy ranking twice at once is never asked for.
+    if (!hasDirectory || top100Busy) return
     const id = ++liveReq.current
     setLiveLoading(true)
     const t = setTimeout(async () => {
@@ -1269,13 +1276,7 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
         const d = await api({ action: 'browse', categories: cats, keywords: kws, limit: 60, includeMine: showMine, sort: sortBy, payType, filters, name: nameQ.trim(), ...(prioritiesEdited ? { priorities } : {}),
           ...(top100 ? { top100: { categories: top100.profile.categories, keywords: top100.profile.keywords, joined: top100.joined } } : {}) })
         if (id !== liveReq.current) return // a newer search has started
-        setLive({ brands: d.brands || [], matched: d.matched ?? 0, capped: !!d.capped, hiddenMine: d.hiddenMine ?? 0, payUnknown: d.payUnknown ?? 0, payOther: d.payOther ?? 0,
-          hiddenBy: d.hiddenBy, blankBy: d.blankBy, unknownBy: d.unknownBy, amazonNotes: d.amazonNotes, amazonVideos: d.amazonVideos, rawKeys: d.rawKeys, prioritiesSaved: d.prioritiesSaved, starsSaved: d.starsSaved,
-          // EVERY FIELD THE PAGE READS IS COPIED HERE (2026-10-21): Your mix,
-          // the spend note, the crowd window and the read counts were sent and
-          // read but never copied, so none of them ever showed.
-          crowdDays: d.crowdDays ?? null, spendKnown: d.spendKnown ?? null, mix: d.mix ?? null,
-          readCounts: d.readCounts, metaTodo: d.metaTodo, creatorsKnown: d.creatorsKnown, nameSearch: d.nameSearch ?? null, top100: d.top100 ?? null })
+        setLive(liveOf(d))
         // The saved priorities, until the creator changes them on this visit.
         if (!prioritiesEdited && d.priorities) setPriorities(d.priorities)
         setLiveError(null)
@@ -1288,7 +1289,19 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
       }
     }, 350)
     return () => clearTimeout(t)
-  }, [hasDirectory, catsKey, kwsKey, liveNonce, showMine, sortBy, payType, JSON.stringify(filters), nameQ.trim(), prioritiesEdited ? JSON.stringify(priorities) : '', top100 ? JSON.stringify(top100.profile) : '']) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [hasDirectory, catsKey, kwsKey, liveNonce, showMine, sortBy, payType, JSON.stringify(filters), nameQ.trim(), prioritiesEdited ? JSON.stringify(priorities) : '', top100 ? JSON.stringify(top100.profile) : '', !!top100Busy]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  /** What the page keeps from a search's answer. */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  function liveOf(d: any): NonNullable<typeof live> {
+    return { brands: d.brands || [], matched: d.matched ?? 0, capped: !!d.capped, hiddenMine: d.hiddenMine ?? 0, payUnknown: d.payUnknown ?? 0, payOther: d.payOther ?? 0,
+      hiddenBy: d.hiddenBy, blankBy: d.blankBy, unknownBy: d.unknownBy, amazonNotes: d.amazonNotes, amazonVideos: d.amazonVideos, rawKeys: d.rawKeys, prioritiesSaved: d.prioritiesSaved, starsSaved: d.starsSaved,
+      // EVERY FIELD THE PAGE READS IS COPIED HERE (2026-10-21): Your mix,
+      // the spend note, the crowd window and the read counts were sent and
+      // read but never copied, so none of them ever showed.
+      crowdDays: d.crowdDays ?? null, spendKnown: d.spendKnown ?? null, mix: d.mix ?? null,
+      readCounts: d.readCounts, metaTodo: d.metaTodo, creatorsKnown: d.creatorsKnown, nameSearch: d.nameSearch ?? null, top100: d.top100 ?? null }
+  }
 
   /** MY TOP 100: the TRYBE brands the creator works with (SCOUT), then their
    *  work read into a profile (top100_profile), then the list is theirs. */
@@ -1297,15 +1310,69 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
     let myBrands: Array<{ id: string; name: string; submitted: number | null; earnings: number | null }> = []
     try {
       setTop100Busy('Reading the TRYBE brands you work with')
-      const r = await requestTrybeApi('GET', '/backend/api/creator/v2/brands/stats?period=all').catch(() => ({ ok: false as const, error: 'SCOUT did not answer.' }))
-      if (r.ok && r.json != null) myBrands = readBrandStats(r.json).map(b => ({ id: b.id, name: b.name, submitted: b.submitted, earnings: b.earnings }))
-      else note = `SCOUT could not read the brands you work with on TRYBE (${('error' in r && r.error) || 'no answer'}), so MVP read your posts, messages and samples only, and could not leave those brands out.`
+      setTop100Error(null)
+      // THE FULL LIST TIMED OUT (Seb's run, 2026-11-06): the last 30 days are
+      // asked next (a lighter read), then the list SCOUT read last time, each
+      // said for what it is. Only with none of them are those brands not left out.
+      const stats = (period: string) => requestTrybeApi('GET', `/backend/api/creator/v2/brands/stats?period=${period}`).catch(() => ({ ok: false as const, error: 'SCOUT did not answer.', json: undefined }))
+      const toMine = (json: unknown) => readBrandStats(json).map(b => ({ id: b.id, name: b.name, submitted: b.submitted, earnings: b.earnings }))
+      const KEPT = 'mvp.top100.myBrands'
+      const r = await stats('all')
+      if (r.ok && r.json != null) {
+        myBrands = toMine(r.json)
+        try { localStorage.setItem(KEPT, JSON.stringify({ at: Date.now(), brands: myBrands })) } catch { /* the next run reads TRYBE again */ }
+      } else {
+        const why = ('error' in r && r.error) || 'no answer'
+        const r30 = await stats('30d')
+        let kept: { at: number; brands: typeof myBrands } | null = null
+        try { const v = JSON.parse(localStorage.getItem(KEPT) || 'null'); if (v && Array.isArray(v.brands) && Number.isFinite(v.at)) kept = v } catch { /* none kept */ }
+        if (r30.ok && r30.json != null) {
+          const recent = toMine(r30.json)
+          const seen = new Set(recent.map(b => b.id))
+          myBrands = [...recent, ...(kept?.brands ?? []).filter(b => !seen.has(b.id))]
+          note = `SCOUT could not read all the brands you work with on TRYBE (${why}), so MVP left out the ${recent.length} you worked with in the last 30 days${kept ? ` and the ${myBrands.length - recent.length} more it read on ${new Date(kept.at).toLocaleDateString()}` : ''}. An older brand of yours can still be on the list.`
+        } else if (kept) {
+          myBrands = kept.brands
+          note = `SCOUT could not read the brands you work with on TRYBE (${why}), so MVP left out the ${kept.brands.length} it read on ${new Date(kept.at).toLocaleDateString()}. A brand you joined since can still be on the list.`
+        } else {
+          note = `SCOUT could not read the brands you work with on TRYBE (${why}), so MVP read your posts, messages and samples only, and could not leave those brands out. Press My top 100 again in a minute.`
+        }
+      }
       setTop100Busy('Reading your blog posts, social pushes, messages and samples')
       const d = await api({ action: 'top100_profile', myBrands })
       setLivePick(new Set())
-      setTop100({ profile: d.profile, counts: d.counts, joined: myBrands.map(b => b.id), note })
+      const joined = myBrands.map(b => b.id)
+      setTop100({ profile: d.profile, counts: d.counts, joined, note })
+      // ── AD SPEND ON META, COUNTED WHERE IT IS NOT YET (Seb, 2026-11-06: "as
+      // long as we see that they're spending money on meta ads"). The best
+      // fits MVP has no Meta count for are counted by SCOUT, a round at a
+      // time, until 100 pass or there are none left; Stop shows the list as
+      // it stands. A count that could not be made is said, never guessed.
+      top100Stop.current = false
+      setTop100Error(null)
+      const ask = { action: 'browse', categories: [], keywords: [], limit: TOP100, top100: { categories: d.profile.categories, keywords: d.profile.keywords, joined } }
+      let metaNote: string | null = null
+      for (let round = 0; round < META_ROUNDS_MAX; round++) {
+        setTop100Busy(round ? 'Ranking again with the new Meta counts' : 'Ranking TRYBE for you')
+        const b = await api(ask)
+        liveReq.current++
+        setLive(liveOf(b)); setLiveLoading(false)
+        const t = b.top100
+        if (!t || t.kept >= TOP100 || !t.toCount?.length || top100Stop.current || leftRef.current) break
+        const batch = (t.toCount as Array<{ brand_id: string; name: string }>).slice(0, META_ROUND)
+        setTop100Busy(`Checking ${batch.length} more brands for Meta ads (${t.kept} of ${TOP100} so far)`)
+        const run = await readMetaAds(batch.map(x => ({ brandId: x.brand_id, name: x.name })), {
+          onProgress: (done, total) => setTop100Busy(`Checking brands for Meta ads: ${done} of ${total} (${t.kept} of ${TOP100} so far)`),
+          gone: () => leftRef.current, stop: () => top100Stop.current,
+        })
+        if (run.stopped && !top100Stop.current) { metaNote = metaAdsWords(run, scoutVersion).text; break }
+        if (!run.read && !run.noCount) { metaNote = metaAdsWords(run, scoutVersion).text; break }
+      }
+      if (metaNote) setTop100(x => (x ? { ...x, note: [x.note, `Meta ads: ${metaNote}`].filter(Boolean).join(' ') } : x))
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'My top 100 did not run.', { duration: 12000 })
+      const why = e instanceof Error ? e.message : 'no answer'
+      setTop100Error(why)
+      toast.error(`My top 100 did not finish: ${why}`, { duration: 12000 })
     } finally {
       setTop100Busy(null)
     }
@@ -2353,23 +2420,42 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
               </div>}
             </div>
             <p className="text-[12px] mb-3" style={soft}>{SORTS.find(s => s.id === sortBy)?.says} {preview ? 'Star the ones you like and pass on the rest.' : 'Tick the brands you want and MVP writes each one a message from your core message.'}</p>
-            {top100Busy && <p className="text-[12.5px] mb-3 inline-flex items-center gap-1.5" style={{ color: GREEN }}><Loader2 size={12} className="animate-spin" /> My top 100: {top100Busy}&hellip;</p>}
+            {top100Busy && (
+              <p className="text-[12.5px] mb-3 flex flex-wrap items-center gap-1.5" style={{ color: GREEN }}>
+                <Loader2 size={12} className="animate-spin" /> My top 100: {top100Busy}&hellip;
+                {/Meta/.test(top100Busy) && <button onClick={() => { top100Stop.current = true }} className="underline font-semibold ml-1" style={{ color: GREEN }}>Stop and show what I have</button>}
+              </p>
+            )}
             {top100 && (() => {
               // WHAT MVP READ, WHAT IT LOOKED FOR, WHAT IT LEFT OUT: said, so a
               // short list is never a quiet one.
               const c = top100.counts
               const t = live?.top100
+              // THE RANKING DID NOT COME BACK: said, never the last search's
+              // list under a "Your top" heading (Seb's run, 2026-11-06).
+              if (!t) {
+                if (top100Busy) return null
+                return (
+                  <div className="mb-3 rounded-xl p-3.5" style={{ border: `1.5px solid ${AMBER}`, background: 'rgba(180,83,9,0.06)' }}>
+                    <p className="text-[13px] font-semibold" style={{ color: AMBER }}>Your top 100 did not come back{top100Error ? `: ${top100Error}` : ''}.</p>
+                    <p className="text-[12px] mt-1" style={soft}>The list below is your usual search, not your top 100. Press My top 100 again.</p>
+                    <button onClick={() => { setTop100(null); setTop100Error(null) }} className={`${btn} mt-2`} style={{ border: '1px solid var(--border)' }}>Back to my search</button>
+                  </div>
+                )
+              }
               const n = live?.brands.length ?? 0
               const free = (live?.brands || []).filter(b => !TAKEN.includes(b.status as Brand['status']))
               const read = [
-                c.posts ? `${c.posts} blog post${c.posts === 1 ? '' : 's'}${c.pushed ? ` (${c.pushed} pushed to social)` : ''}` : null,
+                c.posts ? `${c.postsCapped ? 'your latest ' : ''}${c.posts} blog post${c.posts === 1 ? '' : 's'}${c.pushed ? ` (${c.pushed} pushed to social)` : ''}` : null,
                 c.worksWith ? `${c.worksWith} TRYBE brand${c.worksWith === 1 ? '' : 's'} you work with${c.submitted ? ` (${c.submitted} with videos submitted)` : ''}` : null,
-                c.messaged ? `${c.messaged} brand${c.messaged === 1 ? '' : 's'} you messaged` : null,
+                c.messaged ? `${c.messagedTotal && c.messagedTotal > c.messaged ? `the latest ${c.messaged} of the ${c.messagedTotal.toLocaleString()}` : c.messaged} brand${c.messaged === 1 ? '' : 's'} you messaged` : null,
                 c.samples ? `${c.samples} sample${c.samples === 1 ? '' : 's'} you asked for` : null,
               ].filter(Boolean).join(', ')
               const out = t ? [
                 t.leftOut.known ? `${t.leftOut.known} you already know` : null,
-                t.leftOut.noSpend ? `${t.leftOut.noSpend} with no ad spend MVP can prove in the last 60 days` : null,
+                t.leftOut.noMetaAds ? `${t.leftOut.noMetaAds} running no Meta ads` : null,
+                t.leftOut.metaUnclear ? `${t.leftOut.metaUnclear} with a name too common to count on Meta` : null,
+                t.leftOut.notCounted ? `${t.leftOut.notCounted} not checked on Meta yet` : null,
                 t.leftOut.samplesOff ? `${t.leftOut.samplesOff} that do not take sample requests` : null,
                 t.leftOut.samplesMissing ? `${t.leftOut.samplesMissing} where MVP creators asked for samples that never came` : null,
                 t.leftOut.samplesUnknown ? `${t.leftOut.samplesUnknown} where TRYBE does not say whether they send samples` : null,
@@ -2388,7 +2474,7 @@ export default function TrybeOutreach({ preview = false }: { preview?: boolean }
                   {top100.profile.summary && <p className="text-[13px] mt-1.5">{top100.profile.summary}</p>}
                   <p className="text-[12px] mt-1" style={soft}>MVP read {read || 'what you have'}, and looked for brands selling {[...top100.profile.categories, ...top100.profile.keywords].slice(0, 12).join(', ')}.</p>
                   <p className="text-[12px] mt-1" style={soft}>
-                    Every brand here is new to you, spent on ads in the last 60 days, and sends samples, each said on the brand.{t ? ` ${t.provenSamples} of them have sent samples to MVP creators already; the rest take sample requests on TRYBE.` : ''}
+                    Every brand here is new to you, is running Meta ads, and sends samples, each said on the brand.{t ? ` ${t.provenSamples} of them have sent samples to MVP creators already; the rest take sample requests on TRYBE.` : ''}
                   </p>
                   {out && <p className="text-[12px] mt-1" style={soft}>Left out of {t?.considered.toLocaleString()} that fit you: {out}.</p>}
                   {t && n < 100 && <p className="text-[12px] mt-1" style={{ color: AMBER }}>Only {n} passed every check, so your list is {n}, not 100. MVP never pads it with brands it cannot vouch for.</p>}

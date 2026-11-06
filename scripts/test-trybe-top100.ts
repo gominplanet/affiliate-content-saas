@@ -16,15 +16,19 @@ const fails: string[] = []
 const check = (name: string, ok: boolean | undefined) => { if (!ok) fails.push(name) }
 const read = (p: string) => readFileSync(p, 'utf8')
 const DAY = 86_400_000
-const none = { metaAds: null, top100Hits: null, newVideos: null, days: null, tierUp: null }
+const none = { metaCount: null, metaOwn: false, top100Hits: null, newVideos: null, days: null, tierUp: null }
 
-// ── AD SPEND ─────────────────────────────────────────────────────────────────
-check('Meta ads running prove ad spend, and say how many', adSpendProof({ ...none, metaAds: 12 }).proven && /12 Meta ads running/.test(adSpendProof({ ...none, metaAds: 12 }).says.join()))
-check('a video in TRYBE\'s Top 100 proves it', adSpendProof({ ...none, top100Hits: 2 }).proven)
-check('creator videos approved in the window prove it', adSpendProof({ ...none, newVideos: 9, days: 30 }).proven && /9 creator videos approved in 30 days/.test(adSpendProof({ ...none, newVideos: 9, days: 30 }).says.join()))
-check('videos counted over more than 60 days do not', !adSpendProof({ ...none, newVideos: 9, days: 90 }).proven)
-check('a payout tier that went up proves it', adSpendProof({ ...none, tierUp: true }).proven)
-check('nothing known, or zero everywhere, proves nothing', !adSpendProof(none).proven && !adSpendProof({ metaAds: 0, top100Hits: 0, newVideos: 0, days: 30, tierUp: false }).proven)
+// ── AD SPEND, ON META (Seb, 2026-11-06: "the ad spend can be measured as long
+// as we see that they're spending money on meta ads. That's pretty simple.")
+check('Meta ads running, the brand\'s own, prove ad spend, and say how many', (() => { const v = adSpendProof({ ...none, metaCount: 12, metaOwn: true }); return v.proven && /12 Meta ads running/.test(v.says.join()) })())
+check('TRYBE\'s own signs are added to the words, never enough alone', (() => {
+  const v = adSpendProof({ ...none, metaCount: 3, metaOwn: true, top100Hits: 2, newVideos: 9, days: 30, tierUp: true })
+  return v.proven && /Top 100/.test(v.says.join()) && /9 creator videos approved in 30 days/.test(v.says.join()) && /payout tier/.test(v.says.join())
+    && !adSpendProof({ ...none, top100Hits: 2, newVideos: 9, days: 30, tierUp: true }).proven
+})())
+check('no Meta count yet: to be counted, never left out for it', (() => { const v = adSpendProof(none); return !v.proven && v.why === 'notCounted' })())
+check('a count that is not the brand\'s own (a common word) proves nothing', (() => { const v = adSpendProof({ ...none, metaCount: 500, metaOwn: false }); return !v.proven && v.why === 'unclear' })())
+check('no Meta ads running is out', (() => { const v = adSpendProof({ ...none, metaCount: 0, metaOwn: true }); return !v.proven && v.why === 'noAds' })())
 
 // ── SAMPLES ──────────────────────────────────────────────────────────────────
 const sp = (trybe: boolean | null, received: number, waitingLong: number) => samplesProof({ trybe, received, waitingLong })
@@ -70,22 +74,32 @@ check('nothing to read is said, not guessed', /MVP has nothing of yours to read 
 check('the profile stands in for the typed niches, a hundred over a wide pool', /const top100 = readTop100Ask\(body\.top100\)/.test(R) && /const want = top100 \? TOP100/.test(R) && /const pool = top100 \|\|/.test(R))
 check('the page\'s filters do not apply to it', /const filters = nameOnly \|\| top100 \? readFilters\(null\) : asked/.test(R))
 check('a brand the creator knows never makes it: on their list, joined, or sampled', /if \(mineBy\.has\(id\) \|\| top100\.joined\.has\(id\) \|\| sampledMine\.has\(id\)\) \{ leftOut\.known\+\+; continue \}/.test(R))
-check('no proven ad spend, no place', /if \(!spend\.proven\) \{ leftOut\.noSpend\+\+; continue \}/.test(R))
+check('no Meta ads, or a count not its own, no place, each counted', /else if \(spend\.why === 'unclear'\) leftOut\.metaUnclear\+\+/.test(R) && /else leftOut\.noMetaAds\+\+/.test(R))
+check('not counted on Meta yet: handed to the page to count, best fits first', /if \(spend\.why === 'notCounted'\) \{ leftOut\.notCounted\+\+; toCount\.push\(x\) \}/.test(R) && /toCount\.sort\(\(a, b\) => fitOf\(b\) - fitOf\(a\)\)/.test(R) && /toCount: toCount\.slice\(0, 300\)/.test(R))
+check('samples are checked before Meta, so no brand is counted that would be left out anyway', R.indexOf("const sm = samplesProof({ trybe: statsBy.get(id)?.samples") < R.indexOf('const spend = adSpendProof({'))
 check('samples off, missing, or not said: no place, each counted', /if \(!sm\.ok\) \{ leftOut\[sm\.why === 'off' \? 'samplesOff' : sm\.why === 'missing' \? 'samplesMissing' : 'samplesUnknown'\]\+\+; continue \}/.test(R))
 check('samples are read from every MVP creator\'s records, not only this one', /from\('trybe_samples'\)\.select\('brand_id, requested_at, received_at'\)\.in\('brand_id'/.test(R))
-check('fit first, quality next, proven samples last', /0\.6 \* \(k\.x\.match \/ maxMatch\) \+ 0\.3 \* /.test(R))
+check('fit first, quality next, proven samples last', /0\.6 \* \(x\.match \/ maxMatch\) \+ 0\.3 \* /.test(R) && /\(b\.proven \? 0\.1 : 0\)/.test(R))
 check('each brand carries its proof, and the reply its left-out counts', /proof: proofBy\.get\(r\.brand_id\) \?\? null/.test(R) && /top100: top100Out,/.test(R))
 
 // ── THE PAGE ─────────────────────────────────────────────────────────────────
 const U = read('components/labs/TrybeOutreach.tsx')
 check('one button runs it', /onClick=\{\(\) => void runTop100\(\)\}/.test(U) && /My top 100/.test(U))
-check('the TRYBE brands they work with are read through SCOUT, and a failed read is said', /requestTrybeApi\('GET', '\/backend\/api\/creator\/v2\/brands\/stats\?period=all'\)/.test(U) && /could not leave those brands out/.test(U))
+check('the TRYBE brands they work with are read through SCOUT, and a failed read is said', /stats\?period=\$\{period\}/.test(U) && /await stats\('all'\)/.test(U) && /could not leave those brands out/.test(U))
+check('a full list that timed out falls back to the last 30 days, then the list read last time, each said', /await stats\('30d'\)/.test(U) && /localStorage\.setItem\(KEPT/.test(U) && /you worked with in the last 30 days/.test(U) && /it read on \$\{new Date\(kept\.at\)\.toLocaleDateString\(\)\}/.test(U))
 check('the list is searched with the profile', /top100: \{ categories: top100\.profile\.categories, keywords: top100\.profile\.keywords, joined: top100\.joined \}/.test(U))
 check('what MVP read, looked for and left out is said', /MVP read \{read \|\| 'what you have'\}/.test(U) && /Left out of \{t\?\.considered\.toLocaleString\(\)\} that fit you/.test(U))
 check('a list under 100 says why, never padded', /MVP never pads it with brands it cannot vouch for/.test(U))
 check('tick all, then the usual Write messages', /Tick all \{free\.length\}/.test(U) && /Write \{livePick\.size\} message/.test(U))
 check('each brand says its ad spend and samples', /Ad spend: \{b\.proof\.spend\.join\(', '\)\}/.test(U) && /Samples: \{b\.proof\.samples\}/.test(U))
 check('back to the usual search', /Back to my search/.test(U))
+check('the brands not counted on Meta are counted by SCOUT, a round at a time, until 100 pass', /for \(let round = 0; round < META_ROUNDS_MAX; round\+\+\)/.test(U) && /if \(!t \|\| t\.kept >= TOP100 \|\| !t\.toCount\?\.length \|\| top100Stop\.current \|\| leftRef\.current\) break/.test(U) && /await readMetaAds\(batch\.map/.test(U))
+check('the count can be stopped, showing the list as it stands', /Stop and show what I have/.test(U))
+check('a count SCOUT could not make is said, not guessed', /Meta ads: \$\{metaNote\}/.test(U))
+check('a ranking that did not come back is said, never the usual search under a "Your top" heading', /if \(!t\) \{/.test(U) && /Your top 100 did not come back/.test(U) && /The list below is your usual search, not your top 100/.test(U))
+check('the usual search waits while My top 100 ranks, so the two never race', /if \(!hasDirectory \|\| top100Busy\) return/.test(U))
+check('what was read says when it was only the latest', /postsCapped: posts\.length >= 300/.test(R) && /your latest /.test(U))
+check('the page says the rule in its words: running Meta ads', /is running Meta ads, and sends samples/.test(U) && /running no Meta ads/.test(U) && /not checked on Meta yet/.test(U))
 
 if (fails.length) {
   console.error(`\n❌ trybe-top100: ${fails.length} failure(s)\n`)
