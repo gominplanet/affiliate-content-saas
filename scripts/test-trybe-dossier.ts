@@ -136,6 +136,13 @@ check('Find brands as a sortable table in the new TRYBE, cards kept as a choice'
 }
 check('the brand page reads its own TRYBE page live through SCOUT, and says when it could not', /requestTrybeApi\('GET', `\/backend\/api\/creator\/v2\/brands\/\$\{encodeURIComponent\(brandId\)\}\/details`\)/.test(D) && /SCOUT could not read its page on TRYBE/.test(D) && /canDetails=\{access === 'granted' && scoutAtLeast\(scoutVersion, SCOUT_TRYBE_PLAYBOOK_MIN_VERSION\)\}/.test(U))
 check('a brief link names where it goes', /Open its brief on \{siteName\(live\.briefUrl\)\}/.test(D))
+{
+  const F = read('components/labs/TrybeFilmIt.tsx')
+  const V = read('components/labs/TrybeVideoIdeas.tsx')
+  check('every script with words to say can be opened for filming', /setFilming\(\{ title: /.test(V) && /\{filming && <TrybeFilmIt script=\{filming\}/.test(V) && /Film it/.test(V))
+  check('Film it shows one line at a time, then the B-roll to tick off, and moves by keys or a tap', /lines\[at\]/.test(F) && /Now the B-roll/.test(F) && /ArrowRight/.test(F) && /aria-label="Next line"/.test(F))
+  check('the brand page and Film it sit above the dashboard, whatever box opened them', /createPortal\(/.test(F) && /createPortal\(/.test(D) && /zIndex: 1001/.test(F) && /zIndex: 1000/.test(D))
+}
 check('only with the new TRYBE switched on', /<DossierCtx\.Provider value=\{v2 \? openDossier : null\}>/.test(U))
 check('the switch is team only until it is opened', /trybe_v2: 'admin'/.test(read('lib/labs-preview.ts')) && /v2=\{canUsePreview\('trybe_v2', tier\)\}/.test(read('app/(dashboard)/trybe/page.tsx')))
 check('what is not read says so on the page', /Not enough read|MVP has not counted its Meta ads yet/.test(D + read('lib/trybe-dossier.ts')) && /Read it again/.test(D))

@@ -12,6 +12,7 @@
 // or failed read says which it is.
 
 import TrybeTopHooks from '@/components/labs/TrybeTopHooks'
+import TrybeFilmIt, { type FilmScript } from '@/components/labs/TrybeFilmIt'
 import { useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { Loader2, Copy, Check, Clapperboard, ChevronDown, ChevronUp, RotateCcw, Trophy, Play, AlertTriangle, Printer, FileText } from 'lucide-react'
@@ -203,6 +204,8 @@ export default function TrybeVideoIdeas({ brandId, name, plan: initial, canRead,
   const [winLoading, setWinLoading] = useState(false)
   const [step, setStep] = useState<string | null>(null)
   const [copiedKey, setCopiedKey] = useState<string | null>(null)
+  // The script open for filming (Film it), if any.
+  const [filming, setFilming] = useState<FilmScript | null>(null)
 
   useEffect(() => { setPlan(initial) }, [initial])
 
@@ -491,6 +494,7 @@ export default function TrybeVideoIdeas({ brandId, name, plan: initial, canRead,
             </div>
           )}
           {plan.brief === 'link_only' && <p style={{ color: AMBER }}>Their brief is a document MVP cannot open. Open it from the brand page and check these ideas against it.</p>}
+          {filming && <TrybeFilmIt script={filming} onClose={() => setFilming(null)} />}
           {plan.videos && plan.videos.length > 0 && (
             <div>
               <p className="text-[11px] font-bold uppercase tracking-wider" style={soft}>{plan.videos.length} videos, {plan.videos.length} angles{plan.product ? `: ${plan.product}` : ''}</p>
@@ -530,9 +534,18 @@ export default function TrybeVideoIdeas({ brandId, name, plan: initial, canRead,
                         </>)}
                         {v.forBrief && <span className="block mt-0.5" style={{ color: GREEN }}>For the brief: {v.forBrief}</span>}
                       </span>
-                      <button onClick={() => void copyText(`v${i}`, ideaText(v, i + 1))} className="shrink-0 inline-flex items-center gap-1 text-[11px] font-semibold" style={{ color: PURPLE }} title={v.say?.length ? "Copy this video's script and B-roll" : "Copy this video's plan"}>
-                        {copiedKey === `v${i}` ? <Check size={12} /> : <Copy size={12} />} {copiedKey === `v${i}` ? 'Copied' : 'Copy'}
-                      </button>
+                      <span className="shrink-0 flex flex-col items-end gap-1.5">
+                        {/* FILM IT: the script opened for filming, a line at a time. */}
+                        {v.say?.length ? (
+                          <button onClick={() => setFilming({ title: `${i + 1}. ${v.angle || HOOK_STYLE_WORDS[v.style]}`, say: v.say!, broll: v.broll || [], shot: v.shot || null, forBrief: v.forBrief || null })}
+                            className="inline-flex items-center gap-1 text-[11px] font-bold rounded-full px-2.5 py-1" style={{ background: 'var(--accent)', color: '#fff' }} title="Open the script for filming: one line at a time, big, then the B-roll to tick off">
+                            <Clapperboard size={12} /> Film it
+                          </button>
+                        ) : null}
+                        <button onClick={() => void copyText(`v${i}`, ideaText(v, i + 1))} className="inline-flex items-center gap-1 text-[11px] font-semibold" style={{ color: PURPLE }} title={v.say?.length ? "Copy this video's script and B-roll" : "Copy this video's plan"}>
+                          {copiedKey === `v${i}` ? <Check size={12} /> : <Copy size={12} />} {copiedKey === `v${i}` ? 'Copied' : 'Copy'}
+                        </button>
+                      </span>
                     </div>
                   </li>
                 ))}

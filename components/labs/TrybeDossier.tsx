@@ -13,6 +13,7 @@
 // of its numbers. What is not read says so, by name; nothing is guessed.
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { X, Globe, ExternalLink, Loader2, AlertTriangle, MessageCircle, Send, Clapperboard, Star, PlayCircle, Package, History, Users, Megaphone } from 'lucide-react'
 import { readBrandCard } from '@/lib/trybe-brand-page'
 import { payLines } from '@/lib/trybe-pay'
@@ -142,8 +143,11 @@ export default function TrybeDossier({ brandId, name, onClose, actions, scout = 
     try { await (kind === 'message' ? actions.message(brandId) : actions.send(brandId)); await load() } finally { setBusy(null) }
   }
 
-  return (
-    <div className="fixed inset-0 z-[80] flex justify-end" role="dialog" aria-modal="true" aria-label={`${title} on TRYBE`}>
+  // On the page itself, above everything the dashboard draws (its sidebar
+  // and top bar), whatever box it is opened from.
+  if (typeof document === 'undefined') return null
+  return createPortal(
+    <div className="fixed inset-0 flex justify-end" style={{ zIndex: 1000 }} role="dialog" aria-modal="true" aria-label={`${title} on TRYBE`}>
       <button type="button" aria-label="Close" onClick={onClose} className="absolute inset-0 cursor-default" style={{ background: 'rgba(5,15,16,0.46)', backdropFilter: 'blur(2px)' }} />
       <div ref={panel} tabIndex={-1} className="relative h-full w-full max-w-[780px] overflow-y-auto outline-none trybe-dossier-in" style={{ background: 'var(--bg, var(--surface))', boxShadow: '-24px 0 60px rgba(0,0,0,0.18)' }}>
         <style>{`@keyframes trybeIn{from{transform:translateX(24px);opacity:.4}to{transform:none;opacity:1}}.trybe-dossier-in{animation:trybeIn 220ms ease-out}@media (prefers-reduced-motion: reduce){.trybe-dossier-in{animation:none}}`}</style>
@@ -388,7 +392,8 @@ export default function TrybeDossier({ brandId, name, onClose, actions, scout = 
           )}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }
 
