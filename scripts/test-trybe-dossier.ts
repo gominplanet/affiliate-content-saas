@@ -133,6 +133,7 @@ check('Find brands as a sortable table in the new TRYBE, cards kept as a choice'
   check('the table says what it has not read, never a zero', /Not counted/.test(T) && /Not known/.test(T) && /Not shown/.test(T))
   check('every column sorts, unknown always last', /if \(x == null\) return 1/.test(T) && /aria-sort=/.test(T))
   check('a brand already written or sent cannot be picked again', /disabled=\{isTaken\}/.test(T))
+  check('the table downloads as a spreadsheet, rows as shown, blank where not read', /Download these \{rows\.length\} as a spreadsheet/.test(T) && /text\/csv/.test(T) && /metaOf\(b\) \?\? ''/.test(T))
 }
 check('the brand page reads its own TRYBE page live through SCOUT, and says when it could not', /requestTrybeApi\('GET', `\/backend\/api\/creator\/v2\/brands\/\$\{encodeURIComponent\(brandId\)\}\/details`\)/.test(D) && /SCOUT could not read its page on TRYBE/.test(D) && /canDetails=\{access === 'granted' && scoutAtLeast\(scoutVersion, SCOUT_TRYBE_PLAYBOOK_MIN_VERSION\)\}/.test(U))
 check('a brief link names where it goes', /Open its brief on \{siteName\(live\.briefUrl\)\}/.test(D))

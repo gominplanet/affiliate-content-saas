@@ -81,7 +81,32 @@ export default function TrybeBrandTable({ brands, picked, onPick, taken, preview
   }, [brands, sort])
   const flip = (c: Col) => setSort((s) => (s && s.col === c ? (s.desc ? { col: c, desc: false } : null) : { col: c, desc: c !== 'brand' }))
 
+  // AS A SPREADSHEET: the rows as shown, in this order, each value as the
+  // table says it (blank where MVP has not read it, never a zero).
+  function download() {
+    const cell = (v: unknown) => { const s = v == null ? '' : String(v); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s }
+    const head = ['Brand', 'Website', 'Categories', 'MVP pick', 'A video pays ($)', 'Pay on TRYBE', 'Paid out', 'Meta ads', 'Top 100 videos', 'Rating', 'Reviews', 'Samples', 'Room', 'Days to decide', 'On your list']
+    const lines = rows.map((b) => [
+      b.name, b.website, (b.categories || []).join('; '), typeof b.pick === 'number' ? Math.round(b.pick) : '',
+      b.pay_est?.dollars != null ? Math.round(b.pay_est.dollars) : '', b.pay_text || '', b.earnings_bucket || '', metaOf(b) ?? '',
+      typeof b.top100_hits === 'number' ? b.top100_hits : '', typeof b.review_rating === 'number' ? b.review_rating : '', typeof b.review_count === 'number' ? b.review_count : '',
+      b.stats?.samples === true ? 'Yes' : b.stats?.samples === false ? 'No' : '', b.crowd?.level || '', typeof b.review?.reviewDays === 'number' ? b.review.reviewDays : '', whereOf(b) || '',
+    ].map(cell).join(','))
+    const blob = new Blob([[head.join(','), ...lines].join('\n')], { type: 'text/csv;charset=utf-8' })
+    const a = document.createElement('a')
+    a.href = URL.createObjectURL(blob)
+    a.download = 'trybe-brands.csv'
+    a.click()
+    window.setTimeout(() => URL.revokeObjectURL(a.href), 2000)
+  }
+
   return (
+    <div className="flex flex-col gap-2">
+    <div className="flex justify-end">
+      <button type="button" onClick={download} disabled={!rows.length} className="text-[12px] font-semibold rounded-lg px-3 py-1.5 disabled:opacity-50" style={{ background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text)' }} title="The rows as shown, as a CSV file for Google Sheets or Excel">
+        Download these {rows.length} as a spreadsheet
+      </button>
+    </div>
     <div className="rounded-2xl overflow-x-auto" style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
       <table className="w-full text-[13px] min-w-[1060px]" style={{ fontVariantNumeric: 'tabular-nums' }}>
         <thead>
@@ -162,6 +187,7 @@ export default function TrybeBrandTable({ brands, picked, onPick, taken, preview
           })}
         </tbody>
       </table>
+    </div>
     </div>
   )
 }
