@@ -25,7 +25,7 @@ import type { Pooled } from '@/lib/trybe-changes'
 import { ProductAmazon } from '@/components/labs/TrybeFinderControls'
 import { useTrybeAmazon } from '@/components/labs/useTrybeAmazon'
 
-const PURPLE = '#7C3AED'
+const PURPLE = 'var(--accent)'
 const GREEN = '#16A34A'
 const AMBER = '#B45309'
 const PER_DAY_KEY = 'mvp.trybe.week.perDay'
@@ -463,7 +463,7 @@ export default function TrybeWeek({ knownBrands, canRead, isAdmin = false }: {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center gap-2 rounded-2xl border px-4 py-3" style={{ borderColor: 'rgba(124,58,237,0.35)', background: 'rgba(124,58,237,0.05)' }}>
+      <div className="flex flex-wrap items-center gap-2 rounded-2xl border px-4 py-3" style={{ borderColor: 'rgb(var(--brand-rgb) / 0.35)', background: 'rgb(var(--brand-rgb) / 0.05)' }}>
         <FileDown size={18} style={{ color: PURPLE }} />
         <p className="text-[13px] flex-1 min-w-[16rem]"><b>Your weekly planner, ready to print.</b> <span style={soft}>This week&rsquo;s three jobs, a 7 day calendar, a page per product you have on hand with 5 video guidelines and the brand&rsquo;s best videos (QR codes), samples on the way, and your money as charts.</span></p>
         <button onClick={() => void makePlanner()} disabled={!!exporting} className={btn} style={{ background: PURPLE, color: '#fff' }}>
@@ -529,7 +529,7 @@ export default function TrybeWeek({ knownBrands, canRead, isAdmin = false }: {
               const on = focusIds.includes(b.id)
               return (
                 <button key={b.id} onClick={() => toggleFocus(b.id)} aria-pressed={on} className="rounded-full border px-2.5 py-1 text-[12px] font-semibold"
-                  style={on ? { background: 'rgba(124,58,237,0.10)', color: PURPLE, borderColor: 'transparent' } : { borderColor: 'var(--border)', color: 'var(--text)' }}>
+                  style={on ? { background: 'rgb(var(--brand-rgb) / 0.10)', color: PURPLE, borderColor: 'transparent' } : { borderColor: 'var(--border)', color: 'var(--text)' }}>
                   {on ? '\u2713 ' : '+ '}{b.name}
                 </button>
               )
@@ -563,7 +563,7 @@ export default function TrybeWeek({ knownBrands, canRead, isAdmin = false }: {
                     <ul className="mt-1 space-y-1">
                       {d.tasks.map((t, i) => (
                         <li key={i} className="text-[13px] flex items-start gap-1.5" style={t.late ? { color: AMBER } : undefined}>
-                          <span aria-hidden className="mt-0.5 shrink-0 text-[11px] font-bold rounded px-1" style={{ background: t.kind === 'film' || t.kind === 'volume' ? 'rgba(124,58,237,0.12)' : 'rgba(0,0,0,0.05)', color: t.kind === 'film' || t.kind === 'volume' ? PURPLE : 'var(--text-soft)' }}>
+                          <span aria-hidden className="mt-0.5 shrink-0 text-[11px] font-bold rounded px-1" style={{ background: t.kind === 'film' || t.kind === 'volume' ? 'rgb(var(--brand-rgb) / 0.12)' : 'rgba(0,0,0,0.05)', color: t.kind === 'film' || t.kind === 'volume' ? PURPLE : 'var(--text-soft)' }}>
                             {t.kind === 'film' || t.kind === 'volume' ? 'Film' : t.kind === 'submit' ? 'Submit' : t.kind === 'ideas' ? 'Plan' : 'Ask'}
                           </span>
                           <span>{t.text}</span>

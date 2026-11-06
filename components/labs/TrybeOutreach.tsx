@@ -342,7 +342,7 @@ function replyConvo(b: Brand, convos: Conversation[]): Conversation | null {
 /** A glance card: what it is, one big number, what the number means. The
  *  colour on top says which card it is at a glance; the number takes it only
  *  when it needs attention. */
-function Stat({ label, value, hint, tone, accent = '#7C3AED', onClick }: { label: string; value: string; hint?: string; tone?: string; accent?: string; onClick?: () => void }) {
+function Stat({ label, value, hint, tone, accent = 'var(--accent)', onClick }: { label: string; value: string; hint?: string; tone?: string; accent?: string; onClick?: () => void }) {
   const body = (<>
     <p className="text-[13px] font-semibold" style={{ color: 'var(--text-soft)' }}>{label}</p>
     <p className="text-[28px] font-bold leading-tight mt-1 tabular-nums" style={tone ? { color: tone } : undefined}>{value}</p>
