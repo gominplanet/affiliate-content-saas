@@ -25,7 +25,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { researchBrandSite, normalizeSite, type SiteResearch } from '@/lib/trybe-research'
 import { siteSocials } from '@/lib/trybe-pick'
 import { safeFetch } from '@/lib/ssrf-guard'
-import { siteSearchText } from '@/lib/trybe-directory'
+import { siteSearchText, readDirectoryItem } from '@/lib/trybe-directory'
 import { siteDomain, fetchWebRank, googleSeed, brandSearches, POPULARITY_FRESH_MS } from '@/lib/brand-popularity'
 import { suggest } from '@/lib/search-suggest'
 
@@ -55,6 +55,27 @@ type PopRow = { brand_id: string; name: string; website: string | null }
 interface PopRun { web: { read: number; notRanked: number; shared: number; missed: number }; google: { read: number; missed: number }; missing?: boolean }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
+// PAY LINES FROM THE ENTRY MVP KEEPS (Seb's check, 2026-11-06: 0 of 8,354
+// brands had a pay line, because TRYBE moved pay to program.rules). Each
+// listed brand with no pay line has it read from its kept TRYBE entry
+// (lib/trybe-directory), so the line, the pay filter and the pay index fill
+// without waiting for the next whole collection. Up to 1,000 a run; a brand
+// whose entry says nothing about pay stays empty, never made up.
+const PAY_FILL_PER_RUN = 1000
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function payLinePass(sb: any): Promise<{ looked: number; filled: number } | { error: string }> {
+  const { data, error } = await sb.from('trybe_directory').select('brand_id, name, raw').is('pay_text', null).is('left_at', null).not('raw', 'is', null).limit(PAY_FILL_PER_RUN)
+  if (error) return { error: error.message }
+  const rows = ((data || []) as Array<{ brand_id: string; name: string; raw: unknown }>)
+    .map((r) => ({ brand_id: r.brand_id, name: r.name, pay_text: readDirectoryItem(r.raw)?.payText ?? null }))
+    .filter((r) => !!r.pay_text && !!r.name)
+  for (let i = 0; i < rows.length; i += 200) {
+    const { error: ue } = await sb.from('trybe_directory').upsert(rows.slice(i, i + 200), { onConflict: 'brand_id' })
+    if (ue) return { error: ue.message }
+  }
+  return { looked: (data || []).length, filled: rows.length }
+}
+
 async function popularityPass(sb: any, started: number): Promise<PopRun> {
   const run: PopRun = { web: { read: 0, notRanked: 0, shared: 0, missed: 0 }, google: { read: 0, missed: 0 } }
   const until = started + POP_BUDGET_MS
@@ -126,6 +147,7 @@ export async function GET(request: Request) {
   const started = Date.now()
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const sb = createAdminClient() as any
+  const pay = await payLinePass(sb).catch((e) => ({ error: e instanceof Error ? e.message : 'error' }))
   // Before migration 452 this reads nothing and says so in its answer.
   const popularity = await popularityPass(sb, started).catch((e) => ({ error: e instanceof Error ? e.message : 'error' }))
   const { data: fresh, error } = await sb.from('trybe_directory')
@@ -206,5 +228,5 @@ export async function GET(request: Request) {
       }))
     }
   }
-  return NextResponse.json({ ok: true, asked: rows.length, read, failed, socials, popularity, ms: Date.now() - started })
+  return NextResponse.json({ ok: true, asked: rows.length, read, failed, socials, popularity, pay, ms: Date.now() - started })
 }
