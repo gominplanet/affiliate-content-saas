@@ -340,3 +340,52 @@ export function withHooks(ads: MetaAd[], hooks: AdHooks, now: number): MetaAd[] 
     return { ...a, heard: state, spoken: state === 'ready' ? hooks[a.id]?.hook ?? null : null }
   })
 }
+
+// ── THE BRAND'S OWN META ADS, FOR ITS SCRIPTS (Seb, 2026-11-06: "let's
+// really use all the information that we have now") ───────────────────────
+// The ads the brand keeps paying to run are the surest sign of who buys from
+// it and what they are told. The video plan reads them, longest running
+// first: what each says first (heard by MVP), its words, its button. Ads
+// with no words at all are left out. Pure, so it is tested
+// (scripts/test-trybe-playbook.ts).
+
+/** Ads given to one plan. */
+export const PLAN_META_ADS = 6
+
+export interface PlanAd { id: string; days: number | null; video: boolean; paid: boolean; cta: string | null; spoken: string | null; script: string | null; text: string }
+
+/** This brand's own ads, the longest running first, with what MVP heard. Pure. */
+export function brandAdsForPlan(g: Pick<Gallery, 'ads'> | null | undefined, hooks: AdHooks | null | undefined, brandId: string, brand: string, now: number, n = PLAN_META_ADS): PlanAd[] {
+  if (!brandId) return []
+  const clean = (t: string | null | undefined, max: number) => String(t || '').replace(PLAYER_CLOCK, '').replace(/\s+/g, ' ').trim().slice(0, max)
+  return (g?.ads || [])
+    .filter((a) => a.brandId === brandId && ownAd(a, a.brand || brand))
+    .map((a) => {
+      const h = hooks?.[a.id]
+      return {
+        id: a.id, days: ranDays(a, now), video: !!a.video, paid: !!a.paid, cta: a.cta ? clean(a.cta, 40) : null,
+        spoken: h?.state === 'ready' ? clean(h.hook, 200) || null : null,
+        script: h?.state === 'ready' ? clean(h.script, 450) || null : null,
+        text: clean(a.body, 300),
+      }
+    })
+    .filter((a) => a.spoken || a.script || a.text)
+    .sort((a, b) => (b.days ?? -1) - (a.days ?? -1))
+    .slice(0, Math.max(0, n))
+}
+
+/** The prompt block: the brand's own ads, the frame and the buyer, never
+ *  the sentences. '' when MVP has none for the brand. Pure. */
+export function brandAdsBlock(ads: PlanAd[]): string {
+  if (!ads.length) return ''
+  const lines = ads.map((a, i) => {
+    const tag = [a.days != null ? `running ${a.days} day${a.days === 1 ? '' : 's'}${a.days >= LONG_RUN_DAYS ? ', a keeper' : ''}` : 'start date not read', a.video ? 'a video' : 'a picture', a.paid ? 'run by a creator in paid partnership' : '', a.cta ? `button "${a.cta}"` : ''].filter(Boolean).join(', ')
+    const said = a.script ? ` Said in the video: "${a.script}"` : a.spoken ? ` Says first: "${a.spoken}"` : ''
+    const shown = a.text ? ` Written on the ad: "${a.text}"` : ''
+    return `Meta ad ${i + 1} (${tag}).${said}${shown}`
+  })
+  return [
+    `THE BRAND'S OWN META ADS (the ads this brand pays to run on Facebook and Instagram, longest running first; one still running after ${LONG_RUN_DAYS} days is one that sells). Learn from them WHO the brand sells to, the problem it names and the words it uses, and the frame each ad follows: the opening, the turn, the proof, the ask. Never copy their sentences, and never borrow a price, discount, number or result from them that BRAND does not show.`,
+    ...lines,
+  ].join('\n')
+}

@@ -12,7 +12,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { X, ChevronLeft, ChevronRight, Check, Clapperboard, Camera } from 'lucide-react'
+import { X, ChevronLeft, ChevronRight, Check, Clapperboard, Camera, Type } from 'lucide-react'
 
 export interface FilmScript {
   title: string
@@ -24,6 +24,8 @@ export interface FilmScript {
   shot?: string | null
   /** What it answers in the brief. */
   forBrief?: string | null
+  /** The words on screen in the first seconds (2026-11-06). */
+  onScreen?: string | null
 }
 
 export default function TrybeFilmIt({ script, onClose }: { script: FilmScript; onClose: () => void }) {
@@ -78,6 +80,9 @@ export default function TrybeFilmIt({ script, onClose }: { script: FilmScript; o
           {at > 0 && <p className="text-[15px] sm:text-[18px] mb-6 max-w-[900px] leading-snug" style={{ color: '#5C6F71' }}>{lines[at - 1]}</p>}
           <p className="font-bold max-w-[1000px]" style={{ fontFamily: 'var(--font-sora), var(--font-jakarta), system-ui, sans-serif', fontSize: 'clamp(30px, 6vw, 72px)', lineHeight: 1.12, letterSpacing: '-0.02em', textWrap: 'balance' as never }}>{line}</p>
           {at === 0 && script.shot && <p className="text-[14px] sm:text-[16px] mt-6 max-w-[760px] inline-flex items-start gap-2 text-left" style={{ color: '#5EEAD4' }}><Camera size={16} className="mt-1 shrink-0" /> First 2 seconds: {script.shot}</p>}
+          {/* THE HOOK IS THREE THINGS: the words, the picture, and the text on
+              screen, which goes on in the edit. */}
+          {at === 0 && script.onScreen && <p className="text-[14px] sm:text-[16px] mt-3 max-w-[760px] inline-flex items-center gap-2 text-left" style={{ color: '#8FA3A5' }}><Type size={16} className="shrink-0" /> On screen: <span className="rounded-md px-2 py-0.5 font-extrabold" style={{ background: '#fff', color: '#0B1416' }}>{script.onScreen}</span></p>}
           {at < lines.length - 1 && <p className="text-[15px] sm:text-[18px] mt-6 max-w-[900px] leading-snug" style={{ color: '#5C6F71' }}>{lines[at + 1]}</p>}
         </div>
       ) : (

@@ -35,7 +35,7 @@ import { winnersForPlan, winnersBlock, readScript } from '@/lib/trybe-mybrands'
 import { directoryChanges, adsChange, poolBrands, type Change, type MemberRow } from '@/lib/trybe-changes'
 import { topDayKey, topDayOf, TOP_DAYS_KEEP } from '@/lib/trybe-topdays'
 import { activeKeys, activeRows, activeBy, rankActive, categoryCounts, latestTierChanges, type ActiveBy, type ActiveRow } from '@/lib/trybe-active'
-import { GALLERY_KEY, readCardsBody, readAdCard, mergeGallery, type Gallery, type MetaAd, brandsWithAds, GALLERY_MAX, ownAd, HOOKS_KEY, withHooks, type AdHooks } from '@/lib/trybe-adsgallery'
+import { GALLERY_KEY, readCardsBody, readAdCard, mergeGallery, type Gallery, type MetaAd, brandsWithAds, GALLERY_MAX, ownAd, HOOKS_KEY, withHooks, type AdHooks, brandAdsForPlan, brandAdsBlock, type PlanAd } from '@/lib/trybe-adsgallery'
 import { hearMetaAds } from '@/lib/meta-ad-hear'
 import { transcriptionConfigured } from '@/lib/shorts-transcribe'
 import {
@@ -1528,12 +1528,34 @@ export async function POST(request: Request) {
       examples = pickExamples([...(mine ?? []), ...(ex ?? [])] as Array<Pick<TopScript, 'brand_id' | 'brand_name' | 'best_rank' | 'category' | 'script' | 'state'>>, { id: lookupId || null, name: String(row.name || ''), categories: Array.isArray(row.categories) ? row.categories as string[] : [] }, 6)
     } catch { examples = [] }
     const examplesText = examplesBlock(examples, String(row.name || ''))
+    // THE BRAND'S OWN META ADS (Seb, 2026-11-06: "let's really use all the
+    // information that we have now"): the ads it keeps paying for, longest
+    // running first, with what MVP heard each video say; and the products it
+    // lists on TRYBE for creators. Any failure plans without them, and the
+    // answer says how many went in.
+    let metaAds: PlanAd[] = []
+    let trybeProducts: string[] = []
+    if (lookupId) {
+      try {
+        const [{ data: gRow }, { data: hRow }, { data: sRow }] = await Promise.all([
+          admin.from('trybe_directory_meta').select('value').eq('key', GALLERY_KEY).maybeSingle(),
+          admin.from('trybe_directory_meta').select('value').eq('key', HOOKS_KEY).maybeSingle(),
+          admin.from('trybe_directory_meta').select('value').eq('key', `samples:${lookupId}`).maybeSingle(),
+        ])
+        metaAds = brandAdsForPlan((gRow?.value || null) as Gallery | null, (hRow?.value || null) as AdHooks | null, lookupId, String(row.name || ''), Date.now())
+        const names = (sRow?.value as { names?: unknown } | null)?.names
+        trybeProducts = (Array.isArray(names) ? names : []).filter((x): x is string => typeof x === 'string' && !!x.trim()).map((x) => x.trim().slice(0, 120)).slice(0, 12)
+      } catch { metaAds = []; trybeProducts = [] }
+    }
+    const metaAdsText = brandAdsBlock(metaAds)
+    const trybeText = trybeProducts.length ? `PRODUCTS THE BRAND LISTS ON TRYBE (the ones creators can ask for as samples): ${trybeProducts.join('; ')}` : ''
     try {
       const msg = await createAnthropicClient().messages.create({
-        // Room for ten scripts and their B-roll (2026-10-22).
-        model: MODEL, max_tokens: 10000,
+        // Room for ten scripts, their B-roll (2026-10-22) and why each hook
+        // works (2026-11-06).
+        model: MODEL, max_tokens: 14000,
         system: VIDEO_PLAN_SYSTEM(BANNED_RULE),
-        messages: [{ role: 'user', content: `BRAND:\n${brandBlock({ name: row.name, categories: row.categories || [], about: row.about, siteSummary: summary, products, onSale, payText: row.pay_text })}${briefText ? `\n\nBRIEF (the brand's own creative brief on TRYBE):\n${briefText}` : ''}${product ? `\n\nTHE PRODUCT ON HAND: ${product}. The creator has this one in hand, so every video is about it and shows it.` : ''}${winners.length ? `\n\n${winnersBlock(winners)}` : ''}${examplesText ? `\n\n${examplesText}` : ''}${hooksText ? `\n\n${hooksText}` : ''}` }],
+        messages: [{ role: 'user', content: `BRAND:\n${brandBlock({ name: row.name, categories: row.categories || [], about: row.about, siteSummary: summary, products, onSale, payText: row.pay_text })}${briefText ? `\n\nBRIEF (the brand's own creative brief on TRYBE):\n${briefText}` : ''}${product ? `\n\nTHE PRODUCT ON HAND: ${product}. The creator has this one in hand, so every video is about it and shows it.` : ''}${trybeText ? `\n\n${trybeText}` : ''}${metaAdsText ? `\n\n${metaAdsText}` : ''}${winners.length ? `\n\n${winnersBlock(winners)}` : ''}${examplesText ? `\n\n${examplesText}` : ''}${hooksText ? `\n\n${hooksText}` : ''}` }],
       })
       try { const u = usageFromAnthropic(msg); recordUsage({ userId, tier, feature: 'trybe_video_plan', model: MODEL, input: u.input, output: u.output }) } catch { /* best-effort */ }
       const parsed = parseVideoPlan((msg.content as Array<{ type: string; text?: string }>).map(b => b.type === 'text' ? b.text || '' : '').join(''))
@@ -1545,7 +1567,7 @@ export async function POST(request: Request) {
           const { error: smUp } = await admin.from('trybe_samples').update({ ideas: { ...plan, onSale, products: products.slice(0, 15) }, ideas_at: now, updated_at: now }).eq('user_id', ownerId).eq('id', sampleId)
           if (smUp) kept = false
         } catch { kept = false }
-        return NextResponse.json({ ok: true, plan, onSale, products: products.slice(0, 15), saved: kept, onList: true, fromWinners: winners.length, fromTop100: examples.length, fromRanked: examples.filter((x) => x.best_rank != null).length })
+        return NextResponse.json({ ok: true, plan, onSale, products: products.slice(0, 15), saved: kept, onList: true, fromWinners: winners.length, fromTop100: examples.length, fromRanked: examples.filter((x) => x.best_rank != null).length, fromMetaAds: metaAds.length, metaAdsLongest: metaAds[0]?.days ?? null, fromTrybeProducts: trybeProducts.length })
       }
       // KEPT FOR EVERY BRAND (migration 429): a brand joined on TRYBE directly
       // has no row on the MVP list, and its ideas used to be lost.
@@ -1562,7 +1584,7 @@ export async function POST(request: Request) {
           if (upErr) saved = false
         } catch { saved = false }
       }
-      return NextResponse.json({ ok: true, plan, onSale, products: products.slice(0, 15), saved: saved || ideasKept, onList: !!own || ideasKept, fromWinners: winners.length, fromTop100: examples.length, fromRanked: examples.filter((x) => x.best_rank != null).length })
+      return NextResponse.json({ ok: true, plan, onSale, products: products.slice(0, 15), saved: saved || ideasKept, onList: !!own || ideasKept, fromWinners: winners.length, fromTop100: examples.length, fromRanked: examples.filter((x) => x.best_rank != null).length, fromMetaAds: metaAds.length, metaAdsLongest: metaAds[0]?.days ?? null, fromTrybeProducts: trybeProducts.length })
     } catch (e) {
       return NextResponse.json({ error: e instanceof Error ? `MVP could not plan the videos: ${e.message}` : 'MVP could not plan the videos.' }, { status: 502 })
     }

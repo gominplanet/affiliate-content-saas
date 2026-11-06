@@ -156,6 +156,51 @@ export interface VideoIdea {
   cta: string
   /** Which part of the brief it answers, when there is a brief. */
   forBrief: string
+  // WHY THIS HOOK (Seb, 2026-11-06, after Built4More's "drive the knife" and
+  // the five Ws). Absent on plans made before.
+  /** Who it calls out: a person in a situation, not a demographic. */
+  who?: string
+  /** The moment in their day or life it happens. */
+  when?: string
+  /** Where the camera is. */
+  where?: string
+  /** The problem, in the words a buyer would use. */
+  what?: string
+  /** The five whys, climbed: the surface problem, why it matters, and the
+   *  moment and feeling underneath. The hook opens on the last. */
+  why?: string[]
+  /** The text on screen in the first seconds (the third part of the hook). */
+  onScreen?: string
+  /** The one doubt a buyer has that the script answers. */
+  objection?: string
+  /** Which of MVP's proven openers it starts with, when it does. */
+  opener?: string
+}
+
+/** OPENERS THAT STOP THE SCROLL (Seb's list, 2026-11-06). Each is the start of
+ *  a hook, finished with who it is for, the moment or the real reason: never
+ *  said bare. */
+export const PROVEN_OPENERS = [
+  'Nobody mentions this',
+  'I wish I knew this earlier',
+  'Pause for a second',
+  'Ever notice this pattern',
+  "Here's the real truth",
+  'Let me save you hours',
+  'This may surprise you',
+  'You need this now',
+  'You may not agree with this',
+  'I just figured this out',
+] as const
+/** Of the ten videos, how many start with a proven opener. */
+export const OPENER_VIDEOS = 4
+
+const plainWords = (t: string) => t.toLowerCase().replace(/[\u2018\u2019]/g, "'").replace(/[^a-z0-9' ]+/g, ' ').replace(/\s+/g, ' ').trim()
+/** The proven opener a hook really starts with, read from the hook itself
+ *  (never the model's say so), or '' when it starts with none. */
+export function openerOf(hook: string): string {
+  const h = plainWords(hook || '')
+  return PROVEN_OPENERS.find((o) => { const w = plainWords(o); return h === w || h.startsWith(`${w} `) }) || ''
 }
 
 export interface VideoPlan {
@@ -190,10 +235,18 @@ Return ONLY JSON, no markdown:
   "videos": [ {
     "angle": "the angle in under 8 words",
     "style": "versus|before_after|negative|stat|problem|reaction|pov|myth",
-    "hook": "the first line said, under 10 words (the same as say[0])",
+    "who": "WHO it calls out: a person in a situation, in under 8 words (\\"guys who shave every morning\\", \\"nurses on 12 hour shifts\\"), never a demographic like \\"men 25 to 34\\"",
+    "when": "WHEN it bites: the moment in their day or life, in under 8 words (\\"getting ready for date night\\")",
+    "where": "WHERE the camera is: the real place for that moment",
+    "what": "WHAT the problem is, in the words a buyer would say out loud, not the brand's words",
+    "why": ["the surface problem the product solves", "why that matters to them", "the moment and the feeling underneath it: the deepest reason"],
+    "opener": "the PROVEN OPENER this hook starts with, word for word, or \\"\\" when it does not use one",
+    "hook": "the first line said, under 16 words, opening on the deepest why (the same as say[0])",
+    "onScreen": "the text on screen in the first 2 seconds, under 6 words, never the same words as the hook",
     "shot": "what the camera shows in the first 2 seconds, with movement",
-    "say": ["THE SCRIPT: the exact words the creator says, in order, 4 to 7 lines. Each line is ONE short spoken sentence of 4 to 10 words, said in one breath. The first line is the hook, the last line is the call to action."],
-    "broll": ["4 to 6 B-roll shots to film for this video, each one short line: what the camera shows and how it moves"],
+    "objection": "the one doubt a buyer has about this product that this video answers, in under 10 words",
+    "say": ["THE SCRIPT: the exact words the creator says, in order, 5 to 7 lines. The hook first (up to 16 words), every other line ONE short spoken sentence of 4 to 10 words, said in one breath, the call to action last."],
+    "broll": ["5 to 7 B-roll shots to film for this video, one for every line said, each one short line: what the camera shows and how it moves"],
     "cta": "the last line said, under 12 words (the same as the last line of say)",
     "forBrief": "which want of the brief it answers, in a few words; empty when there is no BRIEF"
   } ],
@@ -204,6 +257,13 @@ Write exactly ${VIDEO_IDEAS} videos with ${VIDEO_IDEAS} clearly different angles
 THE SCRIPT IS WORDS TO SAY, NOT DIRECTIONS. Every line of "say" is a sentence the creator speaks to camera, word for word, never a description like "show it working" or "talk about the bags". Short and plain: everyday words, contractions, no lists, no commas strung together, nothing a person would stumble on. A creator memorizes one line, films it, then the next, so each line stands on its own and makes sense cut together. Write them the way the WINNING VIDEOS and WINNING TRYBE ADS below talk when they are given: the same short sentences, the same kind of opening, how fast they get to the product, the proof, the ask. Never copy their sentences.
 B-ROLL IS WHAT THE CAMERA FILMS UNDER THE WORDS: close-ups of the product working, the result, hands using it, the before and after, the place. Each shot is one line with movement ("Slow push in as the bag shrinks around the steak"), never a line of speech, and together they cover every line of the script.
 Write 3 calls to action. Use kind "sale" or "bundle" ONLY when BRAND lists something on sale or a bundle; otherwise use social_proof or urgency that claims nothing false (never "sold out", never numbers, never ratings that are not in BRAND). A video's own cta follows the same rule.
+WHY THIS HOOK: THE FIVE WS, THEN THE FIVE WHYS. Before writing each video, decide WHO it calls out, WHEN in their day it bites, WHERE they are, and WHAT the problem is in their own words. Then dig the WHY: start from the surface problem the product solves ("razor bumps"), ask why that matters ("they itch, they look bad"), and ask again until you reach a moment in someone's life and a feeling ("you don't want people staring at your neck at dinner with your wife"). Write that ladder in "why". Every video aims at a different WHO or a different moment, so the ten angles really differ. Dig only from what BRAND, BRIEF, the BRAND'S OWN META ADS and the WINNING videos say about the people who buy it, and from everyday life; never a medical claim, never a promise the product cannot keep.
+THE HOOK OPENS ON THE DEEPEST WHY, NEVER THE SURFACE. Not "Tired of razor bumps?" but "If date night means hoping nobody looks at your neck, watch this." Call out the WHO in the first words ("If you're on your feet all day", "Moms who pack lunches at 6am", "Guys who shave every morning") and put them in the WHEN. Call out only people the product is really for, as BRAND and BRIEF show them. Specific beats clever: a real place, a real time, a real person in their life. Say it the way the buyer would, in their words, never the brand's.
+PROVEN OPENERS (MVP's list): ${PROVEN_OPENERS.map((o) => `"${o}"`).join(', ')}. At least ${OPENER_VIDEOS} of the ${VIDEO_IDEAS} videos start their hook with one of these, word for word, and finish the same sentence with the WHO, the moment or the deepest why ("Nobody mentions this about shaving the night before a date", "I wish I knew this earlier, back when 12 hour shifts wrecked my feet", "Pause for a second if your kid's lunch comes home uneaten"). Never say an opener bare, never two videos on the same opener. A hook that starts with "I" turns to the viewer ("you") in the very next line. Name the opener used in "opener".
+THE HOOK IS THREE THINGS AT ONCE: what is said ("hook"), what the screen says ("onScreen": under 6 words, never the hook's own words, and it makes them need the next second), and what the camera shows in the first 2 seconds ("shot": something that stops a thumb). All three carry the same moment.
+DRIVE THE KNIFE, THEN THE RELIEF. Line 1 is the hook. Line 2 makes the viewer feel the problem in their own day (the moment from "why", in "you" words). Then the product arrives as the way out, then proof shown on camera, then the line that answers the "objection" (does it fit, does it last, does it taste right, is it worth it), then the call to action. Urgency only when it is true.
+A NEW SCENE EVERY 3 SECONDS: every line said has its own B-roll shot, so the picture changes with every sentence.
+STEAL THE SKELETON, NEVER THE WORDS. When WINNING VIDEOS, WINNING TRYBE ADS or the BRAND'S OWN META ADS are given, notice the frame each one uses (the order, the kind of opening, the turn, the proof, the ask) and reuse frames with this product's own WHO and WHY. The BRAND'S OWN META ADS that have run the longest are the ones the brand keeps paying for: their frames and the buyer they speak to are proven for this brand.
 WRITE FOR THE VIEWER (TRYBE's co-founder, Lukas Pakter: "switch from I to you"). Nobody knows a UGC creator, so the video is about what the product does for the person watching. Hooks and beats talk to them: "you", "your", "if you...". A story hook may start with a personal moment, but it turns to the viewer by its second sentence. Never "I'm obsessed", never a list of what the creator likes.
 IT MUST NOT LOOK LIKE AN AD. No brand logo and no product held up to the camera in the first 2 seconds, no influencer tone ("hey guys", "so today", "link in bio", "use my code"), never "introducing". Open on the problem, the result or the moment, then the product.
 THE BACKGROUND SELLS. Every shot names a real place that suits the buyer and has colour or something that pops (a busy gym, outdoors, a styled kitchen, a car), never a plain wall.
@@ -238,12 +298,28 @@ export function parseVideoPlan(text: string): VideoPlan | null {
     const say = (Array.isArray(x.say) ? x.say : []).map((b) => s(b, 160)).filter(Boolean).slice(0, 8)
     const broll = (Array.isArray(x.broll) ? x.broll : []).map((b) => s(b, 180)).filter(Boolean).slice(0, 7)
     const beats = (Array.isArray(x.beats) ? x.beats : []).map((b) => s(b, 200)).filter(Boolean).slice(0, 5)
+    const hook = s(x.hook, 160) || say[0] || ''
+    // WHY THIS HOOK: kept only when the model said it. The opener is read
+    // from the hook's own words, so a plan never claims one it did not use.
+    const why = (Array.isArray(x.why) ? x.why : []).map((b) => s(b, 200)).filter(Boolean).slice(0, 5)
+    const opener = openerOf(hook)
+    const onScreen = s(x.onScreen, 60)
+    const five = {
+      ...(s(x.who, 90) ? { who: s(x.who, 90) } : {}), ...(s(x.when, 90) ? { when: s(x.when, 90) } : {}),
+      ...(s(x.where, 120) ? { where: s(x.where, 120) } : {}), ...(s(x.what, 160) ? { what: s(x.what, 160) } : {}),
+      ...(why.length ? { why } : {}),
+      // Screen words that only repeat the hook add nothing and are dropped.
+      ...(onScreen && plainWords(onScreen) !== plainWords(hook) ? { onScreen } : {}),
+      ...(s(x.objection, 120) ? { objection: s(x.objection, 120) } : {}),
+      ...(opener ? { opener } : {}),
+    }
     return {
-      angle: s(x.angle, 80), style, hook: s(x.hook, 120) || say[0] || '', shot: s(x.shot, 200),
+      angle: s(x.angle, 80), style, hook, shot: s(x.shot, 200),
       // Anything that reads beats (the planner PDF, older screens) reads the script.
       beats: beats.length ? beats : say.slice(1, -1).length ? say.slice(1, -1) : say,
       ...(say.length ? { say } : {}), ...(broll.length ? { broll } : {}),
       cta: s(x.cta, 140) || (say.length > 1 ? say[say.length - 1] : ''), forBrief: s(x.forBrief, 120),
+      ...five,
     }
   }).filter((v) => v.hook && (v.beats.length || v.say?.length)).slice(0, 12)
   const lines = (v: unknown, n: number) => (Array.isArray(v) ? v : []).map((x) => s(x, 160)).filter(Boolean).slice(0, n)
@@ -279,6 +355,18 @@ export function honestCtas(plan: VideoPlan, onSale: string[]): VideoPlan {
   return { ...plan, ctas, ...(videos ? { videos } : {}) }
 }
 
+/** Why the hook works, as text: who it calls out, when, where, the problem
+ *  in the buyer's words, and the whys dug to the real reason. '' when the
+ *  plan was made before MVP asked for them. */
+export function whyText(v: VideoIdea): string {
+  const lines = [
+    v.who ? `WHO: ${v.who}` : '', v.when ? `WHEN: ${v.when}` : '', v.where ? `WHERE: ${v.where}` : '',
+    v.what ? `IN THEIR WORDS: ${v.what}` : '',
+    v.why?.length ? `THE REAL REASON: ${v.why.join(' > ')}` : '',
+  ].filter(Boolean)
+  return lines.length ? ['WHY THIS HOOK:', ...lines].join('\n') : ''
+}
+
 /** One idea, ready to film or print: the words to say, line by line, then
  *  the B-roll, when the plan has a script; else the hook and beats. */
 export function ideaText(v: VideoIdea, n: number): string {
@@ -291,6 +379,9 @@ export function ideaText(v: VideoIdea, n: number): string {
       v.broll?.length ? 'B-ROLL TO FILM:' : '',
       ...(v.broll || []).map((b) => `- ${b}`),
       v.shot ? `FIRST 2 SECONDS: ${v.shot}` : '',
+      v.onScreen ? `ON SCREEN: ${v.onScreen}` : '',
+      whyText(v),
+      v.objection ? `THE DOUBT IT ANSWERS: ${v.objection}` : '',
       v.forBrief ? `FOR THE BRIEF: ${v.forBrief}` : '',
     ].filter(Boolean).join('\n')
   }

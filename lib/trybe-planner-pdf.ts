@@ -198,7 +198,11 @@ export function renderPlannerPdf(model: PlannerModel, assets: PlannerAssets): Ar
       const broll = script ? (v.broll || []).slice(0, 6) : []
       const brollText = broll.length ? `B-roll: ${broll.join('; ')}` : ''
       const briefText = v.forBrief ? `For the brief: ${v.forBrief}` : ''
+      // WHO IT IS FOR AND THE WORDS ON SCREEN (2026-11-06), on plans that have them.
+      const forText = v.who ? `For ${v.who}${v.when ? `, when ${v.when}` : ''}` : ''
+      const screenText = v.onScreen ? `On screen: ${v.onScreen}` : ''
       const est = 26 + (script ? 0 : lines(`Hook: ${v.hook}`, inner).length * lh(10)) + (v.shot ? lines(`First 2 seconds: ${v.shot}`, inner).length * lh(9.5) : 0)
+        + (forText ? lines(forText, inner).length * lh(9.5) : 0) + (screenText ? lines(screenText, inner).length * lh(9.5) : 0)
         + beats.reduce((n, b) => n + lines(b, inner - 14).length * lh(9.5), 0) + (!script && v.cta ? lines(`Close: ${v.cta}`, inner).length * lh(9.5) : 0)
         + (brollText ? lines(brollText, inner).length * lh(9.5) : 0) + (briefText ? lines(briefText, inner).length * lh(9.5) : 0) + 24
       ensure(est)
@@ -211,8 +215,10 @@ export function renderPlannerPdf(model: PlannerModel, assets: PlannerAssets): Ar
       font(11.5, true); color(INK); doc.text(pdfSafe(v.angle || HOOK_STYLE_WORDS[v.style]), x, y + 12)
       font(8.5, true); color(PURPLE); doc.text(pdfSafe(HOOK_STYLE_WORDS[v.style] || '').toUpperCase(), W - M - 12, y + 12, { align: 'right' })
       y += 20
+      if (forText) para(forText, x, inner, 9.5, PURPLE)
       if (!script) para(`Hook: ${v.hook}`, x, inner, 10, INK, true)
       if (v.shot) para(`First 2 seconds: ${v.shot}`, x, inner, 9.5, SOFT)
+      if (screenText) para(screenText, x, inner, 9.5, INK, true)
       beats.forEach((b, j) => { font(9.5, true); color(PURPLE); doc.text(`${j + 1}`, x, y + 9.5); para(script ? `\u201c${b}\u201d` : b, x + 14, inner - 14, 9.5) })
       if (!script && v.cta) para(`Close: ${v.cta}`, x, inner, 9.5, INK)
       if (brollText) para(brollText, x, inner, 9.5, SOFT)

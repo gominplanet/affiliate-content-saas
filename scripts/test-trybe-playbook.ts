@@ -9,7 +9,9 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { pickScore, siteSocials, readTopCreatives, tallyTop, readAdLibraryCount, bucketDollars, adLibraryUrl } from '../lib/trybe-pick'
-import { afterAccept, readChat, parseVideoPlan, honestCtas, scriptFor, ideaText, planText, NO_ANSWER_DAYS, KICKOFF_SYSTEM, VIDEO_PLAN_SYSTEM } from '../lib/trybe-playbook'
+import { afterAccept, readChat, parseVideoPlan, honestCtas, scriptFor, ideaText, planText, NO_ANSWER_DAYS, KICKOFF_SYSTEM, VIDEO_PLAN_SYSTEM, PROVEN_OPENERS, OPENER_VIDEOS, openerOf, whyText } from '../lib/trybe-playbook'
+import { brandAdsForPlan, brandAdsBlock, PLAN_META_ADS, type MetaAd } from '../lib/trybe-adsgallery'
+import { scrubBanned } from '../lib/scrub'
 
 let failed = 0
 function check(name: string, ok: boolean, detail = '') {
@@ -110,7 +112,7 @@ check('the plan asks for ten videos across Cole\'s styles and never invents a sa
   check('nothing on sale: a spoken line promising a sale is swapped too', !!hs && !hs.videos![0].say!.some((l) => /sale/i.test(l)) && hs.videos![0].say!.includes('Try it this week'))
   check('one video copies as its words to say, then its B-roll', one ? /SAY, ONE LINE AT A TIME:\n1\) Your leftovers go bad in three days\.\n2\) Mine last weeks now\.[\s\S]*B-ROLL TO FILM:\n- Slow push in/.test(ideaText(one, 2)) : false)
   const sys = VIDEO_PLAN_SYSTEM('')
-  check('the prompt asks for spoken lines of 4 to 10 words, never directions, modelled on the winners', /"say": \["THE SCRIPT: the exact words the creator says, in order, 4 to 7 lines/.test(sys) && /4 to 10 words, said in one breath/.test(sys) && /THE SCRIPT IS WORDS TO SAY, NOT DIRECTIONS/.test(sys) && /the way the WINNING VIDEOS and WINNING TRYBE ADS below talk/.test(sys) && /"broll": \["4 to 6 B-roll shots/.test(sys))
+  check('the prompt asks for spoken lines of 4 to 10 words, never directions, modelled on the winners', /"say": \["THE SCRIPT: the exact words the creator says, in order, 5 to 7 lines/.test(sys) && /4 to 10 words, said in one breath/.test(sys) && /THE SCRIPT IS WORDS TO SAY, NOT DIRECTIONS/.test(sys) && /the way the WINNING VIDEOS and WINNING TRYBE ADS below talk/.test(sys) && /"broll": \["5 to 7 B-roll shots to film for this video, one for every line said/.test(sys))
   const ui = read('components/labs/TrybeVideoIdeas.tsx')
   check('the page shows the lines to say one by one, the B-roll, and says when a plan is from before scripts', /Say, one line at a time/.test(ui) && /B-roll to film/.test(ui) && /These ideas are from before scripts\. Press New scripts/.test(ui))
   // Every line is scrubbed, whatever the model sent.
@@ -120,6 +122,67 @@ check('the plan asks for ten videos across Cole\'s styles and never invents a sa
   check('"deal with" and "no big deal" are no sale promise and keep their lines', !!dirty && (honestCtas(dirty, []).videos?.[0].say || []).some((l) => /deal with back pain/.test(l)) && (honestCtas(dirty, []).videos?.[0].say || []).some((l) => /big deal/.test(l)))
   check('the video prompt never asks for an "honest" anything', !/honest/i.test(VIDEO_PLAN_SYSTEM('')) && !/honest/i.test(KICKOFF_SYSTEM('')))
   check('the planner PDF prints the words to say and the B-roll', /const script = v\.say\?\.length \? v\.say\.slice\(0, 8\) : null/.test(read('lib/trybe-planner-pdf.ts')) && /B-roll: \$\{broll\.join/.test(read('lib/trybe-planner-pdf.ts')))
+}
+// 4d. WHY THIS HOOK (Seb, 2026-11-06, after Built4More's "drive the knife",
+// Techna Digital's five Ws and his own ten openers): who it calls out, the
+// moment, the whys dug to the real reason, the hook said, shown and written
+// on screen, and the brand's own Meta ads read for who it sells to.
+{
+  const sys = VIDEO_PLAN_SYSTEM('')
+  check('Seb\'s ten openers, word for word, in the prompt', PROVEN_OPENERS.length === 10 && PROVEN_OPENERS.every((o) => sys.includes(`"${o}"`))
+    && ['Nobody mentions this', 'I wish I knew this earlier', 'Pause for a second', 'Ever notice this pattern', "Here's the real truth", 'Let me save you hours', 'This may surprise you', 'You need this now', 'You may not agree with this', 'I just figured this out'].every((o) => (PROVEN_OPENERS as readonly string[]).includes(o)))
+  check(`at least ${OPENER_VIDEOS} of the 10 open with one, finished with who or the moment, never bare, never twice`, new RegExp(`At least ${OPENER_VIDEOS} of the 10 videos start their hook with one of these, word for word`).test(sys) && /Never say an opener bare, never two videos on the same opener/.test(sys))
+  check('the five Ws, then the whys dug to a moment and a feeling', /THE FIVE WS, THEN THE FIVE WHYS/.test(sys) && /ask again until you reach a moment in someone's life and a feeling/.test(sys) && /"why": \["the surface problem/.test(sys) && /"who": "WHO it calls out: a person in a situation/.test(sys) && /never a demographic/.test(sys))
+  check('the hook opens on the deepest why, in the buyer\'s words', /THE HOOK OPENS ON THE DEEPEST WHY, NEVER THE SURFACE/.test(sys) && /in their words, never the brand's/.test(sys) && /Call out only people the product is really for/.test(sys))
+  check('the hook is said, shown and written on screen', /THE HOOK IS THREE THINGS AT ONCE/.test(sys) && /"onScreen": "the text on screen in the first 2 seconds, under 6 words, never the same words as the hook"/.test(sys))
+  check('drive the knife, then the relief, the doubt answered, a new scene every line', /DRIVE THE KNIFE, THEN THE RELIEF/.test(sys) && /"objection":/.test(sys) && /A NEW SCENE EVERY 3 SECONDS/.test(sys) && /Urgency only when it is true/.test(sys))
+  check('steal the skeleton, never the words, from the brand\'s longest running Meta ads', /STEAL THE SKELETON, NEVER THE WORDS/.test(sys) && /BRAND'S OWN META ADS that have run the longest/.test(sys))
+  check('no health claim and no made up promise in the dig', /never a medical claim, never a promise the product cannot keep/.test(sys))
+  check('the prompt has no dash and no "honest"', !/[\u2013\u2014]| - /.test(sys) && !/honest/i.test(sys))
+  check('no opener is changed by MVP\'s word scrub', PROVEN_OPENERS.every((o) => scrubBanned(o) === o))
+
+  check('the opener is read from the hook itself', openerOf('Nobody mentions this about shaving the night before a date') === 'Nobody mentions this'
+    && openerOf('Here\u2019s the real truth about meal prep') === "Here's the real truth" && openerOf('PAUSE FOR A SECOND, if your feet ache') === 'Pause for a second'
+    && openerOf('Nobody mentions shaving') === '' && openerOf('Nobody mentions thistle') === '' && openerOf('') === '')
+
+  const sayIt = ['Nobody mentions this about shaving the night before a date.', 'You check your neck in every mirror.', 'This razor glides without the bumps.', 'Watch it on day three.', 'It fits every handle you own.', 'Grab one before your next date.']
+  const vv = (i: number, extra: Record<string, unknown> = {}) => ({ angle: `A${i}`, style: 'problem', hook: i === 0 ? sayIt[0] : `Hook number ${i} for you`, say: i === 0 ? sayIt : [`Hook number ${i} for you`, 'Line two here', 'Line three here', 'Grab one'], broll: ['Push in on the mirror'], cta: '', forBrief: '',
+    who: 'Guys who shave every morning', when: 'The night before a date', where: 'A steamy bathroom mirror', what: 'Red bumps on my neck',
+    why: ['Razor bumps', 'They look bad up close', 'You do not want her staring at your neck at dinner'], onScreen: 'Date night neck check', objection: 'Will it fit my handle?', opener: 'Nobody mentions this', ...extra })
+  const pw = parseVideoPlan(JSON.stringify({ product: 'Razor', body: 'It shaves clean.', videos: [vv(0), vv(1), vv(2, { onScreen: 'Hook number 2 for you' })], ctas: [{ kind: 'urgency', line: 'Try it' }], funnel: {} }))
+  const w0 = pw?.videos?.[0], w1 = pw?.videos?.[1], w2 = pw?.videos?.[2]
+  check('who, when, where, what, the whys, the screen words and the doubt are kept', w0?.who === 'Guys who shave every morning' && w0.when === 'The night before a date' && w0.where === 'A steamy bathroom mirror' && w0.what === 'Red bumps on my neck' && w0.why?.length === 3 && w0.onScreen === 'Date night neck check' && w0.objection === 'Will it fit my handle?')
+  check('a hook up to 16 words is kept whole', w0?.hook === sayIt[0])
+  check('an opener the model claims but the hook does not use is not shown', w0?.opener === 'Nobody mentions this' && !!w1 && !w1.opener)
+  check('screen words that only repeat the hook are dropped', !!w2 && !w2.onScreen)
+  const it = w0 ? ideaText(w0, 1) : ''
+  check('a copied video carries the screen words, why the hook works and the doubt', /ON SCREEN: Date night neck check/.test(it) && /WHY THIS HOOK:\nWHO: Guys who shave every morning\nWHEN: The night before a date/.test(it) && /THE REAL REASON: Razor bumps > They look bad up close > You do not want her staring/.test(it) && /THE DOUBT IT ANSWERS: Will it fit my handle\?/.test(it))
+  check('a plan from before has no why, and copies as it did', !!pw && whyText({ ...pw.videos![0], who: undefined, when: undefined, where: undefined, what: undefined, why: undefined }) === '')
+
+  // The brand's own Meta ads, for its scripts.
+  const now = Date.parse('2026-11-06T12:00:00Z')
+  const ad = (id: string, brandId: string, page: string, started: string, extra: Partial<MetaAd> = {}): MetaAd => ({ id, brandId, brand: 'Oink', page, startedText: null, started, body: 'Your bacon deserves better. 0:00 / 0:31', opening: '', paid: false, video: true, versions: false, preview: null, readAt: '2026-11-05T00:00:00Z', cta: 'Shop now', ...extra })
+  const g = { ads: [
+    ad('1', 'b-oink', 'Oink', '2026-10-25'), ad('2', 'b-oink', 'Oink', '2026-07-01'), ad('3', 'b-oink', 'Someone Else', '2026-01-01'),
+    ad('4', 'b-other', 'Other', '2026-01-01'), ad('5', 'b-oink', 'Jane Creator', '2026-09-01', { paid: true, partner: 'Oink' }),
+    ...Array.from({ length: 6 }, (_, i) => ad(`x${i}`, 'b-oink', 'Oink', '2026-10-30')),
+  ] }
+  const hooks = { '2': { hook: 'Nobody tells you bacon can taste like this.', script: 'Nobody tells you bacon can taste like this. 0:00 / 0:20 You fry it once and you get it.', state: 'ready' as const, at: '2026-11-01', tries: 1 } }
+  const mine = brandAdsForPlan(g, hooks, 'b-oink', 'Oink', now)
+  check(`only the brand's own ads, the longest running first, at most ${PLAN_META_ADS}`, mine.length === PLAN_META_ADS && mine[0].id === '2' && mine[1].id === '5' && !mine.some((a) => a.id === '3' || a.id === '4'))
+  check('what MVP heard the video say goes with it, without the player clock', mine[0].script === 'Nobody tells you bacon can taste like this. You fry it once and you get it.' && mine[0].text === 'Your bacon deserves better.')
+  const blk = brandAdsBlock(mine)
+  check('the block says how long each ran, which ones sell, the button, and never to borrow a price', /^THE BRAND'S OWN META ADS/.test(blk) && /Meta ad 1 \(running 127 days, a keeper, a video, button "Shop now"\)\. Said in the video: "Nobody tells you/.test(blk) && /run by a creator in paid partnership/.test(blk) && /never borrow a price, discount, number or result/.test(blk) && !/[\u2013\u2014]/.test(blk))
+  check('no ads, no block, no brand, no ads', brandAdsBlock([]) === '' && brandAdsForPlan(g, hooks, '', 'Oink', now).length === 0 && brandAdsForPlan(null, null, 'b-oink', 'Oink', now).length === 0)
+
+  const r = read('app/api/labs/trybe/route.ts')
+  check('the plan reads the brand\'s own Meta ads and its TRYBE products, and says how many went in', /metaAds = brandAdsForPlan\(/.test(r) && /key', `samples:\$\{lookupId\}`\)/.test(r) && /\$\{metaAdsText \? `\\n\\n\$\{metaAdsText\}` : ''\}/.test(r) && /\$\{trybeText \? `\\n\\n\$\{trybeText\}` : ''\}/.test(r) && (r.match(/fromMetaAds: metaAds\.length, metaAdsLongest: metaAds\[0\]\?\.days \?\? null, fromTrybeProducts: trybeProducts\.length/g) || []).length === 2)
+  const ui = read('components/labs/TrybeVideoIdeas.tsx')
+  check('each video shows who it is for, the screen words, a proven opener, and why the hook works', /<WhyThisHook v=\{v\} \/>/.test(ui) && /Why this hook works/.test(ui) && /Dug down to the real reason/.test(ui) && /The hook opens here/.test(ui) && /On screen, first 2 seconds/.test(ui) && /Proven opener/.test(ui) && /The doubt it answers:/.test(ui))
+  check('the plan says how many open with a proven opener, and when it fell short', /open with one of your proven openers\$\{n < OPENER_VIDEOS \? `, fewer than the \$\{OPENER_VIDEOS\} MVP asked for` : ''\}/.test(ui) && /None of these open with one of your proven openers/.test(ui))
+  check('the note says how many of the brand\'s Meta ads went in', /of the brand's own Meta ads/.test(ui) && /product\$\{tp === 1 \? '' : 's'\} it lists on TRYBE/.test(ui))
+  check('Film it shows the screen words with the hook', /onScreen: v\.onScreen \|\| null/.test(ui) && /at === 0 && script\.onScreen/.test(read('components/labs/TrybeFilmIt.tsx')))
+  check('the printed planner says who each video is for and its screen words', /const forText = v\.who/.test(read('lib/trybe-planner-pdf.ts')) && /On screen: \$\{v\.onScreen\}/.test(read('lib/trybe-planner-pdf.ts')))
 }
 check('a broken answer gives no plan rather than an empty one', parseVideoPlan('sorry') === null && parseVideoPlan('{"body":"x","hooks":[]}') === null)
 

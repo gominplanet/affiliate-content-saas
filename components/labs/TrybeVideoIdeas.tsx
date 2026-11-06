@@ -13,11 +13,11 @@
 
 import TrybeTopHooks from '@/components/labs/TrybeTopHooks'
 import TrybeFilmIt, { type FilmScript } from '@/components/labs/TrybeFilmIt'
-import { useEffect, useRef, useState } from 'react'
+import { Fragment, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
-import { Loader2, Copy, Check, Clapperboard, ChevronDown, ChevronUp, RotateCcw, Trophy, Play, AlertTriangle, Printer, FileText } from 'lucide-react'
+import { Loader2, Copy, Check, Clapperboard, ChevronDown, ChevronUp, RotateCcw, Trophy, Play, AlertTriangle, Printer, FileText, Target, Type } from 'lucide-react'
 import { requestTrybeApi } from '@/lib/extension-frame'
-import { scriptFor, ideaText, planText, HOOK_STYLE_WORDS, VIDEO_IDEAS, type VideoPlan } from '@/lib/trybe-playbook'
+import { scriptFor, ideaText, planText, HOOK_STYLE_WORDS, VIDEO_IDEAS, OPENER_VIDEOS, type VideoPlan, type VideoIdea } from '@/lib/trybe-playbook'
 import { readBrandCard, readPromotedProducts, mergeProducts, readSampleRequests, sampleStage, brandPageUrl, type PromotedProduct } from '@/lib/trybe-brand-page'
 import { readTopVideos, readScript, keysOf, type TopVideo } from '@/lib/trybe-mybrands'
 import { withTeamWords, type WinnerVideo } from '@/lib/trybe-scripts'
@@ -309,7 +309,13 @@ export default function TrybeVideoIdeas({ brandId, name, plan: initial, canRead,
       // none of them (the Top 100 had no words yet) never reads as one that had.
       const ranked = typeof d.fromRanked === 'number' ? d.fromRanked : d.fromTop100, fromPages = (Number(d.fromTop100) || 0) - (Number(ranked) || 0)
       const fromTop = d.fromTop100 ? `Written with ${[ranked ? `${ranked} winning ad${ranked === 1 ? '' : 's'} from TRYBE’s Top 100` : '', fromPages ? `${fromPages} top video${fromPages === 1 ? '' : 's'} from brands’ own TRYBE pages` : ''].filter(Boolean).join(' and ')} as examples.` : ''
-      const from = [briefSaid, fromWin, fromTop].filter(Boolean).join(' ')
+      // THE BRAND'S OWN META ADS AND TRYBE PRODUCTS that went in, said, so a
+      // plan written without them never reads as one that had them.
+      const metaN = Number(d.fromMetaAds) || 0, longest = typeof d.metaAdsLongest === 'number' ? d.metaAdsLongest : null
+      const fromMeta = metaN ? `Read ${metaN} of the brand's own Meta ads${longest != null ? ` (the longest running ${longest} day${longest === 1 ? '' : 's'})` : ''} for who it sells to.` : ''
+      const tp = Number(d.fromTrybeProducts) || 0
+      const fromTrybe = tp ? `Knows the ${tp} product${tp === 1 ? '' : 's'} it lists on TRYBE.` : ''
+      const from = [briefSaid, fromWin, fromTop, fromMeta, fromTrybe].filter(Boolean).join(' ')
       // A plan that did not save says so: every brand's plans are kept now
       // (migration 429), so "not on your list" was never the reason.
       if (!d.saved) setPlanNote({ tone: 'warn', text: `${from ? `${from} ` : ''}These scripts are shown but could not be saved, so they will be gone next visit. Copy or print what you want to keep.` })
@@ -498,6 +504,13 @@ export default function TrybeVideoIdeas({ brandId, name, plan: initial, canRead,
           {plan.videos && plan.videos.length > 0 && (
             <div>
               <p className="text-[11px] font-bold uppercase tracking-wider" style={soft}>{plan.videos.length} videos, {plan.videos.length} angles{plan.product ? `: ${plan.product}` : ''}</p>
+              {/* HOW MANY OPEN WITH A PROVEN OPENER, read from the hooks
+                  themselves, so a plan short of them says so. Only on plans
+                  made since MVP asked for them (they carry who it is for). */}
+              {plan.videos.some((v) => v.who || v.why?.length) && (() => {
+                const n = plan.videos!.filter((v) => v.opener).length
+                return <p className="mt-0.5 text-[12px]" style={{ color: n >= OPENER_VIDEOS ? GREEN : AMBER }}>{n === 0 ? 'None of these open with one of your proven openers. Press New scripts to try again.' : `${n} of ${plan.videos!.length} open with one of your proven openers${n < OPENER_VIDEOS ? `, fewer than the ${OPENER_VIDEOS} MVP asked for` : ''}.`}</p>
+              })()}
               <ol className="mt-1 space-y-1.5">
                 {plan.videos.map((v, i) => (
                   <li key={i} className="rounded-lg border px-2.5 py-2" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
@@ -507,10 +520,23 @@ export default function TrybeVideoIdeas({ brandId, name, plan: initial, canRead,
                         <span className="flex flex-wrap items-center gap-1.5">
                           <span className="text-[13px] font-semibold">{v.angle || HOOK_STYLE_WORDS[v.style]}</span>
                           <span className="text-[10px] font-bold rounded-full px-1.5 py-0.5" style={{ background: 'rgb(var(--brand-rgb) / 0.10)', color: PURPLE }}>{HOOK_STYLE_WORDS[v.style]}</span>
+                          {v.opener && <span className="text-[10px] font-bold rounded-full px-1.5 py-0.5" style={{ background: GREEN, color: '#fff' }} title="This hook starts with one of MVP's proven openers">Proven opener</span>}
                         </span>
+                        {(v.who || v.when) && (
+                          <span className="block mt-1 text-[12.5px]">
+                            <Target size={12} className="inline -mt-0.5 mr-1" style={{ color: PURPLE }} />
+                            <b>For</b> {v.who || 'the buyer'}{v.when ? <>, <b>when</b> {v.when}</> : null}
+                          </span>
+                        )}
                         {v.say?.length ? (<>
                           {/* THE WORDS TO SAY (Seb, 2026-10-22): one short line at a
                               time, so each is memorized, filmed, then the next. */}
+                          {v.onScreen && (
+                            <span className="flex flex-wrap items-center gap-1.5 mt-1.5">
+                              <span className="text-[11px] font-bold uppercase tracking-wider inline-flex items-center gap-1" style={soft}><Type size={11} /> On screen, first 2 seconds</span>
+                              <span className="rounded-md px-2 py-0.5 text-[13px] font-extrabold" style={{ background: '#FFFFFF', color: '#0B1416', border: '1px solid var(--border)', boxShadow: '0 1px 2px rgb(0 0 0 / 0.12)' }}>{v.onScreen}</span>
+                            </span>
+                          )}
                           <span className="block mt-1.5 text-[11px] font-bold uppercase tracking-wider" style={{ color: PURPLE }}>Say, one line at a time</span>
                           <ol className="mt-1 space-y-1">
                             {v.say.map((l, j) => (
@@ -525,6 +551,7 @@ export default function TrybeVideoIdeas({ brandId, name, plan: initial, canRead,
                             <ul className="mt-0.5 list-disc pl-5 space-y-0.5">{v.broll.map((b, j) => <li key={j}>{b}</li>)}</ul>
                           </>)}
                           {v.shot && <span className="block mt-1" style={soft}>First 2 seconds: {v.shot}</span>}
+                          <WhyThisHook v={v} />
                         </>) : (<>
                           <span className="block mt-0.5"><b>Hook:</b> {v.hook}</span>
                           {v.shot && <span className="block" style={soft}>First 2 seconds: {v.shot}</span>}
@@ -537,7 +564,7 @@ export default function TrybeVideoIdeas({ brandId, name, plan: initial, canRead,
                       <span className="shrink-0 flex flex-col items-end gap-1.5">
                         {/* FILM IT: the script opened for filming, a line at a time. */}
                         {v.say?.length ? (
-                          <button onClick={() => setFilming({ title: `${i + 1}. ${v.angle || HOOK_STYLE_WORDS[v.style]}`, say: v.say!, broll: v.broll || [], shot: v.shot || null, forBrief: v.forBrief || null })}
+                          <button onClick={() => setFilming({ title: `${i + 1}. ${v.angle || HOOK_STYLE_WORDS[v.style]}`, say: v.say!, broll: v.broll || [], shot: v.shot || null, forBrief: v.forBrief || null, onScreen: v.onScreen || null })}
                             className="inline-flex items-center gap-1 text-[11px] font-bold rounded-full px-2.5 py-1" style={{ background: 'var(--accent)', color: '#fff' }} title="Open the script for filming: one line at a time, big, then the B-roll to tick off">
                             <Clapperboard size={12} /> Film it
                           </button>
@@ -598,5 +625,39 @@ export default function TrybeVideoIdeas({ brandId, name, plan: initial, canRead,
         </div>
       )}
     </div>
+  )
+}
+
+/** WHY THIS HOOK (Seb, 2026-11-06): who the video calls out, the moment, the
+ *  place, the problem in the buyer's words, and the whys dug down to the
+ *  real reason the hook opens on. Nothing shows on plans made before. */
+function WhyThisHook({ v }: { v: VideoIdea }) {
+  const rows: Array<[string, string]> = ([['Who', v.who], ['When', v.when], ['Where', v.where], ['In their words', v.what]] as Array<[string, string | undefined]>)
+    .filter((r): r is [string, string] => !!r[1])
+  if (!rows.length && !v.why?.length && !v.objection) return null
+  return (
+    <details className="mt-2 rounded-lg border px-2.5 py-1.5" style={{ borderColor: 'rgb(var(--brand-rgb) / 0.25)', background: 'rgb(var(--brand-rgb) / 0.05)' }}>
+      <summary className="cursor-pointer text-[11px] font-bold uppercase tracking-wider" style={{ color: PURPLE }}>Why this hook works</summary>
+      {rows.length > 0 && (
+        <dl className="mt-1.5 grid gap-x-3 gap-y-0.5 text-[12.5px]" style={{ gridTemplateColumns: 'auto 1fr' }}>
+          {rows.map(([k, t]) => (<Fragment key={k}><dt className="font-bold" style={{ color: 'var(--text-soft)' }}>{k}</dt><dd>{t}</dd></Fragment>))}
+        </dl>
+      )}
+      {v.why && v.why.length > 0 && (<>
+        <span className="block mt-2 text-[11px] font-bold uppercase tracking-wider" style={{ color: 'var(--text-soft)' }}>Dug down to the real reason</span>
+        <ol className="mt-1 space-y-1">
+          {v.why.map((w, j) => {
+            const last = j === v.why!.length - 1
+            return (
+              <li key={j} className="flex items-start gap-2 text-[12.5px]">
+                <span className="shrink-0 w-5 h-5 rounded-full inline-flex items-center justify-center text-[10px] font-bold" style={last ? { background: 'var(--accent)', color: '#fff' } : { background: 'rgb(var(--brand-rgb) / 0.12)', color: PURPLE }}>{j + 1}</span>
+                <span className={last ? 'font-semibold' : ''}>{w}{last && <span className="ml-1.5 text-[10px] font-bold rounded-full px-1.5 py-0.5 align-middle" style={{ background: 'rgb(var(--brand-rgb) / 0.12)', color: PURPLE }}>The hook opens here</span>}</span>
+              </li>
+            )
+          })}
+        </ol>
+      </>)}
+      {v.objection && <span className="block mt-2 text-[12.5px]"><b>The doubt it answers:</b> {v.objection}</span>}
+    </details>
   )
 }
