@@ -14,9 +14,9 @@ import { readFileSync } from 'node:fs'
 import vm from 'node:vm'
 import {
   linkKind, storeOf, factsBlock, cleanReviews, reviewsBlock, reviewCorpus, quotedFrom, parseProductScripts, secondsOf,
-  productVideoText, productScriptsText, readWords, PRODUCT_SCRIPT_SYSTEM, PRODUCT_VIDEOS, PRODUCT_OPENER_VIDEOS, SHORT_HOSTS, tiktokReviewsFrom,
+  productVideoText, productScriptsText, readWords, PRODUCT_SCRIPT_SYSTEM, PRODUCT_VIDEOS, PRODUCT_OPENER_VIDEOS, SHORT_HOSTS, tiktokReviewsFrom, buyerReportWords,
 } from '../lib/product-scripts'
-import { PROVEN_OPENERS, SCRIPT_CHECKLIST, VIDEO_PLAN_SYSTEM, clipAtWord } from '../lib/trybe-playbook'
+import { PROVEN_OPENERS, SCRIPT_CHECKLIST, VIDEO_PLAN_SYSTEM, clipAtWord, parseVideoPlan } from '../lib/trybe-playbook'
 import { scrubBanned } from '../lib/scrub'
 
 const fails: string[] = []
@@ -62,7 +62,7 @@ check('a long line is cut at a word, and says it was cut', clipAtWord('someone d
   const pl = parseProductScripts(JSON.stringify({ product: 'x', videos: [0, 1, 2].map((i) => ({ angle: `A${i}`, style: 'myth', hook: `Hook ${i}`, who: long, say: [`Hook ${i}`, 'two', 'three'], broll: ['a', 'b', 'c'] })) }), '')
   check('a long "who" is never cut through a word', !!pl && /\u2026$/.test(pl.videos[0].who || '') && (pl.videos[0].who || '').length <= 120)
 }
-check('the length is said, and only a video over a minute is marked', /const fits = secs <= 60/.test(read('components/labs/ProductScripts.tsx')) && /, over a minute/.test(read('components/labs/ProductScripts.tsx')))
+check('the length is said, and only a video over a minute is marked', /const fits = secs <= 60/.test(read('components/labs/ScriptParts.tsx')) && /, over a minute/.test(read('components/labs/ScriptParts.tsx')))
 
 // ── THE REVIEWS ──────────────────────────────────────────────────────────────
 const rv = cleanReviews({
@@ -155,19 +155,46 @@ check('SCOUT reads the words and stars, never a reviewer\'s name or picture', /\
   // ── THE PAGE AND THE ROUTE ─────────────────────────────────────────────────
   const R = read('app/api/labs/product-scripts/route.ts')
   check('the route is for the team while it is tried, gated and spend capped', /canUsePreview\('product_scripts'/.test(R) && /await spendGate\(g\.userId, g\.tier\)/.test(R) && /product_scripts: 'admin'/.test(read('lib/labs-preview.ts')))
-  check('a short link is followed only through short-link hosts', /if \(!SHORT_HOSTS\.test\(host\)\) return at/.test(R) && /redirect: 'manual'/.test(R))
+  const B = read('lib/buyer-sources.ts')
+  check('a short link is followed only through short-link hosts', /if \(!SHORT_HOSTS\.test\(host\)\) return at/.test(B) && /redirect: 'manual'/.test(B) && /followShort\(raw\)/.test(R))
   check('reviews are taken from SCOUT for Amazon and from the page for TikTok Shop, and quotes checked against them', /cleanReviews\(link\.kind === 'amazon' \? body\.reviews : tiktokReviews\)/.test(R) && /parseProductScripts\(out, reviewCorpus\(reviews\)\)/.test(R))
   check('a screenshot goes to the model as a picture, size capped', /type: 'image' as const/.test(R) && /IMAGE_MAX/.test(R))
   check('winning TRYBE ads go in as examples', /pickExamples\(/.test(R) && /examplesBlock\(examples, ''\)/.test(R))
   const P = read('components/labs/ProductScripts.tsx')
-  check('the page asks SCOUT for the reviews only when SCOUT can read them, and says why when not', /scoutAtLeast\(st\.version, SCOUT_AMAZON_REVIEWS_MIN_VERSION\)/.test(P) && /requestAmazonProduct\(asin, \{ reviews: withReviews \}\)/.test(P) && /reviewsWhy = 'no-scout'/.test(P) && /reviewsWhy = 'old-scout'/.test(P))
-  check('a screenshot can be added or pasted, and is made small first', /onPaste=/.test(P) && /shrink\(f\)/.test(P) && /1600 \/ Math\.max/.test(P))
-  check('each video shows its scenes, length, screen words, opener and why', /Scene by scene/.test(P) && /about \{secs\} seconds/.test(P) && /On screen, first 2 seconds/.test(P) && /Proven opener/.test(P) && /<WhyThisHook v=\{v\} \/>/.test(P))
-  check('what buyers say shows, the quotes marked as written in the reviews', /Who buys it, and why/.test(P) && /In their own words, as written in the reviews/.test(P) && /No reviews were read for this product \(the line above says why\)/.test(P))
+  const C = read('lib/buyer-read-client.ts')
+  const PP = P + read('components/labs/ScriptParts.tsx')
+  check('the page asks SCOUT for the reviews only when SCOUT can read them, and says why when not', /scoutAtLeast\(st\.version, SCOUT_AMAZON_REVIEWS_MIN_VERSION\)/.test(C) && /requestAmazonProduct\(asin, \{ reviews: withReviews \}\)/.test(C) && /out\.reviewsWhy = 'no-scout'/.test(C) && /out\.reviewsWhy = 'old-scout'/.test(C) && /readBuyersInChrome\(text, \(u\) => api\(\{ action: 'resolve', url: u \}\), setStep\)/.test(P) && !/fetch\(/.test(C))
+  check('a screenshot can be added or pasted, and is made small first', /onPaste=/.test(P) && /shrinkPicture\(f\)/.test(P) && /1600 \/ Math\.max/.test(C))
+  check('each video shows its scenes, length, screen words, opener and why', /Scene by scene/.test(PP) && /about \{secs\} seconds/.test(PP) && /On screen, first 2 seconds/.test(PP) && /Proven opener/.test(PP) && /<WhyThisHook v=\{v\} \/>/.test(PP))
+  check('what buyers say shows, the quotes marked as written in the reviews', /Who buys it, and why/.test(PP) && /In their own words, as written in the reviews/.test(PP) && /No reviews were read for this product \(the line above says why\)/.test(PP))
   check('what went in is said under the button', /readWords\(result\.read, SCOUT_AMAZON_REVIEWS_MIN_VERSION\)/.test(P))
   check('Film it opens each video for filming', /<TrybeFilmIt script=\{filming\}/.test(P) && /onScreen: v\.onScreen \|\| null/.test(P))
   check('recent sets are kept in this browser only, and a private window still works', /localStorage\.setItem\(RECENT_KEY/.test(P) && /catch \{ \/\* private window/.test(P))
   check('the menu shows it in Labs, the team\'s alone', /href: '\/video-scripts'.*gate: isAdmin/.test(read('components/layout/DashboardShellV2.tsx')) && /canUsePreview\('product_scripts', tier\)/.test(read('app/(dashboard)/video-scripts/page.tsx')))
+
+  // ── ONE AGENT DOES THE WORK (Seb, 2026-11-06: "it should be inside of Tribe
+  // as well ... this agent should be the one doing the work") ────────────────
+  const PB = read('lib/trybe-playbook.ts'), PS = read('lib/product-scripts.ts')
+  check('both writers are built from the same agent: the buyers read first, the same craft, the same video, the same last look',
+    [PB.slice(PB.indexOf('export const VIDEO_PLAN_SYSTEM')), PS.slice(PS.indexOf('export const PRODUCT_SCRIPT_SYSTEM'))].every((x) => /\$\{readTheBuyers\(/.test(x) && /\$\{BUYERS_JSON\}/.test(x) && /\$\{videoJson\(\{/.test(x) && /\$\{scriptCraft\(\{/.test(x) && /\$\{SCRIPT_CHECKLIST\}/.test(x))
+    && /FIRST, READ THE BUYERS/.test(VIDEO_PLAN_SYSTEM('')) && /WEAK POINTS ARE ANSWERED, NEVER HIDDEN AND NEVER DENIED/.test(VIDEO_PLAN_SYSTEM('')) && /"buyers": \{/.test(VIDEO_PLAN_SYSTEM('')) && !/[\u2013\u2014]| - /.test(VIDEO_PLAN_SYSTEM('')) && !/honest/i.test(VIDEO_PLAN_SYSTEM('')))
+  {
+    const tv = (i: number) => ({ angle: `A${i}`, style: 'problem', hook: `Hook ${i}`, who: 'Moms who pack lunch', why: ['a', 'b', 'c'], say: [`Hook ${i}`, 'two', 'three'], broll: ['x', 'y', 'z'], cta: 'Go' })
+    const tp = parseVideoPlan(JSON.stringify({ product: 'Bento', body: 'It keeps lunch crisp.', buyers: { who: ['Parents of picky eaters'], loves: ['No soggy crackers'], doubts: ['Hard to clean'], words: ['finally eats his lunch', 'made up praise'] }, videos: [0, 1, 2].map(tv), ctas: [{ kind: 'urgency', line: 'Try it' }], funnel: {} }), corpus)
+    check('TRYBE\'s plan keeps who buys it, and only the buyers\' real words', JSON.stringify(tp?.buyers) === JSON.stringify({ who: ['Parents of picky eaters'], loves: ['No soggy crackers'], doubts: ['Hard to clean'], words: ['finally eats his lunch'] }) && parseVideoPlan(JSON.stringify({ body: 'x', videos: [0, 1, 2].map(tv) }))?.buyers === undefined)
+  }
+  const TR = read('app/api/labs/trybe/route.ts')
+  check('TRYBE\'s writer reads the buyers: Amazon\'s from SCOUT, TikTok Shop\'s from its page, a screenshot as a picture, quotes checked, and says what it read',
+    /const buyerLink = linkKind\(typeof body\.buyerUrl === 'string'/.test(TR) && /cleanReviews\(buyerLink\.kind === 'amazon' \? body\.reviews/.test(TR) && /await readTikTok\(buyerLink\.url\)/.test(TR) && /type: 'image' as const/.test(TR)
+    && /parseVideoPlan\([\s\S]{0,160}reviewCorpus\(buyerReviews\)\)/.test(TR) && /\.\.\.\(buyerReport \? \{ buyerReport \} : \{\}\)/.test(TR) && /action === 'buyer_resolve'/.test(TR) && !/amazon\.com\/dp/.test(TR.slice(TR.indexOf("if (action === 'buyer_resolve')"), TR.indexOf("if (action === 'video_plan')"))))
+  const TV = read('components/labs/TrybeVideoIdeas.tsx')
+  check('TRYBE\'s scripts read the buyers the same way and show the same cards', /readBuyersInChrome\(link, \(u\) => api\(\{ action: 'buyer_resolve', url: u \}\), setStep\)/.test(TV) && /const ownLink = \(b\?\.products \|\| \[\]\)\.find/.test(TV)
+    && /<BuyersCard b=\{plan\.buyers\}/.test(TV) && /<ScriptVideoCard key=\{i\}/.test(TV) && /buyerReportWords\(plan\.buyerReport, SCOUT_AMAZON_REVIEWS_MIN_VERSION\)/.test(TV) && /Add where it sells, so MVP reads its reviews/.test(TV))
+  check('TRYBE says what its writer read about the buyers', /^Written from what its buyers say: 8 reviews from the Amazon page through SCOUT, 2 critical reviews\. Looked at your screenshot\.$/.test(buyerReportWords({ reviews: 8, critical: 2, customersSay: false, by: 'scout', source: 'amazon', screenshot: true }, '1.58.0'))
+    && /No reviews read: your SCOUT is older than 1\.58\.0/.test(buyerReportWords({ reviews: 0, critical: 0, customersSay: false, by: null, source: 'amazon', why: 'old-scout', screenshot: false }, '1.58.0')))
+  const ON = read('components/labs/TrybeOutreach.tsx'), NV = read('components/labs/TrybeNav.tsx')
+  check('Video Scripts sits inside TRYBE\'s Make videos, by its own switch', /\{ label: 'Video Scripts', icon: Wand2, tabs: \['anyscripts'\], gate: 'anyScripts' \}/.test(NV) && /\{ label: 'Brand scripts', icon: Clapperboard, tabs: \['create'\] \}/.test(NV) && /active\.items\.filter\(shown\)\.map/.test(NV)
+    && /tab === 'anyscripts' && \(canAnyScripts \? <ProductScripts embedded \/>/.test(ON) && /const canAnyScripts = canUsePreview\('product_scripts'/.test(ON) && /anyScripts=\{canAnyScripts\}/.test(ON))
   const words = [P.match(/>[^<>{}]{12,}</g) || []].flat().join(' ')
   check('no dashes in the page\'s words', !/[–—]| - /.test(words))
 

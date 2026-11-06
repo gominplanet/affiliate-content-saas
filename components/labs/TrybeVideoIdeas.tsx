@@ -14,9 +14,13 @@
 import TrybeTopHooks from '@/components/labs/TrybeTopHooks'
 import TrybeFilmIt, { type FilmScript } from '@/components/labs/TrybeFilmIt'
 import WhyThisHook from '@/components/labs/WhyThisHook'
+import { BuyersCard, ScriptVideoCard } from '@/components/labs/ScriptParts'
+import { readBuyersInChrome, shrinkPicture } from '@/lib/buyer-read-client'
+import { linkKind, buyerReportWords } from '@/lib/product-scripts'
+import { SCOUT_AMAZON_REVIEWS_MIN_VERSION } from '@/lib/scout-version'
 import { useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
-import { Loader2, Copy, Check, Clapperboard, ChevronDown, ChevronUp, RotateCcw, Trophy, Play, AlertTriangle, Printer, FileText, Target, Type } from 'lucide-react'
+import { Loader2, Copy, Check, Clapperboard, ChevronDown, ChevronUp, RotateCcw, Trophy, Play, AlertTriangle, Printer, FileText, Target, Type, ImagePlus, X } from 'lucide-react'
 import { requestTrybeApi } from '@/lib/extension-frame'
 import { scriptFor, ideaText, planText, HOOK_STYLE_WORDS, VIDEO_IDEAS, OPENER_VIDEOS, type VideoPlan } from '@/lib/trybe-playbook'
 import { readBrandCard, readPromotedProducts, mergeProducts, readSampleRequests, sampleStage, brandPageUrl, type PromotedProduct } from '@/lib/trybe-brand-page'
@@ -207,6 +211,14 @@ export default function TrybeVideoIdeas({ brandId, name, plan: initial, canRead,
   const [copiedKey, setCopiedKey] = useState<string | null>(null)
   // The script open for filming (Film it), if any.
   const [filming, setFilming] = useState<FilmScript | null>(null)
+  // WHERE IT SELLS, FOR ITS BUYERS (Seb, 2026-11-06: "this agent should be
+  // the one doing the work"): the product's Amazon or TikTok Shop link and a
+  // screenshot, read by the script agent before it writes. The product's
+  // own link on TRYBE is used when it is one.
+  const [buyerOpen, setBuyerOpen] = useState(false)
+  const [buyerLink, setBuyerLink] = useState('')
+  const [buyerShot, setBuyerShot] = useState<string | null>(null)
+  const shotRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => { setPlan(initial) }, [initial])
 
@@ -288,10 +300,16 @@ export default function TrybeVideoIdeas({ brandId, name, plan: initial, canRead,
       const b = page || (canRead && brandId ? await loadBrandPage(brandId) : null)
       if (b && !page) setPage(b)
       const state = b ? b.state : 'unread'
-      setStep(`Writing ${VIDEO_IDEAS} scripts${product ? ` for ${product}` : ''} from ${b?.brief ? 'the brief, ' : ''}the brand and its website. This takes about a minute.`)
+      // THE BUYERS: the link given, or the product's own link on TRYBE when it
+      // is an Amazon or TikTok Shop one. Amazon's reviews are read by SCOUT.
+      const ownLink = (b?.products || []).find((x) => x.url && (!product || sameProduct(x.name, product)) && ['amazon', 'tiktok'].includes(linkKind(x.url).kind))?.url || ''
+      const link = buyerLink.trim() || ownLink
+      const got = link ? await readBuyersInChrome(link, (u) => api({ action: 'buyer_resolve', url: u }), setStep) : null
+      const buyerBits = got && (got.kind === 'amazon' || got.kind === 'tiktok') ? { buyerUrl: got.url, ...(got.reviews ? { reviews: got.reviews } : {}), ...(got.reviewsWhy ? { reviewsWhy: got.reviewsWhy } : {}) } : {}
+      setStep(`Writing ${VIDEO_IDEAS} scripts${product ? ` for ${product}` : ''} from ${b?.brief ? 'the brief, ' : ''}${got?.kind === 'amazon' || got?.kind === 'tiktok' ? 'what its buyers say, ' : ''}the brand and its website. This takes about a minute.`)
       // What TRYBE's own page says about the brand goes too, so a brand MVP's
       // directory has not collected yet is still planned, not refused.
-      const d = await api({ action: 'video_plan', brandId, brandName: name, ...(b?.website ? { website: b.website } : {}), ...(b?.products.length ? { knownProducts: b.products.slice(0, 15).map((x) => x.name) } : {}), ...(sampleId ? { sampleId } : {}), ...(product ? { product } : {}), winners: winnerWords, ...(b?.brief ? { brief: b.brief } : state !== 'unread' ? { briefState: state } : {}) })
+      const d = await api({ action: 'video_plan', brandId, brandName: name, ...(b?.website ? { website: b.website } : {}), ...(b?.products.length ? { knownProducts: b.products.slice(0, 15).map((x) => x.name) } : {}), ...(sampleId ? { sampleId } : {}), ...(product ? { product } : {}), winners: winnerWords, ...(b?.brief ? { brief: b.brief } : state !== 'unread' ? { briefState: state } : {}) , ...buyerBits, ...(buyerShot ? { image: buyerShot } : {}) })
       setPicking(false)
       const s0 = state as string
       const b0 = { state: s0 }
@@ -350,6 +368,24 @@ export default function TrybeVideoIdeas({ brandId, name, plan: initial, canRead,
           {winLoading ? <Loader2 size={12} className="animate-spin" /> : <Trophy size={12} />} Their best videos
           {winners && (winOpen ? <ChevronUp size={12} /> : <ChevronDown size={12} />)}
         </button>}
+      </div>
+
+      {/* WHERE IT SELLS: read for its buyers before the scripts are written. */}
+      <div className="mt-1.5">
+        <button type="button" onClick={() => setBuyerOpen((o) => !o)} className="inline-flex items-center gap-1 text-[12px] font-semibold" style={{ color: PURPLE }}>
+          {buyerOpen ? <ChevronUp size={12} /> : <ChevronDown size={12} />} {buyerLink || buyerShot ? 'Where it sells: added' : 'Add where it sells, so MVP reads its reviews'}
+        </button>
+        {buyerOpen && (
+          <div className="mt-1.5 flex flex-col sm:flex-row gap-1.5">
+            <input value={buyerLink} onChange={(e) => setBuyerLink(e.target.value)} placeholder="Its Amazon or TikTok Shop link (optional)"
+              className="flex-1 min-w-0 rounded-lg border px-2.5 py-1.5 text-[12.5px]" style={{ borderColor: 'var(--border)', background: 'var(--bg)', color: 'var(--text)' }} />
+            <button type="button" onClick={() => shotRef.current?.click()} className={btn} style={{ border: '1px solid var(--border)' }}>
+              <ImagePlus size={12} /> {buyerShot ? 'Change screenshot' : 'Screenshot of its reviews'}
+            </button>
+            {buyerShot && <button type="button" onClick={() => setBuyerShot(null)} className="inline-flex items-center gap-1 text-[12px]" style={soft}><X size={12} /> Remove</button>}
+            <input ref={shotRef} type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) void shrinkPicture(f).then(setBuyerShot, () => toast.error('MVP could not open that picture.')) }} />
+          </div>
+        )}
       </div>
 
       <TrybeTopHooks />
@@ -502,6 +538,9 @@ export default function TrybeVideoIdeas({ brandId, name, plan: initial, canRead,
           )}
           {plan.brief === 'link_only' && <p style={{ color: AMBER }}>Their brief is a document MVP cannot open. Open it from the brand page and check these ideas against it.</p>}
           {filming && <TrybeFilmIt script={filming} onClose={() => setFilming(null)} />}
+          {/* WHO BUYS IT, as the script agent read the buyers, and what it read. */}
+          {plan.buyerReport && <p className="text-[12px]" style={{ color: plan.buyerReport.reviews || plan.buyerReport.critical || plan.buyerReport.customersSay ? GREEN : AMBER }}>{buyerReportWords(plan.buyerReport, SCOUT_AMAZON_REVIEWS_MIN_VERSION)}</p>}
+          {plan.buyers && <BuyersCard b={plan.buyers} fromReviews={!!(plan.buyerReport && (plan.buyerReport.reviews || plan.buyerReport.critical || plan.buyerReport.customersSay))} />}
           {plan.videos && plan.videos.length > 0 && (
             <div>
               <p className="text-[11px] font-bold uppercase tracking-wider" style={soft}>{plan.videos.length} videos, {plan.videos.length} angles{plan.product ? `: ${plan.product}` : ''}</p>
@@ -513,7 +552,12 @@ export default function TrybeVideoIdeas({ brandId, name, plan: initial, canRead,
                 return <p className="mt-0.5 text-[12px]" style={{ color: n >= OPENER_VIDEOS ? GREEN : AMBER }}>{n === 0 ? 'None of these open with one of your proven openers. Press New scripts to try again.' : `${n} of ${plan.videos!.length} open with one of your proven openers${n < OPENER_VIDEOS ? `, fewer than the ${OPENER_VIDEOS} MVP asked for` : ''}.`}</p>
               })()}
               <ol className="mt-1 space-y-1.5">
-                {plan.videos.map((v, i) => (
+                {plan.videos.map((v, i) => (v.who || v.why?.length) && v.say?.length ? (
+                  // THE SCRIPT AGENT'S CARD (the same as Video Scripts): scene by scene.
+                  <ScriptVideoCard key={i} v={v} n={i + 1} copied={copiedKey === `v${i}`} onCopy={() => void copyText(`v${i}`, ideaText(v, i + 1))}
+                    onFilm={() => setFilming({ title: `${i + 1}. ${v.angle || HOOK_STYLE_WORDS[v.style]}`, say: v.say!, broll: v.broll || [], shot: v.shot || null, forBrief: v.forBrief || null, onScreen: v.onScreen || null })}
+                    footer={v.forBrief ? <p className="mt-1.5 text-[12.5px]" style={{ color: GREEN }}>For the brief: {v.forBrief}</p> : null} />
+                ) : (
                   <li key={i} className="rounded-lg border px-2.5 py-2" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
                     <div className="flex items-start gap-2">
                       <span className="shrink-0 text-[11px] font-bold mt-0.5" style={soft}>{i + 1}</span>

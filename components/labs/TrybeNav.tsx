@@ -12,10 +12,10 @@
 // on a phone), each saying what waits in it, and the pages of the open job sit
 // under them as tabs that wrap. Nothing is hidden off the edge.
 
-import { LayoutDashboard, Search, Rocket, Send, Inbox, Clapperboard, UploadCloud, CalendarDays, Lightbulb, BarChart3, ListChecks, Bell, Megaphone, ChevronRight, type LucideIcon } from 'lucide-react'
+import { LayoutDashboard, Search, Rocket, Send, Inbox, Clapperboard, UploadCloud, CalendarDays, Lightbulb, BarChart3, ListChecks, Bell, Megaphone, ChevronRight, Wand2, type LucideIcon } from 'lucide-react'
 import type { Tab } from '@/components/labs/TrybeOutreach'
 
-type Item = { label: string; icon: LucideIcon; tabs: Tab[]; count?: 'queue' | 'unread' }
+type Item = { label: string; icon: LucideIcon; tabs: Tab[]; count?: 'queue' | 'unread'; /** Shown only when its own switch is open. */ gate?: 'anyScripts' }
 type Group = { id: string; label: string; icon: LucideIcon; hint: string; items: Item[] }
 const GROUPS: Group[] = [
   { id: 'home', label: 'Home', icon: LayoutDashboard, hint: 'What needs you today', items: [{ label: 'Home', icon: LayoutDashboard, tabs: ['home'] }] },
@@ -26,7 +26,9 @@ const GROUPS: Group[] = [
     { label: 'Inbox', icon: Inbox, tabs: ['inbox'], count: 'unread' },
   ] },
   { id: 'make', label: 'Make videos', icon: Clapperboard, hint: 'Scripts, filming, uploads', items: [
-    { label: 'Scripts', icon: Clapperboard, tabs: ['create'] },
+    { label: 'Brand scripts', icon: Clapperboard, tabs: ['create'] },
+    // The script agent for any product (Seb, 2026-11-06: "it should be inside of Tribe as well").
+    { label: 'Video Scripts', icon: Wand2, tabs: ['anyscripts'], gate: 'anyScripts' },
     { label: 'Upload', icon: UploadCloud, tabs: ['upload'] },
     { label: 'This week', icon: CalendarDays, tabs: ['week'] },
     { label: 'What’s working', icon: Lightbulb, tabs: ['working'] },
@@ -43,7 +45,8 @@ export function groupOf(tab: Tab): string {
   return (GROUPS.find((g) => g.items.some((it) => it.tabs.includes(tab))) ?? GROUPS[0]).id
 }
 
-export default function TrybeNav({ tab, queue, unread, go }: { tab: Tab; queue: number; unread: number; go: (t: Tab) => void }) {
+export default function TrybeNav({ tab, queue, unread, go, anyScripts = false }: { tab: Tab; queue: number; unread: number; go: (t: Tab) => void; anyScripts?: boolean }) {
+  const shown = (it: Item) => !it.gate || (it.gate === 'anyScripts' && anyScripts)
   const open = groupOf(tab)
   const countOf = (it: Item) => (it.count === 'queue' ? queue : it.count === 'unread' ? unread : 0)
   const firstOf = (it: Item): Tab => (it.count === 'queue' ? (queue ? 'queue' : 'sent') : it.tabs[0])
@@ -83,13 +86,13 @@ export default function TrybeNav({ tab, queue, unread, go }: { tab: Tab; queue: 
           the look's own colour under the four jobs, named for the job it
           opens, with each page a bold button: the page you are on solid, the
           others white with a coloured icon. They wrap; nothing scrolls. */}
-      {active.items.length > 1 && (
+      {active.items.filter(shown).length > 1 && (
         <div role="tablist" aria-label={active.label} className="flex flex-wrap items-center gap-2 px-3 py-2.5"
           style={{ background: 'rgb(var(--brand-rgb) / 0.10)', borderTop: '1px solid rgb(var(--brand-rgb) / 0.25)' }}>
           <span className="hidden sm:inline-flex items-center gap-1 text-[11px] font-bold uppercase pl-1 pr-1.5" style={{ color: 'var(--accent-text, var(--accent))', letterSpacing: '0.08em' }}>
             {active.label} <ChevronRight size={13} aria-hidden="true" />
           </span>
-          {active.items.map((it) => {
+          {active.items.filter(shown).map((it) => {
             const on = it.tabs.includes(tab)
             const n = countOf(it)
             const Icon = it.icon

@@ -10,13 +10,13 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
-import { Loader2, Clapperboard, Copy, Check, ImagePlus, X, Printer, Target, Type, Users, Heart, HelpCircle, Quote, ChevronDown, ChevronUp } from 'lucide-react'
+import { Loader2, Clapperboard, Copy, Check, ImagePlus, X, Printer, ChevronDown, ChevronUp } from 'lucide-react'
 import TrybeFilmIt, { type FilmScript } from '@/components/labs/TrybeFilmIt'
-import WhyThisHook from '@/components/labs/WhyThisHook'
-import { HOOK_STYLE_WORDS, type VideoIdea } from '@/lib/trybe-playbook'
-import { PRODUCT_VIDEOS, PRODUCT_OPENER_VIDEOS, linkKind, secondsOf, productVideoText, productScriptsText, readWords, type ProductScripts as Scripts, type ReadReport } from '@/lib/product-scripts'
-import { getScoutStatus, requestAmazonProduct } from '@/lib/extension-frame'
-import { scoutAtLeast, SCOUT_AMAZON_REVIEWS_MIN_VERSION } from '@/lib/scout-version'
+import { BuyersCard, ScriptVideoCard } from '@/components/labs/ScriptParts'
+import { HOOK_STYLE_WORDS } from '@/lib/trybe-playbook'
+import { PRODUCT_VIDEOS, PRODUCT_OPENER_VIDEOS, productVideoText, productScriptsText, readWords, type ProductScripts as Scripts, type ReadReport } from '@/lib/product-scripts'
+import { SCOUT_AMAZON_REVIEWS_MIN_VERSION } from '@/lib/scout-version'
+import { readBuyersInChrome, shrinkPicture } from '@/lib/buyer-read-client'
 
 const PURPLE = 'var(--accent)'
 const GREEN = '#16A34A'
@@ -33,25 +33,13 @@ async function api(body: Record<string, unknown>) {
   return d
 }
 
-/** A screenshot made small enough to send (longest side 1600px, JPEG). */
-async function shrink(file: File): Promise<string> {
-  const url = URL.createObjectURL(file)
-  try {
-    const img = await new Promise<HTMLImageElement>((ok, no) => { const i = new Image(); i.onload = () => ok(i); i.onerror = () => no(new Error('That file is not a picture MVP can open.')); i.src = url })
-    const scale = Math.min(1, 1600 / Math.max(img.width, img.height))
-    const c = document.createElement('canvas')
-    c.width = Math.max(1, Math.round(img.width * scale)); c.height = Math.max(1, Math.round(img.height * scale))
-    c.getContext('2d')!.drawImage(img, 0, 0, c.width, c.height)
-    return c.toDataURL('image/jpeg', 0.85)
-  } finally { URL.revokeObjectURL(url) }
-}
-
 function readKept(): Kept[] {
   try { const v = JSON.parse(localStorage.getItem(RECENT_KEY) || '[]'); return Array.isArray(v) ? v.slice(0, RECENT_MAX) : [] } catch { return [] }
 }
 function keep(list: Kept[]) { try { localStorage.setItem(RECENT_KEY, JSON.stringify(list.slice(0, RECENT_MAX))) } catch { /* private window: shown, not kept */ } }
 
-export default function ProductScripts() {
+/** `embedded`: inside TRYBE's Make videos, which shows its own heading. */
+export default function ProductScripts({ embedded = false }: { embedded?: boolean } = {}) {
   const [input, setInput] = useState('')
   const [notes, setNotes] = useState('')
   const [notesOpen, setNotesOpen] = useState(false)
@@ -70,7 +58,7 @@ export default function ProductScripts() {
   const addFile = async (f: File | null | undefined) => {
     if (!f) return
     if (!/^image\//.test(f.type)) { toast.error('Add a picture: a screenshot of the product or its listing.'); return }
-    try { setImage(await shrink(f)) } catch (e) { toast.error(e instanceof Error ? e.message : 'MVP could not open that picture.') }
+    try { setImage(await shrinkPicture(f)) } catch (e) { toast.error(e instanceof Error ? e.message : 'MVP could not open that picture.') }
   }
 
   const copyText = async (key: string, text: string) => {
@@ -90,34 +78,10 @@ export default function ProductScripts() {
     if (!text && !image) { setError('Paste a link, type the product, or add a screenshot.'); return }
     setBusy(true); setError(null); setResult(null)
     try {
-      let url: string | null = null
-      let asin: string | null = null
-      let kind = linkKind(text).kind
-      if (text && kind !== 'name') {
-        setStep('Reading the link')
-        const r = await api({ action: 'resolve', url: text })
-        kind = r.kind; url = r.url || text; asin = r.asin || null
-      }
-      // AN AMAZON PRODUCT AND ITS REVIEWS, read by SCOUT in this Chrome:
-      // Amazon answers a real browser and not MVP's server.
-      let amazon: Record<string, unknown> | null = null
-      let reviews: unknown = null
-      let reviewsWhy: string | null = null
-      if (kind === 'amazon' && asin) {
-        const st = await getScoutStatus().catch(() => ({ installed: false, version: null }))
-        if (!st.installed) reviewsWhy = 'no-scout'
-        else {
-          const withReviews = scoutAtLeast(st.version, SCOUT_AMAZON_REVIEWS_MIN_VERSION)
-          if (!withReviews) reviewsWhy = 'old-scout'
-          setStep(withReviews ? 'SCOUT is reading the Amazon page and its reviews in a background tab. About half a minute.' : 'SCOUT is reading the Amazon page in a background tab')
-          const r = await requestAmazonProduct(asin, { reviews: withReviews })
-          if (r.ok && r.product) amazon = { title: r.product.title, bullets: r.product.bullets, description: r.product.description, price: r.product.price, rating: r.product.rating }
-          if (withReviews) {
-            if (!r.reviews) reviewsWhy = 'scout-failed'
-            else { reviews = r.reviews; if (!r.reviews.onPage.length && !r.reviews.critical.length && !r.reviews.customersSay) reviewsWhy = 'none-shown' }
-          }
-        }
-      }
+      // THE BUYERS FIRST (lib/buyer-read-client): which product it is, and an
+      // Amazon product's reviews read by SCOUT in this Chrome.
+      const got = await readBuyersInChrome(text, (u) => api({ action: 'resolve', url: u }), setStep)
+      const { url, asin, amazon, reviews, reviewsWhy } = got
       setStep(`Writing ${PRODUCT_VIDEOS} scripts, scene by scene. This takes about a minute.`)
       const d = await api({ action: 'write', input: text, url, asin, amazon, reviews, reviewsWhy, image, notes })
       const k: Kept = { at: new Date().toISOString(), input: text || 'Screenshot', scripts: d.scripts, read: d.read }
@@ -135,14 +99,14 @@ export default function ProductScripts() {
   const openers = result ? result.scripts.videos.filter((v) => v.opener).length : 0
 
   return (
-    <div className="max-w-4xl mx-auto px-4 sm:px-6 py-8 flex flex-col gap-5" onPaste={(e) => { const f = Array.from(e.clipboardData?.files || []).find((x) => /^image\//.test(x.type)); if (f) { e.preventDefault(); void addFile(f) } }}>
-      <header>
+    <div className={embedded ? 'flex flex-col gap-5' : 'max-w-4xl mx-auto px-4 sm:px-6 py-8 flex flex-col gap-5'} onPaste={(e) => { const f = Array.from(e.clipboardData?.files || []).find((x) => /^image\//.test(x.type)); if (f) { e.preventDefault(); void addFile(f) } }}>
+      {!embedded && <header>
         <p className="text-[11px] font-semibold uppercase tracking-[0.12em]" style={{ color: 'var(--text-faint)' }}>Labs · Make videos</p>
         <h1 className="text-[24px] font-semibold tracking-tight" style={{ color: 'var(--text)' }}>Video Scripts</h1>
         <p className="text-[13px] max-w-2xl" style={soft}>
           Drop in any product: a TikTok Shop or Amazon link, a product page, a screenshot, or just its name. MVP reads who buys it and why, then writes {PRODUCT_VIDEOS} short videos, scene by scene, under a minute each and nothing wasted, each opening on the real reason someone needs it.
         </p>
-      </header>
+      </header>}
 
       <section className={card} style={cardStyle}>
         <label htmlFor="ps-input" className="text-[12px] font-bold uppercase tracking-wider" style={soft}>The product</label>
@@ -209,7 +173,7 @@ export default function ProductScripts() {
             </button>
           </div>
 
-          <BuyersCard s={result.scripts} read={result.read} />
+          <BuyersCard b={result.scripts.buyers} fromReviews={result.read.reviews > 0 || result.read.critical > 0 || result.read.customersSay} />
 
           <div>
             <p className="text-[11px] font-bold uppercase tracking-wider" style={soft}>{result.scripts.videos.length} videos{result.scripts.product ? `: ${result.scripts.product}` : ''}</p>
@@ -219,7 +183,7 @@ export default function ProductScripts() {
           </div>
           <ol className="flex flex-col gap-2.5">
             {result.scripts.videos.map((v, i) => (
-              <VideoCard key={i} v={v} n={i + 1} copied={copied === `v${i}`}
+              <ScriptVideoCard key={i} v={v} n={i + 1} copied={copied === `v${i}`}
                 onCopy={() => void copyText(`v${i}`, productVideoText(v, i + 1))}
                 onFilm={() => setFilming({ title: `${i + 1}. ${v.angle || HOOK_STYLE_WORDS[v.style]}`, say: v.say?.length ? v.say : [v.hook, ...v.beats, v.cta].filter(Boolean), broll: v.broll || [], shot: v.shot || null, onScreen: v.onScreen || null })} />
             ))}
@@ -230,89 +194,3 @@ export default function ProductScripts() {
   )
 }
 
-/** Who buys it, what they love, their doubts, and their own words. The
- *  quotes are only those found in the reviews MVP read. */
-function BuyersCard({ s, read }: { s: Scripts; read: ReadReport }) {
-  const b = s.buyers
-  if (!b.who.length && !b.loves.length && !b.doubts.length && !b.words.length) return null
-  const fromReviews = read.reviews > 0 || read.critical > 0 || read.customersSay
-  const col = (icon: React.ReactNode, title: string, items: string[], color?: string) => items.length ? (
-    <div>
-      <p className="text-[11px] font-bold uppercase tracking-wider inline-flex items-center gap-1" style={{ color: color || 'var(--text-soft)' }}>{icon} {title}</p>
-      <ul className="mt-1 space-y-0.5 text-[13px] list-disc pl-4">{items.map((x, i) => <li key={i}>{x}</li>)}</ul>
-    </div>
-  ) : null
-  return (
-    <section className="rounded-xl border px-4 py-3" style={{ borderColor: 'rgb(var(--brand-rgb) / 0.25)', background: 'rgb(var(--brand-rgb) / 0.05)' }}>
-      <p className="text-[12px] font-bold uppercase tracking-wider" style={{ color: PURPLE }}>Who buys it, and why</p>
-      <p className="text-[12px]" style={{ color: 'var(--text-soft)' }}>{fromReviews ? 'Read from the reviews MVP read for this product.' : 'No reviews were read for this product (the line above says why), so this comes from the listing itself.'}</p>
-      <div className="mt-2 grid gap-3 sm:grid-cols-3">
-        {col(<Users size={11} />, 'Who buys it', b.who)}
-        {col(<Heart size={11} />, 'What they love', b.loves, GREEN)}
-        {col(<HelpCircle size={11} />, 'Their doubts', b.doubts, AMBER)}
-      </div>
-      {b.words.length > 0 && (
-        <div className="mt-2.5">
-          <p className="text-[11px] font-bold uppercase tracking-wider inline-flex items-center gap-1" style={{ color: 'var(--text-soft)' }}><Quote size={11} /> In their own words, as written in the reviews</p>
-          <div className="mt-1 flex flex-wrap gap-1.5">{b.words.map((w, i) => <span key={i} className="rounded-full border px-2 py-0.5 text-[12.5px]" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>&ldquo;{w}&rdquo;</span>)}</div>
-        </div>
-      )}
-    </section>
-  )
-}
-
-function VideoCard({ v, n, copied, onCopy, onFilm }: { v: VideoIdea; n: number; copied: boolean; onCopy: () => void; onFilm: () => void }) {
-  const say = v.say?.length ? v.say : [v.hook, ...v.beats, v.cta].filter(Boolean)
-  const shots = v.broll || []
-  const secs = secondsOf(say)
-  // Under a minute is fine, shorter is better (Seb, 2026-11-06).
-  const fits = secs <= 60
-  return (
-    <li className="rounded-xl border px-3.5 py-3" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
-      <div className="flex items-start gap-2.5">
-        <span className="shrink-0 w-6 h-6 rounded-full inline-flex items-center justify-center text-[12px] font-bold" style={{ background: 'var(--accent)', color: '#fff' }}>{n}</span>
-        <div className="flex-1 min-w-0">
-          <div className="flex flex-wrap items-center gap-1.5">
-            <span className="text-[14px] font-semibold">{v.angle || HOOK_STYLE_WORDS[v.style]}</span>
-            <span className="text-[10px] font-bold rounded-full px-1.5 py-0.5" style={{ background: 'rgb(var(--brand-rgb) / 0.10)', color: PURPLE }}>{HOOK_STYLE_WORDS[v.style]}</span>
-            {v.opener && <span className="text-[10px] font-bold rounded-full px-1.5 py-0.5" style={{ background: GREEN, color: '#fff' }} title="This hook starts with one of MVP's proven openers">Proven opener</span>}
-            <span className="text-[10px] font-bold rounded-full px-1.5 py-0.5 border" style={{ borderColor: fits ? GREEN : AMBER, color: fits ? GREEN : AMBER }} title="Counted from the words to say, at a normal speaking pace">about {secs} seconds{fits ? '' : ', over a minute'}</span>
-          </div>
-          {(v.who || v.when) && (
-            <p className="mt-1 text-[12.5px]"><Target size={12} className="inline -mt-0.5 mr-1" style={{ color: PURPLE }} /><b>For</b> {v.who || 'the buyer'}{v.when ? <>, <b>when</b> {v.when}</> : null}</p>
-          )}
-          {v.onScreen && (
-            <p className="mt-1.5 flex flex-wrap items-center gap-1.5">
-              <span className="text-[11px] font-bold uppercase tracking-wider inline-flex items-center gap-1" style={{ color: 'var(--text-soft)' }}><Type size={11} /> On screen, first 2 seconds</span>
-              <span className="rounded-md px-2 py-0.5 text-[13px] font-extrabold" style={{ background: '#FFFFFF', color: '#0B1416', border: '1px solid var(--border)', boxShadow: '0 1px 2px rgb(0 0 0 / 0.12)' }}>{v.onScreen}</span>
-            </p>
-          )}
-          {v.shot && <p className="mt-1 text-[12.5px]" style={{ color: 'var(--text-soft)' }}>First 2 seconds: {v.shot}</p>}
-          {/* SCENE BY SCENE: the words to say, and what the camera shows under them. */}
-          <p className="mt-2 text-[11px] font-bold uppercase tracking-wider" style={{ color: PURPLE }}>Scene by scene</p>
-          <ol className="mt-1 divide-y rounded-lg border" style={{ borderColor: 'var(--border)' }}>
-            {say.map((l, j) => (
-              <li key={j} className="grid grid-cols-[auto,1fr] gap-x-2.5 px-2.5 py-1.5" style={{ borderColor: 'var(--border)' }}>
-                <span className="w-5 h-5 mt-0.5 rounded-full inline-flex items-center justify-center text-[10.5px] font-bold" style={{ background: 'rgb(var(--brand-rgb) / 0.10)', color: PURPLE }}>{j + 1}</span>
-                <span className="min-w-0">
-                  <span className="block text-[14px] leading-snug font-medium">&ldquo;{l}&rdquo;</span>
-                  {shots[j] && <span className="block text-[12.5px] leading-snug" style={{ color: 'var(--text-soft)' }}>Show: {shots[j]}</span>}
-                </span>
-              </li>
-            ))}
-          </ol>
-          {shots.length > say.length && <p className="mt-1 text-[12.5px]" style={{ color: 'var(--text-soft)' }}>Extra shots: {shots.slice(say.length).join('; ')}</p>}
-          <WhyThisHook v={v} />
-        </div>
-        <div className="shrink-0 flex flex-col items-end gap-1.5">
-          <button type="button" onClick={onFilm} className="inline-flex items-center gap-1 text-[11.5px] font-bold rounded-full px-2.5 py-1" style={{ background: 'var(--accent)', color: '#fff' }} title="Open the script for filming: one line at a time, big, then the shots to tick off">
-            <Clapperboard size={12} /> Film it
-          </button>
-          <button type="button" onClick={onCopy} className="inline-flex items-center gap-1 text-[11.5px] font-semibold" style={{ color: PURPLE }}>
-            {copied ? <Check size={12} /> : <Copy size={12} />} {copied ? 'Copied' : 'Copy'}
-          </button>
-        </div>
-      </div>
-    </li>
-  )
-}

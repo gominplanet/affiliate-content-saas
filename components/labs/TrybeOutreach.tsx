@@ -22,6 +22,7 @@
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useEffectiveTier } from '@/lib/useEffectiveTier'
+import { canUsePreview } from '@/lib/labs-preview'
 import { toast } from 'sonner'
 import { Loader2, Lock, Search, Sparkles, Send, Square, ExternalLink, Check, AlertTriangle, Globe, Star, Handshake, RotateCcw, X, Trash2, Tag,
   Dumbbell, Shirt, House, UtensilsCrossed, Baby, PawPrint, Gem, Cpu, Tent, Plane, BookOpen, Church, Palette, SprayCan, Moon, Pill, HeartPulse,
@@ -58,6 +59,7 @@ import { APP, AppChip } from '@/components/labs/trybe-ui'
 import { DossierCtx, BrandName } from '@/components/labs/trybe-dossier-context'
 import TrybeWorking from '@/components/labs/TrybeWorking'
 import TrybeCreate from '@/components/labs/TrybeCreate'
+import ProductScripts from '@/components/labs/ProductScripts'
 import TrybeStage from '@/components/labs/TrybeStage'
 import TrybeAds from '@/components/labs/TrybeAds'
 import TrybeSubmissions from '@/components/labs/TrybeSubmissions'
@@ -131,7 +133,7 @@ type Access = 'checking' | 'granted' | 'not-granted' | 'no-scout' | 'old' | 'no-
 interface Directory { brands: number; listed?: number | null; firstCountAt?: string | null; joinedSinceFirst?: number | null; joinedStillListed?: number | null; withWebsite: number; websitesRead: number; lastCollectedAt: string | null; lastPartial?: { at: string; pages: number | null; totalPages: number | null } | null; categories: string[]; top100?: { at?: string; entries?: number; brands?: number; matched?: number } | null }
 /** The whole list is collected again after this long. */
 const RECOLLECT_MS = 20 * 3600_000
-export type Tab = 'home' | 'create' | 'upload' | 'find' | 'stars' | 'queue' | 'sent' | 'inbox' | 'analytics' | 'submissions' | 'brands' | 'week' | 'changes' | 'working'
+export type Tab = 'home' | 'create' | 'upload' | 'find' | 'stars' | 'queue' | 'sent' | 'inbox' | 'analytics' | 'submissions' | 'brands' | 'week' | 'changes' | 'working' | 'anyscripts'
 /** One brand from MVP's copy of TRYBE, as the live list shows it. */
 interface LiveBrand {
   brand_id: string; name: string; website: string | null; categories: string[]; about: string | null
@@ -368,6 +370,8 @@ const TABS: Array<{ id: Tab; label: string; icon: LucideIcon; group: TabGroup; s
   // THE TRYBE HOME (the new TRYBE only, Seb 2026-11-06): what needs you, then what moved on TRYBE.
   { id: 'home', label: 'TRYBE home', icon: LayoutDashboard, group: 'brands', says: 'What needs you today, and what moved on TRYBE this week.' },
   { id: 'create', label: 'Make videos', icon: Clapperboard, group: 'create', says: 'Pick a brand, pick the product you have, and get ten shooting scripts that follow its brief.' },
+  // VIDEO SCRIPTS INSIDE TRYBE (Seb, 2026-11-06: "it should be inside of Tribe as well"): the script agent for any product.
+  { id: 'anyscripts', label: 'Video Scripts', icon: Wand2, group: 'create', says: 'Any product, from a TikTok Shop or Amazon link to a screenshot: five short videos written scene by scene from what its buyers say.' },
   { id: 'upload', label: 'Upload videos', icon: UploadCloud, group: 'create', says: 'Add the videos you filmed and send each one to its TRYBE brand, without leaving this page.' },
   // (How they win, once a team-only tab here, was removed 2026-10-18: its
   // words now show in Make videos, under Their best videos.)
@@ -609,6 +613,8 @@ export default function TrybeOutreach({ preview = false, v2 = false }: { preview
   const [realAdmin, setIsAdmin] = useState(false)
   const viewTier = useEffectiveTier()
   const isAdmin = realAdmin && (viewTier === null || viewTier === 'admin')
+  // Video Scripts inside TRYBE follows its own switch (lib/labs-preview product_scripts).
+  const canAnyScripts = canUsePreview('product_scripts', viewTier ?? (realAdmin ? 'admin' : null))
   const [showAllNiches, setShowAllNiches] = useState(false)
   const searchRef = useRef<HTMLInputElement>(null)
   // The TRYBE inbox, for the unread count and which sent brands answered.
@@ -2328,7 +2334,7 @@ export default function TrybeOutreach({ preview = false, v2 = false }: { preview
       )}
 
       {v2
-        ? <TrybeNav tab={tab} queue={queue.length} unread={unread} go={go} />
+        ? <TrybeNav tab={tab} queue={queue.length} unread={unread} go={go} anyScripts={canAnyScripts} />
         : <TrybeMenu tab={tab} lockedTab={lockedTab} preview={preview} queue={queue} history={history} unread={unread} changes={changes} go={go} />}
       {/* Where you are, and what it is for. */}
       {(() => {
@@ -2374,6 +2380,7 @@ export default function TrybeOutreach({ preview = false, v2 = false }: { preview
         forYou={(live?.brands || []).filter(b => !b.status || b.status === 'new').slice().sort((a, b) => (b.pick ?? -1) - (a.pick ?? -1)).slice(0, 6)}
         forYouWhy={[...cats, ...kws].slice(0, 4).join(', ')} canMoney={canMyBrands}
         yours={(changes?.changes || []).filter(c => c.yours).slice().sort((a, b) => Date.parse(b.at) - Date.parse(a.at))} />}
+      {tab === 'anyscripts' && (canAnyScripts ? <ProductScripts embedded /> : <p className="text-[13px]" style={{ color: 'var(--text-3)' }}>Video Scripts is still being tried by the MVP team, and opens here once it is ready.</p>)}
       {tab === 'create' && <TrybeCreate canRead={canMyBrands} isAdmin={isAdmin} onFind={() => setTab('find')} start={scriptsFor} onStarted={() => setScriptsFor(null)} />}
 
       {tab === 'upload' && <TrybeUpload inbox={inbox} canChat={canInbox} onOpenChat={(id) => { setOpenChat(o => ({ id, n: (o?.n ?? 0) + 1 })); setTab('inbox') }} />}

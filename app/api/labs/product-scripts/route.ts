@@ -23,14 +23,13 @@ import { spendGate } from '@/lib/ai-spend'
 import { createAnthropicClient } from '@/lib/anthropic'
 import { recordUsage, usageFromAnthropic } from '@/lib/ai-usage'
 import { BANNED_RULE } from '@/lib/scrub'
-import { fetchWithTimeout } from '@/lib/fetch-timeout'
 import { fetchAmazonProduct } from '@/services/amazon'
-import { parseTikTokProduct } from '@/lib/tiktok-product'
+import { followShort, readTikTok } from '@/lib/buyer-sources'
 import { researchBrandSite } from '@/lib/trybe-research'
 import { pickExamples, examplesBlock, type TopScript } from '@/lib/trybe-scripts'
 import { hooksBlock, type TopHook } from '@/lib/trybe-hooks'
 import {
-  PRODUCT_SCRIPT_SYSTEM, SHORT_HOSTS, linkKind, storeOf, factsBlock, cleanReviews, reviewsBlock, reviewCorpus,
+  PRODUCT_SCRIPT_SYSTEM, linkKind, storeOf, factsBlock, cleanReviews, reviewsBlock, reviewCorpus,
   parseProductScripts, tiktokReviewsFrom, type ProductFacts, type ReadReport,
 } from '@/lib/product-scripts'
 
@@ -42,7 +41,6 @@ export const maxDuration = 300
 export const preferredRegion = 'iad1'
 
 const MODEL = 'claude-sonnet-4-6'
-const UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
 /** A screenshot as the page sends it, made small first (about 1 MB). */
 const IMAGE = /^data:image\/(jpeg|png|webp);base64,([A-Za-z0-9+/=]+)$/
 const IMAGE_MAX = 3_500_000
@@ -56,42 +54,6 @@ async function gate() {
   const { data: intg } = await (supabase as any).from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
   if (!canUsePreview('product_scripts', intg?.tier)) return { error: NextResponse.json({ error: 'Video Scripts is still being tested.' }, { status: 403 }) }
   return { userId: user.id, tier: (intg?.tier as string | null) ?? null }
-}
-
-/** Where a short link goes, followed only through short-link hosts, so MVP's
- *  server never fetches a page the creator named. */
-async function followShort(url: string): Promise<string | null> {
-  let at = url
-  for (let hop = 0; hop < 5; hop++) {
-    let host = ''
-    try { host = new URL(at).hostname } catch { return null }
-    if (!SHORT_HOSTS.test(host)) return at
-    try {
-      const res = await fetchWithTimeout(at, { timeoutMs: 8000, redirect: 'manual', headers: { 'User-Agent': UA } })
-      const loc = res.headers.get('location')
-      if (!loc) return null
-      at = new URL(loc, at).toString()
-    } catch { return null }
-  }
-  return null
-}
-
-/** A TikTok Shop product and the reviews its page carries. */
-async function readTikTok(url: string): Promise<{ facts: ProductFacts; reviews: ReturnType<typeof tiktokReviewsFrom> } | null> {
-  try {
-    const res = await fetchWithTimeout(url, { timeoutMs: 12000, headers: { 'User-Agent': UA, 'Accept-Language': 'en-US,en;q=0.9' } })
-    if (!res.ok) return null
-    const html = await res.text()
-    const p = parseTikTokProduct(html, url)
-    if (!p) return null
-    return {
-      facts: {
-        name: p.title, store: 'tiktok', description: p.description, rating: p.rating, reviewCount: p.reviewCount, soldCount: p.soldCount,
-        seller: p.sellerName, price: p.price ? `${p.currencySymbol || ''}${p.price}` : null,
-      },
-      reviews: tiktokReviewsFrom(html),
-    }
-  } catch { return null }
 }
 
 export async function POST(req: NextRequest) {

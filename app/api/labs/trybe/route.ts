@@ -30,7 +30,9 @@ import { readTopWords, firstHook, keepHooks, readHooksBody, hooksBlock, type Top
 import { readRetainers } from '@/lib/trybe-retainer'
 import { amazonVideoPage } from '@/lib/brand-content'
 import { pickVoice, readVoiceBody, voiceBlock, VOICE_RULE, DRAFT_VOICE_RULE, type VoiceSample } from '@/lib/trybe-voice'
-import { KICKOFF_SYSTEM, FOLLOWUP_SYSTEM, kickoffUserPrompt, brandBlock, VIDEO_PLAN_SYSTEM, parseVideoPlan, honestCtas } from '@/lib/trybe-playbook'
+import { KICKOFF_SYSTEM, FOLLOWUP_SYSTEM, kickoffUserPrompt, brandBlock, VIDEO_PLAN_SYSTEM, parseVideoPlan, honestCtas, type BuyerReport } from '@/lib/trybe-playbook'
+import { linkKind, cleanReviews, reviewsBlock, reviewCorpus } from '@/lib/product-scripts'
+import { followShort, readTikTok } from '@/lib/buyer-sources'
 import { winnersForPlan, winnersBlock, readScript } from '@/lib/trybe-mybrands'
 import { directoryChanges, adsChange, poolBrands, type Change, type MemberRow } from '@/lib/trybe-changes'
 import { topDayKey, topDayOf, TOP_DAYS_KEEP } from '@/lib/trybe-topdays'
@@ -1463,6 +1465,16 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: true, at: now })
   }
 
+  // A short product link (amzn.to, a.co, vm.tiktok.com ...) followed to
+  // where it goes, so the page knows which Amazon product SCOUT should read.
+  if (action === 'buyer_resolve') {
+    const raw = typeof body.url === 'string' ? body.url.trim().slice(0, 600) : ''
+    const first = linkKind(raw)
+    if (!first.short) return NextResponse.json({ ok: true, ...first })
+    const to = await followShort(raw)
+    return NextResponse.json({ ok: true, ...(to ? linkKind(to) : { ...first, kind: 'site', unresolved: true }) })
+  }
+
   if (action === 'video_plan') {
     // ONE BODY, MANY HOOKS (Cole: "the middle of the video is pretty much the
     // same"). The brand's real products and, read fresh, what is on sale on
@@ -1548,6 +1560,25 @@ export async function POST(request: Request) {
       } catch { metaAds = []; trybeProducts = [] }
     }
     const metaAdsText = brandAdsBlock(metaAds)
+    // THE BUYERS, READ BY THE SCRIPT AGENT (Seb, 2026-11-06: "this agent
+    // should be the one doing the work"): the product's reviews (Amazon's read
+    // by SCOUT in the creator's Chrome and sent by the page, TikTok Shop's read
+    // here from its own page) and a screenshot when the creator added one.
+    const buyerLink = linkKind(typeof body.buyerUrl === 'string' ? body.buyerUrl.slice(0, 600) : '')
+    let buyerReviews = cleanReviews(buyerLink.kind === 'amazon' ? body.reviews as Parameters<typeof cleanReviews>[0] : null)
+    let buyerBy: BuyerReport['by'] = buyerReviews.onPage.length || buyerReviews.critical.length || buyerReviews.customersSay ? 'scout' : null
+    if (!buyerBy && buyerLink.kind === 'tiktok' && buyerLink.url) {
+      const t = await readTikTok(buyerLink.url).catch(() => null)
+      if (t && (t.reviews.onPage.length || t.reviews.critical.length)) { buyerReviews = cleanReviews(t.reviews); buyerBy = 'server' }
+    }
+    const buyersText = reviewsBlock(buyerReviews)
+    const shot = typeof body.image === 'string' && body.image.length < 4_700_000 ? body.image.match(/^data:image\/(jpeg|png|webp);base64,([A-Za-z0-9+/=]+)$/) : null
+    const buyerReport: BuyerReport | null = buyerLink.kind === 'amazon' || buyerLink.kind === 'tiktok' || shot ? {
+      reviews: buyerReviews.onPage.length, critical: buyerReviews.critical.length, customersSay: !!buyerReviews.customersSay, by: buyerBy,
+      source: buyerLink.kind === 'amazon' ? 'amazon' : buyerLink.kind === 'tiktok' ? 'tiktok' : null,
+      why: !buyerBy && buyerLink.kind === 'amazon' && typeof body.reviewsWhy === 'string' && ['no-scout', 'old-scout', 'scout-failed', 'none-shown'].includes(body.reviewsWhy) ? body.reviewsWhy as BuyerReport['why'] : null,
+      criticalWhy: buyerReviews.criticalWhy ?? null, screenshot: !!shot,
+    } : null
     const trybeText = trybeProducts.length ? `PRODUCTS THE BRAND LISTS ON TRYBE (the ones creators can ask for as samples): ${trybeProducts.join('; ')}` : ''
     try {
       const msg = await createAnthropicClient().messages.create({
@@ -1555,12 +1586,15 @@ export async function POST(request: Request) {
         // works (2026-11-06).
         model: MODEL, max_tokens: 14000,
         system: VIDEO_PLAN_SYSTEM(BANNED_RULE),
-        messages: [{ role: 'user', content: `BRAND:\n${brandBlock({ name: row.name, categories: row.categories || [], about: row.about, siteSummary: summary, products, onSale, payText: row.pay_text })}${briefText ? `\n\nBRIEF (the brand's own creative brief on TRYBE):\n${briefText}` : ''}${product ? `\n\nTHE PRODUCT ON HAND: ${product}. The creator has this one in hand, so every video is about it and shows it.` : ''}${trybeText ? `\n\n${trybeText}` : ''}${metaAdsText ? `\n\n${metaAdsText}` : ''}${winners.length ? `\n\n${winnersBlock(winners)}` : ''}${examplesText ? `\n\n${examplesText}` : ''}${hooksText ? `\n\n${hooksText}` : ''}` }],
+        messages: [{ role: 'user', content: [
+          ...(shot ? [{ type: 'image' as const, source: { type: 'base64' as const, media_type: `image/${shot[1]}` as 'image/jpeg' | 'image/png' | 'image/webp', data: shot[2] } }] : []),
+          { type: 'text' as const, text: `BRAND:\n${brandBlock({ name: row.name, categories: row.categories || [], about: row.about, siteSummary: summary, products, onSale, payText: row.pay_text })}${briefText ? `\n\nBRIEF (the brand's own creative brief on TRYBE):\n${briefText}` : ''}${product ? `\n\nTHE PRODUCT ON HAND: ${product}. The creator has this one in hand, so every video is about it and shows it.` : ''}${trybeText ? `\n\n${trybeText}` : ''}${metaAdsText ? `\n\n${metaAdsText}` : ''}${winners.length ? `\n\n${winnersBlock(winners)}` : ''}${examplesText ? `\n\n${examplesText}` : ''}${hooksText ? `\n\n${hooksText}` : ''}${shot ? '\n\nSCREENSHOT: attached above, of the product or its reviews. Read the product and anything buyers say in it.' : ''}${buyersText ? `\n\n${buyersText}` : ''}` },
+        ] }],
       })
       try { const u = usageFromAnthropic(msg); recordUsage({ userId, tier, feature: 'trybe_video_plan', model: MODEL, input: u.input, output: u.output }) } catch { /* best-effort */ }
-      const parsed = parseVideoPlan((msg.content as Array<{ type: string; text?: string }>).map(b => b.type === 'text' ? b.text || '' : '').join(''))
+      const parsed = parseVideoPlan((msg.content as Array<{ type: string; text?: string }>).map(b => b.type === 'text' ? b.text || '' : '').join(''), reviewCorpus(buyerReviews))
       if (!parsed) return NextResponse.json({ error: 'The plan came back in a shape MVP could not read. Try again.' }, { status: 502 })
-      const plan = { ...honestCtas(parsed, onSale), ...(briefState ? { brief: briefState } : {}) }
+      const plan = { ...honestCtas(parsed, onSale), ...(briefState ? { brief: briefState } : {}), ...(buyerReport ? { buyerReport } : {}) }
       if (sample) {
         let kept = true
         try {
