@@ -1,5 +1,5 @@
 /**
- * /video-scripts — Video Scripts (LABS, admin while it is tried). Any product
+ * /video-scripts — Video Scripts (Pro, lib/labs-preview product_scripts). Any product
  * in, five short scripts out (under a minute, shorter is better); see lib/product-scripts.ts.
  */
 'use client'
@@ -15,7 +15,7 @@ export default function VideoScriptsPage() {
 
   if (tier !== null && canUsePreview('product_scripts', tier)) return <ProductScripts />
   // Not on this plan: say so, never a silent bounce.
-  if (tier !== null) return <ProUpgradePanel feature="Video Scripts" body="Video Scripts turns any product, from a TikTok Shop or Amazon link to a screenshot, into five short videos written scene by scene. It is still being tested." />
+  if (tier !== null) return <ProUpgradePanel feature="Video Scripts" body="Video Scripts turns any product, from a TikTok Shop or Amazon link to a screenshot, into five short videos written scene by scene, from what its buyers say." />
 
   return (
     <div className="flex items-center justify-center py-24 text-sm text-[#86868b] dark:text-[#8e8e93]">

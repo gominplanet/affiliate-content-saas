@@ -27,6 +27,7 @@ export const FEATURE_LINES: Record<string, string> = {
   // Make videos
   '/drop': 'Drop in finished videos and MVP sends each one everywhere it belongs.',
   '/review-editor': 'Your talking take and B-roll in, an edited review out.',
+  '/video-scripts': 'Any product in, five short scripts out, scene by scene.',
   '/co-pilot': 'Titles, descriptions, tags and thumbnails for your YouTube videos.',
   '/amazon/thumbnails': 'Thumbnail designs for a product, with or without your face.',
   '/script': 'Writes a video script for a product.',

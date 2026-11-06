@@ -109,10 +109,11 @@ const OPEN_TO: Record<PreviewFeature, 'admin' | 'labs'> = {
   // file read (Seb: "make sure that the Deals Hub works for users").
   deals_import: 'labs',
   // Video Scripts: any product (a TikTok Shop or Amazon link, a page, a
-  // screenshot or a name) in, five 30 to 40 second scripts out, written the
-  // TRYBE way (Alejandro, via Seb 2026-11-06). Admin while it is tried on
-  // the live site; one word here opens it to Pro.
-  product_scripts: 'admin',
+  // screenshot or a name) in, five short scripts out, written by the same
+  // script agent as TRYBE's Brand scripts (Alejandro, via Seb 2026-11-06).
+  // Opened to Pro the same day (Seb: "open video script to members"), in
+  // Make videos.
+  product_scripts: 'labs',
 }
 
 /** Every preview feature. A check can then ask which are still admin only

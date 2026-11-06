@@ -16,7 +16,7 @@ import {
   linkKind, storeOf, factsBlock, cleanReviews, reviewsBlock, reviewCorpus, quotedFrom, parseProductScripts, secondsOf,
   productVideoText, productScriptsText, readWords, PRODUCT_SCRIPT_SYSTEM, PRODUCT_VIDEOS, PRODUCT_OPENER_VIDEOS, SHORT_HOSTS, tiktokReviewsFrom, buyerReportWords,
 } from '../lib/product-scripts'
-import { PROVEN_OPENERS, SCRIPT_CHECKLIST, VIDEO_PLAN_SYSTEM, clipAtWord, parseVideoPlan, linkInspired, inspiredWords } from '../lib/trybe-playbook'
+import { PROVEN_OPENERS, SCRIPT_CHECKLIST, VIDEO_PLAN_SYSTEM, clipAtWord, parseVideoPlan, linkInspired, inspiredWords, honestCtas, planText } from '../lib/trybe-playbook'
 import { scrubBanned } from '../lib/scrub'
 import { competitorAdsForPlan, competitorAdsBlock } from '../lib/trybe-adsgallery'
 
@@ -155,7 +155,7 @@ check('SCOUT reads the words and stars, never a reviewer\'s name or picture', /\
 
   // ── THE PAGE AND THE ROUTE ─────────────────────────────────────────────────
   const R = read('app/api/labs/product-scripts/route.ts')
-  check('the route is for the team while it is tried, gated and spend capped', /canUsePreview\('product_scripts'/.test(R) && /await spendGate\(g\.userId, g\.tier\)/.test(R) && /product_scripts: 'admin'/.test(read('lib/labs-preview.ts')))
+  check('the route is open to Pro by its switch, gated and spend capped', /canUsePreview\('product_scripts'/.test(R) && /await spendGate\(g\.userId, g\.tier\)/.test(R) && /product_scripts: 'labs'/.test(read('lib/labs-preview.ts')))
   const B = read('lib/buyer-sources.ts')
   check('a short link is followed only through short-link hosts', /if \(!SHORT_HOSTS\.test\(host\)\) return at/.test(B) && /redirect: 'manual'/.test(B) && /followShort\(raw\)/.test(R))
   check('reviews are taken from SCOUT for Amazon and from the page for TikTok Shop, and quotes checked against them', /cleanReviews\(link\.kind === 'amazon' \? body\.reviews : tiktokReviews\)/.test(R) && /parseProductScripts\(out, reviewCorpus\(reviews\)\)/.test(R))
@@ -171,7 +171,7 @@ check('SCOUT reads the words and stars, never a reviewer\'s name or picture', /\
   check('what went in is said under the button', /readWords\(result\.read, SCOUT_AMAZON_REVIEWS_MIN_VERSION\)/.test(P))
   check('Film it opens each video for filming', /<TrybeFilmIt script=\{filming\}/.test(P) && /onScreen: v\.onScreen \|\| null/.test(P))
   check('recent sets are kept in this browser only, and a private window still works', /localStorage\.setItem\(RECENT_KEY/.test(P) && /catch \{ \/\* private window/.test(P))
-  check('the menu shows it in Labs, the team\'s alone', /href: '\/video-scripts'.*gate: isAdmin/.test(read('components/layout/DashboardShellV2.tsx')) && /canUsePreview\('product_scripts', tier\)/.test(read('app/(dashboard)/video-scripts/page.tsx')))
+  check('Video Scripts is open to Pro, in Make videos by its own switch, and out of Labs', /href: '\/video-scripts'.*gate: canUsePreview\('product_scripts', effectiveTier\)/.test(read('components/layout/DashboardShellV2.tsx')) && /canUsePreview\('product_scripts', tier\)/.test(read('app/(dashboard)/video-scripts/page.tsx')) && !/Labs/.test(P.slice(P.indexOf('<header>'), P.indexOf('</header>'))))
 
   // ── ONE AGENT DOES THE WORK (Seb, 2026-11-06: "it should be inside of Tribe
   // as well ... this agent should be the one doing the work") ────────────────
@@ -244,6 +244,46 @@ check('SCOUT reads the words and stars, never a reviewer\'s name or picture', /\
     /BRIEF \(the brand's own creative brief on TRYBE\)/.test(TR) && /researchBrandSite\(row\.website\)/.test(TR) && /PRODUCTS THE BRAND LISTS ON TRYBE/.test(TR) && /payText: row\.pay_text/.test(TR) && /examplesBlock\(examples/.test(TR) && /hooksBlock\(topHooks\.hooks/.test(TR)
     && /\$\{metaAdsText \? /.test(TR) && /\$\{rivalAdsText \? /.test(TR) && /\$\{amazonText \? /.test(TR) && /\$\{buyersText \? /.test(TR) && /rivalAds = competitorAdsForPlan\(/.test(TR) && (TR.match(/fromCompetitors: rivalAds\.length, fromAmazonListing: !!amazonText/g) || []).length === 2)
   check('the brand\'s own best videos on TRYBE are read every time before writing, and what went in is said', /if \(!w && canRead && brandId\) \{/.test(TV) && /winners: bestWords/.test(TV) && /Studied \$\{rivals\} competing brand/.test(TV) && /Read its Amazon listing\./.test(TV) && /amazon: got\.amazon/.test(TV))
+
+  // ── THE WHOLE WAY THROUGH (Seb, 2026-11-06: "make sure that the tribe script
+  // is working and everything is working properly") ─────────────────────────
+  // The example each writer copies must itself be valid JSON: two fields once
+  // carried bare quotes ("Ad 3"), which a writer could copy into an answer
+  // MVP cannot read.
+  const exampleOf = (t: string) => t.slice(t.indexOf('{\n'), t.indexOf('\n}\n') + 2)
+  check('the JSON each writer is shown parses, so it is never taught a broken answer', [VIDEO_PLAN_SYSTEM('x'), sys].every((t) => { try { JSON.parse(exampleOf(t)); return true } catch { return false } }))
+  {
+    // A full TRYBE answer as the writer sends it: ten videos with every field,
+    // a few things wrong on purpose.
+    const reviewsRead = cleanReviews({ onPage: [{ stars: 5, title: 'Finally', body: 'My son finally eats his lunch now, nothing gets soggy anymore.' }], critical: [{ stars: 2, title: 'Seal', body: 'The seal is hard to clean after a few weeks.' }], customersSay: '', aspects: [] })
+    const vid = (i: number) => ({
+      angle: `Angle ${i}`, style: ['versus', 'before_after', 'negative', 'stat', 'problem', 'reaction', 'pov', 'myth', 'problem', 'pov'][i],
+      who: i === 0 ? 'Parents of picky eaters who pack lunch every single weekday morning before the school run and then rush straight off to work all day' : 'Parents of picky eaters', when: 'Packing lunch at 6am', where: 'A busy kitchen counter', what: 'Lunch comes home full',
+      why: ['Soggy lunch', 'They skip it', 'You worry all afternoon'], opener: i === 0 ? 'Nobody mentions this' : '',
+      hook: i === 0 ? 'Nobody mentions this about packing lunch at 6am.' : `If lunch comes home full \u2014 watch ${i}.`, onScreen: 'Full again?', shot: 'Open the lunchbox, slow',
+      objection: 'Is it hard to clean?', inspiredBy: i === 1 ? 'Ad 2' : i === 2 ? 'Ad 9' : i === 3 ? 'Video 1' : '', frame: i === 1 ? 'opens on the mess, product at second 4' : '',
+      say: [i === 0 ? 'Nobody mentions this about packing lunch at 6am.' : `If lunch comes home full, watch ${i}.`, 'You open it after school.', 'Everything is still there.', 'These walls keep it crisp.', i === 4 ? 'Get 20% off today only.' : 'Try it this week.'],
+      broll: ['Open the box', 'Push in on crackers', 'Snap the walls in', 'Fill each part', 'Point to the link'],
+      cta: i === 4 ? 'Get 20% off today only.' : 'Try it this week.', forBrief: 'Show the compartments',
+    })
+    const answer = 'Here is the plan.\n' + JSON.stringify({
+      product: 'Bento lunch box', wants: ['Show the compartments'], avoid: ['No competitor names'],
+      buyers: { who: ['Parents of picky eaters'], loves: ['Nothing gets soggy'], doubts: ['The seal is hard to clean'], words: ['finally eats his lunch', 'a total game changer'] },
+      body: 'It keeps every part of lunch apart and crisp.', videos: Array.from({ length: 10 }, (_, i) => vid(i)),
+      ctas: [{ kind: 'sale', line: 'On sale now' }, { kind: 'urgency', line: 'Try it this week' }], funnel: { top: '1', middle: '4', bottom: '7' },
+    })
+    const parsed = parseVideoPlan(answer, reviewCorpus(reviewsRead))
+    const examplesGiven = [{ best_rank: 3, category: 'Kitchen', video_url: 'https://cdn.example/3.mp4' }, { best_rank: 12, category: 'Kids', video_url: 'https://cdn.example/12.mp4' }]
+    if (parsed?.videos) parsed.videos = linkInspired(parsed.videos, examplesGiven, 0)
+    const plan = parsed ? honestCtas(parsed, []) : null
+    check('a full TRYBE answer is read: ten videos, the buyers, the brief\'s wants', plan?.videos?.length === 10 && plan.wants?.[0] === 'Show the compartments' && plan.buyers?.who[0] === 'Parents of picky eaters')
+    check('only the buyers\' real words are kept', JSON.stringify(plan?.buyers?.words) === JSON.stringify(['finally eats his lunch']))
+    check('built on a winner only where MVP gave that winner', plan?.videos?.[1].inspired?.rank === 12 && !plan?.videos?.[2].inspired && !plan?.videos?.[3].inspired && plan?.videos?.filter((v) => v.inspired).length === 1)
+    check('nothing on sale: a sale line and a sale call to action are swapped for honest ones', !!plan && !plan.ctas.some((c) => c.kind === 'sale') && !/20% off/.test(JSON.stringify(plan.videos)))
+    check('dashes are scrubbed, a long "who" is cut at a word, the opener read from the hook', !!plan && !/[\u2013\u2014]/.test(JSON.stringify(plan)) && /\u2026$/.test(plan.videos![0].who || '') && (plan.videos![0].who || '').length <= 120 && plan.videos![0].opener === 'Nobody mentions this' && !plan.videos![5].opener)
+    const txt = plan ? planText({ ...plan, brief: 'text' }, 'Oink') : ''
+    check('the whole plan copies as text with who it is for, the screen words, why the hook works and what it is built on', /THE BRIEF ASKS FOR:/.test(txt) && /ON SCREEN: Full again\?/.test(txt) && /WHY THIS HOOK:/.test(txt) && /BUILT ON: #12 in TRYBE\u2019s Top 100, Kids\. Kept: opens on the mess/.test(txt) && /10\. Angle 9/.test(txt))
+  }
   const words = [P.match(/>[^<>{}]{12,}</g) || []].flat().join(' ')
   check('no dashes in the page\'s words', !/[–—]| - /.test(words))
 

@@ -100,7 +100,7 @@ export default function ProductScripts() {
   return (
     <div className="max-w-4xl mx-auto px-4 sm:px-6 py-8 flex flex-col gap-5" onPaste={(e) => { const f = Array.from(e.clipboardData?.files || []).find((x) => /^image\//.test(x.type)); if (f) { e.preventDefault(); void addFile(f) } }}>
       <header>
-        <p className="text-[11px] font-semibold uppercase tracking-[0.12em]" style={{ color: 'var(--text-faint)' }}>Labs · Make videos</p>
+        <p className="text-[11px] font-semibold uppercase tracking-[0.12em]" style={{ color: 'var(--text-faint)' }}>Make videos</p>
         <h1 className="text-[24px] font-semibold tracking-tight" style={{ color: 'var(--text)' }}>Video Scripts</h1>
         <p className="text-[13px] max-w-2xl" style={soft}>
           Drop in any product: a TikTok Shop or Amazon link, a product page, a screenshot, or just its name. MVP reads who buys it and why, then writes {PRODUCT_VIDEOS} short videos, scene by scene, under a minute each and nothing wasted, each opening on the real reason someone needs it.

@@ -1,7 +1,7 @@
 // © 2026 Gominplanet / MVP Affiliate — proprietary & confidential.
 //
-// /api/labs/product-scripts — VIDEO SCRIPTS (lib/product-scripts). LABS,
-// admin while it is tried (lib/labs-preview product_scripts).
+// /api/labs/product-scripts — VIDEO SCRIPTS (lib/product-scripts). Pro, on
+// its own switch (lib/labs-preview product_scripts).
 //
 // POST { action: 'resolve', url }   a short link (amzn.to, a.co, geni.us,
 //                                   vm.tiktok.com ...) followed to where it
@@ -53,7 +53,7 @@ async function gate() {
   const { user } = auth as { user: { id: string } }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: intg } = await (supabase as any).from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
-  if (!canUsePreview('product_scripts', intg?.tier)) return { error: NextResponse.json({ error: 'Video Scripts is still being tested.' }, { status: 403 }) }
+  if (!canUsePreview('product_scripts', intg?.tier)) return { error: NextResponse.json({ error: 'Video Scripts is part of MVP Pro.', code: 'tier_not_allowed' }, { status: 403 }) }
   return { userId: user.id, tier: (intg?.tier as string | null) ?? null }
 }
 

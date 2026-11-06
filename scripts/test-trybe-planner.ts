@@ -26,7 +26,9 @@ const idea = (i: number) => ({ angle: `Cheap one versus Audien ${i}`, style: 've
 const product: PlannerProduct = {
   brand: 'Audien', product: 'Audien Atom ONE OTC Hearing Aid', price: '$98', image: null, productUrl: 'https://www.audienhearing.com/products/atom-one', brandPage: 'https://jointrybe.com/creator/brands/abc',
   wants: ['Show how small it is in the ear', 'Say the price: $149 versus $3,000'], avoid: ['No medical claims'], briefNote: null,
-  ideas: [1, 2, 3, 4, 5].map(idea), ideasNote: null,
+  // Two scripted ideas from the script agent (2026-11-06): who it is for,
+  // the words on screen, the scenes and the top video it is built on.
+  ideas: [...[1, 2, 3].map(idea), ...[4, 5].map((i) => ({ ...idea(i), who: 'Grandparents who miss half the dinner talk', when: 'Sunday dinner with the grandkids', onScreen: 'Say that again?', say: ['Nobody mentions this about Sunday dinner with the grandkids.', 'You nod along and miss the punchline.', 'This sits in your ear and nobody sees it.', 'Now you hear the whole story.'], broll: ['Family table, slow push in', 'Grandpa smiling, missing the joke', 'Close up of the tiny Atom in the ear', 'Everyone laughing together'], inspired: { kind: 'top100' as const, rank: 12, category: 'Health', video: null, frame: 'opens on the moment, product at second 4' } }))], ideasNote: null,
   viral: [1, 2, 3, 4, 5].map((i) => ({ url: `https://jointrybe.com/v/${i}`, thumb: null, caption: `Top video ${i}: this changed how I hear my grandkids` })), viralNote: 'The brand\'s best videos on TRYBE, not always for this exact product.',
 }
 const model = buildPlanner({
@@ -58,6 +60,7 @@ void (async () => {
   const s = pdf.toString('latin1')
   const pages = (s.match(/\/Type \/Page\b/g) || []).length
   check('it is a PDF with a cover, calendar, product, shipping, money and checklist page', s.startsWith('%PDF-') && pages >= 6)
+  check('a scripted idea prints who it is for and its words on screen', /For Grandparents who miss half the dinner talk, when Sunday dinner with the grandkids/.test(s) && /On screen: Say that again\?/.test(s))
   check('the viral videos and the product page are clickable links', /\/URI \(https:\/\/jointrybe\.com\/v\/1\)/.test(s) && /\/URI \(https:\/\/www\.audienhearing\.com\/products\/atom-one\)/.test(s))
   // MVP'S TEMPLATE (Seb, 2026-10-14: "use mvp logos and style for the design
   // of these PDF"): the planner and the samples PDF carry the logo and font.

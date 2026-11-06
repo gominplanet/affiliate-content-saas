@@ -649,6 +649,12 @@ export default function DashboardShellV2({
         // (Seb: "open to pro"); on its own switch (lib/labs-preview review_edit),
         // which the page and every route ask too.
         { href: '/review-editor', icon: <Clapperboard size={15} />, label: 'Review Editor', gate: canUsePreview('review_edit', effectiveTier), badge: 'New' },
+        // Video Scripts: any product (a TikTok Shop or Amazon link, a page, a
+        // screenshot) into five short scripts, scene by scene, by the same
+        // agent as TRYBE's Brand scripts. Left Labs for Pro 2026-11-06 (Seb:
+        // "open video script to members"); on its own switch
+        // (lib/labs-preview product_scripts), which the page and route ask too.
+        { href: '/video-scripts', icon: <Wand2 size={15} />, label: 'Video Scripts', gate: canUsePreview('product_scripts', effectiveTier), badge: 'New' },
         // The Amazon plan has its six video additions since 2026-10-05 (Seb):
         // one YouTube channel and Co-Pilot, Bulk Amazon upload, Clip Factory
         // with its own allowance, YouTube comments and Amazon Live.
@@ -805,10 +811,6 @@ export default function DashboardShellV2({
         // Plan this video: a joined Creator Connections campaign turned into a
         // filming plan. Admin only while it is tested (lib/labs-preview video_plan).
         { href: '/plan-video', icon: <ClipboardList size={15} />, label: 'Plan This Video', gate: isAdmin, badge: 'New' },
-        // Video Scripts: any product (TikTok Shop, Amazon, a page, a screenshot)
-        // into five short scripts, scene by scene. Labs is the team's alone; opening
-        // it to Pro (lib/labs-preview product_scripts) moves it to Make videos.
-        { href: '/video-scripts', icon: <Clapperboard size={15} />, label: 'Video Scripts', gate: isAdmin, badge: 'New' },
       ],
     },
     {
