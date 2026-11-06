@@ -42,7 +42,7 @@ export default function TrybeBriefCheck({ brandId, brandName }: { brandId: strin
     latestPlan(brandId).then((p) => { if (live) setPlan(p) }).catch((e) => { if (live) setError(e instanceof Error ? e.message : 'the read did not finish') })
     return () => { live = false }
   }, [brandId])
-  if (error) return <p className="text-[12px] mt-2" style={{ color: '#B45309' }}>Could not read {brandName}&rsquo;s brief checklist: {error}. Check the brief on TRYBE before you send.</p>
+  if (error) return <p className="text-[12px] mt-2" style={{ color: '#B45309' }}>Could not read {brandName}&rsquo;s brief checklist: {error.replace(/[.\s]+$/, '')}. Check the brief on TRYBE before you send.</p>
   if (plan === undefined) return null
   if (!plan) return <p className="text-[12px] mt-2" style={{ color: 'var(--text-3)' }}>No brief checklist for {brandName} yet. Make videos reads its brief when it writes your scripts, and the checklist shows here.</p>
   const wants = plan.plan?.wants || []

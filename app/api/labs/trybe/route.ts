@@ -2791,16 +2791,39 @@ Weigh posts pushed to social, and TRYBE brands they earned with or submitted to,
 
   if (action === 'ideas') {
     // The video ideas kept for one brand, newest plan per product first.
+    // A plan is kept in up to three places (video_plan above): the saved
+    // ideas (migration 429), the sample it was made for, and the brand's row
+    // on the MVP list. All three are read (Seb, 2026-11-06: the brief
+    // checklist said it "could not read" a brand's brief because the saved
+    // ideas table was missing, while the plan sat on the brand's row, and a
+    // plan made for a sample never reached the saved ideas at all). A read
+    // that fails is said only when no place gave a plan.
     if (!brandId) return NextResponse.json({ error: 'Bad request' }, { status: 400 })
-    const { data: ide, error: ideErr } = await admin.from('trybe_ideas').select('id, product, plan, created_at').eq('user_id', ownerId).eq('brand_id', brandId).order('created_at', { ascending: false }).limit(40)
-    if (ideErr) return NextResponse.json({ ok: true, plans: [], why: /does not exist|schema cache/i.test(ideErr.message) ? setupWords(tier, 'Saved ideas need migration 429 in Supabase first.') : ideErr.message })
+    type Kept = { id: string; product: string | null; plan: unknown; created_at: string }
+    const found: Kept[] = []
+    const failed: string[] = []
+    const [ideasRead, samplesRead, brandRead] = await Promise.all([
+      admin.from('trybe_ideas').select('id, product, plan, created_at').eq('user_id', ownerId).eq('brand_id', brandId).order('created_at', { ascending: false }).limit(40),
+      admin.from('trybe_samples').select('id, product, ideas, ideas_at').eq('user_id', ownerId).eq('brand_id', brandId).not('ideas', 'is', null).order('ideas_at', { ascending: false }).limit(20),
+      admin.from('trybe_brands').select('video_plan, video_plan_at').eq('user_id', ownerId).eq('brand_id', brandId).maybeSingle(),
+    ])
+    if (ideasRead.error) failed.push(/does not exist|schema cache/i.test(ideasRead.error.message) ? setupWords(tier, 'Saved ideas need migration 429 in Supabase first') : ideasRead.error.message)
+    else found.push(...((ideasRead.data || []) as Kept[]))
+    if (samplesRead.error) failed.push(samplesRead.error.message)
+    else for (const r of (samplesRead.data || []) as Array<{ id: string; product: string | null; ideas: unknown; ideas_at: string | null }>) found.push({ id: `sample:${r.id}`, product: r.product, plan: r.ideas, created_at: r.ideas_at || '' })
+    if (brandRead.error) failed.push(brandRead.error.message)
+    else if (brandRead.data?.video_plan) {
+      const vp = brandRead.data.video_plan as { product?: string | null }
+      found.push({ id: `brand:${brandId}`, product: vp?.product ?? null, plan: vp, created_at: brandRead.data.video_plan_at || '' })
+    }
+    found.sort((a, b) => (Date.parse(b.created_at) || 0) - (Date.parse(a.created_at) || 0))
     const seen = new Set<string>()
-    const plans = ((ide || []) as Array<{ id: string; product: string | null; plan: unknown; created_at: string }>).filter(r => {
+    const plans = found.filter(r => {
       const k = String(r.product || '').toLowerCase()
       if (seen.has(k)) return false
       seen.add(k); return true
     }).slice(0, 10)
-    return NextResponse.json({ ok: true, plans })
+    return NextResponse.json({ ok: true, plans, ...(!plans.length && failed.length ? { why: failed[0].replace(/[.\s]+$/, '') } : {}) })
   }
 
   if (action === 'home') {
