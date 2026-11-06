@@ -2,62 +2,101 @@
 // © 2026 Gominplanet / MVP Affiliate — proprietary & confidential.
 //
 // THE NEW TRYBE'S MENU (Seb, 2026-11-06: "everything needs to have a place and
-// a reason to be there"). One bar instead of three columns of tiles: Home,
-// then the three jobs in the order a creator does them, get brands, make the
-// videos, keep track. What waits on you shows as a count. On a phone the bar
-// scrolls sideways inside itself; the page never does.
+// a reason to be there"). Home, then the three jobs in the order a creator
+// does them: get brands, make the videos, keep track.
+//
+// TWO LEVELS, NEVER A SCROLLER (Seb, 2026-11-06: "i do not like the slider for
+// the menu selection.. need to figure something else better visually"). One
+// bar of thirteen pages ran wider than the screen and scrolled sideways under
+// a scrollbar. Now the four jobs sit side by side as big buttons (two by two
+// on a phone), each saying what waits in it, and the pages of the open job sit
+// under them as tabs that wrap. Nothing is hidden off the edge.
 
-import { LayoutDashboard, Search, Rocket, Send, Inbox, Clapperboard, UploadCloud, CalendarDays, Lightbulb, BarChart3, ListChecks, Bell, type LucideIcon } from 'lucide-react'
+import { LayoutDashboard, Search, Rocket, Send, Inbox, Clapperboard, UploadCloud, CalendarDays, Lightbulb, BarChart3, ListChecks, Bell, Megaphone, type LucideIcon } from 'lucide-react'
 import type { Tab } from '@/components/labs/TrybeOutreach'
 
 type Item = { label: string; icon: LucideIcon; tabs: Tab[]; count?: 'queue' | 'unread' }
-const GROUPS: Array<{ label: string | null; items: Item[] }> = [
-  { label: null, items: [{ label: 'Home', icon: LayoutDashboard, tabs: ['home'] }] },
-  { label: 'Get brands', items: [
+type Group = { id: string; label: string; icon: LucideIcon; hint: string; items: Item[] }
+const GROUPS: Group[] = [
+  { id: 'home', label: 'Home', icon: LayoutDashboard, hint: 'What needs you today', items: [{ label: 'Home', icon: LayoutDashboard, tabs: ['home'] }] },
+  { id: 'get', label: 'Get brands', icon: Megaphone, hint: 'Find, message, answer', items: [
     { label: 'Find brands', icon: Search, tabs: ['find'] },
     { label: 'Star brands', icon: Rocket, tabs: ['stars'] },
     { label: 'Outreach', icon: Send, tabs: ['queue', 'sent'], count: 'queue' },
     { label: 'Inbox', icon: Inbox, tabs: ['inbox'], count: 'unread' },
   ] },
-  { label: 'Make videos', items: [
+  { id: 'make', label: 'Make videos', icon: Clapperboard, hint: 'Scripts, filming, uploads', items: [
     { label: 'Scripts', icon: Clapperboard, tabs: ['create'] },
     { label: 'Upload', icon: UploadCloud, tabs: ['upload'] },
     { label: 'This week', icon: CalendarDays, tabs: ['week'] },
     { label: 'What’s working', icon: Lightbulb, tabs: ['working'] },
   ] },
-  { label: 'Track', items: [
+  { id: 'track', label: 'Track', icon: BarChart3, hint: 'Earnings and what changed', items: [
     { label: 'Earnings', icon: BarChart3, tabs: ['analytics', 'brands'] },
     { label: 'Submissions', icon: ListChecks, tabs: ['submissions'] },
     { label: 'What changed', icon: Bell, tabs: ['changes'] },
   ] },
 ]
 
+/** The job a page belongs to (Home when it is not in the menu). Pure. */
+export function groupOf(tab: Tab): string {
+  return (GROUPS.find((g) => g.items.some((it) => it.tabs.includes(tab))) ?? GROUPS[0]).id
+}
+
 export default function TrybeNav({ tab, queue, unread, go }: { tab: Tab; queue: number; unread: number; go: (t: Tab) => void }) {
+  const open = groupOf(tab)
+  const countOf = (it: Item) => (it.count === 'queue' ? queue : it.count === 'unread' ? unread : 0)
+  const firstOf = (it: Item): Tab => (it.count === 'queue' ? (queue ? 'queue' : 'sent') : it.tabs[0])
+  const active = GROUPS.find((g) => g.id === open)!
   return (
-    <nav aria-label="TRYBE" className="rounded-2xl p-1.5 overflow-x-auto" style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
-      <div className="flex items-stretch gap-1 min-w-max">
-        {GROUPS.map((g, gi) => (
-          <div key={gi} className="flex items-stretch gap-1">
-            {gi > 0 && <span aria-hidden="true" className="w-px my-2 mx-1.5" style={{ background: 'var(--border)' }} />}
-            {g.label && <span className="self-center text-[10px] font-bold uppercase pl-1 pr-0.5 hidden xl:inline" style={{ color: 'var(--text-3)', letterSpacing: '0.09em' }}>{g.label}</span>}
-            {g.items.map((it) => {
-              const on = it.tabs.includes(tab)
-              const n = it.count === 'queue' ? queue : it.count === 'unread' ? unread : 0
-              const Icon = it.icon
-              return (
-                <button key={it.label} type="button" aria-current={on ? 'page' : undefined}
-                  onClick={() => go(it.count === 'queue' ? (queue ? 'queue' : 'sent') : it.tabs[0])}
-                  className="inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-[13px] font-semibold whitespace-nowrap transition-colors focus-visible:outline focus-visible:outline-2"
-                  style={on ? { background: 'var(--accent)', color: '#fff', outlineColor: 'var(--accent)' } : { color: 'var(--text-2)', outlineColor: 'var(--accent)' }}>
-                  <Icon size={14} />
-                  {it.label}
-                  {n > 0 && <span className="text-[10.5px] font-bold rounded-full px-1.5 min-w-[18px] text-center" style={on ? { background: 'rgba(255,255,255,0.25)' } : { background: 'var(--accent)', color: '#fff' }}>{n}</span>}
-                </button>
-              )
-            })}
-          </div>
-        ))}
+    <nav aria-label="TRYBE" className="rounded-2xl overflow-hidden" style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
+      {/* The four jobs. */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-1.5 p-1.5">
+        {GROUPS.map((g) => {
+          const on = g.id === open
+          const waiting = g.items.reduce((n, it) => n + countOf(it), 0)
+          const Icon = g.icon
+          return (
+            <button key={g.id} type="button" aria-current={on ? 'true' : undefined}
+              onClick={() => { if (!on) go(firstOf(g.items[0])) }}
+              className="flex items-center gap-2.5 rounded-xl px-3 py-2.5 text-left transition-colors focus-visible:outline focus-visible:outline-2 hover:brightness-[1.03]"
+              style={on
+                ? { background: 'var(--accent)', color: '#fff', outlineColor: 'var(--accent)' }
+                : { background: 'var(--surface-2)', color: 'var(--text)', outlineColor: 'var(--accent)' }}>
+              <span className="shrink-0 grid place-items-center w-8 h-8 rounded-lg" style={on ? { background: 'rgba(255,255,255,0.18)' } : { background: 'var(--surface)', color: 'var(--accent-text, var(--accent))' }}>
+                <Icon size={16} />
+              </span>
+              <span className="min-w-0">
+                <span className="block text-[14px] font-bold leading-tight">{g.label}</span>
+                {/* What waits shows at every width; the plain hint only where it fits. */}
+                <span className={`${waiting > 0 ? 'block' : 'hidden sm:block'} text-[11.5px] leading-tight mt-0.5 truncate`} style={{ color: on ? 'rgba(255,255,255,0.85)' : waiting > 0 ? 'var(--accent-text, var(--accent))' : 'var(--text-3)', fontWeight: waiting > 0 ? 600 : 400 }}>
+                  {waiting > 0 ? <>{waiting} waiting<span className="hidden sm:inline"> on you</span></> : g.hint}
+                </span>
+              </span>
+            </button>
+          )
+        })}
       </div>
+      {/* The pages of the open job, as tabs that wrap. */}
+      {active.items.length > 1 && (
+        <div role="tablist" aria-label={active.label} className="flex flex-wrap gap-x-1 gap-y-0.5 px-2.5" style={{ borderTop: '1px solid var(--border)' }}>
+          {active.items.map((it) => {
+            const on = it.tabs.includes(tab)
+            const n = countOf(it)
+            const Icon = it.icon
+            return (
+              <button key={it.label} type="button" role="tab" aria-selected={on}
+                onClick={() => go(firstOf(it))}
+                className="inline-flex items-center gap-1.5 px-3 py-2.5 text-[13px] font-semibold whitespace-nowrap transition-colors focus-visible:outline focus-visible:outline-2 -mb-px"
+                style={{ color: on ? 'var(--accent-text, var(--accent))' : 'var(--text-2)', borderBottom: `2.5px solid ${on ? 'var(--accent)' : 'transparent'}`, outlineColor: 'var(--accent)' }}>
+                <Icon size={14} />
+                {it.label}
+                {n > 0 && <span className="text-[10.5px] font-bold rounded-full px-1.5 min-w-[18px] text-center" style={{ background: 'var(--accent)', color: '#fff' }}>{n}</span>}
+              </button>
+            )
+          })}
+        </div>
+      )}
     </nav>
   )
 }

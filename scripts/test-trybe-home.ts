@@ -47,6 +47,12 @@ const R = read('app/api/labs/trybe/route.ts')
 check('one action counts the home, shared by every member and kept 20 minutes', /if \(action === 'home'\)/.test(R) && /const HOME_KEY = 'home_v1'/.test(R) && /< 20 \* 60_000/.test(R))
 check('the pay index reads every listed brand and is kept 12 hours', /key: 'pay_index'/.test(R) && /< 12 \* 3_600_000/.test(R))
 const U = read('components/labs/TrybeOutreach.tsx')
+{
+  // Seb, 2026-11-06: "i do not like the slider for the menu selection".
+  const N = readFileSync('components/labs/TrybeNav.tsx', 'utf8')
+  check('the menu never scrolls sideways: four jobs side by side, the open job\'s pages wrap under them',
+    !/overflow-x-auto|min-w-max/.test(N) && /grid grid-cols-2 md:grid-cols-4/.test(N) && /role="tablist"/.test(N) && /flex flex-wrap/.test(N) && /export function groupOf/.test(N))
+}
 check('the new TRYBE opens on its home, with the new menu, and drops the old numbers row', /useState<Tab>\(preview \? 'find' : v2 \? 'home' : 'create'\)/.test(U) && /\? <TrybeNav tab=\{tab\}/.test(U) && /\{!preview && !v2 && <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">/.test(U))
 check('members keep the page they know', /: <TrybeMenu tab=\{tab\}/.test(U) && /\{tab === 'home' && v2 && <TrybeHome/.test(U))
 const H = read('components/labs/TrybeHome.tsx')
