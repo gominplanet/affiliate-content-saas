@@ -12,14 +12,14 @@ import { Loader2, Sparkles, AlertTriangle, ChevronDown } from 'lucide-react'
 import TrybeLink from '@/components/labs/TrybeLink'
 import { BrandName, useBrandOpen } from '@/components/labs/trybe-dossier-context'
 import TrybeBrandPeek, { type PeekActions } from '@/components/labs/TrybeBrandPeek'
-import { VerdictChip, CrowdChip, PayChip, type LivePayEst } from '@/components/labs/TrybeFinderControls'
-import type { CrowdRead } from '@/lib/trybe-finder'
+import { VerdictChip, RoomPayChip, PayChip, type LivePayEst } from '@/components/labs/TrybeFinderControls'
+import type { CrowdRead, RoomPayRead } from '@/lib/trybe-finder'
 import type { PickReason } from '@/lib/trybe-pick'
 
 const PURPLE = 'var(--accent)'
 const AMBER = '#B45309'
 
-interface NewBrand { brand_id: string; name: string; pick?: number; pick_read?: number; pick_reasons?: PickReason[]; crowd?: CrowdRead | null; pay_est?: LivePayEst | null; pay_text?: string | null; categories?: string[] }
+interface NewBrand { brand_id: string; name: string; pick?: number; pick_read?: number; pick_reasons?: PickReason[]; crowd?: CrowdRead | null; room_pay?: RoomPayRead | null; pay_est?: LivePayEst | null; pay_text?: string | null; categories?: string[] }
 
 export default function TrybeBestNew({ scoutOpens, onSeeAll, actions }: { scoutOpens: boolean; onSeeAll?: () => void; actions?: PeekActions }) {
   const [open, setOpen] = useState<string | null>(null)
@@ -64,7 +64,7 @@ export default function TrybeBestNew({ scoutOpens, onSeeAll, actions }: { scoutO
                 <span className="text-[12px] font-bold tabular-nums w-4" style={soft}>{i + 1}</span>
                 <BrandName id={b.brand_id} name={b.name} className="text-[13.5px] font-semibold" />
                 <VerdictChip score={b.pick} read={b.pick_read} />
-                <CrowdChip crowd={b.crowd} />
+                <RoomPayChip roomPay={b.room_pay} crowd={b.crowd} />
                 <PayChip est={b.pay_est} payText={b.pay_text} />
                 <TrybeLink brandId={b.brand_id} name={b.name} scout={scoutOpens} />
                 <button onClick={() => setOpen(open === b.brand_id ? null : b.brand_id)} aria-expanded={open === b.brand_id} className="inline-flex items-center gap-0.5 text-[12.5px] font-semibold" style={{ color: PURPLE }}>

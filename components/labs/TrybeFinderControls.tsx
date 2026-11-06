@@ -11,7 +11,7 @@ import { useState } from 'react'
 import { Star, Search, X, ExternalLink, Copy, Check, SlidersHorizontal, PlayCircle, ShoppingBag, Ban, RotateCcw, DollarSign, Users, Sparkles, Clock, ChevronDown, TrendingUp, ArrowLeftRight, Globe, Megaphone, Image as ImageIcon } from 'lucide-react'
 import { GRID_FACTORS, FORMATS, DEFAULT_PRIORITIES, verdictOf, VERDICT_WORDS, metaTrustWords, type Factor, type Priorities, type Weight, type MetaTrust } from '@/lib/trybe-pick'
 import { reviewWords } from '@/lib/trybe-mybrands'
-import { FILTER_WORDS, CROWD_WORDS, type FilterId, type FinderFilters, type DirStats, type CrowdRead, type SpendRead } from '@/lib/trybe-finder'
+import { FILTER_WORDS, CROWD_WORDS, type FilterId, type FinderFilters, type DirStats, type CrowdRead, type SpendRead, type RoomPayRead } from '@/lib/trybe-finder'
 import type { PayBasis } from '@/lib/trybe-pay'
 import { SELLS, SELLS_WORDS, type SellsRead } from '@/lib/trybe-sells'
 import { webRankWords, googleWords, adsPerCreatorWords, adsPerReviewWords, type Said } from '@/lib/brand-popularity'
@@ -415,7 +415,9 @@ export function BrandExtras({ amazon, stats }: { amazon?: LiveAmazon | null; sta
   const days = stats?.joinedAt ? Math.max(0, Math.floor((Date.now() - Date.parse(stats.joinedAt)) / 86_400_000)) : null
   const parts: React.ReactNode[] = amazonPills(amazon)
   const quiet = { background: 'var(--surface-2)', color: 'var(--text-2)' }
-  if (stats?.videosApproved != null) parts.push(<span key="va" className={pill} style={quiet}>{stats.videosApproved.toLocaleString()} video{stats.videosApproved === 1 ? '' : 's'} approved</span>)
+  // Its posts, as TrybeDaily counts them: all time, and the last 30 days.
+  if (stats?.videosApproved != null) parts.push(<span key="va" className={pill} style={quiet}>{stats.videosApproved.toLocaleString()} video{stats.videosApproved === 1 ? '' : 's'} approved{stats.videos30d != null ? `, ${stats.videos30d.toLocaleString()} in the last 30 days` : ''}</span>)
+  else if (stats?.videos30d != null) parts.push(<span key="v30" className={pill} style={quiet}>{stats.videos30d.toLocaleString()} video{stats.videos30d === 1 ? '' : 's'} approved in the last 30 days</span>)
   if (stats?.paidOut != null && stats.paidOut > 0) parts.push(<span key="po" className={pill} style={quiet}>Paid creators ${Math.round(stats.paidOut).toLocaleString()}</span>)
   if (stats?.samples === true) parts.push(<span key="sa" className={pill} style={quiet}>Sends samples</span>)
   if (stats?.samples === false) parts.push(<span key="sn" className={pill} style={quiet}>No samples</span>)
@@ -543,6 +545,24 @@ export function CrowdChip({ crowd, windowDays }: { crowd: CrowdRead | null | und
   return (
     <span className="text-[10.5px] font-extrabold tracking-wider rounded-md px-2 py-0.5 cursor-help inline-flex items-center gap-1" style={CROWD_STYLE[crowd.level]} title={`${crowd.why}${note}`}>
       <Users size={10} />{CROWD_WORDS[crowd.level]}<span className="sr-only">: {crowd.why}</span>
+    </span>
+  )
+}
+
+const ROOM_PAY_STYLE = {
+  strong: { background: 'rgba(22,163,74,0.14)', color: GREEN },
+  fair: { background: 'rgba(180,83,9,0.12)', color: AMBER },
+  weak: { background: 'rgba(220,38,38,0.10)', color: '#DC2626' },
+} as const
+
+/** ROOM AND PAY IN ONE (lib/trybe-finder roomPayOf): "Crowded but paying",
+ *  with what to do and the figures on hover. When MVP cannot judge the pay,
+ *  the crowd chip alone, as before. */
+export function RoomPayChip({ roomPay, crowd, windowDays }: { roomPay: RoomPayRead | null | undefined; crowd: CrowdRead | null | undefined; windowDays?: number | null }) {
+  if (!roomPay?.words || !roomPay.tone) return <CrowdChip crowd={crowd} windowDays={windowDays} />
+  return (
+    <span className="text-[11px] font-bold rounded-md px-2 py-0.5 cursor-help inline-flex items-center gap-1" style={ROOM_PAY_STYLE[roomPay.tone]} title={roomPay.why}>
+      <Users size={11} />{roomPay.words}<span className="sr-only">: {roomPay.why}</span>
     </span>
   )
 }

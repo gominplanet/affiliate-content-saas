@@ -15,9 +15,9 @@
 
 import { useEffect, useState } from 'react'
 import { Loader2, AlertTriangle, MessageCircle, Send, Globe, ExternalLink, ArrowRight } from 'lucide-react'
-import { BrandExtras, PayChip, CrowdChip, NewChip, StaticsChip, SellsChip, VerdictChip, ReviewChip, type LiveAmazon, type LivePayEst } from '@/components/labs/TrybeFinderControls'
+import { BrandExtras, PayChip, RoomPayChip, NewChip, StaticsChip, SellsChip, VerdictChip, ReviewChip, type LiveAmazon, type LivePayEst } from '@/components/labs/TrybeFinderControls'
 import { adLibraryUrl, type PickReason } from '@/lib/trybe-pick'
-import type { DirStats, CrowdRead } from '@/lib/trybe-finder'
+import type { DirStats, CrowdRead, RoomPayRead } from '@/lib/trybe-finder'
 
 /** A website link names where it goes: its address, not "Website". */
 const siteName = (url: string) => { try { return new URL(/^https?:\/\//i.test(url) ? url : `https://${url}`).hostname.replace(/^www\./, '') } catch { return 'Their website' } }
@@ -52,7 +52,7 @@ interface PeekBrand {
   products: string[]; status: PeekStatus | null
   pick?: number; pick_reasons?: PickReason[]; pick_read?: number
   amazon?: LiveAmazon | null; stats?: DirStats | null
-  pay_est?: LivePayEst | null; crowd?: CrowdRead | null; is_new?: boolean; statics?: boolean | null
+  pay_est?: LivePayEst | null; crowd?: CrowdRead | null; room_pay?: RoomPayRead | null; is_new?: boolean; statics?: boolean | null
   review?: { reviewDays: number | null; slowShare: number | null } | null
   sells?: import('@/lib/trybe-sells').SellsRead | null
 }
@@ -127,7 +127,7 @@ export default function TrybeBrandPeek({ brandId, name, actions }: { brandId: st
       <div className="flex flex-wrap items-center gap-1.5">
         <NewChip on={brand.is_new} />
         <VerdictChip score={brand.pick} read={brand.pick_read} />
-        <CrowdChip crowd={brand.crowd} />
+        <RoomPayChip roomPay={brand.room_pay} crowd={brand.crowd} />
         <PayChip est={brand.pay_est} payText={brand.pay_text} />
         <ReviewChip review={brand.review} />
         <StaticsChip on={brand.statics} />

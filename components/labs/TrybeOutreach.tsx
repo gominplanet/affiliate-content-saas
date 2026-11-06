@@ -65,13 +65,13 @@ import TrybeRetainers from '@/components/labs/TrybeRetainers'
 import TrybeIntroVideo from '@/components/labs/TrybeIntroVideo'
 import TrybeSampleGuard from '@/components/labs/TrybeSampleGuard'
 import { readScript, readBrandStats } from '@/lib/trybe-mybrands'
-import { FinderToolbar, FinderFilterNote, FinderPriorities, FinderPresets, PopularityChips, RatingChip, BrandExtras, StarButton, PassButton, AmazonLine, PayChip, CrowdChip, SpendChip, SpendNote, NewChip, StaticsChip, SellsChip, VerdictChip, ReviewChip, PaidOutChip, TikTokShopChip, CompareButton, BrandMark, NO_FILTERS, filtersOn, type LiveAmazon, type LivePayEst } from '@/components/labs/TrybeFinderControls'
+import { FinderToolbar, FinderFilterNote, FinderPriorities, FinderPresets, PopularityChips, RatingChip, BrandExtras, StarButton, PassButton, AmazonLine, PayChip, RoomPayChip, SpendChip, SpendNote, NewChip, StaticsChip, SellsChip, VerdictChip, ReviewChip, PaidOutChip, TikTokShopChip, CompareButton, BrandMark, NO_FILTERS, filtersOn, type LiveAmazon, type LivePayEst } from '@/components/labs/TrybeFinderControls'
 import TrybeCompare from '@/components/labs/TrybeCompare'
 import { COMPARE_MAX } from '@/lib/trybe-compare'
 import { useTrybeAmazon } from '@/components/labs/useTrybeAmazon'
 import { readVoice } from '@/components/labs/useTrybeVoice'
 import { DEFAULT_PRIORITIES, adLibraryUrl, type Priorities } from '@/lib/trybe-pick'
-import { type FinderFilters, type FilterId, type DirStats, type CrowdRead, type SpendRead } from '@/lib/trybe-finder'
+import { type FinderFilters, type FilterId, type DirStats, type CrowdRead, type SpendRead, type RoomPayRead } from '@/lib/trybe-finder'
 import type { SellsRead } from '@/lib/trybe-sells'
 import { useLook } from '@/components/layout/shell-nav-context'
 import PageHero from '@/components/layout/PageHero'
@@ -152,7 +152,7 @@ interface LiveBrand {
   /** The brand on Amazon, TRYBE's own numbers, and the creator's star. */
   amazon?: LiveAmazon | null; stats?: DirStats | null; starred?: boolean
   /** What a video pays (lib/trybe-pay), how crowded, new, and statics. */
-  pay_est?: LivePayEst | null; crowd?: CrowdRead | null; spend?: SpendRead | null; is_new?: boolean; statics?: boolean | null
+  pay_est?: LivePayEst | null; crowd?: CrowdRead | null; spend?: SpendRead | null; room_pay?: RoomPayRead | null; is_new?: boolean; statics?: boolean | null
   /** What it sells (lib/trybe-sells), with why. */
   sells?: SellsRead | null
   /** How fast it decides videos, from MVP members' results. */
@@ -178,13 +178,14 @@ const REQUEST_WORDS: Record<RequestState, { label: string; color: string; bg: st
   pending: { label: 'Pending', color: AMBER, bg: 'rgba(180,83,9,0.10)' },
   declined: { label: 'Declined or expired', color: RED, bg: 'rgba(220,38,38,0.10)' },
 }
-type LiveSort = 'match' | 'picks' | 'pay' | 'spend' | 'payouts' | 'creators' | 'fit' | 'newest' | 'adsPerCreator'
+type LiveSort = 'match' | 'picks' | 'pay' | 'spend' | 'roomPay' | 'payouts' | 'creators' | 'fit' | 'newest' | 'adsPerCreator'
 type LivePay = 'any' | 'flat' | 'percent' | 'both' | 'adspend' | 'guaranteed'
 const SORTS: Array<{ id: LiveSort; label: string; says: string }> = [
   { id: 'match', label: 'Best match', says: 'Best matches first.' },
   { id: 'picks', label: 'Best bets', says: 'Best bets first, ranked by Your priorities: less competition, real ad spend (Meta ads, TRYBE\u2019s Top 100), pay, samples, and brands you already filmed on Amazon.' },
   { id: 'pay', label: 'Highest pay', says: 'Highest pay first: what a video pays (your results, members\u2019 results, or its flat fee and retainer), then % of sales.' },
   { id: 'spend', label: 'Pays creators most', says: 'Most paid to TRYBE creators a month first, estimated: its videos approved in the last 30 days times its pay per video. Brands MVP cannot estimate come after.' },
+  { id: 'roomPay', label: 'Room and pay', says: 'Room and paying first, then Paying, filling up, then Crowded but paying, down to Crowded, low pay: how crowded it is with creators, weighed with what a video, a month and all its time on TRYBE pay. Brands MVP cannot judge on both come after.' },
   { id: 'payouts', label: 'Highest total payouts', says: 'Most paid out to creators on TRYBE first, by TRYBE\u2019s own payout range ($200K+, $50K+...), then most creators. Brands TRYBE gives no range for come after.' },
   { id: 'creators', label: 'Fewest creators', says: 'Fewest creators first: less competition for each brand.' },
   { id: 'fit', label: 'Best fit', says: 'Highest AI fit score for this search first. Brands not scored for it come after, then the ones the AI said do not fit it.' },
@@ -2860,7 +2861,7 @@ export default function TrybeOutreach({ preview = false, v2 = false }: { preview
                       <span className="flex flex-wrap items-center gap-1.5 mt-1.5">
                         <NewChip on={b.is_new} />
                         {sortBy !== 'picks' && <VerdictChip score={b.pick} read={b.pick_read} />}
-                        <CrowdChip crowd={b.crowd} windowDays={live?.crowdDays} />
+                        <RoomPayChip roomPay={b.room_pay} crowd={b.crowd} windowDays={live?.crowdDays} />
                         <PayChip est={b.pay_est} payText={b.pay_text} />
                         <SpendChip spend={b.spend} />
                         {b.stats?.paidOut == null && <PaidOutChip bucket={b.earnings_bucket} up={b.tier_up} />}

@@ -24,7 +24,7 @@ import { sellsOf, type SellsRead } from '@/lib/trybe-sells'
 import { outreachNiche } from '@/lib/outreach-niche'
 import { pickScore, creatorProgramOf, readTopCreatives, tallyTop, META_ADS_FRESH_MS, readPriorities, weighScore, staticsOf, bucketDollars, metaTrustOf, metaUsable } from '@/lib/trybe-pick'
 import { adsPerCreator, adsPerReview, STAR_MIN_REVIEWS } from '@/lib/brand-popularity'
-import { ratingOf, readDirStats, rawKeys, amazonOf, nameVariants, readFilters, anyFilterOn, filterCheck, spendingOf, productOnAmazon, filmedProducts, mergeSnapshot, pickBaseline, crowdOf, creatorSpendOf, snapshotKey, isNewBrand, mixPick, mixOf, SNAPSHOT_KEEP_DAYS, type AmazonOf, type DirStats, type AmazonFilmed, type AmazonVideoProduct, type CcCampaign, type FilterId, type Snapshot } from '@/lib/trybe-finder'
+import { ratingOf, readDirStats, rawKeys, amazonOf, nameVariants, readFilters, anyFilterOn, filterCheck, spendingOf, productOnAmazon, filmedProducts, mergeSnapshot, pickBaseline, crowdOf, creatorSpendOf, roomPayOf, snapshotKey, isNewBrand, mixPick, mixOf, SNAPSHOT_KEEP_DAYS, type AmazonOf, type DirStats, type AmazonFilmed, type AmazonVideoProduct, type CcCampaign, type FilterId, type Snapshot } from '@/lib/trybe-finder'
 import { payLines, payReadOf, estimatePay } from '@/lib/trybe-pay'
 import { readTopWords, firstHook, keepHooks, readHooksBody, hooksBlock, type TopHook } from '@/lib/trybe-hooks'
 import { readRetainers } from '@/lib/trybe-retainer'
@@ -1769,7 +1769,7 @@ Weigh posts pushed to social, and TRYBE brands they earned with or submitted to,
     // best bets) would never reach the list from 400.
     // My top 100 reads the widest pool: it is left with only the brands that
     // pass every check, so it starts from as many fits as the search gives.
-    const pool = top100 ? 2400 : sort === 'picks' || sort === 'creators' || sort === 'spend' || sort === 'payouts' || sort === 'adsPerCreator' || readFilters(body.filters).minRating ? 1200 : 400
+    const pool = top100 ? 2400 : sort === 'picks' || sort === 'creators' || sort === 'spend' || sort === 'roomPay' || sort === 'payouts' || sort === 'adsPerCreator' || readFilters(body.filters).minRating ? 1200 : 400
     // FINDER (Seb, 2026-10-14, after Rob's Oink Blue video): the creator's
     // priorities, stars and filters. Priorities sent by the page win, so a
     // change ranks at once; else the saved ones.
@@ -1991,6 +1991,17 @@ Weigh posts pushed to social, and TRYBE brands they earned with or submitted to,
         earned: st?.paidOut ?? bucket, earnedFloor: st?.paidOut == null && bucket != null, joinedAt: st?.joinedAt ?? null,
       })]
     }))
+    // ROOM AND PAY, IN ONE VERDICT (lib/trybe-finder roomPayOf): "Crowded
+    // but paying", from how crowded it is and what a video, a month and all
+    // its time on TRYBE pay.
+    const roomPayBy = new Map(rows.map(r => {
+      const st = statsBy.get(r.brand_id)
+      const bucket = bucketDollars(r.earnings_bucket)
+      return [r.brand_id as string, roomPayOf({
+        crowd: crowdBy.get(r.brand_id), perVideo: estBy.get(r.brand_id)?.dollars ?? null, spend: spendBy.get(r.brand_id) ?? null,
+        paidOut: st?.paidOut ?? bucket, paidOutFloor: st?.paidOut == null && bucket != null,
+      })]
+    }))
     // Top 100 read at all (any brand stamped): a brand not in it then reads 0.
     const topRead = rows.some(r => r.top100_checked_at)
     const pickOf = (r: Record<string, any>) => pickScore({ // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -2157,6 +2168,7 @@ Weigh posts pushed to social, and TRYBE brands they earned with or submitted to,
     ranked.sort((a, b) => knownFirst(a, b) || payKnownFirst(a, b) ||
       (sort === 'pay' ? payOrder(b) - payOrder(a) || byMatch(a, b)
         : sort === 'spend' ? spendOrder(b) - spendOrder(a) || byMatch(a, b)
+        : sort === 'roomPay' ? (roomPayBy.get(b.r.brand_id)?.rank ?? 0) - (roomPayBy.get(a.r.brand_id)?.rank ?? 0) || spendOrder(b) - spendOrder(a) || byMatch(a, b)
         : sort === 'payouts' ? payoutOrder(b) - payoutOrder(a) || (b.r.total_creators ?? -1) - (a.r.total_creators ?? -1) || byMatch(a, b)
         : sort === 'creators' ? creators(a.r.total_creators) - creators(b.r.total_creators) || byMatch(a, b)
           : sort === 'fit' ? fit(b.r.brand_id) - fit(a.r.brand_id) || byMatch(a, b)
@@ -2351,6 +2363,7 @@ Weigh posts pushed to social, and TRYBE brands they earned with or submitted to,
           pay_est: (() => { const e = estBy.get(r.brand_id); return e ? { dollars: e.dollars, basis: e.basis, short: e.short, math: e.math, plus: e.plus, capped: e.capped, guaranteed: e.guaranteed } : null })(),
           crowd: crowdBy.get(r.brand_id) ?? null,
           spend: spendBy.get(r.brand_id) ?? null,
+          room_pay: roomPayBy.get(r.brand_id) ?? null,
           is_new: newBy.get(r.brand_id) ?? false,
           review: results.review.get(r.brand_id) ?? null,
           statics: staticsOf(r.raw, r.about),

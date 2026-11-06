@@ -34,7 +34,8 @@ function key(b: Row, c: Col): number | string | null {
     case 'top100': return typeof b.top100_hits === 'number' ? b.top100_hits : null
     case 'rating': return typeof b.review_rating === 'number' ? b.review_rating : null
     case 'samples': return b.proof?.app ? 0.5 : b.stats?.samples === true ? 1 : b.stats?.samples === false ? 0 : null
-    case 'room': return roomRank(b.crowd?.level) || null
+    // Room and pay when MVP can judge both; else room alone, after them.
+    case 'room': return b.room_pay?.rank ? 10 + b.room_pay.rank : roomRank(b.crowd?.level) || null
     case 'decides': return typeof b.review?.reviewDays === 'number' ? -b.review.reviewDays : null
   }
 }
@@ -48,7 +49,7 @@ const COLS: Array<{ id: Col; label: string; title: string; align?: 'right' }> = 
   { id: 'top100', label: 'Top 100', title: 'Its videos seen in TRYBE’s Top 100', align: 'right' },
   { id: 'rating', label: 'Rating', title: 'Creators’ stars on TRYBE', align: 'right' },
   { id: 'samples', label: 'Samples', title: 'Takes sample requests, from TRYBE or its products' },
-  { id: 'room', label: 'Room', title: 'How crowded it is with creators' },
+  { id: 'room', label: 'Room and pay', title: 'How crowded it is with creators, weighed with what it pays: Room and paying, Crowded but paying, Crowded, low pay' },
   { id: 'decides', label: 'Decides', title: 'Days to decide a video, from MVP members', align: 'right' },
 ]
 
@@ -88,12 +89,12 @@ export default function TrybeBrandTable({ brands, picked, onPick, taken, preview
   // table says it (blank where MVP has not read it, never a zero).
   function download() {
     const cell = (v: unknown) => { const s = v == null ? '' : String(v); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s }
-    const head = ['Brand', 'Website', 'Categories', 'MVP pick', 'A video pays ($)', 'Pay on TRYBE', 'Paid out', 'Meta ads', 'Top 100 videos', 'Rating', 'Reviews', 'Samples', 'Room', 'Days to decide', 'On your list']
+    const head = ['Brand', 'Website', 'Categories', 'MVP pick', 'A video pays ($)', 'Pay on TRYBE', 'Paid out', 'Meta ads', 'Top 100 videos', 'Rating', 'Reviews', 'Samples', 'Room', 'Room and pay', 'Days to decide', 'On your list']
     const lines = rows.map((b) => [
       b.name, b.website, (b.categories || []).join('; '), typeof b.pick === 'number' ? Math.round(b.pick) : '',
       b.pay_est?.dollars != null ? Math.round(b.pay_est.dollars) : '', b.pay_text || '', b.earnings_bucket || '', metaOf(b) ?? '',
       typeof b.top100_hits === 'number' ? b.top100_hits : '', typeof b.review_rating === 'number' ? b.review_rating : '', typeof b.review_count === 'number' ? b.review_count : '',
-      b.proof?.app ? 'App, none needed' : b.stats?.samples === true ? 'Yes' : b.stats?.samples === false ? 'No' : '', b.crowd?.level || '', typeof b.review?.reviewDays === 'number' ? b.review.reviewDays : '', whereOf(b) || '',
+      b.proof?.app ? 'App, none needed' : b.stats?.samples === true ? 'Yes' : b.stats?.samples === false ? 'No' : '', b.crowd?.level || '', b.room_pay?.words || '', typeof b.review?.reviewDays === 'number' ? b.review.reviewDays : '', whereOf(b) || '',
     ].map(cell).join(','))
     const blob = new Blob([[head.join(','), ...lines].join('\n')], { type: 'text/csv;charset=utf-8' })
     const a = document.createElement('a')
@@ -184,7 +185,8 @@ export default function TrybeBrandTable({ brands, picked, onPick, taken, preview
                     : b.stats?.samples === true ? <Dot c="strong">Yes</Dot> : b.stats?.samples === false ? <Dot c="weak">No</Dot> : <Unknown>Not known</Unknown>}
                 </td>
                 <td className="px-2.5 py-2.5 align-middle whitespace-nowrap">
-                  {b.crowd?.level ? <Dot c={b.crowd.level === 'open' ? 'strong' : b.crowd.level === 'filling' ? 'fair' : 'weak'}>{b.crowd.level === 'open' ? 'Open' : b.crowd.level === 'filling' ? 'Filling' : 'Crowded'}</Dot> : <Unknown>Not known</Unknown>}
+                  {b.room_pay?.words && b.room_pay.tone ? <span title={b.room_pay.why}><Dot c={b.room_pay.tone}>{b.room_pay.words}</Dot></span>
+                    : b.crowd?.level ? <span title={b.room_pay?.why || b.crowd.why}><Dot c={b.crowd.level === 'open' ? 'strong' : b.crowd.level === 'filling' ? 'fair' : 'weak'}>{b.crowd.level === 'open' ? 'Open' : b.crowd.level === 'filling' ? 'Filling' : 'Crowded'}</Dot></span> : <Unknown>Not known</Unknown>}
                 </td>
                 <td className="px-2.5 py-2.5 pr-4 text-right align-middle whitespace-nowrap">
                   {typeof b.review?.reviewDays === 'number' ? <span className="font-semibold" style={{ color: 'var(--text)' }}>{b.review.reviewDays}d</span> : <Unknown>Not yet</Unknown>}

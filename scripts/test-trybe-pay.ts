@@ -93,7 +93,7 @@ const R = read('app/api/labs/trybe/route.ts')
 check('Find brands reads pay from the kept entry, with your and members\' results', /payLines\(r\.raw, r\.pay_text\)/.test(R) && /estimatePay\(\{ lines: linesBy\.get\(r\.brand_id\) \|\| \[\], yours: results\.yours\.get/.test(R) && /perVideo: estBy\.get\(x\.r\.brand_id\)\?\.dollars \?\? null/.test(R))
 check('each collection writes the day\'s snapshot and a failure never fails it', /mergeSnapshot\(\(snapRow\?\.value \?\? null\) as Snapshot \| null, rows, trusted\)/.test(R) && /catch \{ \/\* the snapshot is extra/.test(R))
 const O = read('components/labs/TrybeOutreach.tsx')
-check('brand cards show NEW, the crowd word, the pay figure and statics', /<NewChip on=\{b\.is_new\} \/>/.test(O) && /<CrowdChip crowd=\{b\.crowd\}/.test(O) && /<PayChip est=\{b\.pay_est\} payText=\{b\.pay_text\} \/>/.test(O) && /<StaticsChip on=\{b\.statics\} \/>/.test(O))
+check('brand cards show NEW, the crowd word (with the pay, as Room and pay), the pay figure and statics', /<NewChip on=\{b\.is_new\} \/>/.test(O) && /<RoomPayChip roomPay=\{b\.room_pay\} crowd=\{b\.crowd\}/.test(O) && /<PayChip est=\{b\.pay_est\} payText=\{b\.pay_text\} \/>/.test(O) && /<StaticsChip on=\{b\.statics\} \/>/.test(O))
 check('the pay figure never goes into a message to a brand', /never put a rate in a message to a TRYBE brand/.test(read('components/labs/TrybeFinderControls.tsx')) && !/pay_est|estimatePay/.test(read('lib/trybe-outreach.ts')))
 
 // ── TRYBE'S PAY UNDER program.rules (Seb's check, 2026-11-06: 0 of 8,354

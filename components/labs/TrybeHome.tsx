@@ -173,7 +173,8 @@ export default function TrybeHome({ go, unread, queue, repliedWeek, inboxRead, f
                   {b.pay_est?.dollars != null ? <Tag tone="good">${Math.round(b.pay_est.dollars)} a video</Tag> : b.pay_est?.short ? <Tag>{String(b.pay_est.short).slice(0, 24)}</Tag> : null}
                   {typeof b.meta_ads === 'number' && b.meta_fresh && b.meta_ads > 0 && <Tag tone="good">{b.meta_ads} Meta ads</Tag>}
                   {b.stats?.samples === true && <Tag tone="good">Samples</Tag>}
-                  {b.crowd?.level === 'open' && <Tag tone="accent">Room for you</Tag>}
+                  {b.room_pay?.words ? <Tag tone={b.room_pay.tone === 'strong' ? 'good' : b.room_pay.tone === 'fair' ? 'warn' : 'bad'} title={b.room_pay.why}>{b.room_pay.words}</Tag>
+                    : b.crowd?.level === 'open' && <Tag tone="accent">Room for you</Tag>}
                   {b.is_new && <Tag tone="accent">New</Tag>}
                 </div>
               </BrandOpen>

@@ -263,6 +263,116 @@ export function creatorSpendOf(input: {
   return { dollars: null, basis: null, videos: null, perVideo: per, days, short: null, why: `${missing}, so MVP cannot estimate what it pays creators yet.` }
 }
 
+// ── ROOM AND PAY, IN ONE VERDICT (Seb, 2026-11-06, a TRYBE creator showing
+// TrybeDaily's brand lookup: "this one right here is crowded but paying, so
+// this might be one to look at"). MVP already shows how crowded a brand is
+// (crowdOf) and what it pays (estimatePay, creatorSpendOf, TRYBE's payout
+// range), but in separate chips, so a creator had to put the two together.
+// This puts them together, in plain words, with what to do. Pay is judged by
+// what one video pays first (what the creator earns), then by what the brand
+// pays all its creators a month, then by what it has paid out in all.
+// Either side not known: no verdict, never a guess.
+
+export type PayLevel = 'paying' | 'some' | 'low'
+export type RoomPay = `${Crowd}_${PayLevel}`
+export interface RoomPayRead {
+  key: RoomPay | null
+  crowd: Crowd | null
+  pay: PayLevel | null
+  /** "Crowded but paying"; null when either side is not known. */
+  words: string | null
+  /** For the dot and the chip. */
+  tone: 'strong' | 'fair' | 'weak' | null
+  /** For sorting: higher is better, 0 not known. */
+  rank: number
+  /** What to do about it. */
+  advice: string | null
+  /** The figures behind it, for the hover. */
+  why: string
+}
+
+export const ROOM_PAY_WORDS: Record<RoomPay, string> = {
+  open_paying: 'Room and paying',
+  filling_paying: 'Paying, filling up',
+  crowded_paying: 'Crowded but paying',
+  open_some: 'Room, fair pay',
+  filling_some: 'Filling, fair pay',
+  crowded_some: 'Crowded, fair pay',
+  open_low: 'Room, low pay',
+  filling_low: 'Filling, low pay',
+  crowded_low: 'Crowded, low pay',
+}
+
+const ROOM_PAY_ADVICE: Record<RoomPay, string> = {
+  open_paying: 'The best kind: real pay and few creators. Ask now.',
+  filling_paying: 'Real pay, and creators are finding it. Ask soon.',
+  crowded_paying: 'Real pay, shared by many creators. Worth it when your videos stand out from theirs.',
+  open_some: 'Few creators and fair pay. Worth a try.',
+  filling_some: 'Fair pay, and creators are finding it.',
+  crowded_some: 'Many creators for fair pay. Only if you like the product.',
+  open_low: 'Easy to get into, but each video pays little.',
+  filling_low: 'Creators are coming in for little pay. Only if the samples are worth it to you.',
+  crowded_low: 'Many creators, little pay. Skip it unless you love the product.',
+}
+
+const ROOM_RANK: Record<Crowd, number> = { open: 3, filling: 2, crowded: 1 }
+const PAY_RANK: Record<PayLevel, number> = { paying: 3, some: 2, low: 1 }
+
+/** Paying, fair or low, and the figure that decided it. Pure. */
+export function payLevelOf(input: {
+  perVideo: number | null | undefined
+  spend?: Pick<SpendRead, 'dollars' | 'basis'> | null
+  /** What it has paid creators on TRYBE in all: TRYBE's range or its paid-out figure. */
+  paidOut?: number | null
+  /** The paid-out figure is TRYBE's range, a floor ("$10K+"). */
+  paidOutFloor?: boolean
+}): { level: PayLevel | null; why: string } {
+  const per = typeof input.perVideo === 'number' && Number.isFinite(input.perVideo) && input.perVideo > 0 ? input.perVideo : null
+  const month = input.spend?.dollars ?? null
+  const recent = input.spend?.basis === 'recent'
+  const total = typeof input.paidOut === 'number' && Number.isFinite(input.paidOut) && input.paidOut > 0 ? input.paidOut : null
+  const monthWords = month == null ? '' : recent ? `about ${usd(month)} a month to creators lately` : `about ${usd(month)} a month to creators on average`
+  const parts = [per != null ? `about ${usd(per)} a video` : '', monthWords, total != null ? `${input.paidOutFloor ? 'at least ' : ''}${usd(total)} paid out to creators in all` : ''].filter(Boolean)
+  const said = parts.join(', ')
+  // Approving nothing lately: not paying now, whatever it pays a video.
+  if (recent && month === 0) return { level: 'low', why: 'No videos approved in the last 30 days: it is not paying creators for videos right now.' }
+  if (per != null) {
+    if (per >= 40) return { level: 'paying', why: said }
+    if (per >= 20) return { level: (month != null && month >= 3_000) || (total != null && total >= 25_000) ? 'paying' : 'some', why: said }
+    return { level: 'low', why: said }
+  }
+  if (month != null) return { level: month >= 5_000 ? 'paying' : month >= 500 ? 'some' : 'low', why: said }
+  if (total != null) return { level: total >= 50_000 ? 'paying' : total >= 5_000 ? 'some' : 'low', why: said }
+  return { level: null, why: 'MVP knows no pay per video, monthly payouts or total payouts for it.' }
+}
+
+/** How crowded it is and what it pays, as one verdict. Pure. */
+export function roomPayOf(input: {
+  crowd: Pick<CrowdRead, 'level' | 'why'> | null | undefined
+  perVideo: number | null | undefined
+  spend?: Pick<SpendRead, 'dollars' | 'basis'> | null
+  paidOut?: number | null
+  paidOutFloor?: boolean
+}): RoomPayRead {
+  const level = input.crowd?.level ?? null
+  const pay = payLevelOf(input)
+  const roomWhy = level ? `${CROWD_WORDS[level][0]}${CROWD_WORDS[level].slice(1).toLowerCase()}: ${input.crowd?.why || ''}`.trim() : 'How crowded it is: not known.'
+  const payWhy = pay.level ? `${pay.level === 'paying' ? 'Paying' : pay.level === 'some' ? 'Fair pay' : 'Low pay'}: ${pay.why.replace(/\.$/, '')}.` : `Pay: ${pay.why}`
+  if (!level || !pay.level) {
+    return { key: null, crowd: level, pay: pay.level, words: null, tone: null, rank: 0, advice: null, why: `${roomWhy} ${payWhy}` }
+  }
+  const key = `${level}_${pay.level}` as RoomPay
+  const score = PAY_RANK[pay.level] * ROOM_RANK[level]
+  const tone = score >= 6 ? 'strong' : score >= 3 ? 'fair' : 'weak'
+  return {
+    key, crowd: level, pay: pay.level, words: ROOM_PAY_WORDS[key], tone,
+    // Pay first among equals: crowded but paying above room with low pay.
+    rank: score * 10 + PAY_RANK[pay.level],
+    advice: ROOM_PAY_ADVICE[key],
+    why: `${ROOM_PAY_ADVICE[key]} ${roomWhy} ${payWhy}${FOR_CHOOSING}`,
+  }
+}
+
 /** Every key TRYBE's entries carry, one level deep, for the admin box: so
  *  what TRYBE sends is seen, not guessed. Pure. */
 export function rawKeys(raws: unknown[], max = 60): string[] {
