@@ -325,3 +325,59 @@ export function verdictOf(dims: Dimension[]): Verdict {
   const line = best === worst ? `${best.label}: ${best.value}.` : `Best: ${best.label.toLowerCase()} (${best.value}). Weakest: ${worst.label.toLowerCase()} (${worst.value}).`
   return { score, word, read: known.length, of, line }
 }
+
+// ── LIVE FROM TRYBE ─────────────────────────────────────────────────────────
+// The brand's own page on TRYBE (GET creator/v2/brands/{id}/details, read by
+// SCOUT from the creator's signed-in tab): its numbers as TRYBE shows them
+// today. TRYBE's field names are not published, so each is looked for under
+// the names it is likely to have, one level deep, and only what is found is
+// shown. The keys TRYBE sent are kept for the team, so a missing number can
+// be traced.
+
+export interface LiveBrandRead {
+  numbers: Array<{ id: 'creators' | 'subs30' | 'subsTotal' | 'score' | 'payout' | 'rating'; label: string; value: string; sub: string }>
+  program: string | null
+  approval: string | null
+  keys: string[]
+}
+
+type Obj = Record<string, unknown>
+const isObj = (v: unknown): v is Obj => !!v && typeof v === 'object' && !Array.isArray(v)
+
+/** The numbers on the brand's TRYBE page, by name, one level deep. Pure. */
+export function readLiveBrand(json: unknown): LiveBrandRead {
+  const root = isObj(json) && isObj(json.data) ? json.data : json
+  const o: Obj = isObj(root) ? (isObj(root.brand) ? { ...(root.brand as Obj), ...root } : root) : {}
+  const nested = Object.values(o).filter(isObj)
+  const find = (keys: string[]): unknown => {
+    for (const k of keys) if (o[k] != null && o[k] !== '') return o[k]
+    for (const n of nested) for (const k of keys) if (n[k] != null && n[k] !== '') return n[k]
+    return undefined
+  }
+  const num = (v: unknown): number | null => { const n = typeof v === 'number' ? v : typeof v === 'string' && /\d/.test(v) && !/[a-z]{3,}/i.test(v) ? parseFloat(v.replace(/[^0-9.]/g, '')) : NaN; return Number.isFinite(n) && n >= 0 ? n : null }
+  const label = (v: unknown): string | null => (typeof v === 'string' && /\d/.test(v) && v.length <= 20 ? v.trim() : typeof v === 'number' && Number.isFinite(v) ? v.toLocaleString('en-US') : null)
+  const numbers: LiveBrandRead['numbers'] = []
+  const creators = label(find(['creatorLabel', 'totalCreators', 'creatorsCount', 'creatorCount', 'numCreators', 'activeCreators', 'creators']))
+  if (creators) numbers.push({ id: 'creators', label: 'Creators', value: creators, sub: 'Working with it on TRYBE' })
+  const s30 = num(find(['submissionsLast30Days', 'submissions30d', 'subs30', 'last30DaysSubmissions', 'recentSubmissions', 'submissionsThisMonth']))
+  if (s30 != null) numbers.push({ id: 'subs30', label: 'Videos in 30 days', value: s30.toLocaleString('en-US'), sub: 'Submitted to it in the last 30 days' })
+  const st = num(find(['totalSubmissions', 'submissionsTotal', 'subsTotal', 'submissionCount', 'submissionsCount']))
+  if (st != null) numbers.push({ id: 'subsTotal', label: 'Videos all time', value: st.toLocaleString('en-US'), sub: 'Submitted to it since it joined' })
+  const score = num(find(['trybeScore', 'brandScore', 'score']))
+  if (score != null && score <= 100) numbers.push({ id: 'score', label: 'TRYBE score', value: `${Math.round(score)}`, sub: 'Of 100: how fast it reviews, launches ads and replies' })
+  const pd = num(find(['payoutDays', 'payoutFrequencyDays', 'paidEveryDays', 'paymentTermsDays']))
+  if (pd != null && pd > 0 && pd <= 90) numbers.push({ id: 'payout', label: 'Pays every', value: `${Math.round(pd)} day${pd === 1 ? '' : 's'}`, sub: pd <= 7 ? 'Weekly, the TRYBE norm' : 'Slower than weekly' })
+  const rating = num(find(['reviewRating', 'averageRating']))
+  const rc = num(find(['reviewCount', 'ratingsCount', 'ratingCount']))
+  if (rating != null && rating > 0 && rating <= 5) numbers.push({ id: 'rating', label: 'Rating', value: `${rating.toFixed(1)} ★`, sub: rc != null ? `From ${rc} creator review${rc === 1 ? '' : 's'}` : 'Creators’ stars' })
+  const programs = [o.programs, o.commissionPrograms].find(Array.isArray) as unknown[] | undefined
+  const prog = find(['programName']) ?? (programs && isObj(programs[0]) ? (programs[0] as Obj).name : undefined)
+  const ap = find(['joinApproval', 'approvalType', 'joinType'])
+  const auto = find(['autoApprove', 'autoApproval', 'autoAccept'])
+  return {
+    numbers,
+    program: typeof prog === 'string' && prog.trim() ? prog.trim().slice(0, 80) : null,
+    approval: auto === true ? 'Approves creators automatically' : auto === false ? 'Reviews each creator who asks to join' : typeof ap === 'string' ? (/auto/i.test(ap) ? 'Approves creators automatically' : /manual|review/i.test(ap) ? 'Reviews each creator who asks to join' : null) : null,
+    keys: Object.keys(o).slice(0, 80),
+  }
+}

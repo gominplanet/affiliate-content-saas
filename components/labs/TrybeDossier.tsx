@@ -14,7 +14,10 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { X, Globe, ExternalLink, Loader2, AlertTriangle, MessageCircle, Send, Clapperboard, Star, PlayCircle, Package, History, Users, Megaphone } from 'lucide-react'
-import { scorecard, verdictOf, seriesMove, type Dimension, type SamplePool, type ReplyPool, type DossierProduct, type TimelineItem, type SeriesPoint } from '@/lib/trybe-dossier'
+import { readBrandCard } from '@/lib/trybe-brand-page'
+import { payLines } from '@/lib/trybe-pay'
+import { requestTrybeApi } from '@/lib/extension-frame'
+import { scorecard, verdictOf, seriesMove, readLiveBrand, type LiveBrandRead, type Dimension, type SamplePool, type ReplyPool, type DossierProduct, type TimelineItem, type SeriesPoint } from '@/lib/trybe-dossier'
 import { adLibraryUrl } from '@/lib/trybe-pick'
 import { CHANGE_WORDS } from '@/lib/trybe-changes'
 import { GRADE, ui, Section, Tag, Meter, ScoreRing, Figure, AreaChart, Btn } from '@/components/labs/trybe-ui'
@@ -64,7 +67,7 @@ function standing(d: DossierRead['you'] | undefined, listing: Listing | null): s
   return 'Not on your list yet.'
 }
 
-export default function TrybeDossier({ brandId, name, onClose, actions, scout = false, onScripts }: {
+export default function TrybeDossier({ brandId, name, onClose, actions, scout = false, onScripts, canDetails = false, isAdmin = false }: {
   brandId: string
   /** The name, shown while the page loads. */
   name?: string
@@ -75,6 +78,10 @@ export default function TrybeDossier({ brandId, name, onClose, actions, scout = 
   scout?: boolean
   /** Go to Make videos with this brand. */
   onScripts?: (brandId: string, name: string) => void
+  /** SCOUT can read the brand's own page on TRYBE (1.45.0). */
+  canDetails?: boolean
+  /** The team sees which fields TRYBE sent. */
+  isAdmin?: boolean
 }) {
   const [listing, setListing] = useState<Listing | null>(null)
   const [d, setD] = useState<DossierRead | null>(null)
@@ -82,6 +89,17 @@ export default function TrybeDossier({ brandId, name, onClose, actions, scout = 
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState<'message' | 'send' | null>(null)
   const panel = useRef<HTMLDivElement>(null)
+  // LIVE FROM TRYBE: the brand's own page, read through SCOUT just now.
+  const [live, setLive] = useState<{ state: 'reading' | 'read' | 'failed'; read?: LiveBrandRead; rules?: string[]; brief?: string | null; briefUrl?: string | null; error?: string } | null>(null)
+  const readLive = useCallback(async () => {
+    if (!canDetails) return
+    setLive({ state: 'reading' })
+    const r = await requestTrybeApi('GET', `/backend/api/creator/v2/brands/${encodeURIComponent(brandId)}/details`).catch(() => ({ ok: false as const, error: 'SCOUT did not answer.', json: undefined }))
+    if (!r.ok || r.json == null) { setLive({ state: 'failed', error: ('error' in r && r.error) || 'no answer' }); return }
+    const card = readBrandCard(r.json)
+    setLive({ state: 'read', read: readLiveBrand(r.json), rules: payLines(r.json), brief: card.brief, briefUrl: card.briefUrl })
+  }, [brandId, canDetails])
+  useEffect(() => { void readLive() }, [readLive])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -203,6 +221,37 @@ export default function TrybeDossier({ brandId, name, onClose, actions, scout = 
                 </div>
               ))}
             </div>
+          )}
+
+          {/* ── LIVE FROM TRYBE ──────────────────────────────────────────── */}
+          {canDetails && live && (
+            <Section title="Live from TRYBE" aside="Its own page on TRYBE, read just now through SCOUT">
+              <div className="rounded-2xl p-5 flex flex-col gap-5" style={ui.card}>
+                {live.state === 'reading' && <p className="text-[13px] inline-flex items-center gap-2" style={ui.soft}><Loader2 size={14} className="animate-spin" /> Reading its page on TRYBE&hellip;</p>}
+                {live.state === 'failed' && <p className="text-[13px]" style={ui.text}><AlertTriangle size={14} className="inline -mt-0.5 mr-1" style={{ color: '#F59E0B' }} />SCOUT could not read its page on TRYBE: {live.error}. <button type="button" onClick={() => void readLive()} className="font-semibold underline">Read it again</button></p>}
+                {live.state === 'read' && live.read && (<>
+                  {live.read.numbers.length
+                    ? <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-5">{live.read.numbers.map((n) => <Figure key={n.id} label={n.label} value={n.value} sub={n.sub} />)}</div>
+                    : <p className="text-[13px]" style={ui.soft}>Its TRYBE page shows no creator, video or score counts to MVP.</p>}
+                  {(live.rules?.length ?? 0) > 0 && (
+                    <div>
+                      <p className="text-[11px] font-semibold uppercase mb-1.5" style={{ ...ui.soft, letterSpacing: '0.07em' }}>Its pay, as TRYBE says it</p>
+                      <ul className="flex flex-col gap-1">{live.rules!.map((r, i) => <li key={i} className="text-[13.5px] font-semibold" style={ui.text}>{r}</li>)}</ul>
+                    </div>
+                  )}
+                  {(live.read.program || live.read.approval) && <p className="text-[12.5px]" style={ui.mid}>{[live.read.program ? `Program: ${live.read.program}` : null, live.read.approval].filter(Boolean).join('. ')}.</p>}
+                  {live.brief && (
+                    <details className="rounded-xl px-4 py-3" style={ui.well}>
+                      <summary className="text-[13px] font-semibold cursor-pointer" style={ui.text}>Its creative brief</summary>
+                      <p className="text-[13px] leading-relaxed mt-2 whitespace-pre-line" style={ui.mid}>{live.brief}</p>
+                    </details>
+                  )}
+                  {live.briefUrl && <a href={live.briefUrl} target="_blank" rel="noopener noreferrer" className="text-[13px] font-semibold inline-flex items-center gap-1 hover:underline" style={{ color: ui.accentText }}>Open its brief on {siteName(live.briefUrl)} <ExternalLink size={12} /></a>}
+                  {!live.brief && !live.briefUrl && <p className="text-[12.5px]" style={ui.soft}>It has no creative brief on TRYBE.</p>}
+                  {isAdmin && <p className="text-[11px]" style={ui.soft}>For the team: TRYBE sent {live.read.keys.join(', ') || 'nothing'}.</p>}
+                </>)}
+              </div>
+            </Section>
           )}
 
           {/* ── ITS NUMBERS ON TRYBE ─────────────────────────────────────── */}

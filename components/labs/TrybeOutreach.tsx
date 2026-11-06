@@ -2030,7 +2030,8 @@ export default function TrybeOutreach({ preview = false, v2 = false }: { preview
 
   return (
     <DossierCtx.Provider value={v2 ? openDossier : null}>
-    {dossierOf && <TrybeDossier brandId={dossierOf.id} name={dossierOf.name} onClose={() => setDossierOf(null)} actions={peekActions} scout={scoutOpens} onScripts={() => { setDossierOf(null); go('create') }} />}
+    {dossierOf && <TrybeDossier brandId={dossierOf.id} name={dossierOf.name} onClose={() => setDossierOf(null)} actions={peekActions} scout={scoutOpens} onScripts={() => { setDossierOf(null); go('create') }}
+      canDetails={access === 'granted' && scoutAtLeast(scoutVersion, SCOUT_TRYBE_PLAYBOOK_MIN_VERSION)} isAdmin={isAdmin} />}
     <div className="max-w-6xl mx-auto px-4 py-8 space-y-6" style={{ color: 'var(--text)' }}>
       <Suspense fallback={null}><TabQueryWatcher onTab={onTabQuery} /></Suspense>
       {teal ? (

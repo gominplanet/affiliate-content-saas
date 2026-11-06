@@ -8,7 +8,7 @@
 // came from, never scoring what was not read; and the page is wired in for the
 // team only, from wherever a brand's name is shown.
 import { readFileSync } from 'node:fs'
-import { samplePool, replyPool, metaSeries, seriesMove, timelineOf, dossierProducts, scorecard, verdictOf, type ScoreInput } from '../lib/trybe-dossier'
+import { samplePool, replyPool, metaSeries, seriesMove, timelineOf, dossierProducts, scorecard, verdictOf, readLiveBrand, type ScoreInput } from '../lib/trybe-dossier'
 import { POOL_MIN } from '../lib/trybe-changes'
 
 const fails: string[] = []
@@ -106,12 +106,25 @@ const blank: ScoreInput = { pay: { dollars: null, short: null, basis: null }, me
   check('products that all refuse samples score zero and say so', shut?.score === 0 && /None of its 4 products/.test(shut?.source || ''))
 }
 
+// ── LIVE FROM TRYBE ──────────────────────────────────────────────────────────
+{
+  const l = readLiveBrand({ data: { brand: { id: 'x', name: 'Luxe', creatorLabel: '1,500+', trybeScore: 100, payoutDays: 7, reviewRating: 4.9, reviewCount: 46 }, stats: { submissionsLast30Days: 3407, totalSubmissions: '3,600' }, programs: [{ name: 'Luxe creators' }], autoApprove: false } })
+  const by = Object.fromEntries(l.numbers.map((n) => [n.id, n.value]))
+  check('TRYBE\'s own numbers are found by name, one level deep', by.creators === '1,500+' && by.subs30 === '3,407' && by.subsTotal === '3,600' && by.score === '100' && by.payout === '7 days' && by.rating === '4.9 \u2605')
+  check('its program and how it lets creators in', l.program === 'Luxe creators' && l.approval === 'Reviews each creator who asks to join')
+  check('the keys TRYBE sent are kept for the team', l.keys.includes('stats') && l.keys.includes('id'))
+  const none = readLiveBrand({ data: { name: 'Quiet', about: 'words' } })
+  check('a page with no numbers gives none, never a made up one', none.numbers.length === 0 && none.program === null && none.approval === null)
+  check('a score over 100 or a word is not a number', readLiveBrand({ score: 340, creatorLabel: 'many creators' }).numbers.length === 0)
+}
+
 // ── WIRED IN ─────────────────────────────────────────────────────────────────
 const R = read('app/api/labs/trybe/route.ts')
 check('one action reads the rest of the brand page', /if \(action === 'dossier'\)/.test(R) && /samplePool\(/.test(R) && /replyPool\(/.test(R) && /metaSeries\(changes/.test(R) && /timelineOf\(changes\)/.test(R))
 check('members\' results leave out the one looking', /poolBrands\(memQ\.rows, \{ exclude: ownerId \}\)/.test(R))
 check('TRYBE\'s public brand page and products are read, kept a day, and feed the samples count too', /backend\/api\/public\/brand\/\$\{encodeURIComponent\(brandId\)\}/.test(R) && /key: pubKey/.test(R) && /key: `samples:\$\{brandId\}`/.test(R))
 const U = read('components/labs/TrybeOutreach.tsx')
+const D = read('components/labs/TrybeDossier.tsx')
 check('brand names open the page in Find, Sent and Ready to send', (U.match(/<BrandName id=\{b\.brand_id\} name=\{b\.name\}/g) || []).length >= 3)
 check('and in Star brands, and on the home', /<BrandName id=\{b\.brand_id\}/.test(read('components/labs/TrybeStarBrands.tsx')))
 check('Find brands as a sortable table in the new TRYBE, cards kept as a choice', /\{v2 && listView === 'table' \? \(\s*<TrybeBrandTable/.test(U) && /localStorage\.setItem\('mvp\.trybe\.listView', v\)/.test(U))
@@ -121,9 +134,10 @@ check('Find brands as a sortable table in the new TRYBE, cards kept as a choice'
   check('every column sorts, unknown always last', /if \(x == null\) return 1/.test(T) && /aria-sort=/.test(T))
   check('a brand already written or sent cannot be picked again', /disabled=\{isTaken\}/.test(T))
 }
+check('the brand page reads its own TRYBE page live through SCOUT, and says when it could not', /requestTrybeApi\('GET', `\/backend\/api\/creator\/v2\/brands\/\$\{encodeURIComponent\(brandId\)\}\/details`\)/.test(D) && /SCOUT could not read its page on TRYBE/.test(D) && /canDetails=\{access === 'granted' && scoutAtLeast\(scoutVersion, SCOUT_TRYBE_PLAYBOOK_MIN_VERSION\)\}/.test(U))
+check('a brief link names where it goes', /Open its brief on \{siteName\(live\.briefUrl\)\}/.test(D))
 check('only with the new TRYBE switched on', /<DossierCtx\.Provider value=\{v2 \? openDossier : null\}>/.test(U))
 check('the switch is team only until it is opened', /trybe_v2: 'admin'/.test(read('lib/labs-preview.ts')) && /v2=\{canUsePreview\('trybe_v2', tier\)\}/.test(read('app/(dashboard)/trybe/page.tsx')))
-const D = read('components/labs/TrybeDossier.tsx')
 check('what is not read says so on the page', /Not enough read|MVP has not counted its Meta ads yet/.test(D + read('lib/trybe-dossier.ts')) && /Read it again/.test(D))
 check('every outside link names where it goes', /Its ads on Meta Ad Library/.test(D) && /Watch on TRYBE/.test(D) && /Open on TRYBE/.test(D))
 
