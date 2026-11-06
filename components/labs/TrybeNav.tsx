@@ -12,7 +12,7 @@
 // on a phone), each saying what waits in it, and the pages of the open job sit
 // under them as tabs that wrap. Nothing is hidden off the edge.
 
-import { LayoutDashboard, Search, Rocket, Send, Inbox, Clapperboard, UploadCloud, CalendarDays, Lightbulb, BarChart3, ListChecks, Bell, Megaphone, type LucideIcon } from 'lucide-react'
+import { LayoutDashboard, Search, Rocket, Send, Inbox, Clapperboard, UploadCloud, CalendarDays, Lightbulb, BarChart3, ListChecks, Bell, Megaphone, ChevronRight, type LucideIcon } from 'lucide-react'
 import type { Tab } from '@/components/labs/TrybeOutreach'
 
 type Item = { label: string; icon: LucideIcon; tabs: Tab[]; count?: 'queue' | 'unread' }
@@ -77,9 +77,18 @@ export default function TrybeNav({ tab, queue, unread, go }: { tab: Tab; queue: 
           )
         })}
       </div>
-      {/* The pages of the open job, as tabs that wrap. */}
+      {/* THE PAGES OF THE OPEN JOB (Seb, 2026-11-06: "needs to be more
+          visible.. especially the smaller lower sub menus... needs color,
+          boldness.. something so that users dont search for it"). A strip in
+          the look's own colour under the four jobs, named for the job it
+          opens, with each page a bold button: the page you are on solid, the
+          others white with a coloured icon. They wrap; nothing scrolls. */}
       {active.items.length > 1 && (
-        <div role="tablist" aria-label={active.label} className="flex flex-wrap gap-x-1 gap-y-0.5 px-2.5" style={{ borderTop: '1px solid var(--border)' }}>
+        <div role="tablist" aria-label={active.label} className="flex flex-wrap items-center gap-2 px-3 py-2.5"
+          style={{ background: 'rgb(var(--brand-rgb) / 0.10)', borderTop: '1px solid rgb(var(--brand-rgb) / 0.25)' }}>
+          <span className="hidden sm:inline-flex items-center gap-1 text-[11px] font-bold uppercase pl-1 pr-1.5" style={{ color: 'var(--accent-text, var(--accent))', letterSpacing: '0.08em' }}>
+            {active.label} <ChevronRight size={13} aria-hidden="true" />
+          </span>
           {active.items.map((it) => {
             const on = it.tabs.includes(tab)
             const n = countOf(it)
@@ -87,11 +96,13 @@ export default function TrybeNav({ tab, queue, unread, go }: { tab: Tab; queue: 
             return (
               <button key={it.label} type="button" role="tab" aria-selected={on}
                 onClick={() => go(firstOf(it))}
-                className="inline-flex items-center gap-1.5 px-3 py-2.5 text-[13px] font-semibold whitespace-nowrap transition-colors focus-visible:outline focus-visible:outline-2 -mb-px"
-                style={{ color: on ? 'var(--accent-text, var(--accent))' : 'var(--text-2)', borderBottom: `2.5px solid ${on ? 'var(--accent)' : 'transparent'}`, outlineColor: 'var(--accent)' }}>
-                <Icon size={14} />
+                className="inline-flex items-center gap-2 rounded-xl px-3.5 py-2 text-[14px] font-bold whitespace-nowrap transition hover:brightness-[1.04] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
+                style={on
+                  ? { background: 'var(--accent)', color: '#fff', border: '1px solid var(--accent)', boxShadow: '0 2px 10px rgb(var(--brand-rgb) / 0.35)', outlineColor: 'var(--accent)' }
+                  : { background: 'var(--surface)', color: 'var(--text)', border: '1px solid rgb(var(--brand-rgb) / 0.30)', outlineColor: 'var(--accent)' }}>
+                <Icon size={16} style={on ? undefined : { color: 'var(--accent-text, var(--accent))' }} />
                 {it.label}
-                {n > 0 && <span className="text-[10.5px] font-bold rounded-full px-1.5 min-w-[18px] text-center" style={{ background: 'var(--accent)', color: '#fff' }}>{n}</span>}
+                {n > 0 && <span className="text-[11px] font-bold rounded-full px-1.5 min-w-[20px] text-center" style={on ? { background: '#fff', color: 'var(--accent)' } : { background: 'var(--accent)', color: '#fff' }}>{n}</span>}
               </button>
             )
           })}
