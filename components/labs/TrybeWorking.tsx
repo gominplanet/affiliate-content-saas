@@ -27,6 +27,7 @@ import { readTopEntries, openingLine, hookType, hookCounts, middleHalf, HOOK_TYP
 import { topCreators } from '@/lib/trybe-creators'
 import { BrandMark } from '@/components/labs/TrybeFinderControls'
 import TrybeAdsGallery from '@/components/labs/TrybeAdsGallery'
+import TrybeHookLibrary from '@/components/labs/TrybeHookLibrary'
 
 const PURPLE = 'var(--accent)'
 const AMBER = '#B45309'
@@ -130,7 +131,8 @@ export default function TrybeWorking({ canRead, isAdmin, newToTop, scoutVersion 
   const tile = 'rounded-2xl border px-5 py-4 flex flex-col'
 
   // The ads gallery is MVP's own copy, so it shows even when the Top 100 cannot be read.
-  const gallery = <TrybeAdsGallery isAdmin={isAdmin} scoutVersion={scoutVersion} canRead={canRead} topBrands={topBrands} category={data ? cat : null} />
+  // The hook library is MVP's own copy too: it shows with or without SCOUT.
+  const gallery = <><TrybeAdsGallery isAdmin={isAdmin} scoutVersion={scoutVersion} canRead={canRead} topBrands={topBrands} category={data ? cat : null} /><TrybeHookLibrary /></>
   if (!canRead) {
     return (
       <div className="space-y-7">
@@ -159,7 +161,7 @@ export default function TrybeWorking({ canRead, isAdmin, newToTop, scoutVersion 
       {playing && <ExamplePlayer entry={playing} isAdmin={isAdmin} onClose={() => setPlaying(null)} />}
       <div className="flex flex-wrap items-center gap-2">
         <nav className="flex flex-wrap gap-1.5" aria-label="On this tab">
-          {[['ww-glance', 'At a glance'], ['ww-hooks', 'Hooks'], ['ww-lengths', 'Video lengths'], ['ww-creators', 'Top creators'], ['ww-ads', 'Longest running ads']].map(([id, label]) => (
+          {[['ww-glance', 'At a glance'], ['ww-hooks', 'Hooks'], ['ww-lengths', 'Video lengths'], ['ww-creators', 'Top creators'], ['ww-ads', 'Longest running ads'], ['ww-library', 'Hook library']].map(([id, label]) => (
             <a key={id} href={`#${id}`} className="rounded-full px-3 py-1 text-[12.5px] font-semibold border hover:border-[#7C3AED]/50" style={{ borderColor: 'var(--border)', color: 'var(--text)' }}>{label}</a>
           ))}
         </nav>

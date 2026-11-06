@@ -145,6 +145,13 @@ check('a brief link names where it goes', /Open its brief on \{siteName\(live\.b
 }
 check('brands like it: still on TRYBE, in its categories, biggest Meta advertisers first, each opening its page', /\.overlaps\('categories', cats\)\.neq\('brand_id', brandId\)\.is\('left_at', null\)/.test(R) && /Brands like it/.test(D) && /<BrandName id=\{x\.brand_id\}/.test(D))
 check('brand names open the page in What changed, Best new, Most active and the inbox too', ['components/labs/TrybeChanges.tsx', 'components/labs/TrybeBestNew.tsx', 'components/labs/TrybeActive.tsx', 'components/labs/TrybeBrandCard.tsx'].every((f) => /<BrandName id=/.test(read(f))))
+{
+  const L = read('components/labs/TrybeHookLibrary.tsx')
+  check('the hook library reads every opening line MVP wrote down from the Top 100, best placed first', /if \(action === 'hook_library'\)/.test(R) && /from\('trybe_top_scripts'\)\.select\('submission_id, brand_id, brand_name, creator, best_rank, category, seconds, hook, video_url'\)\.not\('hook', 'is', null\)\.order\('best_rank'/.test(R))
+  check('it searches, filters by kind and category, sorts, and copies each line', /hookType\(h\.hook\) === kind/.test(L) && /Every category/.test(L) && /Shortest first/.test(L) && /navigator\.clipboard\.writeText\(h\.hook\)/.test(L))
+  check('it sits in What\'s working, with or without SCOUT', /<TrybeHookLibrary \/>/.test(read('components/labs/TrybeWorking.tsx')) && /\['ww-library', 'Hook library'\]/.test(read('components/labs/TrybeWorking.tsx')))
+  check('a library that did not load says so', /The hook library did not load/.test(L))
+}
 check('only with the new TRYBE switched on', /<DossierCtx\.Provider value=\{v2 \? openDossier : null\}>/.test(U))
 check('the switch is team only until it is opened', /trybe_v2: 'admin'/.test(read('lib/labs-preview.ts')) && /v2=\{canUsePreview\('trybe_v2', tier\)\}/.test(read('app/(dashboard)/trybe/page.tsx')))
 check('what is not read says so on the page', /Not enough read|MVP has not counted its Meta ads yet/.test(D + read('lib/trybe-dossier.ts')) && /Read it again/.test(D))

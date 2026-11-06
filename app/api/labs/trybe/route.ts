@@ -2982,6 +2982,23 @@ Weigh posts pushed to social, and TRYBE brands they earned with or submitted to,
     return NextResponse.json({ ok: true, videos: rows, coverage: coverageWords(rows) })
   }
 
+  if (action === 'hook_library') {
+    // THE HOOK LIBRARY (Seb, 2026-11-06: "proper scripts"): every opening line
+    // MVP has written down from TRYBE's Top 100, across every day it watched,
+    // best placed first. TrybeDaily keeps these behind sign-up; here they are
+    // the team's shared copy (trybe_top_scripts), read in one answer.
+    const { data, error } = await admin.from('trybe_top_scripts').select('submission_id, brand_id, brand_name, creator, best_rank, category, seconds, hook, video_url').not('hook', 'is', null).order('best_rank', { ascending: true, nullsFirst: false }).limit(800)
+    if (error) {
+      if (scriptsMissing(error.message)) return NextResponse.json({ error: setupWords(tier, SCRIPTS_SQL), needsMigration: true }, { status: 409 })
+      return NextResponse.json({ error: error.message }, { status: 500 })
+    }
+    const seen = new Set<string>()
+    const hooks = ((data || []) as Array<Record<string, any>>) // eslint-disable-line @typescript-eslint/no-explicit-any
+      .map(r => ({ id: String(r.submission_id), brandId: r.brand_id ? String(r.brand_id) : null, brand: r.brand_name ? String(r.brand_name) : null, creator: r.creator ? String(r.creator) : null, rank: typeof r.best_rank === 'number' ? r.best_rank : null, category: r.category ? String(r.category) : null, seconds: typeof r.seconds === 'number' ? r.seconds : null, hook: String(r.hook || '').replace(/\s+/g, ' ').trim().slice(0, 240), video: typeof r.video_url === 'string' && /^https:\/\//.test(r.video_url) ? r.video_url : null }))
+      .filter(h => h.hook.length >= 8 && !seen.has(h.hook.toLowerCase()) && !!seen.add(h.hook.toLowerCase()))
+    return NextResponse.json({ ok: true, hooks })
+  }
+
   if (action === 'top_lines') {
     // WHAT'S WORKING, FROM THE SHARED COPY (Seb, 2026-10-19: "this takes too
     // long and i'm not sure i get the value"). Each member's SCOUT asked TRYBE
