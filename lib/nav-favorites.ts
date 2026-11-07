@@ -18,6 +18,9 @@ import { createBrowserClient } from '@/lib/supabase/client'
 export const MAX_NAV_FAVORITES = 12
 
 const LOCAL_KEY = 'mvp_nav_favorites_v1'
+/** Said on the page when the list changes, so the sidebar's My features and
+ *  the Dashboard's Pinned cards (two copies of this hook) stay the same. */
+const CHANGED_EVENT = 'mvp:nav-favorites'
 
 /** Adds or removes one page, keeping pin order and the maximum. `aliases`
  *  are the other addresses the same row answers to (the tabs merged into it):
@@ -74,7 +77,13 @@ export function useNavFavorites(): {
         setSavedTo('account')
       } catch { if (alive) setSavedTo('device') }
     })()
-    return () => { alive = false }
+    // A pin made elsewhere on this page (the Dashboard or the sidebar), or in
+    // another MVP tab, shows here at once.
+    const onChange = (e: Event) => { const d = (e as CustomEvent<string[]>).detail; if (Array.isArray(d)) setFavorites(d) }
+    const onStorage = (e: StorageEvent) => { if (e.key === LOCAL_KEY) setFavorites(readLocal()) }
+    window.addEventListener(CHANGED_EVENT, onChange)
+    window.addEventListener('storage', onStorage)
+    return () => { alive = false; window.removeEventListener(CHANGED_EVENT, onChange); window.removeEventListener('storage', onStorage) }
   }, [])
 
   const toggle = useCallback((href: string, aliases: string[] = []) => {
@@ -82,6 +91,7 @@ export function useNavFavorites(): {
     if (r.full) return { full: true }
     setFavorites(r.next)
     writeLocal(r.next)
+    try { window.dispatchEvent(new CustomEvent(CHANGED_EVENT, { detail: r.next })) } catch { /* old browser: a reload shows it */ }
     ;(async () => {
       try {
         const sb = createBrowserClient()

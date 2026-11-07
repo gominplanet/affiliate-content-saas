@@ -21,11 +21,12 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
-import { AlertTriangle, ArrowRight, BadgeDollarSign, ChevronRight, Loader2, RefreshCw, Sparkles } from 'lucide-react'
+import { AlertTriangle, ArrowRight, BadgeDollarSign, ChevronRight, Loader2, Pin, PinOff, RefreshCw, Sparkles } from 'lucide-react'
 import { bannerFor } from '@/lib/banner-art'
 import type { TodayItem } from '@/lib/today-list'
 import { featureLine } from '@/lib/feature-lines'
-import { useShellNav } from '@/components/layout/shell-nav-context'
+import { useShellNav, type ShellNavItem } from '@/components/layout/shell-nav-context'
+import { useNavFavorites, MAX_NAV_FAVORITES } from '@/lib/nav-favorites'
 import { pickBuckets, type UsageBucket } from '@/lib/usage-highlights'
 
 type Usage = { buckets: UsageBucket[]; resetLabel: string | null; introNote?: string | null }
@@ -92,6 +93,31 @@ export default function TealDashboard({ firstName, today, meta, primary, seconda
   }, [])
 
   const groups = useShellNav()
+  // ── PINNED (Seb, 2026-11-07: "on the cards, have a little box that says
+  // pin it to the top. And if I pin that card to the top, it becomes a
+  // pinned card to the top of the dashboard"). The same list as My features
+  // in the menu, saved to the account so it follows the member to every
+  // device: one pin shows in both places.
+  const { favorites, toggle: togglePin, savedTo } = useNavFavorites()
+  const [pinNote, setPinNote] = useState<string | null>(null)
+  const isPinned = (f: ShellNavItem) => [f.href, ...(f.aliases || [])].some((h) => favorites.includes(h))
+  const pin = (f: ShellNavItem) => {
+    const { full } = togglePin(f.href, f.aliases || [])
+    setPinNote(full ? `You can pin ${MAX_NAV_FAVORITES}. Unpin one to pin ${f.label}.` : null)
+  }
+  // The pinned cards, in the order they were pinned, each with its section's
+  // colour. A pin on a tool this plan no longer opens is not shown.
+  const pinned = (() => {
+    if (!groups) return []
+    const out: Array<ShellNavItem & { color: string; tint: string; section: string }> = []
+    for (const h of favorites) {
+      for (const g of groups) {
+        const f = g.items.find((it) => it.href === h || (it.aliases || []).includes(h))
+        if (f && !out.some((o) => o.href === f.href)) { out.push({ ...f, color: g.color, tint: g.tint, section: g.label }); break }
+      }
+    }
+    return out
+  })()
 
   // The banner's second line says what the Today list actually found.
   const loadingToday = !todayShut && items === null && !todayError
@@ -157,6 +183,47 @@ export default function TealDashboard({ firstName, today, meta, primary, seconda
       </section>
 
       {alerts}
+
+      {/* ── PINNED: the tools this member pinned, first. ── */}
+      {groups && groups.length > 0 && (
+        <section aria-labelledby="pinned-h" className="flex flex-col gap-3">
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <h2 id="pinned-h" className="text-[20px] font-extrabold inline-flex items-center gap-2"><Pin size={18} style={{ color: 'var(--accent-text)' }} /> Pinned</h2>
+            <p className="text-[13px]" style={{ color: 'var(--text-faint)' }}>
+              {pinned.length ? 'Your tools, first. They also show under My features in the menu.' : ''}
+              {savedTo === 'device' && <span style={{ color: 'var(--hot)' }}>{pinned.length ? ' ' : ''}Saved in this browser only for now, so they will not follow you to another computer yet.</span>}
+            </p>
+          </div>
+          {pinned.length === 0 ? (
+            <p className="rounded-[18px] border border-dashed px-5 py-4 text-[14px]" style={{ borderColor: 'var(--border)', color: 'var(--text-soft)' }}>
+              Put the tools you use most right here. Press <Pin size={13} className="inline -mt-0.5" /> <b>Pin</b> on any tool under Everything MVP does below, and it shows at the top of your Dashboard every time you sign in.
+            </p>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3.5">
+              {pinned.map((f) => {
+                const line = featureLine(f.href)
+                return (
+                  <div key={f.href} className="relative rounded-[18px] border overflow-hidden transition-shadow hover:shadow-md" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
+                    <Link href={f.href} className="flex items-start gap-3 px-4 py-4 pr-12 focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[color:var(--accent)]">
+                      <span className="shrink-0 w-10 h-10 rounded-xl inline-flex items-center justify-center" style={{ background: f.tint, color: f.color }} aria-hidden="true">{f.icon ?? <Pin size={17} />}</span>
+                      <span className="min-w-0">
+                        <span className="flex items-center gap-2 text-[15.5px] font-extrabold" style={{ color: 'var(--text)' }}>{f.label}<Badge badge={f.badge} /></span>
+                        <span className="block text-[11px] font-bold uppercase tracking-[0.06em] mt-0.5" style={{ color: f.color }}>{f.section}</span>
+                        {line && <span className="block text-[13px] leading-snug mt-1" style={{ color: 'var(--text-faint)' }}>{line}</span>}
+                      </span>
+                    </Link>
+                    <button type="button" onClick={() => pin(f)} aria-label={`Unpin ${f.label}`} title="Unpin: it goes back to Everything MVP does below"
+                      className="absolute top-3 right-3 w-8 h-8 rounded-lg inline-flex items-center justify-center transition-colors hover:bg-[color:var(--surface-hover)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[color:var(--accent)]" style={{ color: 'var(--text-dim)' }}>
+                      <PinOff size={15} />
+                    </button>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+          {pinNote && <p className="text-[13px] font-semibold" style={{ color: 'var(--hot)' }}>{pinNote}</p>}
+        </section>
+      )}
 
       {/* ── 2. This month ── */}
       {(buckets.length > 0 || usageFailed || usage === null) && (
@@ -284,7 +351,7 @@ export default function TealDashboard({ firstName, today, meta, primary, seconda
         <section aria-labelledby="all-h" className="flex flex-col gap-3">
           <div className="flex flex-wrap items-baseline justify-between gap-2">
             <h2 id="all-h" className="text-[20px] font-extrabold">Everything MVP does</h2>
-            <p className="text-[13px]" style={{ color: 'var(--text-faint)' }}>Pick a job, then the tool. Each one says what it does.</p>
+            <p className="text-[13px]" style={{ color: 'var(--text-faint)' }}>Pick a job, then the tool. Each one says what it does. Pin the ones you use most to the top.</p>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3.5 items-start">
             {groups.map((g) => (
@@ -296,9 +363,10 @@ export default function TealDashboard({ firstName, today, meta, primary, seconda
                 <ul>
                   {g.items.map((f) => {
                     const line = featureLine(f.href)
+                    const on = isPinned(f)
                     return (
-                      <li key={f.href + f.label} className="border-t" style={{ borderColor: 'var(--border)' }}>
-                        <Link href={f.href} className="flex items-center gap-3 px-4 py-3 transition-colors hover:bg-[color:var(--surface-hover)] focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[color:var(--accent)]">
+                      <li key={f.href + f.label} className="border-t flex items-stretch" style={{ borderColor: 'var(--border)' }}>
+                        <Link href={f.href} className="flex-1 min-w-0 flex items-center gap-3 pl-4 pr-2 py-3 transition-colors hover:bg-[color:var(--surface-hover)] focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[color:var(--accent)]">
                           <span className="flex-1 min-w-0">
                             <span className="flex items-center gap-2 text-[14.5px] font-bold" style={{ color: 'var(--text)' }}>
                               {f.label}
@@ -308,6 +376,13 @@ export default function TealDashboard({ firstName, today, meta, primary, seconda
                           </span>
                           <ChevronRight size={16} className="flex-shrink-0" style={{ color: 'var(--text-dim)' }} aria-hidden="true" />
                         </Link>
+                        {/* PIN IT TO THE TOP: the same pin as My features in the menu. */}
+                        <button type="button" onClick={() => pin(f)} aria-pressed={on} aria-label={on ? `Unpin ${f.label}` : `Pin ${f.label} to the top of your Dashboard`}
+                          title={on ? 'Pinned to the top of your Dashboard. Press to unpin.' : 'Pin to the top of your Dashboard'}
+                          className="shrink-0 w-11 inline-flex items-center justify-center transition-colors hover:bg-[color:var(--surface-hover)] focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[color:var(--accent)]"
+                          style={{ color: on ? 'var(--accent-text)' : 'var(--text-dim)' }}>
+                          <Pin size={15} fill={on ? 'currentColor' : 'none'} />
+                        </button>
                       </li>
                     )
                   })}

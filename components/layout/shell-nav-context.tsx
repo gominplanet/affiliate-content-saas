@@ -14,6 +14,10 @@ export type ShellNavItem = {
   label: string
   /** An unread count, or a short word like "New". */
   badge?: number | string
+  /** The row's other addresses (its tabs): a pin saved on one is this row's. */
+  aliases?: string[]
+  /** The row's menu icon. */
+  icon?: ReactNode
 }
 
 export type ShellNavGroup = {

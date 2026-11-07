@@ -1003,7 +1003,7 @@ export default function DashboardShellV2({
         tint: hexToRgba(color, isDark ? 0.14 : 0.10),
         items: g.items
           .filter((it) => it.gate !== false && !it.external)
-          .map((it) => ({ href: it.href, label: it.label, badge: it.badge })),
+          .map((it) => ({ href: it.href, label: it.label, badge: it.badge, icon: it.icon, aliases: (it.tabs ?? []).map((t) => t.href).filter((h) => h !== it.href) })),
       }
     })
     .filter((g) => g.items.length > 0)
