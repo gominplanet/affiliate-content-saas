@@ -7,7 +7,7 @@
 // cap (rolling 24 hours, unanswered sends counted), the gaps, the draft rules
 // (no dashes, no year), and the honest outcome words on screen.
 import { readFileSync, existsSync } from 'node:fs'
-import { clampCap, countsTowardCap, nextGapMs, sanitizeScanned, tidyDraft, sendUrl, MIN_GAP_MS, MAX_GAP_MS, BREAK_MS, DEFAULT_DAILY_CAP, cleanTerms, prefsKey, parseFit, DAILY_FIND, readPay, payPasses, payRank, REPLY_SYSTEM, talksTerms, replyUserPrompt, replyBlanks, nextFreeAt, claimsUnticked, readReplySteps, REPLY_STEPS } from '../lib/trybe-outreach'
+import { clampCap, countsTowardCap, nextGapMs, sanitizeScanned, tidyDraft, sendUrl, MIN_GAP_MS, MAX_GAP_MS, BREAK_MS, DEFAULT_DAILY_CAP, MAX_DAILY_CAP, cleanTerms, prefsKey, parseFit, DAILY_FIND, readPay, payPasses, payRank, REPLY_SYSTEM, talksTerms, replyUserPrompt, replyBlanks, nextFreeAt, claimsUnticked, readReplySteps, REPLY_STEPS } from '../lib/trybe-outreach'
 import { pageSummary, normalizeSite } from '../lib/trybe-research'
 import { inboxSnapshot, freshUnread, whoWrote, checkedAgo, TRYBE_ALERT_FRESH_MS } from '../lib/trybe-alerts'
 import { readDiscoveryPage, requestState, acceptRate } from '../lib/trybe-invites'
@@ -33,10 +33,11 @@ check('default cap is 20', DEFAULT_DAILY_CAP === 20 && clampCap(undefined) === 2
   check('the next free slot is 24 hours after the oldest of the last cap sends', nextFreeAt(rows.slice(0, 2), 2, now) === '2026-10-10T09:00:00.000Z')
   const ui = readFileSync('components/labs/TrybeOutreach.tsx', 'utf8')
   check('no screen says the cap resets "today" or "tomorrow" as if at midnight', !/Today.s cap is used|waits for tomorrow/.test(ui))
-  check('the cap setting says up to 60 in a rolling 24 hours', /rolling 24 hours \(up to \{MAX_DAILY_CAP\}/.test(ui))
+  check('the cap setting says up to the most allowed in a rolling 24 hours', /rolling 24 hours \(up to \{MAX_DAILY_CAP\}/.test(ui))
 }
-// Seb, 2026-10-24: 60 at most, under TRYBE's own 80.
-check('cap is held to 1..60', clampCap(0) === 1 && clampCap(500) === 60 && clampCap(80) === 60 && clampCap(60) === 60 && clampCap(35) === 35)
+// Seb, 2026-11-07: 100 at most in a rolling 24 hours (60 before).
+check('cap is held to 1..100', MAX_DAILY_CAP === 100 && clampCap(0) === 1 && clampCap(500) === 100 && clampCap(101) === 100 && clampCap(100) === 100 && clampCap(80) === 80 && clampCap(35) === 35)
+check('a run stops after two failed sends in a row, so a refusal from TRYBE is never pressed through', /if \(res\.outcome === 'failed' && lastFailed\) \{/.test(readFileSync('components/labs/TrybeOutreach.tsx', 'utf8')))
 const now = Date.parse('2026-10-06T12:00:00Z')
 check('a sent request from 23h ago counts', countsTowardCap({ status: 'sent', send_started_at: '2026-10-05T13:00:00Z' }, now))
 check('a sent request from 25h ago does not', !countsTowardCap({ status: 'sent', send_started_at: '2026-10-05T11:00:00Z' }, now))
