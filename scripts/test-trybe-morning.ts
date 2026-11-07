@@ -10,7 +10,7 @@
 // Meta when TRYBE is not ready; the switch says what SCOUT answered.
 import { readFileSync } from 'node:fs'
 import vm from 'node:vm'
-import { morningWords } from '../lib/trybe-morning'
+import { morningWords, autoRunWords } from '../lib/trybe-morning'
 
 const fails: string[] = []
 const check = (name: string, ok: boolean | undefined) => { if (!ok) fails.push(name) }
@@ -109,7 +109,7 @@ const ON = { on: true, origin: 'https://mvpaffiliate.io', hour: 4, minute: 0 }
   check('a morning run never asks for Allow, never brings TRYBE to the front, never waits for a sign-in', /if \(auto\) return false/.test(O) && /if \(t === 'signed-out' && auto\) \{ setTrybeTab\(t\); return \{ ok: false/.test(O) && /trybeReady\(\(t\) => step\('trybe', 'running', t\), auto\)/.test(O))
   check('TRYBE not ready stops only the two TRYBE steps; products and Meta ads still run', /if \(!ready\.ok\) step\('trybe', 'failed', ready\.text\)/.test(O) && /step\('top100', 'skipped', 'Not read: TRYBE was not ready\.'\)/.test(O) && /step\('list', 'skipped', 'Not collected: TRYBE was not ready\.'\)/.test(O)
     && !/stopRest\(\['top100', 'list', 'products', 'meta'\], 'Not started: TRYBE was not ready\.'\)/.test(O))
-  check('a run that started by itself is kept as one and said', /log: \{ at, auto, steps/.test(O) && /auto: log\.auto === true/.test(read('app/api/labs/trybe/route.ts')) && /, by itself/.test(O))
+  check('a run that started by itself is kept as one and said', /log: \{ at, auto, startedAt, steps/.test(O) && /auto: log\.auto === true/.test(read('app/api/labs/trybe/route.ts')) && /, by itself/.test(O))
   check('the switch sits on the Daily refresh card, for the team, with an hour to pick', /Run it by itself every morning at/.test(O) && /aria-label="Hour of the morning run"/.test(O) && /requestTrybeMorning\(\{ on, hour, minute \}\)/.test(O) && /needs SCOUT \{SCOUT_TRYBE_MORNING_MIN_VERSION\}/.test(O))
 
   // ── WHAT THE SWITCH SAYS ───────────────────────────────────────────────────
@@ -119,6 +119,28 @@ const ON = { on: true, origin: 'https://mvpaffiliate.io', hour: 4, minute: 0 }
   check('a morning that found MVP signed out says nothing ran', /signed out of MVP, so nothing ran/.test(morningWords({ on: true, hour: 4, minute: 0, next: T, lastAt: T, lastResult: 'signed-out' })))
   check('off says how to run it', /^Off\. Press Daily refresh yourself/.test(morningWords({ on: false, hour: 4, minute: 0, next: null, lastAt: null, lastResult: null })))
   check('no dashes in the words', [morningWords(null), morningWords({ on: true, hour: 4, minute: 0, next: T, lastAt: T, lastResult: 'could-not-open' })].every((w) => !/[–—]| - /.test(w)))
+
+  // ── DID IT RUN? (Seb, 2026-11-07: "I watched it just go by and nothing
+  // happened ... make sure that this feature actually runs") ──
+  const T0 = Date.parse('2026-11-07T06:00:00Z')
+  const fin = autoRunWords({ startedAt: new Date(T0).toISOString(), finishedAt: new Date(T0 + 21 * 60_000).toISOString(), steps: [{ state: 'done' }, { state: 'done' }, { state: 'skipped' }, { state: 'warn' }, { state: 'done' }] }, T0 - 30_000, T0 + 3600_000)
+  check('a finished run by itself says when it started and finished, and how each step went', fin.tone === 'ok' && /^Last ran by itself: started /.test(fin.text) && /finished /.test(fin.text) && /3 done, 1 partly, 1 skipped\.$/.test(fin.text))
+  const going = autoRunWords({ startedAt: new Date(T0).toISOString(), finishedAt: null }, T0, T0 + 20 * 60_000)
+  check('a run still going says so, and why it is slow in a tab behind the others', going.tone === 'info' && /^Running by itself since /.test(going.text) && /Chrome slows a tab you are not looking at/.test(going.text))
+  const lost = autoRunWords({ startedAt: new Date(T0).toISOString(), finishedAt: null }, T0, T0 + 5 * 3600_000)
+  check('a run that never finished says so, never looks done', lost.tone === 'warn' && /did not finish/.test(lost.text))
+  const notStarted = autoRunWords({ startedAt: new Date(T0 - 86_400_000).toISOString(), finishedAt: new Date(T0 - 86_000_000).toISOString(), steps: [] }, T0, T0 + 600_000)
+  check('SCOUT opened the page but no run started there: said, never shown as yesterday\u2019s run', notStarted.tone === 'warn' && /but the run did not start in it/.test(notStarted.text))
+  const none = autoRunWords(null, T0, T0 + 60_000)
+  check('nothing recorded yet is said as that, never as a failure', none.tone === 'info' && /No run by itself is recorded yet/.test(none.text))
+  check('no dashes in what it says', [fin, going, lost, notStarted, none].every(w => !/[\u2013\u2014]/.test(w.text)))
+  const R2 = readFileSync('app/api/labs/trybe/route.ts', 'utf8')
+  check('the server keeps the run by itself apart: its start, then its finish with the steps', /const AUTO_KEY = 'daily_refresh_auto'/.test(R2) && /if \(body\.autoStart === true\) \{/.test(R2) && /value: \{ startedAt, finishedAt: now, by: ownerId, steps \}/.test(R2) && /lastAuto: byKey\.get\(AUTO_KEY\)/.test(R2))
+  const P2 = readFileSync('components/labs/TrybeOutreach.tsx', 'utf8')
+  check('the page says the start the moment SCOUT\u2019s run begins', /void api\(\{ action: 'daily_refresh', autoStart: true \}\)[\s\S]{0,160}void dailyRefresh\(true\)/.test(P2))
+  check('the result in the tab that ran it is marked by itself', /at, auto \}\)\n\s*const saved = await api\(\{ action: 'daily_refresh', log: \{ at, auto, startedAt,/.test(P2))
+  check('a run by itself reads again what is over 3 hours old, not 12, so a morning after an evening press still refreshes', /const AUTO_FRESH_MS = 3 \* 3600_000/.test(P2) && /\(auto \? AUTO_FRESH_MS : DAILY_FRESH_MS\)/.test(P2))
+  check('the card says whether it ran and what it does', /autoRunWords\(autoLast, morning\?\.lastResult === 'opened' \? morning\.lastAt : null\)/.test(P2) && /What it does: checks TRYBE is open and signed in/.test(P2))
 
   if (fails.length) {
     console.error(`❌ trybe-morning: ${fails.length} failure(s)\n`)

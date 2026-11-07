@@ -54,7 +54,7 @@ import TrybeDossier from '@/components/labs/TrybeDossier'
 import TrybeHome from '@/components/labs/TrybeHome'
 import TrybeNav from '@/components/labs/TrybeNav'
 import TrybeBrandTable from '@/components/labs/TrybeBrandTable'
-import { morningWords } from '@/lib/trybe-morning'
+import { morningWords, autoRunWords, type AutoRunRecord } from '@/lib/trybe-morning'
 import { APP, AppChip } from '@/components/labs/trybe-ui'
 import { DossierCtx, BrandName } from '@/components/labs/trybe-dossier-context'
 import TrybeWorking from '@/components/labs/TrybeWorking'
@@ -421,6 +421,8 @@ interface DailyStep { id: 'trybe' | 'list' | 'top100' | 'products' | 'meta'; lab
 const DAILY_META_CHUNK = 200
 /** The list and the Top 100 are not read again within this long. */
 const DAILY_FRESH_MS = 12 * 3600_000
+/** A run by itself (every morning) reads them again once they are older than this. */
+const AUTO_FRESH_MS = 3 * 3600_000
 const DAILY_STYLE: Record<DailyStep['state'], { color: string; word: string }> = {
   waiting: { color: 'var(--text-3)', word: 'Waiting' }, running: { color: PURPLE, word: 'Running' }, done: { color: GREEN, word: 'Done' },
   warn: { color: AMBER, word: 'Partly' }, failed: { color: RED, word: 'Not done' }, skipped: { color: 'var(--text-3)', word: 'Skipped' },
@@ -678,10 +680,15 @@ export default function TrybeOutreach({ preview = false, v2 = false }: { preview
   const [signalNote, setSignalNote] = useState<{ tone: 'ok' | 'warn' | 'bad'; text: string } | null>(null)
   // The daily refresh (the MVP team): its steps now, or as last run.
   const [daily, setDaily] = useState<{ running: boolean; steps: DailyStep[]; at: string; auto?: boolean } | null>(null)
+  // The last run by itself: when it started and finished (lib/trybe-morning autoRunWords).
+  const [autoLast, setAutoLast] = useState<AutoRunRecord | null>(null)
   const dailyStop = useRef(false)
   useEffect(() => {
     if (!isAdmin || preview) return
-    void api({ action: 'daily_refresh' }).then((d) => { if (d?.last?.at && Array.isArray(d.last.steps)) setDaily((now) => now?.running ? now : { running: false, steps: d.last.steps, at: d.last.at, auto: d.last.auto === true }) }).catch(() => {})
+    void api({ action: 'daily_refresh' }).then((d) => {
+      if (d?.last?.at && Array.isArray(d.last.steps)) setDaily((now) => now?.running ? now : { running: false, steps: d.last.steps, at: d.last.at, auto: d.last.auto === true })
+      setAutoLast(d?.lastAuto ?? null)
+    }).catch(() => {})
   }, [isAdmin, preview])
   // EVERY MORNING (Seb, 2026-11-06: "even if it's once a day ... Scout could
   // do it automatically"). SCOUT 1.56.0 opens this page behind the team's tabs
@@ -1655,6 +1662,7 @@ export default function TrybeOutreach({ preview = false, v2 = false }: { preview
   async function dailyRefresh(auto = false) {
     if (daily?.running) return
     dailyStop.current = false
+    const startedAt = new Date().toISOString()
     // TRYBE READY FIRST, THEN THE TOP 100, THEN THE LIST (Seb, 2026-10-22: "if
     // my Trybe account is not open or scout is not running.. this should be
     // automatic"). The Top 100 goes before the list because reading it renews
@@ -1671,7 +1679,10 @@ export default function TrybeOutreach({ preview = false, v2 = false }: { preview
     const step = (id: DailyStep['id'], state: DailyStep['state'], text: string) => { const x = steps.find((y) => y.id === id)!; x.state = state; x.text = text; show(true) }
     show(true)
     try {
-      const fresh = (at: string | null | undefined) => !!at && Date.now() - Date.parse(at) < DAILY_FRESH_MS
+      // A RUN BY ITSELF READS AGAIN WHAT IS OVER 3 HOURS OLD (Seb, 2026-11-07):
+      // with the 12 hours a press uses, a morning run after an evening press
+      // skipped TRYBE's Top 100 and brand list and looked like it did nothing.
+      const fresh = (at: string | null | undefined) => !!at && Date.now() - Date.parse(at) < (auto ? AUTO_FRESH_MS : DAILY_FRESH_MS)
       const ago = (at: string) => { const h = Math.round((Date.now() - Date.parse(at)) / 3600_000); return h < 1 ? 'less than an hour ago' : `${h} hour${h === 1 ? '' : 's'} ago` }
       const stopRest = (from: DailyStep['id'][], why: string) => { for (const id of from) step(id, 'skipped', why) }
       // 0. TRYBE READY: SCOUT answers and is allowed, a TRYBE tab is open,
@@ -1809,8 +1820,9 @@ export default function TrybeOutreach({ preview = false, v2 = false }: { preview
     } finally {
       setFinding(null)
       const at = new Date().toISOString()
-      setDaily({ running: false, steps: steps.map((x) => ({ ...x, state: x.state === 'waiting' || x.state === 'running' ? 'skipped' : x.state })), at })
-      await api({ action: 'daily_refresh', log: { at, auto, steps: steps.map((x) => ({ id: x.id, label: x.label, state: x.state === 'waiting' || x.state === 'running' ? 'skipped' : x.state, text: x.text.slice(0, 600) })) } }).catch(() => null)
+      setDaily({ running: false, steps: steps.map((x) => ({ ...x, state: x.state === 'waiting' || x.state === 'running' ? 'skipped' : x.state })), at, auto })
+      const saved = await api({ action: 'daily_refresh', log: { at, auto, startedAt, steps: steps.map((x) => ({ id: x.id, label: x.label, state: x.state === 'waiting' || x.state === 'running' ? 'skipped' : x.state, text: x.text.slice(0, 600) })) } }).catch(() => null)
+      if (saved?.lastAuto) setAutoLast(saved.lastAuto)
       setLiveNonce((n) => n + 1)
       void load()
     }
@@ -1823,6 +1835,8 @@ export default function TrybeOutreach({ preview = false, v2 = false }: { preview
     if (!autoAsked || autoDaily.current || !isAdmin || preview || !directory || daily?.running) return
     autoDaily.current = true
     try { const u = new URL(window.location.href); u.searchParams.delete('daily'); window.history.replaceState(window.history.state, '', u.toString()) } catch { /* the run still starts */ }
+    // Said on MVP as soon as it starts, so a run that never finishes is seen.
+    void api({ action: 'daily_refresh', autoStart: true }).then((d) => { if (d?.lastAuto) setAutoLast(d.lastAuto) }).catch(() => {})
     void dailyRefresh(true)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoAsked, isAdmin, preview, directory, daily?.running])
@@ -2183,7 +2197,7 @@ export default function TrybeOutreach({ preview = false, v2 = false }: { preview
           {daily && (
             <>
               <p className="font-semibold flex flex-wrap items-center gap-2">
-                Daily refresh {daily.running ? (autoDaily.current ? 'running by itself this morning' : 'running') : `last run ${new Date(daily.at).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}${daily.auto ? ', by itself' : ''}`}
+                Daily refresh {daily.running ? (autoDaily.current ? 'running by itself' : 'running') : `last run ${new Date(daily.at).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}${daily.auto ? ', by itself' : ''}`}
                 {!daily.running && Date.now() - Date.parse(daily.at) > 30 * 3600_000 && <span style={{ color: AMBER }}>More than a day ago.</span>}
                 <span className="text-[11px] font-normal" style={soft}>Team only. Website ranks, Google searches and every brand&rsquo;s products also refresh by themselves on MVP&rsquo;s server.</span>
               </p>
@@ -2207,6 +2221,9 @@ export default function TrybeOutreach({ preview = false, v2 = false }: { preview
                   {Array.from({ length: 24 }, (_, h) => <option key={h} value={h}>{new Date(2000, 0, 1, h).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</option>)}
                 </select>
                 <span className="basis-full text-[12px]" style={soft}>{morningWords(morning)}</span>
+                {/* DID IT RUN: started and finished, as MVP heard it, never assumed. */}
+                {(() => { const w = autoRunWords(autoLast, morning?.lastResult === 'opened' ? morning.lastAt : null); return <span className="basis-full text-[12.5px] font-semibold" style={{ color: w.tone === 'ok' ? GREEN : w.tone === 'warn' ? AMBER : 'var(--text-2)' }}>{w.text}</span> })()}
+                <span className="basis-full text-[12px]" style={soft}>What it does: checks TRYBE is open and signed in, then reads TRYBE&rsquo;s Top 100 and brand list (anything older than 3 hours), every brand&rsquo;s products, and the Meta ad counts not read this week. Find brands, Home and Best bets show what it read, for everyone on MVP.</span>
               </>
             ) : (
               <span className="text-[12px]" style={soft}>Running it by itself every morning needs SCOUT {SCOUT_TRYBE_MORNING_MIN_VERSION}. Yours is {scoutVersion || 'not known yet'}; Chrome brings it once the Web Store has it.</span>

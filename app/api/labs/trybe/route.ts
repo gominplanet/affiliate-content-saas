@@ -1262,7 +1262,16 @@ export async function POST(request: Request) {
   if (action === 'daily_refresh') {
     if (tier !== 'admin') return NextResponse.json({ error: 'The daily refresh is for the MVP team.' }, { status: 403 })
     const KEY = 'daily_refresh'
-    const log = body.log && typeof body.log === 'object' ? body.log as { at?: unknown; steps?: unknown; auto?: unknown } : null
+    // THE RUN BY ITSELF, KEPT APART (Seb, 2026-11-07: "I watched it just go
+    // by and nothing happened"): when it started and when it finished, so a
+    // run that never started, or never finished, is said; a press of Daily
+    // refresh no longer hides how the last one by itself went.
+    const AUTO_KEY = 'daily_refresh_auto'
+    const log = body.log && typeof body.log === 'object' ? body.log as { at?: unknown; steps?: unknown; auto?: unknown; startedAt?: unknown } : null
+    if (body.autoStart === true) {
+      const { error: e } = await admin.from('trybe_directory_meta').upsert({ key: AUTO_KEY, value: { startedAt: now, finishedAt: null, by: ownerId, steps: [] }, updated_at: now })
+      if (e) return NextResponse.json({ error: e.message }, { status: 500 })
+    }
     if (log) {
       const steps = (Array.isArray(log.steps) ? log.steps : []).slice(0, 6).map((x) => {
         const o = (x && typeof x === 'object' ? x : {}) as Record<string, unknown>
@@ -1270,9 +1279,15 @@ export async function POST(request: Request) {
       })
       const { error: e } = await admin.from('trybe_directory_meta').upsert({ key: KEY, value: { at: now, by: ownerId, steps, auto: log.auto === true }, updated_at: now })
       if (e) return NextResponse.json({ error: e.message }, { status: 500 })
+      if (log.auto === true) {
+        const startedAt = typeof log.startedAt === 'string' && !Number.isNaN(Date.parse(log.startedAt)) ? log.startedAt : now
+        const { error: ae } = await admin.from('trybe_directory_meta').upsert({ key: AUTO_KEY, value: { startedAt, finishedAt: now, by: ownerId, steps }, updated_at: now })
+        if (ae) return NextResponse.json({ error: ae.message }, { status: 500 })
+      }
     }
-    const { data: row } = await admin.from('trybe_directory_meta').select('value').eq('key', KEY).maybeSingle()
-    return NextResponse.json({ ok: true, last: row?.value ?? null })
+    const { data: rows } = await admin.from('trybe_directory_meta').select('key, value').in('key', [KEY, AUTO_KEY])
+    const byKey = new Map(((rows || []) as Array<{ key: string; value: unknown }>).map(r => [r.key, r.value]))
+    return NextResponse.json({ ok: true, last: byKey.get(KEY) ?? null, lastAuto: byKey.get(AUTO_KEY) ?? null })
   }
 
   if (action === 'meta_ads') {
