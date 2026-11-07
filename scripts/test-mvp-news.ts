@@ -25,7 +25,8 @@ check('every entry has a real date, a title and words, no dashes, no year in the
 const at = (s: string) => new Date(s)
 check(`the last ${NEWS_DAYS} days only`, NEWS_DAYS === 7 && recentNews('admin', at('2026-10-17T12:00:00Z')).length === WHATS_NEW.filter(u => u.date >= '2026-10-10' && u.date <= '2026-10-18').length && recentNews('pro', at('2026-10-30T12:00:00Z')).every(u => u.date >= '2026-10-23'))
 check('never an entry dated ahead of today (a day of grace for time zones)', recentNews('admin', at('2026-10-17T12:00:00Z')).every(u => u.date <= '2026-10-18'))
-check('the new look is news for every paying member the day it opens, and not for a free account', ['pro', 'studio', 'creator'].every(t => recentNews(t, at('2026-11-03T15:00:00Z')).some(u => u.gate === 'new_look')) && !recentNews('trial', at('2026-11-03T15:00:00Z')).some(u => u.gate === 'new_look'))
+// Every account has the new look since 2026-11-07 (Seb: "make the new look the normal mvp"), so its news is for everyone.
+check('the new look is news for every account the week it opens, a free one too', ['pro', 'studio', 'creator', 'trial'].every(t => recentNews(t, at('2026-11-03T15:00:00Z')).some(u => u.gate === 'new_look')))
 const pro = recentNews('pro', at('2026-10-17T12:00:00Z'))
 check('newest first', pro.every((u, i) => i === 0 || pro[i - 1].date >= u.date))
 const trial = recentNews('trial', at('2026-10-17T12:00:00Z'))

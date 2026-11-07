@@ -48,7 +48,7 @@ import {
   Share2, UserSquare, LifeBuoy, Link2, FlaskConical, Store, Send, ShoppingBag, Megaphone,
   Inbox, PackageSearch, Rocket, Database, History, Globe, Radio, Gauge, Repeat, Star, Pin, Menu, X, Scissors, ClipboardList, ListChecks, UploadCloud, Clapperboard } from 'lucide-react'
 import { useNavFavorites, MAX_NAV_FAVORITES } from '@/lib/nav-favorites'
-import { lookCookie, type Look } from '@/lib/look'
+import { type Look } from '@/lib/look'
 import { ShellNavContext, ShellLookContext, ShellActiveContext, type ShellNavGroup, type ShellActive } from './shell-nav-context'
 import { cn } from '@/lib/utils'
 // Deals Hub runs only while Amazon has a real sale event on (Prime Day, Big
@@ -348,11 +348,9 @@ interface DashboardShellV2Props {
   /** Content-only ("bring your own theme") user — hide MVP-theme-only nav
    *  items like Customize Blog. Defaults false. */
   contentOnly?: boolean
-  /** The look to draw (lib/look). The server decides it from the cookie, so
-   *  the first paint is already right. */
+  /** The look to draw (lib/look): the new one, for every account. The
+   *  server hands it over, so the first paint is already right. */
   look?: Look
-  /** This account may try the new look: show the switch between the two. */
-  canTryLook?: boolean
   children: React.ReactNode
 }
 
@@ -365,7 +363,6 @@ export default function DashboardShellV2({
   showBurner,
   contentOnly = false,
   look = 'classic',
-  canTryLook = false,
   children,
 }: DashboardShellV2Props) {
   const pathname = usePathname() || ''
@@ -383,11 +380,6 @@ export default function DashboardShellV2({
     else root.removeAttribute('data-look')
     return () => root.removeAttribute('data-look')
   }, [teal])
-  // Switch looks: the cookie, then a fresh load so the server draws the other one.
-  const switchLook = () => {
-    document.cookie = lookCookie(teal ? 'classic' : 'teal')
-    window.location.reload()
-  }
 
   // Some pages mutate the query string with raw history.replaceState (e.g.
   // /content switching to the Social-Push/Published tab). That doesn't change
@@ -1350,29 +1342,6 @@ export default function DashboardShellV2({
           )}
         </nav>
 
-
-        {/* THE LOOK SWITCH, for every account the new look is open to (Pro
-            since 2026-11-03): one press between it and the old look, kept
-            in a cookie. */}
-        {canTryLook && !railCollapsed && (
-          <div className="px-3 pt-2">
-            <button
-              type="button"
-              onClick={switchLook}
-              className="w-full flex items-center justify-between gap-2 rounded-lg border px-2.5 py-2 text-[12px] font-semibold transition-colors"
-              style={{ borderColor: 'var(--border)', color: 'var(--text-soft)', backgroundColor: 'var(--surface)' }}
-              title={teal ? 'Go back to the old look. You can switch again any time.' : 'Use the new look. You can switch again any time.'}
-            >
-              <span className="flex items-center gap-1.5"><Palette size={13} /> New look</span>
-              <span
-                className="rounded-full px-2 py-0.5 text-[11px] font-bold"
-                style={teal ? { background: 'var(--accent)', color: '#fff' } : { background: 'var(--surface-bright)', color: 'var(--text-soft)' }}
-              >
-                {teal ? 'On' : 'Off'}
-              </span>
-            </button>
-          </div>
-        )}
 
         {/* User pill */}
         <div className="border-t p-3" style={{ borderColor: 'var(--border)' }}>

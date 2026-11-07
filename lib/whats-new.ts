@@ -35,7 +35,7 @@ export const WHATS_NEW: WhatsNewItem[] = [
     badge: 'NEW',
     tone: '#0B7A6E',
     title: 'A new look for MVP',
-    desc: 'Teal for everything you can click, a header on every page that says what it does, numbered steps on the jobs you do in order, and a Dashboard that shows what needs you today and everything MVP does, each with a line on what it is for. Prefer the old look for now? Press New look at the bottom of the menu to switch back, and again to return.',
+    desc: 'Teal for everything you can click, a header on every page that says what it does, numbered steps on the jobs you do in order, and a Dashboard that shows what needs you today and everything MVP does, each with a line on what it is for. It is now the look of MVP for every account.',
     href: '/dashboard',
   },
   // Instagram Auto-DM, open to members (Seb, 2026-10-23: "the auto DM
@@ -460,7 +460,7 @@ export function newsGateOpen(gate: NewsGate | undefined, tier: unknown): boolean
   if (gate === 'trybe') return trybeAccess(tier) !== 'none'
   if (gate === 'instagram_dm') return canUseIgDm(typeof tier === 'string' ? tier : null)
   // The new look reaches the legacy paid plans as well as Pro (lib/look).
-  if (gate === 'new_look') return canTryLook(tier)
+  if (gate === 'new_look') return canTryLook()
   return canUsePreview(gate, tier)
 }
 

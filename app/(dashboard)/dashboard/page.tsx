@@ -49,8 +49,7 @@ import DailyCcDigest from '@/components/dashboard/DailyCcDigest'
 import TrialResearchRow from '@/components/dashboard/TrialResearchRow'
 import StartHere from '@/components/dashboard/StartHere'
 import TealDashboard from '@/components/dashboard/TealDashboard'
-import { cookies } from 'next/headers'
-import { lookFor, LOOK_COOKIE } from '@/lib/look'
+import { lookFor } from '@/lib/look'
 import { canUsePreview } from '@/lib/labs-preview'
 import { hasVideoTools } from '@/lib/amazon-plan'
 import {
@@ -179,8 +178,8 @@ export default async function DashboardPage() {
     return <AmazonDashboard firstName={firstName} today={todayLabel} />
   }
 
-  // THE NEW LOOK (Labs, lib/look): the same widgets, laid out as Teal Pop.
-  if (lookFor(tier, (await cookies()).get(LOOK_COOKIE)?.value) === 'teal') {
+  // THE NEW LOOK (lib/look, every account): the same widgets, laid out as Teal Pop.
+  if (lookFor() === 'teal') {
     // The two biggest jobs, as the banner's buttons: start a video (the
     // editor, else the upload tool this plan has), then find what to review.
     const primary = canUsePreview('review_edit', tier) ? { href: '/review-editor', label: 'Start a video edit' }

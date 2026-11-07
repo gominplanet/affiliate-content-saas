@@ -1,12 +1,12 @@
 import { redirect } from 'next/navigation'
-import { headers, cookies } from 'next/headers'
+import { headers } from 'next/headers'
 import { createServerClient } from '@/lib/supabase/server'
 import { canSeeNav } from '@/lib/feature-access'
 import { normalizeTier, type Tier } from '@/lib/tier'
 import { signedUpWithoutTrial } from '@/lib/free-trial'
 import { getOwnerUserId } from '@/lib/agency'
 import DashboardShellV2 from '@/components/layout/DashboardShellV2'
-import { lookFor, canTryLook, LOOK_COOKIE } from '@/lib/look'
+import { lookFor } from '@/lib/look'
 import LastSeenHeartbeat from '@/components/layout/LastSeenHeartbeat'
 import CcRecipeSync from '@/components/scout/CcRecipeSync'
 import { Toaster } from '@/components/ui/toaster'
@@ -118,8 +118,8 @@ export default async function DashboardLayout({ children }: { children: React.Re
   const showDeals = canSeeNav('deals', tier as Tier)
   const showBurner = canSeeNav('burner', tier as Tier)
 
-  // The new look (Labs, lib/look), from the cookie its switch sets.
-  const look = lookFor(tier, (await cookies()).get(LOOK_COOKIE)?.value)
+  // The new look, for every account (lib/look).
+  const look = lookFor()
 
   return (
     <HelpDeskProvider>
@@ -131,10 +131,9 @@ export default async function DashboardLayout({ children }: { children: React.Re
         showDeals={showDeals}
         showBurner={showBurner}
         contentOnly={contentOnly}
-        // The new look (Labs, lib/look), decided here from the cookie so the
-        // page is drawn in it from the first paint.
+        // The new look (lib/look), decided here so the page is drawn in it
+        // from the first paint.
         look={look}
-        canTryLook={canTryLook(tier)}
       >
         {/* Migration drift banner — admin-only sticky warning that
             recent feature-gating migrations haven't been applied on the

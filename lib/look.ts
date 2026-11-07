@@ -9,30 +9,23 @@
 // The choice is a cookie, so the server draws the right look on the first
 // paint instead of flashing the old one.
 
-import { canUsePreview, previewOpenToPro } from '@/lib/labs-preview'
-import { normalizeTier } from '@/lib/tier'
-
 export type Look = 'teal' | 'classic'
 
-/** The cookie holding the choice: 'classic' to go back, anything else is the new look. */
+/** The cookie the old switch wrote; no longer read. */
 export const LOOK_COOKIE = 'mvp_look'
 
-// EVERY PAYING MEMBER, not just Pro (Seb, 2026-11-04, of the legacy Studio
-// and Creator accounts: "yes"), so tutorials, screenshots and support answers
-// match one MVP. These two plans are no longer sold; their members keep them.
-const LEGACY_PAID = new Set(['studio', 'creator'])
+// THE NEW LOOK IS MVP (Seb, 2026-11-07: "make the new look the normal mvp"):
+// every account on every plan sees it, and the switch back is gone. A
+// 'classic' cookie left by the old switch is ignored.
 
-/** Can this account have the new look: Pro (and admin) by its switch, and the
- *  legacy paid plans once it is open to Pro. */
-export function canTryLook(tier: unknown): boolean {
-  if (canUsePreview('new_look', tier)) return true
-  return previewOpenToPro('new_look') && LEGACY_PAID.has(normalizeTier(tier))
+/** Every account has the new look. */
+export function canTryLook(): boolean {
+  return true
 }
 
-/** The look this account sees: the new one when it may try it and has not switched back. */
-export function lookFor(tier: unknown, cookie: string | null | undefined): Look {
-  if (!canTryLook(tier)) return 'classic'
-  return cookie === 'classic' ? 'classic' : 'teal'
+/** The look every account sees: the new one. */
+export function lookFor(): Look {
+  return 'teal'
 }
 
 /** The cookie that switches to `look`, a year long, for every page. */

@@ -19,7 +19,7 @@ import { readFileSync, readdirSync, statSync, existsSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import path from 'node:path'
 import postcss from 'postcss'
-import { lookFor, canTryLook, lookCookie, LOOK_COOKIE } from '../lib/look'
+import { lookFor, canTryLook } from '../lib/look'
 import { previewOpenToPro } from '../lib/labs-preview'
 import { FEATURE_LINES } from '../lib/feature-lines'
 import { searchApp, requestWords } from '../lib/app-search-index'
@@ -84,21 +84,16 @@ async function main() {
   check('bg-[#7C3AED]/10 keeps its tenth', /\.bg-\\\[\\#7C3AED\\\]\\\/10\s*\{[^}]*rgb\(var\(--brand-rgb\) \/ 0\.1\)/.test(out.css))
   check('violet-600 from the palette follows it too', /\.bg-violet-600\s*\{[^}]*rgb\(var\(--brand-rgb\)/.test(out.css))
 
-  // ── Who sees it ──
-  check('admin sees the new look straight away', lookFor('admin', undefined) === 'teal' && canTryLook('admin'))
-  check('and the switch back holds', lookFor('admin', 'classic') === 'classic' && lookFor('admin', 'teal') === 'teal')
-  check('a member sees it only once it opens to Pro', lookFor('pro', undefined) === (previewOpenToPro('new_look') ? 'teal' : 'classic') && lookFor('trial', undefined) === 'classic' && lookFor('amazon', undefined) === 'classic')
-  check('a cookie alone never gives the look to someone not allowed it', lookFor('trial', 'teal') === 'classic')
-  check('every paying member has it once it is open to Pro: the legacy Studio and Creator plans too', previewOpenToPro('new_look') ? (lookFor('studio', undefined) === 'teal' && lookFor('creator', undefined) === 'teal' && canTryLook('studio') && canTryLook('creator')) : (lookFor('studio', undefined) === 'classic' && lookFor('creator', undefined) === 'classic'))
-  check('and they can switch back like Pro', lookFor('studio', 'classic') === 'classic' && lookFor('creator', 'classic') === 'classic')
-  check('the switch writes the cookie the server reads, for every page, a year long', lookCookie('classic') === `${LOOK_COOKIE}=classic; path=/; max-age=31536000; samesite=lax`)
+  // ── Who sees it (Seb, 2026-11-07: "make the new look the normal mvp") ──
+  check('every account sees the new look', lookFor() === 'teal' && canTryLook())
   const LAYOUT = read('app/(dashboard)/layout.tsx')
-  check('the layout decides the look from the cookie and hands it to the shell', /const look = lookFor\(tier, \(await cookies\(\)\)\.get\(LOOK_COOKIE\)\?\.value\)/.test(LAYOUT) && /look=\{look\}/.test(LAYOUT) && /canTryLook=\{canTryLook\(tier\)\}/.test(LAYOUT))
+  check('the layout hands the new look to the shell, whatever cookie the old switch left', /const look = lookFor\(\)/.test(LAYOUT) && /look=\{look\}/.test(LAYOUT) && !/LOOK_COOKIE/.test(LAYOUT))
   const SHELL = read('components/layout/DashboardShellV2.tsx')
   check('the shell marks its own root, so the first paint is already teal', /data-look=\{teal \? 'teal' : undefined\}/.test(SHELL))
   check('and <html>, for popups drawn on <body>, taken off on the way out', /root\.setAttribute\('data-look', 'teal'\)/.test(SHELL) && /return \(\) => root\.removeAttribute\('data-look'\)/.test(SHELL))
-  check('the switch is shown only to accounts that may try the look', /\{canTryLook && !railCollapsed && \(/.test(SHELL) && /document\.cookie = lookCookie\(teal \? 'classic' : 'teal'\)/.test(SHELL))
-  check('the Dashboard page asks the same question as the layout', /lookFor\(tier, \(await cookies\(\)\)\.get\(LOOK_COOKIE\)\?\.value\) === 'teal'/.test(read('app/(dashboard)/dashboard/page.tsx')))
+  check('there is no switch back to the old look', !/switchLook|lookCookie\(|canTryLook/.test(SHELL) && !/> New look</.test(SHELL))
+  check('the Dashboard page draws the new look too', /if \(lookFor\(\) === 'teal'\)/.test(read('app/(dashboard)/dashboard/page.tsx')))
+  check('What\u2019s new no longer tells anyone how to switch back', !/switch back/.test(read('lib/whats-new.ts').slice(0, 2000)))
 
   // ── Everything MVP does ──
   const navStart = SHELL.indexOf('const NAV_GROUPS')
