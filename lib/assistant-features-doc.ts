@@ -610,6 +610,20 @@ legacy post from its source video (keeps the URL, replaces the body). Note:
 MVP now writes new posts correctly from the start, so this page is mostly for
 older/imported posts.
 
+THE SITEMAP (a member was stuck on this, 2026-11-07): a WordPress blog's own
+sitemap is at https://THEIRBLOG.com/wp-sitemap.xml, NOT /sitemap.xml (that one
+only exists with an SEO plugin: Yoast and Rank Math use /sitemap_index.xml).
+The SEO page shows the member's exact address with a Copy button. In Google
+Search Console, open Sitemaps, then "Add a new sitemap": when the box already
+shows https://theirblog.com/ in front of it, type only wp-sitemap.xml; when the
+box is empty (a Domain property), paste the whole address with https://. Never
+type the domain into a box that already shows it: Google reads it twice and
+says the address is invalid. "Couldn't fetch" right after submitting is normal
+and turns to Success within a day. The red banner Chrome shows on top of the
+sitemap page ("This site uses XSLT...") is only about how the page is styled
+for people; it is not an error and Google is not affected. Never tell a member
+to use /sitemap.xml without checking which address their blog has.
+
 ---
 
 ## SITE TOOLS
