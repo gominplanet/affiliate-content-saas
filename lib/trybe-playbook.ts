@@ -204,8 +204,23 @@ export const PROVEN_OPENERS = [
   'You may not agree with this',
   'I just figured this out',
 ] as const
+/** MORE PROVEN HOOKS (Seb, 2026-11-07, shared from a creator: "I'm just
+ *  adding some more ideas"): whole sentences with a blank for the product,
+ *  its buyer or the thing everybody tells them. They count as proven openers
+ *  too: a hook counts when it begins with one of `starts`, read from the
+ *  hook's own words. */
+export const PROVEN_HOOK_LINES = [
+  { kind: 'Curiosity', line: 'I wish somebody had told me this before I wasted all this time on ___.', starts: ['I wish somebody had told me this', 'I wish someone had told me this'] },
+  { kind: 'Controversial', line: "I'm probably going to offend somebody with this, but we need to stop pretending that ___.", starts: ["I'm probably going to offend somebody with this", "I'm probably going to offend someone with this"] },
+  { kind: 'Problem solving', line: "Still struggling with ___? Chances are you're overlooking this.", starts: ['Still struggling with', "If you're still struggling with", "You're still struggling with"] },
+  { kind: 'Relatable', line: 'Can we talk about how nobody warns you that ___?', starts: ['Can we talk about how nobody warns you'] },
+  { kind: 'Bold claim', line: "You don't need one more ___. You need to start doing this instead.", starts: ["You don't need one more", "You don't need another"] },
+  { kind: 'Storytelling', line: "I almost didn't share this because I thought I was the only one who ___.", starts: ["I almost didn't share this"] },
+  { kind: 'Mystery', line: 'This is the one thing I would do completely differently if I had to start all over again: ___.', starts: ['This is the one thing I would do completely differently', 'This is the one thing I would do completely different', "This is the one thing I'd do completely differently"] },
+] as const
 /** Of the ten videos, how many start with a proven opener. */
 export const OPENER_VIDEOS = 4
+
 /** Of the ten videos, how many are built on a named top video. */
 export const BUILT_ON_VIDEOS = 2
 
@@ -214,7 +229,8 @@ const plainWords = (t: string) => t.toLowerCase().replace(/[\u2018\u2019]/g, "'"
  *  (never the model's say so), or '' when it starts with none. */
 export function openerOf(hook: string): string {
   const h = plainWords(hook || '')
-  return PROVEN_OPENERS.find((o) => { const w = plainWords(o); return h === w || h.startsWith(`${w} `) }) || ''
+  const begins = (t: string) => { const w = plainWords(t); return h === w || h.startsWith(`${w} `) }
+  return PROVEN_OPENERS.find(begins) || PROVEN_HOOK_LINES.find((x) => x.starts.some(begins))?.starts[0] || ''
 }
 
 export interface VideoPlan {
@@ -297,8 +313,8 @@ export const videoJson = (o: { say: string; broll: string; cta: string; forBrief
     "where": "WHERE the camera is: the real place for that moment",
     "what": "WHAT the problem is, in the words a buyer would say out loud, not the brand's words",
     "why": ["the surface problem the product solves", "why that matters to you", "the moment and the feeling underneath it, said to the viewer as you: the deepest reason, which the hook opens on"],
-    "opener": "the PROVEN OPENER this hook starts with, word for word, or \\"\\" when it does not use one",
-    "hook": "the first line said, under 16 words, opening on the deepest why (the same as say[0])",
+    "opener": "the PROVEN OPENER or PROVEN HOOK this hook starts with, its words up to the blank, or \\"\\" when it uses none",
+    "hook": "the first line said, under 16 words (one built on a PROVEN HOOK up to 24), opening on the deepest why (the same as say[0])",
     "onScreen": "the text on screen in the first 2 seconds, under 6 words, never the same words as the hook",
     "shot": "what the camera shows in the first 2 seconds, with movement",
     "objection": "the one doubt a buyer has about this product that this video answers (from \\"doubts\\"), in under 10 words",
@@ -315,6 +331,7 @@ export function scriptCraft(o: { count: number; openers: number; builtOn: number
   return `WHY THIS HOOK: THE FIVE WS, THEN THE FIVE WHYS. Before writing each video, decide WHO it calls out, WHEN in their day it bites, WHERE they are, and WHAT the problem is in their own words. Then dig the WHY: start from the surface problem the product solves ("razor bumps"), ask why that matters ("they itch, they look bad"), and ask again until you reach a moment in someone's life and a feeling ("you don't want people staring at your neck at dinner"). Write that ladder in "why". Every video aims at a different WHO or a different moment, so the ${o.count} angles really differ. Dig from the reviews first when they are given: the moment a buyer describes is worth more than any you imagine. Then from ${o.digFrom}, and from everyday life; never a medical claim, never a promise the product cannot keep.
 THE HOOK OPENS ON THE DEEPEST WHY, NEVER THE SURFACE. Not "Tired of razor bumps?" but "If date night means hoping nobody looks at your neck, watch this." Call out the WHO in the first words ("If you're on your feet all day", "Moms who pack lunches at 6am", "Guys who shave every morning") and put them in the WHEN. Call out only people the product is really for, as ${o.calloutFrom} show them. Specific beats clever: a real place, a real time, a real person in their life. Say it the way the buyer would, in their words, never the brand's.
 PROVEN OPENERS (MVP's list): ${PROVEN_OPENERS.map((x) => `"${x}"`).join(', ')}. At least ${o.openers} of the ${o.count} videos start their hook with one of these, word for word, and finish the same sentence with the WHO, the moment or the deepest why ("Nobody mentions this about shaving the night before a date", "I wish I knew this earlier, back when 12 hour shifts wrecked my feet", "Pause for a second if your kid's lunch comes home uneaten"). Never say an opener bare, never two videos on the same opener. A hook that starts with "I" turns to the viewer ("you") in the very next line. Name the opener used in "opener".
+PROVEN HOOKS (MVP's list too, whole sentences with a blank): ${PROVEN_HOOK_LINES.map((x) => `${x.kind.toLowerCase()}: "${x.line}"`).join('; ')}. They count as proven openers: keep the words before the blank word for word and fill the blank with this product's buyer, their moment or the thing everybody tells them, in the buyer's own words. One may run to 24 words. Use the openers and these hooks across the set, never the same one twice, and name the one used in "opener" (its words up to the blank).
 THE HOOK IS THREE THINGS AT ONCE: what is said ("hook"), what the screen says ("onScreen": under 6 words, never the hook's own words, and it makes them need the next second), and what the camera shows in the first 2 seconds ("shot": something that stops a thumb). All three carry the same moment.
 DRIVE THE KNIFE, THEN THE RELIEF. Line 1 is the hook. Line 2 makes the viewer feel the problem in their own day (the moment from "why", in "you" words). Then the product arrives as the way out, then proof shown on camera, then the line that answers the "objection" (does it fit, does it last, does it taste right, is it worth it), then the call to action.
 WEAK POINTS ARE ANSWERED, NEVER HIDDEN AND NEVER DENIED. A doubt buyers share (from CRITICAL REVIEWS when given) is answered plainly in the video that takes it on: what it is, and why the product still wins for the right person, or who it is not for. One video is the negative style built on the most common real doubt. Never claim the product fixes something the reviews say it does not.

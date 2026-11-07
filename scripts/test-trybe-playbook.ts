@@ -9,7 +9,7 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { pickScore, siteSocials, readTopCreatives, tallyTop, readAdLibraryCount, bucketDollars, adLibraryUrl } from '../lib/trybe-pick'
-import { afterAccept, readChat, parseVideoPlan, honestCtas, scriptFor, ideaText, planText, NO_ANSWER_DAYS, KICKOFF_SYSTEM, VIDEO_PLAN_SYSTEM, PROVEN_OPENERS, OPENER_VIDEOS, openerOf, whyText } from '../lib/trybe-playbook'
+import { afterAccept, readChat, parseVideoPlan, honestCtas, scriptFor, ideaText, planText, NO_ANSWER_DAYS, KICKOFF_SYSTEM, VIDEO_PLAN_SYSTEM, PROVEN_OPENERS, PROVEN_HOOK_LINES, OPENER_VIDEOS, openerOf, whyText } from '../lib/trybe-playbook'
 import { brandAdsForPlan, brandAdsBlock, PLAN_META_ADS, type MetaAd } from '../lib/trybe-adsgallery'
 import { scrubBanned } from '../lib/scrub'
 
@@ -225,6 +225,13 @@ check('Best bets ranks a wider pool than the keyword search keeps', /sort === 'p
 check('SCOUT\'s Meta check stops on a deadline, keeps alive, and reopens a closed tab', /notReached\.push/.test(bg) && /const ka = startKeepAlive\(\)[\s\S]{0,200}for \(let i = 0; i < list\.length/.test(bg) && /catch \(e\) \{ tab = null \}/.test(bg))
 const afterUi = read('components/labs/TrybeAfterAccept.tsx')
 check('a message already in the chat is not sent twice, and a lost answer is checked before "Not sent"', /already in your TRYBE chat, so it was not sent again/.test(afterUi) && /const maybeSent = !r\.ok && !r\.status/.test(chatSend) && /sent: true, already: true/.test(chatSend))
+
+// MORE PROVEN HOOKS (Seb, 2026-11-07, from a creator: "I'm just adding some
+// more ideas"): seven sentences with a blank, counted as proven openers.
+check('the seven proven hooks are kept, each a sentence with a blank, no dashes', PROVEN_HOOK_LINES.length === 7 && PROVEN_HOOK_LINES.every(x => x.line.includes('___') && !/[\u2013\u2014]| - /.test(x.line)))
+check('a hook built on one counts as a proven opener, read from its own words', openerOf("I'm probably going to offend somebody with this, but we need to stop pretending cheap pans are fine") === "I'm probably going to offend somebody with this" && openerOf("I almost didn't share this because I thought I was the only one who hated mornings") === "I almost didn't share this" && openerOf('Still struggling with frizz? You are overlooking this.') === 'Still struggling with')
+check('a near miss is not counted', openerOf('I wish I had bought this sooner') === '' && openerOf('You need one more thing') === '')
+check('the script agent is given all seven with what to do with the blank', PROVEN_HOOK_LINES.every(x => VIDEO_PLAN_SYSTEM('').includes(x.line)) && /PROVEN HOOKS \(MVP's list too, whole sentences with a blank\)/.test(VIDEO_PLAN_SYSTEM('')) && /They count as proven openers/.test(VIDEO_PLAN_SYSTEM('')))
 
 if (failed) { console.error(`\n${failed} TRYBE playbook check(s) failed`); process.exit(1) }
 console.log('\nALL PASS')
