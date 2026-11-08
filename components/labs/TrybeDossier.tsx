@@ -300,7 +300,7 @@ export default function TrybeDossier({ brandId, name, onClose, actions, scout = 
           {d && (
             <Section title="What MVP creators got back" aside={<span className="inline-flex items-center gap-1"><Users size={12} /> Only shown once 5 creators have results, never one creator&rsquo;s own</span>}>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-6 gap-y-5 rounded-2xl p-5" style={ui.card}>
-                <Figure label="Approved" value={d.pool?.approvalRate != null ? `${d.pool.approvalRate}%` : 'Not yet'} sub={d.pool?.approvalRate != null ? 'of their videos' : d.pool?.why || 'No results yet'} />
+                <Figure label="Approved" value={d.pool?.approvalRate != null ? `${Math.round(d.pool.approvalRate * 100)}%` : 'Not yet'} sub={d.pool?.approvalRate != null ? 'of their videos' : d.pool?.why || 'No results yet'} />
                 <Figure label="Paid" value={d.pool?.payPerApproved != null ? `$${d.pool.payPerApproved}` : 'Not yet'} sub={d.pool?.payPerApproved != null ? 'per approved video' : 'Not enough results yet'} />
                 <Figure label="Samples" value={d.samples?.shown && d.samples.arrivedRate != null ? `${d.samples.arrivedRate}%` : 'Not yet'} sub={d.samples?.shown ? `arrived${d.samples.medianDays ? `, in ${d.samples.medianDays} days` : ''}${d.samples.waitingLong ? `; ${d.samples.waitingLong} still waiting 3+ weeks` : ''}` : d.samples?.why || 'Not read'} />
                 <Figure label="Answered" value={d.replies?.shown && d.replies.rate != null ? `${d.replies.rate}%` : 'Not yet'} sub={d.replies?.shown ? `of messages${d.replies.medianDays != null ? `, in ${d.replies.medianDays} days` : ''}` : d.replies?.why || 'Not read'} />

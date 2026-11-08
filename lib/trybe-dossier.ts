@@ -286,9 +286,11 @@ export function scorecard(s: ScoreInput): Dimension[] {
     dims.push({ id: 'samples', label: 'Sends samples', grade: gradeOf(score), score, value, source })
   }
 
-  // APPROVAL: the share of MVP creators' videos it approved.
+  // APPROVAL: the share of MVP creators' videos it approved. The pool gives a
+  // fraction (0.65), so it is turned into points here: read as a percent, it
+  // scored every brand 0 and the brand page said "0.65%".
   {
-    const r = s.pool?.approvalRate ?? null
+    const r = s.pool?.approvalRate != null ? Math.round(s.pool.approvalRate * 100) : null
     const score = r == null ? null : clamp(((r - 30) / 55) * 100)
     dims.push({ id: 'approval', label: 'Approves videos', grade: gradeOf(score), score,
       value: r == null ? 'Not enough yet' : `${r}% approved`,
@@ -301,7 +303,7 @@ export function scorecard(s: ScoreInput): Dimension[] {
     const score = d == null ? null : clamp(100 - ((d - 2) / 18) * 100)
     dims.push({ id: 'speed', label: 'Decides fast', grade: gradeOf(score), score,
       value: d == null ? 'Not enough yet' : `${d} day${d === 1 ? '' : 's'}`,
-      source: d == null ? `Shown once ${POOL_MIN} MVP creators have timed it` : `Middle wait for a decision, ${POOL_MIN}+ MVP creators${s.pool?.slowShare != null ? `; ${s.pool.slowShare}% waited over 2 weeks` : ''}` })
+      source: d == null ? `Shown once ${POOL_MIN} MVP creators have timed it` : `Middle wait for a decision, ${POOL_MIN}+ MVP creators${s.pool?.slowShare != null ? `; ${Math.round(s.pool.slowShare * 100)}% still waited after a week` : ''}` })
   }
 
   // ROOM: how crowded it is with creators.

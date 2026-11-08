@@ -95,7 +95,8 @@ const blank: ScoreInput = { pay: { dollars: null, short: null, basis: null }, me
     pay: { dollars: 46, short: '$46 a video', basis: 'members' },
     meta: { count: 38, own: true, fresh: true, top100Hits: 3 },
     samples: { trybe: null, products: { open: 3, total: 6 }, pool: { shown: true, members: 5, arrivedRate: 85, medianDays: 6, waitingLong: 1, why: null } },
-    pool: { approvalRate: 70, reviewDays: 4, slowShare: 10 },
+    // The pool's own shape: fractions (lib/trybe-changes poolBrands), not percents.
+    pool: { approvalRate: 0.7, reviewDays: 4, slowShare: 0.1 },
     crowd: { level: 'filling', why: '14 joined in 30 days' },
     replies: null,
   }
@@ -105,6 +106,10 @@ const blank: ScoreInput = { pay: { dollars: null, short: null, basis: null }, me
   check('ad spend counts its own Meta ads and its Top 100 videos', by.ads.value === '38 Meta ads' && /Top 100/.test(by.ads.source) && by.ads.grade === 'strong')
   check('samples: MVP creators\' arrivals come before its products', by.samples.value === '85% arrived' && /about 6 days/.test(by.samples.source))
   check('approval and speed from members, room from crowding', by.approval.value === '70% approved' && by.speed.value === '4 days' && by.room.value === 'Filling' && by.room.grade === 'fair')
+  // Seb's brand pages said "0.65%" approved and graded every brand weak on it:
+  // the pool's fraction was printed and scored as a percent.
+  check('the pool\'s fraction reads as a percent, graded on it', by.approval.score != null && by.approval.score > 50 && by.approval.grade !== 'weak' && /10% still waited after a week/.test(by.speed.source))
+  check('the brand page prints the pool\'s fraction as a percent', /\$\{Math\.round\(d\.pool\.approvalRate \* 100\)\}%/.test(readFileSync('components/labs/TrybeDossier.tsx', 'utf8')))
   const v = verdictOf(d)
   check('a strong brand reads as a strong bet, with its best and weakest named', v.word === 'Strong bet' && (v.score as number) >= 75 && /Best: .*Weakest: room for you/.test(v.line) && v.read === 6)
   const noSamples = verdictOf(scorecard({ ...good, samples: { trybe: false, products: null, pool: null } }))
