@@ -10,14 +10,14 @@
 // sister pages, the area page never clashing with Passport's public /go
 // links, and the menu exactly as before while the switch is off.
 import { readFileSync, existsSync } from 'node:fs'
-import { canUsePreview } from '../lib/labs-preview'
+import { previewOpenToPro } from '../lib/labs-preview'
 
 const fails: string[] = []
 const check = (name: string, ok: boolean | undefined) => { if (!ok) fails.push(name) }
 const S = readFileSync('components/layout/DashboardShellV2.tsx', 'utf8')
 const PAGE = 'app/(dashboard)/area/[section]/page.tsx'
 
-check('admin only while it is tried', canUsePreview('section_nav', 'admin') && !canUsePreview('section_nav', 'pro'))
+check('on for every account on every plan (Seb, 2026-11-08: "turn it on for everyone")', previewOpenToPro('section_nav') && /const sectionNav = previewOpenToPro\('section_nav'\) \|\| canUsePreview\('section_nav', effectiveTier\)/.test(S))
 check('the menu is exactly as before while the switch is off', /\{!sectionNav && groupsWithFavorites\.map\(\(group\) => \{/.test(S))
 check('the left side shows one row per main area', /\{sectionNav && \(\s*<div className="flex flex-col gap-0\.5">\s*\{navSections\.map\(\(s2\) => \(/.test(S))
 check('areas are the menu’s own rows, gates kept, nothing external', /const rows = g\.items\.filter\(\(it\) => it\.gate !== false && !it\.external\)/.test(S))
@@ -33,4 +33,4 @@ check('each tool says what it does and can be pinned to the Dashboard', /feature
 check('no dashes in what the member reads', !/[–—]/.test(P.split('\n').slice(9).join('\n')))
 
 if (fails.length) { console.error(`✗ ${fails.length} section menu check(s) failed:\n  ${fails.join('\n  ')}`); process.exit(1) }
-console.log('✓ Section menu: main areas on the left, their tools inside, TRYBE on its own, admin first')
+console.log('✓ Section menu: main areas on the left, their tools inside, TRYBE on its own, for everyone')

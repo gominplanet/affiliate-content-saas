@@ -119,8 +119,10 @@ const OPEN_TO: Record<PreviewFeature, 'admin' | 'labs'> = {
   // would bring me to a page where inside that page, I would have the
   // different sub pages ... Tribe should be its own kind of main menu"). The
   // menu shows only the main areas; each opens a page with its tools, and
-  // every page of an area wears a strip of its sister pages. Admin first.
-  section_nav: 'admin',
+  // every page of an area wears a strip of its sister pages. Admin first;
+  // on for every account on every plan 2026-11-08 (Seb: "turn it on for
+  // everyone"), so the shell reads it with previewOpenToPro.
+  section_nav: 'labs',
 }
 
 /** Every preview feature. A check can then ask which are still admin only

@@ -28,6 +28,15 @@ export interface WhatsNewItem {
 }
 
 export const WHATS_NEW: WhatsNewItem[] = [
+  // A cleaner menu (Seb, 2026-11-08: "turn it on for everyone").
+  {
+    date: '2026-11-08',
+    badge: 'NEW',
+    tone: '#0B7A6E',
+    title: 'A cleaner menu',
+    desc: 'The menu on the left now shows only the main areas: Find products, TRYBE, Make videos, Blog, Share, Work with brands, Your setup and Help. Open one to see all of its tools on one page, each with a line on what it does and a pin to put it at the top of your Dashboard. Inside a tool, the strip at the top takes you to the others in the same area. YouTube comments and Instagram Auto-DM are now under Share.',
+    href: '/dashboard',
+  },
   // The new look, open to Pro (Seb, 2026-11-03: "open it to pro").
   {
     date: '2026-11-03',

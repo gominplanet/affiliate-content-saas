@@ -1019,7 +1019,8 @@ export default function DashboardShellV2({
   // /area/<area> with its tools, and every page of an area wears a strip of its
   // sister pages (SectionStrip). TRYBE comes out of Find products to stand on
   // its own, and opens straight away, like the Dashboard.
-  const sectionNav = canUsePreview('section_nav', effectiveTier)
+  // Every account on every plan once open (Seb, 2026-11-08: "turn it on for everyone").
+  const sectionNav = previewOpenToPro('section_nav') || canUsePreview('section_nav', effectiveTier)
   const slugOf = (label: string) => label.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
   const navSections: Array<ShellSection & { rows: NavItemDef[] }> = (() => {
     const out: Array<ShellSection & { rows: NavItemDef[] }> = []
