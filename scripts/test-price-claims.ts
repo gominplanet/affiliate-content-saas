@@ -308,10 +308,15 @@ const live = (src: string) => decomment(src)
     'a select with no matching option renders the first one, so the screen would call a Studio subscriber a trial user')
 
   check('the view-as list is derived, not typed',
-    /VIEW_AS_TIERS: readonly Tier\[\] = \['trial', \.\.\.SELLABLE_TIERS, 'admin'\]/.test(VIEWAS),
+    /VIEW_AS_TIERS: readonly Tier\[\] = \['trial', \.\.\.SELLABLE_TIERS, \.\.\.LEGACY_HELD, 'admin'\]/.test(VIEWAS) && /const LEGACY_HELD: readonly Tier\[\] = \(Object\.keys\(TIERS\) as Tier\[\]\)\.filter\(seesProLocked\)/.test(VIEWAS),
     'its own comment says the hand-written version fell out of sync twice')
   check('and the billing preview renders that list',
     /VIEW_AS_TIERS\.filter/.test(BILLING) && !/<option value="studio">/.test(BILLING), '')
+  // Seb, 2026-11-08: "my view as dropdown is not working .. always kicking me
+  // back to admin". The sidebar's own dropdown was still typed by hand.
+  const SHELL = decomment(read('components/layout/DashboardShellV2.tsx'))
+  check('and so does the sidebar’s, with no option typed by hand but Admin',
+    /VIEW_AS_TIERS\.filter\(\(t\) => t !== 'admin'\)\.map\(\(t\) => \(/.test(SHELL) && (SHELL.match(/<option value="[a-z]+">/g) || []).every((o) => o === '<option value="admin">'), '')
   check('a stored tier that is no longer offered is cleared, not just ignored',
     /localStorage\.removeItem\(KEY\)/.test(VIEWAS.slice(VIEWAS.indexOf('export function getViewAsTier'), VIEWAS.indexOf('export function setViewAsTier'))),
     'left in place it gates the whole UI as Studio while the dropdown reads "My view (Admin)"')

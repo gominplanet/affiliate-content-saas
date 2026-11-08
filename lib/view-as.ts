@@ -10,12 +10,14 @@
 // the real DB tier, so impersonation never grants real access — actions
 // you trigger while "viewing as" still run with your true admin rights.
 
-import { normalizeTier, SELLABLE_TIERS, type Tier } from '@/lib/tier'
+import { normalizeTier, SELLABLE_TIERS, TIERS, type Tier } from '@/lib/tier'
+import { seesProLocked } from '@/lib/pro-locked-nav'
 
 const KEY = 'mvp_view_as_tier'
 const EVENT = 'mvp:view-as-changed'
 
-/** The tiers this preview offers: the plans we sell, plus the free trial.
+/** The tiers this preview offers: the plans we sell, the free trial, and the
+ *  legacy plans members still hold.
  *
  *  IT USED TO BE A HAND-WRITTEN LIST of every value the union allowed, with a
  *  comment saying to keep it in sync, which it twice was not: a selection of
@@ -23,10 +25,26 @@ const EVENT = 'mvp:view-as-changed'
  *  (Admin)", and Amazon did the same on 2026-08-13. Derived now, so adding a
  *  plan cannot repeat it.
  *
- *  Creator and Studio are deliberately NOT here. They are frozen, nothing
- *  sells them, and previewing a plan nobody can buy answers a question nobody
- *  is asking. A stored value naming one is treated as absent below. */
-export const VIEW_AS_TIERS: readonly Tier[] = ['trial', ...SELLABLE_TIERS, 'admin'] as const
+ *  IT HAPPENED A THIRD TIME (Seb, 2026-11-08: "my view as dropdown is not
+ *  working .. always kicking me back to admin"). When Pro became the one plan
+ *  sold, this list shrank to Free, Pro and Admin, while the sidebar's own
+ *  hand-typed dropdown still offered Studio, Amazon and Creator: each was
+ *  saved, read back as not offered, cleared, and the page came back as Admin.
+ *  Both dropdowns are built from this list now.
+ *
+ *  Creator and Studio are back in it: nothing sells them, but members still
+ *  hold them, and they now see every Pro tool locked (lib/pro-locked-nav), so
+ *  what they see is a real question. Derived from that same rule. Amazon is
+ *  not: nobody holds it. A stored value naming a tier not listed here is
+ *  treated as absent below. */
+const LEGACY_HELD: readonly Tier[] = (Object.keys(TIERS) as Tier[]).filter(seesProLocked)
+export const VIEW_AS_TIERS: readonly Tier[] = ['trial', ...SELLABLE_TIERS, ...LEGACY_HELD, 'admin'] as const
+
+/** What the View as dropdowns call a tier. */
+export function viewAsLabel(t: Tier): string {
+  if (t === 'admin') return 'My view (Admin)'
+  return seesProLocked(t) ? `${TIERS[t].label} (legacy)` : TIERS[t].label
+}
 
 export function getViewAsTier(): Tier | null {
   if (typeof window === 'undefined') return null

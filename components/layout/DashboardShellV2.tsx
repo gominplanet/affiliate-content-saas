@@ -32,7 +32,7 @@ import { usePathname, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { useTheme } from 'next-themes'
 import { createBrowserClient } from '@/lib/supabase/client'
-import { getViewAsTier, setViewAsTier } from '@/lib/view-as'
+import { getViewAsTier, setViewAsTier, VIEW_AS_TIERS, viewAsLabel } from '@/lib/view-as'
 import { tierBadge } from '@/lib/tier-badge'
 import { canUpgradeTier, TIERS } from '@/lib/tier'
 import { canSeeNav, canBrowseDealRadar, canUsePassport } from '@/lib/feature-access'
@@ -1356,16 +1356,17 @@ export default function DashboardShellV2({
                 }}
                 title="Preview the UI as each tier sees it. Re-gates the sidebar so you see exactly what that tier sees; your real admin access is unchanged."
               >
-                <option value="admin">My view (Admin)</option>
-                <option value="pro">Pro</option>
-                <option value="studio">Studio</option>
-                <option value="amazon">Amazon Influencer</option>
-                <option value="creator">Creator</option>
-                <option value="trial">Free Trial</option>
+                {/* Built from VIEW_AS_TIERS, the list getViewAsTier reads back:
+                    an option typed here by hand was saved, read back as not
+                    offered, and snapped to Admin (lib/view-as). */}
+                <option value="admin">{viewAsLabel('admin')}</option>
+                {VIEW_AS_TIERS.filter((t) => t !== 'admin').map((t) => (
+                  <option key={t} value={t}>{viewAsLabel(t)}</option>
+                ))}
               </select>
               {viewAs !== 'admin' && (
                 <p className="mt-1 text-[10px]" style={{ color: '#FF9500' }}>
-                  Previewing as {viewAs} · sidebar re-gated, your access unchanged
+                  Previewing as {viewAsLabel(viewAs)}. The menu and pages are shown as that plan sees them; your access is unchanged.
                 </p>
               )}
             </div>

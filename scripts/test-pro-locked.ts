@@ -11,6 +11,7 @@
 import { readFileSync } from 'node:fs'
 import { lockProRows, lockedPageAt, proLockedBody, seesProLocked, type LockableGroup } from '../lib/pro-locked-nav'
 import { newsGateOpen, WHATS_NEW } from '../lib/whats-new'
+import { VIEW_AS_TIERS, getViewAsTier, setViewAsTier, effectiveTier, viewAsLabel } from '../lib/view-as'
 
 const fails: string[] = []
 const check = (name: string, ok: boolean | undefined) => { if (!ok) fails.push(name) }
@@ -83,6 +84,26 @@ const D = readFileSync('components/dashboard/TealDashboard.tsx', 'utf8')
 check('the Dashboard shows the lock, with no pin, and never pins a locked tool', /\{f\.locked \? <ProChip \/> : <Badge badge=\{f\.badge\} \/>\}/.test(D) && /\{!f\.locked && <button type="button" onClick=\{\(\) => pin\(f\)\}/.test(D) && /g\.items\.find\(\(it\) => !it\.locked && \(/.test(D))
 const P = readFileSync('app/(dashboard)/area/[section]/page.tsx', 'utf8')
 check('an area page shows the lock, says Get it with Pro, counts them, and has no pin on them', /\{f\.locked && <span[^\n]*<Lock size=\{10\}/.test(P) && /\{f\.locked \? 'Get it with Pro' : 'Open'\}/.test(P) && /, \$\{lockedCount\} of them with Pro/.test(P) && /\{!f\.locked && <button type="button" onClick=\{\(\) => pin\(f\)\}/.test(P))
+
+// ── PREVIEWED ── (Seb, 2026-11-08: "my view as dropdown is not working ..
+// always kicking me back to admin"). Every plan the dropdown offers must read
+// back as itself after the reload, or the preview snaps to Admin.
+{
+  const store = new Map<string, string>()
+  ;(globalThis as unknown as { window: unknown }).window = {
+    localStorage: { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => { store.set(k, v) }, removeItem: (k: string) => { store.delete(k) } },
+    dispatchEvent: () => true,
+  }
+  const lost = VIEW_AS_TIERS.filter((t) => t !== 'admin').filter((t) => { setViewAsTier(t); return getViewAsTier() !== t || effectiveTier('admin') !== t })
+  check('every plan in View as reads back as itself after the reload', lost.length === 0)
+  check('View as offers the legacy plans that see Pro locked, and Pro and Free', ['creator', 'studio', 'pro', 'trial'].every((t) => (VIEW_AS_TIERS as readonly string[]).includes(t)))
+  setViewAsTier('creator')
+  check('only an admin can preview: anyone else stays on their own plan', effectiveTier('pro') === 'pro' && effectiveTier('studio') === 'studio')
+  store.set('mvp_view_as_tier', 'nonsense')
+  check('a stored value it does not offer is cleared, not left gating the screen', getViewAsTier() === null && !store.has('mvp_view_as_tier'))
+  check('the dropdown says legacy for the old plans', viewAsLabel('creator') === 'Creator (legacy)' && viewAsLabel('studio') === 'Studio (legacy)' && viewAsLabel('pro') === 'Pro' && viewAsLabel('admin') === 'My view (Admin)')
+  delete (globalThis as unknown as { window?: unknown }).window
+}
 
 // ── TOLD ──
 const news = WHATS_NEW.find((n) => n.gate === 'legacy_plan')

@@ -8,7 +8,7 @@ import { Zap, CheckCircle, Loader2, PartyPopper } from 'lucide-react'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { trackMeta } from '@/lib/meta-pixel'
 import { TIERS, normalizeTier, SELLABLE_TIERS, PRICES_BEFORE, type Tier } from '@/lib/tier'
-import { effectiveTier, getViewAsTier, setViewAsTier, VIEW_AS_TIERS } from '@/lib/view-as'
+import { effectiveTier, getViewAsTier, setViewAsTier, VIEW_AS_TIERS, viewAsLabel } from '@/lib/view-as'
 import { FREE_WEEK_SENTENCE, FREE_WEEK_CTA_SHORT } from '@/lib/guarantee'
 
 export default function BillingPage() {
@@ -368,15 +368,13 @@ export default function BillingPage() {
                   className="text-sm rounded-lg border border-gray-200 dark:border-white/10 bg-white dark:bg-[#1c1c1e] px-3 py-2 font-medium shrink-0"
                   title="Preview the UI as each tier sees it. Visual only, your real admin access is unchanged."
                 >
-                  {/* Built from VIEW_AS_TIERS, which is the free trial plus
-                      SELLABLE_TIERS. Creator and Studio are gone: frozen
-                      plans nobody can buy, and a preview of one answers a
-                      question nobody is asking. A stored value naming one is
-                      cleared by getViewAsTier rather than left to render as
-                      the first option in this list. */}
-                  <option value="admin">My view (Admin)</option>
+                  {/* Built from VIEW_AS_TIERS (lib/view-as), the list
+                      getViewAsTier reads back, like the sidebar's. A stored
+                      value it does not list is cleared rather than left to
+                      render as the first option here. */}
+                  <option value="admin">{viewAsLabel('admin')}</option>
                   {VIEW_AS_TIERS.filter((t) => t !== 'admin').map((t) => (
-                    <option key={t} value={t}>{TIERS[t].label}</option>
+                    <option key={t} value={t}>{viewAsLabel(t)}</option>
                   ))}
                 </select>
               </div>
