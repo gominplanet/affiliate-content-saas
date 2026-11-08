@@ -1,7 +1,10 @@
 // © 2026 Gominplanet / MVP Affiliate — proprietary & confidential.
 //
-// "My features": the sidebar features a creator starred, shown in their own
-// section at the top of the sidebar (migration 376).
+// PINS: the features a creator pinned, shown at the top of their Dashboard
+// (migration 376). They were the menu's "My features" until 2026-11-08 (Seb:
+// "I don't think we need the left tab or left area called My Features ... we
+// could have the dashboard have the pinned features instead"); the list and
+// its table are the same.
 //
 // SAVED TO THE ACCOUNT, SHOWN AT ONCE. The list is kept on the account so it
 // follows the creator to every device, and mirrored in this browser so the
@@ -18,8 +21,8 @@ import { createBrowserClient } from '@/lib/supabase/client'
 export const MAX_NAV_FAVORITES = 12
 
 const LOCAL_KEY = 'mvp_nav_favorites_v1'
-/** Said on the page when the list changes, so the sidebar's My features and
- *  the Dashboard's Pinned cards (two copies of this hook) stay the same. */
+/** Said on the page when the list changes, so every copy of this hook (the
+ *  Dashboard's Pinned cards, an area page's pins) stays the same. */
 const CHANGED_EVENT = 'mvp:nav-favorites'
 
 /** Adds or removes one page, keeping pin order and the maximum. `aliases`

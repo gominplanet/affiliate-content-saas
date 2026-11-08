@@ -46,7 +46,7 @@ import {
   UserCog, AlertTriangle, DollarSign, Newspaper, Plug, Wrench, ImageOff,
   Camera, MessageCircle, Activity, BarChart3, Wand2, ShieldCheck,
   Share2, UserSquare, LifeBuoy, Link2, FlaskConical, Store, Send, ShoppingBag, Megaphone,
-  Inbox, PackageSearch, Rocket, Database, History, Globe, Radio, Gauge, Repeat, Star, Pin, Menu, X, Scissors, ClipboardList, ListChecks, UploadCloud, Clapperboard, LayoutGrid } from 'lucide-react'
+  Inbox, PackageSearch, Rocket, Database, History, Globe, Radio, Gauge, Repeat, Star, Pin, Menu, X, Scissors, ClipboardList, ListChecks, UploadCloud, Clapperboard, LayoutGrid, Lock } from 'lucide-react'
 import { useNavFavorites, MAX_NAV_FAVORITES } from '@/lib/nav-favorites'
 import { type Look } from '@/lib/look'
 import { ShellNavContext, ShellSectionsContext, type ShellSection, ShellLookContext, ShellActiveContext, type ShellNavGroup, type ShellActive } from './shell-nav-context'
@@ -76,6 +76,8 @@ import { useTrybeAlerts } from './useTrybeAlerts'
 import SiteSwitcherChip from './SiteSwitcherChip'
 import { HelpDeskButton } from '@/components/HelpDeskSidebar'
 import AmazonUpgradeGate from '@/components/upgrade/AmazonUpgradeGate'
+import ProUpgradePanel from '@/components/upgrade/ProUpgradePanel'
+import { lockProRows, lockedPageAt, seesProLocked, proLockedBody } from '@/lib/pro-locked-nav'
 import PermalinkAutoHeal from '@/components/PermalinkAutoHeal'
 import AnnouncementModal from '@/components/dashboard/AnnouncementModal'
 import MvpNews from '@/components/dashboard/MvpNews'
@@ -122,6 +124,9 @@ interface NavItemDef {
   /** Other addresses that light this row without being tabs of it (a page's
    *  own tab that belongs to this row, e.g. Social Push's scheduled queue). */
   alsoActiveOn?: string[]
+  /** A Pro tool shown to a legacy Creator or Studio member: listed with a
+   *  lock, and opening it shows the Pro upgrade panel (lockProRows). */
+  locked?: boolean
 }
 
 interface NavGroupDef {
@@ -162,7 +167,6 @@ const SECTION_ACCENTS: Record<string, { dark: string; light: string }> = {
   'Source & Earn':     { dark: '#A3E635', light: '#4D7C0F' }, // green     — find & monetize (legacy key)
   'Collaborate':       { dark: '#F472B6', light: '#BE185D' }, // pink      — deals / people
   'Labs':              { dark: '#F87171', light: '#DC2626' }, // red       — experimental
-  'My features':       { dark: '#F472B6', light: '#BE185D' }, // pink      — the creator's own picks
   'Help & Community':  { dark: '#5EEAD4', light: '#0D9488' }, // turquoise — support
   'Account':           { dark: '#94A3B8', light: '#475569' }, // slate     — neutral utility
   'Recommended tools': { dark: '#2DD4BF', light: '#0F766E' }, // teal      — discovery
@@ -188,7 +192,6 @@ const SECTION_ICONS: Record<string, React.ReactNode> = {
   'Grow': <BarChart3 size={12} />,
   'Collaborate': <Share2 size={12} />,
   'Labs': <FlaskConical size={12} />,
-  'My features': <Star size={12} />,
   'Help & Community': <LifeBuoy size={12} />,
   'Account': <UserCog size={12} />,
   'Recommended tools': <Wrench size={12} />,
@@ -427,8 +430,7 @@ export default function DashboardShellV2({
   // is just its header until clicked open, so the menu is a short list of
   // sections rather than a long scroll of features. Unset, a section is open
   // only while it holds the page you are on; once you open or close one, that
-  // choice is kept (this browser). My features never folds: it is the list you
-  // pinned to be one click away.
+  // choice is kept (this browser).
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({})
   useEffect(() => {
     try {
@@ -445,17 +447,16 @@ export default function DashboardShellV2({
       return next
     })
   }
-  // MY FEATURES: the pages this creator starred, pinned at the top of the sidebar.
+  // PINS LIVE ON THE DASHBOARD (Seb, 2026-11-08: "I don't think we need the
+  // left tab or left area called My Features. That could be gone, and we could
+  // have the dashboard have the pinned features instead"). The menu has no My
+  // features any more; the classic menu's star pins to the same list, which the
+  // Dashboard shows at its top.
   const { favorites, toggle: toggleFavorite, savedTo: favoritesSavedTo } = useNavFavorites()
-  const [editingFavorites, setEditingFavorites] = useState(false)
   const [favoritesNote, setFavoritesNote] = useState<string | null>(null)
-  const [favoritesHintHidden, setFavoritesHintHidden] = useState(true)
-  useEffect(() => {
-    try { setFavoritesHintHidden(window.localStorage.getItem('mvp_nav_fav_hint_hidden') === '1') } catch { setFavoritesHintHidden(false) }
-  }, [])
   const starFeature = (href: string, label: string, aliases: string[] = []) => {
     const { full } = toggleFavorite(href, aliases)
-    setFavoritesNote(full ? `My features holds ${MAX_NAV_FAVORITES}. Take one out to add ${label}.` : null)
+    setFavoritesNote(full ? `You can pin ${MAX_NAV_FAVORITES}. Unpin one to pin ${label}.` : null)
   }
 
   const isAdmin = tier === 'admin'
@@ -509,7 +510,7 @@ export default function DashboardShellV2({
   // Generator and Research work on their own limits, and Social Influencer is
   // where their zero design allowance is stated plainly with the Amazon plan
   // offered. A tier gate on the door was hiding the reason to walk through it.
-  const canAmazonHub = (['trial', 'creator', 'amazon', 'studio', 'pro', 'admin'] as string[]).includes(effectiveTier)
+  const amazonHubFor = (t: Tier) => (['trial', 'creator', 'amazon', 'studio', 'pro', 'admin'] as string[]).includes(t)
 
   // Admin-only: count of OPEN support tickets (not yet answered/closed). Drives
   // the red "Support" alert in the topbar so the founder catches new tickets
@@ -577,7 +578,22 @@ export default function DashboardShellV2({
   // sections, 'inside' rows are reached from within another page (the research
   // finders inside Product research), and everything else is listed once under
   // "More with Pro" instead of a locked row in every section.
-  const NAV_GROUPS: NavGroupDef[] = [
+  //
+  // The menu is drawn for a plan (navFor), so the same rows can be drawn for
+  // Pro too: a legacy Creator or Studio member sees every Pro tool, locked
+  // (lockProRows below). For the member's own plan every value is the one
+  // the shell already worked out above.
+  const memberNav = { tier: effectiveTier, showBuyingGuides: showBuyingGuidesEff, showDeals: showDealsEff }
+  const navFor = (forTier: Tier): NavGroupDef[] => {
+    const effectiveTier = forTier
+    const amazonView = forTier === 'amazon'
+    const isPro = canSeeNav('labs', forTier)
+    const canUseFinders = canSeeNav('finders', forTier)
+    const canUseArticles = TIERS[forTier]?.articlesPerMonth !== 0
+    const showBuyingGuidesEff = forTier === memberNav.tier ? memberNav.showBuyingGuides : canSeeNav('buyingGuides', forTier)
+    const showDealsEff = forTier === memberNav.tier ? memberNav.showDeals : canSeeNav('deals', forTier)
+    const canAmazonHub = amazonHubFor(forTier)
+    return [
     // Headerless top item.
     {
       label: '',
@@ -849,7 +865,19 @@ export default function DashboardShellV2({
         { href: '/admin/cc-import', icon: <Database size={15} />, label: 'CC Catalog Import' },
       ],
     }] : []),
-  ]
+    ]
+  }
+
+  // EVERY PRO TOOL, LOCKED, FOR THE LEGACY PLANS (Seb, 2026-11-08: "the legacy
+  // people that are on the creator or studio tier ... should be able to see
+  // everything ... that the full membership offers, but without having access
+  // to it ... If they click on something ... they get asked to upgrade"). The
+  // rows Pro opens and their plan does not are listed where Pro has them, with
+  // a lock, and open the Pro upgrade panel (proLocked below). Labs and Admin
+  // are staff rows, never offered.
+  const legacyView = seesProLocked(effectiveTier)
+  const NAV_GROUPS: NavGroupDef[] = legacyView ? lockProRows<NavItemDef, NavGroupDef>(navFor(effectiveTier), navFor('pro')) : navFor(effectiveTier)
+  const proLocked = legacyView ? lockedPageAt(NAV_GROUPS, pathname) : undefined
 
   // Walled garden (2026-08-13): an Amazon Influencer opening anything outside
   // their plan (blog / YouTube / SEO / blog-tools) gets the upgrade
@@ -908,25 +936,6 @@ export default function DashboardShellV2({
     return [...jobs, { label: 'More with Pro', items: more }, ...staff]
   })()
 
-  // MY FEATURES, right under the Dashboard row: the starred pages, in the
-  // order they were starred, drawn from the menu this creator can actually
-  // see. A starred page their plan no longer shows simply is not listed.
-  const groupsWithFavorites: NavGroupDef[] = (() => {
-    const seen = new Map<string, NavItemDef>()
-    for (const g of orderedGroups) for (const it of g.items) {
-      if (it.gate !== false && !it.external) {
-        // A page that is now a tab of a merged row (a star placed before the
-        // menu was regrouped) shows as that row.
-        for (const h of [it.href, ...(it.tabs ?? []).filter((t) => t.gate !== false).map((t) => t.href)]) if (!seen.has(h)) seen.set(h, it)
-      }
-    }
-    const items = Array.from(new Set(favorites.map((h) => seen.get(h)).filter((it): it is NavItemDef => !!it))).map((it) => ({ ...it, subheading: undefined }))
-    const mine: NavGroupDef = { label: 'My features', items }
-    const dashIdx = orderedGroups.findIndex((g) => !g.label)
-    return dashIdx >= 0
-      ? [...orderedGroups.slice(0, dashIdx + 1), mine, ...orderedGroups.slice(dashIdx + 1)]
-      : [mine, ...orderedGroups]
-  })()
 
   // ── Active-route detection. Match by prefix so a child route still
   // highlights its parent (e.g. /admin/users/123 lights /admin/users).
@@ -1006,7 +1015,7 @@ export default function DashboardShellV2({
         tint: hexToRgba(color, isDark ? 0.14 : 0.10),
         items: g.items
           .filter((it) => it.gate !== false && !it.external)
-          .map((it) => ({ href: it.href, label: it.label, badge: it.badge, icon: it.icon, aliases: (it.tabs ?? []).map((t) => t.href).filter((h) => h !== it.href) })),
+          .map((it) => ({ href: it.href, label: it.label, badge: it.badge, icon: it.icon, aliases: (it.tabs ?? []).map((t) => t.href).filter((h) => h !== it.href), locked: it.locked })),
       }
     })
     .filter((g) => g.items.length > 0)
@@ -1024,27 +1033,24 @@ export default function DashboardShellV2({
   const slugOf = (label: string) => label.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
   const navSections: Array<ShellSection & { rows: NavItemDef[] }> = (() => {
     const out: Array<ShellSection & { rows: NavItemDef[] }> = []
-    const toItem = (it: NavItemDef) => ({ href: it.href, label: it.label, badge: it.badge, icon: it.icon, aliases: (it.tabs ?? []).map((t) => t.href).filter((h) => h !== it.href) })
-    for (const g of groupsWithFavorites) {
+    const toItem = (it: NavItemDef) => ({ href: it.href, label: it.label, badge: it.badge, icon: it.icon, aliases: (it.tabs ?? []).map((t) => t.href).filter((h) => h !== it.href), locked: it.locked })
+    for (const g of orderedGroups) {
       const rows = g.items.filter((it) => it.gate !== false && !it.external)
       if (!g.label) { for (const it of rows) out.push({ label: it.label, slug: slugOf(it.label), href: it.href, icon: it.icon, direct: true, items: [toItem(it)], rows: [it] }); continue }
       const palette = SECTION_ACCENTS[g.label]
       const color = g.accent ?? (palette ? (isDark ? palette.dark : palette.light) : undefined)
       const tint = color ? hexToRgba(color, isDark ? 0.14 : 0.10) : undefined
       const icon = g.icon ?? SECTION_ICONS[g.label]
-      const mine = g.label === 'My features'
-      const trybe = mine ? undefined : rows.find((it) => it.href === '/trybe')
+      const trybe = rows.find((it) => it.href === '/trybe')
       const rest = trybe ? rows.filter((it) => it !== trybe) : rows
-      // My features always shows: its page says how to pin when it is empty.
-      if (mine || rest.length) out.push({ label: g.label, slug: slugOf(g.label), href: `/area/${slugOf(g.label)}`, color, tint, icon, direct: false, items: rest.map(toItem), rows: rest })
+      // Pins are on the Dashboard, not in an area of their own.
+      if (rest.length) out.push({ label: g.label, slug: slugOf(g.label), href: `/area/${slugOf(g.label)}`, color, tint, icon, direct: false, items: rest.map(toItem), rows: rest })
       if (trybe) out.push({ label: 'TRYBE', slug: 'trybe', href: '/trybe', color, tint, icon: trybe.icon, direct: true, items: [toItem(trybe)], rows: [trybe] })
     }
     return out
   })()
-  // The area the page you are on belongs to: its own area first, My features
-  // only on My features' own page.
-  const activeSection = navSections.find((s2) => !s2.direct && s2.label !== 'My features' && (pathname === s2.href || s2.rows.some((it) => itemActive(it))))
-    ?? navSections.find((s2) => s2.label === 'My features' && pathname === s2.href)
+  // The area the page you are on belongs to.
+  const activeSection = navSections.find((s2) => !s2.direct && (pathname === s2.href || s2.rows.some((it) => itemActive(it))))
   const sectionLit = (s2: (typeof navSections)[number]) => pathname === s2.href || (s2.direct ? s2.rows.some((it) => itemActive(it)) : s2 === activeSection)
   const sectionBadge = (s2: (typeof navSections)[number]) => { const n = s2.rows.reduce((t, it) => t + (typeof it.badge === 'number' ? it.badge : 0), 0); return n > 0 ? n : undefined }
 
@@ -1193,30 +1199,13 @@ export default function DashboardShellV2({
             <div className="flex flex-col gap-0.5">
               {navSections.map((s2) => (
                 <NavItem key={s2.href}
-                  item={{ href: s2.href, label: s2.label, icon: s2.icon ?? <LayoutGrid size={15} />, badge: sectionBadge(s2) }}
+                  item={{ href: s2.href, label: s2.label, icon: s2.icon ?? <LayoutGrid size={15} />, badge: s2.direct && s2.rows[0]?.locked ? 'Pro' : sectionBadge(s2), locked: s2.direct && !!s2.rows[0]?.locked }}
                   active={sectionLit(s2)} collapsed={railCollapsed} tint={teal ? s2.color : undefined} teal={teal} />
               ))}
             </div>
           )}
-          {!sectionNav && groupsWithFavorites.map((group) => {
+          {!sectionNav && orderedGroups.map((group) => {
             const visibleItems = group.items.filter((it) => it.gate !== false)
-            const isFavorites = group.label === 'My features'
-            // An empty My features says how to fill it, once, until dismissed.
-            if (isFavorites && visibleItems.length === 0) {
-              if (railCollapsed || favoritesHintHidden) return null
-              return (
-                <div key="my-features-hint" className="rounded-xl border border-dashed px-3 py-2.5 text-[12px]" style={{ borderColor: 'var(--border)', color: 'var(--text-soft)' }}>
-                  <p className="flex items-center gap-1.5 font-semibold text-[11px] uppercase tracking-[0.14em] mb-1" style={{ color: isDark ? '#F472B6' : '#BE185D' }}>
-                    <Star size={12} /> My features
-                  </p>
-                  <p>Tap the star next to any feature to pin it here, at the top.</p>
-                  <div className="mt-1.5 flex gap-3">
-                    <button type="button" onClick={() => setEditingFavorites((e) => !e)} className="font-semibold underline" style={{ color: 'var(--text)' }}>{editingFavorites ? 'Hide the stars' : 'Show the stars'}</button>
-                    <button type="button" onClick={() => { setFavoritesHintHidden(true); try { window.localStorage.setItem('mvp_nav_fav_hint_hidden', '1') } catch { /* fine */ } }} className="underline">Not now</button>
-                  </div>
-                </div>
-              )
-            }
             if (visibleItems.length === 0) return null
             // Per-section header identity (colour + icon), theme-aware, keyed by
             // label. group.accent/group.icon win if a group sets them explicitly.
@@ -1243,8 +1232,8 @@ export default function DashboardShellV2({
                 }
               : undefined
             // Every named section folds to its header (see openSections). The
-            // icon-only rail and My features always show their items.
-            const collapsibleSection = !railCollapsed && !!group.label && !isFavorites
+            // icon-only rail always shows its items.
+            const collapsibleSection = !railCollapsed && !!group.label
             const holdsActive = visibleItems.some((it) => itemActive(it)) || (group.label === 'Admin' && pathname.startsWith('/admin'))
             const sectionOpen = !collapsibleSection || (openSections[group.label] ?? holdsActive)
             return (
@@ -1278,16 +1267,6 @@ export default function DashboardShellV2({
                     >
                       {headerIcon}
                       {group.label}
-                      {isFavorites && (
-                        <button
-                          type="button"
-                          onClick={() => setEditingFavorites((e) => !e)}
-                          className="ml-auto normal-case tracking-normal text-[11px] font-semibold underline"
-                          style={{ color: 'var(--text-soft)' }}
-                        >
-                          {editingFavorites ? 'Done' : 'Edit'}
-                        </button>
-                      )}
                     </p>
                   )
                 )}
@@ -1308,29 +1287,27 @@ export default function DashboardShellV2({
                             item={item}
                             active={itemActive(item)}
                             collapsed={railCollapsed}
-                            starSpace={editingFavorites && !item.external}
                             tint={teal ? headerAccent : undefined}
                             teal={teal}
                           />
-                          {/* THE STAR: pins a feature to My features, or takes it
-                              out. Shown on hover, and always while editing, so
-                              the menu stays calm the rest of the time. */}
-                          {!railCollapsed && !item.external && (() => {
-                            // The row's own address and its tabs': My features
-                            // shows a star saved on a tab as this row, so its
-                            // star reads and clears all of them.
+                          {/* THE STAR: pins a feature to the top of the Dashboard,
+                              or unpins it. Shown on hover, so the menu stays calm. */}
+                          {!railCollapsed && !item.external && !item.locked && (() => {
+                            // The row's own address and its tabs': a pin saved
+                            // on a tab is this row's, so its star reads and
+                            // clears all of them.
                             const aliases = (item.tabs ?? []).map((t) => t.href).filter((h) => h !== item.href)
                             const starred = [item.href, ...aliases].some((h) => favorites.includes(h))
                             return (
                               <button
                                 type="button"
                                 onClick={(e) => { e.preventDefault(); e.stopPropagation(); starFeature(item.href, item.label, aliases) }}
-                                aria-label={starred ? `Take ${item.label} out of My features` : `Add ${item.label} to My features`}
+                                aria-label={starred ? `Unpin ${item.label} from your Dashboard` : `Pin ${item.label} to the top of your Dashboard`}
                                 aria-pressed={starred}
-                                title={starred ? 'Take out of My features' : 'Add to My features'}
+                                title={starred ? 'Pinned to your Dashboard. Press to unpin.' : 'Pin to the top of your Dashboard'}
                                 className={cn(
                                   'absolute right-1 top-1/2 -translate-y-1/2 p-1 rounded-md transition-opacity focus-visible:opacity-100',
-                                  editingFavorites ? 'opacity-100' : 'opacity-0 group-hover/nav:opacity-100',
+                                  'opacity-0 group-hover/nav:opacity-100',
                                 )}
                                 style={{ background: 'var(--bg-sidebar, var(--surface))', color: starred ? (isDark ? '#F472B6' : '#BE185D') : 'var(--text-faint)' }}
                               >
@@ -1343,15 +1320,17 @@ export default function DashboardShellV2({
                     ))}
                   </div>
                 )}
-                {isFavorites && !railCollapsed && (favoritesNote || favoritesSavedTo === 'device') && (
-                  <p className="px-2.5 pt-1 text-[10.5px]" style={{ color: '#D97706' }}>
-                    {favoritesNote || 'Saved on this browser only for now, so it will not show on your other devices.'}
-                  </p>
-                )}
               </div>
               </Fragment>
             )
           })}
+
+          {/* A pin that could not be added, or saved on this browser only, is said. */}
+          {!sectionNav && !railCollapsed && (favoritesNote || favoritesSavedTo === 'device') && (
+            <p className="px-2.5 text-[10.5px]" style={{ color: '#D97706' }}>
+              {favoritesNote || 'Pins are saved on this browser only for now, so they will not show on your other devices.'}
+            </p>
+          )}
 
           {/* Admin View-as dropdown — same lib/view-as.ts wiring as the
               legacy sidebar. Only renders when the real DB tier is admin
@@ -1631,7 +1610,9 @@ export default function DashboardShellV2({
               <SectionStrip section={activeSection} rows={activeSection.rows} onHub={pathname === activeSection.href} itemActive={itemActive} />
             )}
             {!amazonLocked && tabbedItem && <SectionTabs item={tabbedItem} isActive={isActive} teal={teal} />}
-            {amazonLocked ? <AmazonUpgradeGate feature={amazonLocked.label} redirect={amazonLocked.redirect} /> : children}
+            {amazonLocked ? <AmazonUpgradeGate feature={amazonLocked.label} redirect={amazonLocked.redirect} />
+              : proLocked ? <ProUpgradePanel feature={proLocked.label} body={proLockedBody(proLocked, effectiveTier)} />
+              : children}
           </div>
         </main>
       </div>
@@ -1645,7 +1626,7 @@ export default function DashboardShellV2({
 
 // ── Sub-components ──────────────────────────────────────────────────────
 
-function NavItem({ item, active, collapsed, starSpace = false, tint, teal = false }: { item: NavItemDef; active: boolean; collapsed: boolean; starSpace?: boolean; tint?: string; teal?: boolean }) {
+function NavItem({ item, active, collapsed, tint, teal = false }: { item: NavItemDef; active: boolean; collapsed: boolean; tint?: string; teal?: boolean }) {
   // External items (Recommended tools) open in a new tab via a plain <a>
   // — Next.js Link's prefetcher is wasted on offsite URLs, and we want
   // target="_blank" + rel="noopener" for safety on partner links.
@@ -1654,16 +1635,13 @@ function NavItem({ item, active, collapsed, starSpace = false, tint, teal = fals
     // dark theme in commit 929cdb4).
     'relative flex items-center gap-2 py-2 rounded-lg text-[14px] font-semibold transition-colors',
     collapsed ? 'justify-center' : 'px-2.5',
-    // While editing My features every row shows its star: room for it, so
-    // it no longer sits on the NEW chip ("NE").
-    !collapsed && starSpace && 'pr-9',
   )
   // EVERY TITLE READS IN FULL (Seb, 2026-10-24: "the titles on the left
   // sidebar are always cutoff"). "Bulk Amazo...", "Instagram A..." and
   // "Comparisons and g..." were cut to one line beside a wide "New" chip. The
   // rail is wider, the chip is smaller, and a title that still does not fit
   // wraps to a second line instead of losing its end.
-  const fullTitle = collapsed ? item.label : item.label.length > 20 ? item.label : undefined
+  const fullTitle = item.locked ? `${item.label} (part of Pro)` : collapsed ? item.label : item.label.length > 20 ? item.label : undefined
   // Barbie-pink (or any) TEXT colour for a spotlighted row (e.g. Oink) — the
   // letters + icon are tinted, background stays normal so it pops without a
   // heavy block. Stays pink on hover/active.
@@ -1715,7 +1693,17 @@ function NavItem({ item, active, collapsed, starSpace = false, tint, teal = fals
       {!collapsed && item.external && (
         <ExternalLink size={11} className="opacity-60 flex-shrink-0" />
       )}
-      {!collapsed && item.badge !== undefined && (
+      {/* A Pro tool on a legacy plan: a lock and the plan it comes with, so
+          it reads as on offer, not as broken or as already open. */}
+      {!collapsed && item.locked && (
+        <span
+          className="flex-shrink-0 inline-flex items-center gap-[3px] text-[9.5px] uppercase tracking-[0.06em] leading-none px-[5px] py-[3px] rounded-md font-bold"
+          style={{ backgroundColor: active ? 'rgba(255,255,255,0.22)' : 'var(--surface-bright)', color: active ? 'var(--nav-active-text)' : 'var(--text-soft)' }}
+        >
+          <Lock size={9} aria-hidden="true" />Pro
+        </span>
+      )}
+      {!collapsed && !item.locked && item.badge !== undefined && (
         // A numeric badge is an unread count (e.g. new brand inquiries) — render
         // it as a prominent red notification pill so it actually catches the
         // eye. Word badges (e.g. "Paused") stay subtle in the neutral style.
@@ -1803,6 +1791,7 @@ function SectionStrip({ section, rows, onHub, itemActive }: { section: ShellSect
             className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-xl px-3 py-1.5 text-[13.5px] font-bold transition hover:brightness-[1.04]"
             style={on ? { background: color, color: '#fff', border: `1px solid ${color}` } : { background: 'var(--surface)', color: 'var(--text)', border: '1px solid var(--border)' }}>
             {it.label}
+            {it.locked && <Lock size={12} aria-label="Part of Pro" />}
             {typeof it.badge === 'number' && it.badge > 0 && <span className="rounded-full px-1.5 text-[10px] font-bold text-white" style={{ backgroundColor: '#ff3b30' }}>{it.badge > 99 ? '99+' : it.badge}</span>}
           </Link>
         )
@@ -1823,6 +1812,7 @@ function SectionTabs({ item, isActive, teal = false }: { item: NavItemDef; isAct
             className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border-[1.5px] px-4 py-2 text-[14px] font-bold transition-colors hover:border-[color:var(--accent)]"
             style={on ? { background: 'var(--accent)', borderColor: 'var(--accent)', color: '#fff' } : { borderColor: 'var(--border)', background: 'var(--surface)', color: 'var(--text)' }}>
             {t.label}
+            {t.locked && <Lock size={12} aria-label="Part of Pro" />}
             {typeof t.badge === 'number' && t.badge > 0 && (
               <span className="rounded-full px-1.5 text-[10px] font-bold text-white" style={{ backgroundColor: '#ff3b30' }}>{t.badge}</span>
             )}
@@ -1844,6 +1834,7 @@ function SectionTabs({ item, isActive, teal = false }: { item: NavItemDef; isAct
             style={{ color: on ? 'var(--text)' : 'var(--text-faint)', borderColor: on ? 'var(--accent)' : 'transparent' }}
           >
             {t.label}
+            {t.locked && <Lock size={12} aria-label="Part of Pro" />}
             {typeof t.badge === 'number' && t.badge > 0 && (
               <span className="rounded-full px-1.5 text-[10px] font-bold text-white" style={{ backgroundColor: '#ff3b30' }}>{t.badge}</span>
             )}

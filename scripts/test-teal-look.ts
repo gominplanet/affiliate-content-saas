@@ -96,7 +96,7 @@ async function main() {
   check('What\u2019s new no longer tells anyone how to switch back', !/switch back/.test(read('lib/whats-new.ts').slice(0, 2000)))
 
   // ── Everything MVP does ──
-  const navStart = SHELL.indexOf('const NAV_GROUPS')
+  const navStart = SHELL.indexOf('const navFor = (forTier: Tier): NavGroupDef[] => {')
   const nav = SHELL.slice(navStart, SHELL.indexOf('AMAZON_LOCKED_PREFIXES', navStart))
   // Menu rows (not their tabs): a row has an icon, a tab has icon: null.
   const rows = new Set<string>()

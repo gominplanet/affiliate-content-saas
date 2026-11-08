@@ -1,6 +1,7 @@
 // © 2026 Gominplanet / MVP Affiliate — proprietary & confidential.
 //
-// Guards for My features, the starred sidebar section (migration 376).
+// Guards for pins (migration 376): the features a creator pinned, shown at the
+// top of the Dashboard. They were the menu's My features until 2026-11-08.
 
 import { readFileSync } from 'node:fs'
 import { toggleFavorite, MAX_NAV_FAVORITES } from '../lib/nav-favorites'
@@ -24,12 +25,11 @@ const read = (p: string) => readFileSync(p, 'utf8')
   check('saved to the account, mirrored in the browser, and says when it is only on this device',
     /from\('user_nav_favorites'\)\s*\n?\s*\.upsert\(/.test(L) && /writeLocal\(r\.next\)/.test(L) && /setSavedTo\(error \? 'device' : 'account'\)/.test(L))
   const S = read('components/layout/DashboardShellV2.tsx')
-  check('My features sits right under the Dashboard row, from the menu the creator can see',
-    /label: 'My features', items/.test(S) && /orderedGroups\.slice\(0, dashIdx \+ 1\), mine/.test(S) && /it\.gate !== false && !it\.external/.test(S))
-  check('every feature has a star, shown on hover or while editing, with a label for screen readers',
-    /aria-label=\{starred \? `Take \$\{item\.label\} out of My features` : `Add \$\{item\.label\} to My features`\}/.test(S)
-    && /editingFavorites \? 'opacity-100' : 'opacity-0 group-hover\/nav:opacity-100'/.test(S))
-  check('a full list and a device-only save are said on screen', /My features holds \$\{MAX_NAV_FAVORITES\}/.test(S) && /Saved on this browser only for now/.test(S))
+  check('the menu has no My features section any more (Seb, 2026-11-08)', !/label: 'My features'/.test(S) && !/groupsWithFavorites/.test(S))
+  check('every feature in the classic menu has a star that pins it to the Dashboard, shown on hover, with a label for screen readers',
+    /aria-label=\{starred \? `Unpin \$\{item\.label\} from your Dashboard` : `Pin \$\{item\.label\} to the top of your Dashboard`\}/.test(S)
+    && /'opacity-0 group-hover\/nav:opacity-100'/.test(S))
+  check('a full list and a device-only save are said on screen', /You can pin \$\{MAX_NAV_FAVORITES\}\. Unpin one to pin \$\{label\}\./.test(S) && /Pins are saved on this browser only for now/.test(S))
   const M = read('supabase/migrations/376_nav_favorites.sql')
   check('migration 376 is twice-runnable and each creator only reaches their own row',
     /create table if not exists public\.user_nav_favorites/.test(M) && /drop policy if exists "user_nav_favorites_own"/.test(M) && /using \(user_id = auth\.uid\(\)\) with check \(user_id = auth\.uid\(\)\)/.test(M))
@@ -46,7 +46,6 @@ const read = (p: string) => readFileSync(p, 'utf8')
   check('it clears every address of the row at once', toggleFavorite(['/a', '/x', '/b'], '/x', MAX_NAV_FAVORITES, ['/a', '/b']).next.length === 0)
   const S2 = read('components/layout/DashboardShellV2.tsx')
   check('the star reads the row and its tabs', /const starred = \[item\.href, \.\.\.aliases\]\.some\(\(h\) => favorites\.includes\(h\)\)/.test(S2) && /starFeature\(item\.href, item\.label, aliases\)/.test(S2))
-  check('while editing, the star has its own room and never covers the NEW chip', /starSpace=\{editingFavorites && !item\.external\}/.test(S2) && /!collapsed && starSpace && 'pr-9'/.test(S2))
 }
 
 if (failures.length) {
@@ -54,4 +53,4 @@ if (failures.length) {
   for (const f of failures) console.error(`   • ${f}`)
   process.exit(1)
 }
-console.log('✅ nav-favorites: starred features pin to the top, follow the account, and say when they cannot')
+console.log('✅ nav-favorites: pinned features show on the Dashboard, follow the account, and say when they cannot')

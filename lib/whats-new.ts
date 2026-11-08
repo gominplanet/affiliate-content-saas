@@ -13,8 +13,9 @@
 import { canUsePreview, trybeAccess, type PreviewFeature } from '@/lib/labs-preview'
 import { canUseIgDm } from '@/lib/ig-dm-access'
 import { canTryLook } from '@/lib/look'
+import { seesProLocked } from '@/lib/pro-locked-nav'
 
-export type NewsGate = PreviewFeature | 'trybe' | 'instagram_dm'
+export type NewsGate = PreviewFeature | 'trybe' | 'instagram_dm' | 'legacy_plan'
 export interface WhatsNewItem {
   /** The day it went live, YYYY-MM-DD. */
   date: string
@@ -28,6 +29,18 @@ export interface WhatsNewItem {
 }
 
 export const WHATS_NEW: WhatsNewItem[] = [
+  // Every Pro tool in a legacy plan's menu, locked (Seb, 2026-11-08: "If they
+  // click on something ... then they get asked to upgrade to the full
+  // membership that exists now").
+  {
+    date: '2026-11-08',
+    gate: 'legacy_plan',
+    badge: 'NEW',
+    tone: '#7C3AED',
+    title: 'Every Pro tool, now in your menu',
+    desc: 'Your menu now lists everything Pro has, including TRYBE, Drop, the Review Editor, Video Scripts and Clip Factory. The ones your plan does not include wear a small lock and the word Pro. Open one to see what it does and how to move to Pro. Everything your plan has today stays exactly as it is.',
+    href: '/dashboard',
+  },
   // A cleaner menu (Seb, 2026-11-08: "turn it on for everyone").
   {
     date: '2026-11-08',
@@ -470,6 +483,8 @@ export function newsGateOpen(gate: NewsGate | undefined, tier: unknown): boolean
   if (gate === 'instagram_dm') return canUseIgDm(typeof tier === 'string' ? tier : null)
   // The new look reaches the legacy paid plans as well as Pro (lib/look).
   if (gate === 'new_look') return canTryLook()
+  // The legacy Creator and Studio plans only (lib/pro-locked-nav).
+  if (gate === 'legacy_plan') return seesProLocked(String(tier))
   return canUsePreview(gate, tier)
 }
 

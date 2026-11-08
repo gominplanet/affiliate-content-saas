@@ -5,22 +5,37 @@
  * pages"). The tools are the menu's own rows for this member
  * (shell-nav-context), so nothing is listed that the member cannot open.
  * Each card says what the tool does and can be pinned to the Dashboard.
+ *
+ * Pins live on the Dashboard alone (Seb, 2026-11-08: "I don't think we need
+ * the left tab or left area called My Features"), so the old My features
+ * address goes there.
  */
 'use client'
 
 import Link from 'next/link'
-import { useParams } from 'next/navigation'
-import { useState } from 'react'
-import { Loader2, Pin, ChevronRight } from 'lucide-react'
+import { useParams, useRouter } from 'next/navigation'
+import { useEffect, useState } from 'react'
+import { Loader2, Pin, ChevronRight, Lock } from 'lucide-react'
 import { useShellSections, type ShellNavItem } from '@/components/layout/shell-nav-context'
 import { featureLine } from '@/lib/feature-lines'
 import { useNavFavorites, MAX_NAV_FAVORITES } from '@/lib/nav-favorites'
 
 export default function SectionPage() {
   const { section } = useParams<{ section: string }>()
+  const router = useRouter()
   const sections = useShellSections()
   const { favorites, toggle, savedTo } = useNavFavorites()
   const [note, setNote] = useState<string | null>(null)
+  const pinsMoved = section === 'my-features'
+  useEffect(() => { if (pinsMoved) router.replace('/dashboard') }, [pinsMoved, router])
+
+  if (pinsMoved) {
+    return (
+      <p className="text-[14px]" style={{ color: 'var(--text-soft)' }}>
+        Your pinned tools are at the top of your <Link href="/dashboard" className="font-semibold underline">Dashboard</Link> now. Taking you there.
+      </p>
+    )
+  }
 
   if (!sections) return <div className="flex items-center justify-center py-24" style={{ color: 'var(--text-faint)' }}><Loader2 size={16} className="animate-spin" /></div>
   const area = sections.find((s) => s.slug === section && !s.direct)
@@ -32,7 +47,7 @@ export default function SectionPage() {
       </div>
     )
   }
-  const mine = area.label === 'My features'
+  const lockedCount = area.items.filter((f) => f.locked).length
   const pinned = (f: ShellNavItem) => [f.href, ...(f.aliases || [])].some((h) => favorites.includes(h))
   const pin = (f: ShellNavItem) => { const { full } = toggle(f.href, f.aliases || []); setNote(full ? `You can pin ${MAX_NAV_FAVORITES}. Unpin one to pin ${f.label}.` : null) }
 
@@ -43,14 +58,14 @@ export default function SectionPage() {
         <div>
           <h1 className="text-[26px] font-extrabold leading-tight">{area.label}</h1>
           <p className="text-[14px]" style={{ color: 'var(--text-soft)' }}>
-            {mine ? 'The tools you pinned, here and at the top of your Dashboard.' : `${area.items.length} tool${area.items.length === 1 ? '' : 's'}. Each says what it does; pin the ones you use most to your Dashboard.`}
+            {`${area.items.length} tool${area.items.length === 1 ? '' : 's'}${lockedCount ? `, ${lockedCount} of them with Pro` : ''}. Each says what it does; pin the ones you use most to your Dashboard.`}
           </p>
         </div>
       </header>
 
       {area.items.length === 0 ? (
         <p className="rounded-[18px] border border-dashed px-5 py-4 text-[14px]" style={{ borderColor: 'var(--border)', color: 'var(--text-soft)' }}>
-          {mine ? <>Nothing pinned yet. Open any area on the left and press <Pin size={13} className="inline -mt-0.5" /> <b>Pin</b> on a tool: it shows here and at the top of your Dashboard.</> : 'Nothing here is open on your plan yet.'}
+          Nothing here is open on your plan yet.
         </p>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3.5">
@@ -64,19 +79,20 @@ export default function SectionPage() {
                   <span className="min-w-0 flex-1">
                     <span className="flex items-center gap-2 text-[15.5px] font-extrabold" style={{ color: 'var(--text)' }}>
                       {f.label}
-                      {typeof f.badge === 'number' && f.badge > 0 && <span className="rounded-full px-1.5 min-w-[18px] text-center text-[11px] font-bold text-white" style={{ background: '#E5484D' }}>{f.badge > 99 ? '99+' : f.badge}</span>}
-                      {typeof f.badge === 'string' && f.badge && <span className="rounded-md px-1.5 py-[2px] text-[10px] font-bold uppercase tracking-[0.05em]" style={{ background: 'var(--new-bg)', color: 'var(--new-text)' }}>{f.badge}</span>}
+                      {f.locked && <span className="inline-flex items-center gap-1 rounded-md px-1.5 py-[2px] text-[10px] font-bold uppercase tracking-[0.05em]" style={{ background: 'var(--surface-bright)', color: 'var(--text-soft)' }}><Lock size={10} aria-hidden="true" />Pro</span>}
+                      {!f.locked && typeof f.badge === 'number' && f.badge > 0 && <span className="rounded-full px-1.5 min-w-[18px] text-center text-[11px] font-bold text-white" style={{ background: '#E5484D' }}>{f.badge > 99 ? '99+' : f.badge}</span>}
+                      {!f.locked && typeof f.badge === 'string' && f.badge && <span className="rounded-md px-1.5 py-[2px] text-[10px] font-bold uppercase tracking-[0.05em]" style={{ background: 'var(--new-bg)', color: 'var(--new-text)' }}>{f.badge}</span>}
                     </span>
                     {line && <span className="block text-[13px] leading-snug mt-1" style={{ color: 'var(--text-faint)' }}>{line}</span>}
-                    <span className="mt-2 inline-flex items-center gap-0.5 text-[12.5px] font-bold" style={{ color: area.color }}>Open <ChevronRight size={13} /></span>
+                    <span className="mt-2 inline-flex items-center gap-0.5 text-[12.5px] font-bold" style={{ color: area.color }}>{f.locked ? 'Get it with Pro' : 'Open'} <ChevronRight size={13} /></span>
                   </span>
                 </Link>
-                <button type="button" onClick={() => pin(f)} aria-pressed={on} aria-label={on ? `Unpin ${f.label}` : `Pin ${f.label} to the top of your Dashboard`}
+                {!f.locked && <button type="button" onClick={() => pin(f)} aria-pressed={on} aria-label={on ? `Unpin ${f.label}` : `Pin ${f.label} to the top of your Dashboard`}
                   title={on ? 'Pinned to your Dashboard. Press to unpin.' : 'Pin to the top of your Dashboard'}
                   className="absolute top-3 right-3 w-8 h-8 rounded-lg inline-flex items-center justify-center transition-colors hover:bg-[color:var(--surface-hover)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[color:var(--accent)]"
                   style={{ color: on ? 'var(--accent-text)' : 'var(--text-dim)' }}>
                   <Pin size={15} fill={on ? 'currentColor' : 'none'} />
-                </button>
+                </button>}
               </div>
             )
           })}

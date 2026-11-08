@@ -21,7 +21,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
-import { AlertTriangle, ArrowRight, BadgeDollarSign, ChevronRight, Loader2, Pin, PinOff, RefreshCw, Sparkles } from 'lucide-react'
+import { AlertTriangle, ArrowRight, BadgeDollarSign, ChevronRight, Loader2, Lock, Pin, PinOff, RefreshCw, Sparkles } from 'lucide-react'
 import { bannerFor } from '@/lib/banner-art'
 import type { TodayItem } from '@/lib/today-list'
 import { featureLine } from '@/lib/feature-lines'
@@ -95,9 +95,9 @@ export default function TealDashboard({ firstName, today, meta, primary, seconda
   const groups = useShellNav()
   // ── PINNED (Seb, 2026-11-07: "on the cards, have a little box that says
   // pin it to the top. And if I pin that card to the top, it becomes a
-  // pinned card to the top of the dashboard"). The same list as My features
-  // in the menu, saved to the account so it follows the member to every
-  // device: one pin shows in both places.
+  // pinned card to the top of the dashboard"). Saved to the account so it
+  // follows the member to every device. The one place pins show since the
+  // menu's My features was taken out (Seb, 2026-11-08).
   const { favorites, toggle: togglePin, savedTo } = useNavFavorites()
   const [pinNote, setPinNote] = useState<string | null>(null)
   const isPinned = (f: ShellNavItem) => [f.href, ...(f.aliases || [])].some((h) => favorites.includes(h))
@@ -112,7 +112,7 @@ export default function TealDashboard({ firstName, today, meta, primary, seconda
     const out: Array<ShellNavItem & { color: string; tint: string; section: string }> = []
     for (const h of favorites) {
       for (const g of groups) {
-        const f = g.items.find((it) => it.href === h || (it.aliases || []).includes(h))
+        const f = g.items.find((it) => !it.locked && (it.href === h || (it.aliases || []).includes(h)))
         if (f && !out.some((o) => o.href === f.href)) { out.push({ ...f, color: g.color, tint: g.tint, section: g.label }); break }
       }
     }
@@ -190,7 +190,7 @@ export default function TealDashboard({ firstName, today, meta, primary, seconda
           <div className="flex flex-wrap items-baseline justify-between gap-2">
             <h2 id="pinned-h" className="text-[20px] font-extrabold inline-flex items-center gap-2"><Pin size={18} style={{ color: 'var(--accent-text)' }} /> Pinned</h2>
             <p className="text-[13px]" style={{ color: 'var(--text-faint)' }}>
-              {pinned.length ? 'Your tools, first. They also show under My features in the menu.' : ''}
+              {pinned.length ? 'Your tools, first.' : ''}
               {savedTo === 'device' && <span style={{ color: 'var(--hot)' }}>{pinned.length ? ' ' : ''}Saved in this browser only for now, so they will not follow you to another computer yet.</span>}
             </p>
           </div>
@@ -370,19 +370,20 @@ export default function TealDashboard({ firstName, today, meta, primary, seconda
                           <span className="flex-1 min-w-0">
                             <span className="flex items-center gap-2 text-[14.5px] font-bold" style={{ color: 'var(--text)' }}>
                               {f.label}
-                              <Badge badge={f.badge} />
+                              {f.locked ? <ProChip /> : <Badge badge={f.badge} />}
                             </span>
                             {line && <span className="block text-[13px] leading-snug" style={{ color: 'var(--text-faint)' }}>{line}</span>}
                           </span>
                           <ChevronRight size={16} className="flex-shrink-0" style={{ color: 'var(--text-dim)' }} aria-hidden="true" />
                         </Link>
-                        {/* PIN IT TO THE TOP: the same pin as My features in the menu. */}
-                        <button type="button" onClick={() => pin(f)} aria-pressed={on} aria-label={on ? `Unpin ${f.label}` : `Pin ${f.label} to the top of your Dashboard`}
+                        {/* PIN IT TO THE TOP: the one place pins live (the menu has no My
+                            features). A Pro tool on a legacy plan is not pinned: it opens Get Pro. */}
+                        {!f.locked && <button type="button" onClick={() => pin(f)} aria-pressed={on} aria-label={on ? `Unpin ${f.label}` : `Pin ${f.label} to the top of your Dashboard`}
                           title={on ? 'Pinned to the top of your Dashboard. Press to unpin.' : 'Pin to the top of your Dashboard'}
                           className="shrink-0 w-11 inline-flex items-center justify-center transition-colors hover:bg-[color:var(--surface-hover)] focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[color:var(--accent)]"
                           style={{ color: on ? 'var(--accent-text)' : 'var(--text-dim)' }}>
                           <Pin size={15} fill={on ? 'currentColor' : 'none'} />
-                        </button>
+                        </button>}
                       </li>
                     )
                   })}
@@ -395,6 +396,15 @@ export default function TealDashboard({ firstName, today, meta, primary, seconda
 
       {below}
     </div>
+  )
+}
+
+/** A Pro tool on a legacy plan (lib/pro-locked-nav): a lock and its plan. */
+function ProChip() {
+  return (
+    <span className="inline-flex items-center gap-1 rounded-md px-1.5 py-[2px] text-[10px] font-bold uppercase tracking-[0.05em]" style={{ background: 'var(--surface-bright)', color: 'var(--text-soft)' }}>
+      <Lock size={10} aria-hidden="true" />Pro
+    </span>
   )
 }
 

@@ -328,7 +328,7 @@ const check = (name: string, cond: boolean, detail?: string) => {
   // everyone who had not already paid for it.
   const SHELL = readFileSync('components/layout/DashboardShellV2.tsx', 'utf8')
   check('a free user can reach the Amazon hub',
-    /canAmazonHub = \(\['trial',/.test(SHELL),
+    /const amazonHubFor = \(t: Tier\) => \(\['trial',/.test(SHELL) && /const canAmazonHub = amazonHubFor\(forTier\)/.test(SHELL),
     'the trial cannot complete a loop it cannot navigate to')
 
   // And it must need no connection to get there. The dashboard layout bounces an

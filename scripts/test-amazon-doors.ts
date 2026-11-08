@@ -123,7 +123,8 @@ check('the hub files were found', HUB_FILES.length > 10, `${HUB_FILES.length} fo
 // free account you were leaving, and the plan we most want Creator to buy next
 // was the one thing they could not look at.
 {
-  const nav = SHELL.slice(SHELL.indexOf('const canAmazonHub'), SHELL.indexOf('const canAmazonHub') + 400)
+  // The list is amazonHubFor since the menu is drawn for a plan (navFor).
+  const nav = SHELL.slice(SHELL.indexOf('const amazonHubFor'), SHELL.indexOf('const amazonHubFor') + 400)
   for (const t of ['trial', 'creator', 'amazon', 'studio', 'pro', 'admin']) {
     check(`${t} can see the Amazon hub`, new RegExp(`'${t}'`).test(nav), nav.slice(0, 200))
   }

@@ -18,6 +18,9 @@ export type ShellNavItem = {
   aliases?: string[]
   /** The row's menu icon. */
   icon?: ReactNode
+  /** A Pro tool shown to a legacy Creator or Studio member (lib/pro-locked-nav):
+   *  listed with a lock, and it opens the Pro upgrade panel. */
+  locked?: boolean
 }
 
 export type ShellNavGroup = {

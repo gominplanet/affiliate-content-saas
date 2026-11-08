@@ -17,7 +17,8 @@ import { searchApp } from '../lib/app-search-index'
 const failures: string[] = []
 const check = (name: string, ok: boolean, detail?: string) => { if (!ok) failures.push(detail ? `${name}: ${detail}` : name) }
 const S = readFileSync('components/layout/DashboardShellV2.tsx', 'utf8')
-const nav = S.slice(S.indexOf('const NAV_GROUPS: NavGroupDef[] = ['), S.indexOf('const AMAZON_LOCKED_PREFIXES'))
+// The menu is drawn for a plan (navFor), so the member's menu and Pro's are the same rows.
+const nav = S.slice(S.indexOf('const navFor = (forTier: Tier): NavGroupDef[] => {'), S.indexOf('const AMAZON_LOCKED_PREFIXES'))
 
 // ── sections, in order ──────────────────────────────────────────────────────
 const SECTIONS = ['Find products', 'Make videos', 'Blog', 'Share', 'Work with brands', 'Your setup', 'Labs', 'Help']
@@ -71,8 +72,9 @@ check('the tab bar is drawn above the page, never over the upgrade panel',
 check('the tab bar shows only the tabs this account can open', /const tabs = \(item\.tabs \?\? \[\]\)\.filter\(\(t\) => t\.gate !== false\)/.test(S))
 check('a route lights only its own row, not every row it is a prefix of (/brand vs /brand-hub)',
   /return pathname === href \|\| pathname\.startsWith\(`\$\{href\}\/`\)/.test(S))
-check('a star placed on a page that is now a tab still shows, as its row',
-  /for \(const h of \[it\.href, \.\.\.\(it\.tabs \?\? \[\]\)/.test(S))
+// Pins show on the Dashboard since My features left the menu (2026-11-08).
+check('a pin placed on a page that is now a tab still shows, as its row',
+  /aliases: \(it\.tabs \?\? \[\]\)\.map\(\(t\) => t\.href\)/.test(S) && /it\.href === h \|\| \(it\.aliases \|\| \[\]\)\.includes\(h\)/.test(readFileSync('components/dashboard/TealDashboard.tsx', 'utf8')))
 
 // ── the Amazon plan ─────────────────────────────────────────────────────────
 const AMAZON_INCLUDED = ['/dashboard', '/amazon/thumbnails', '/amazon/social', '/social-launch-kit', '/link-in-bio', '/collaborations',
