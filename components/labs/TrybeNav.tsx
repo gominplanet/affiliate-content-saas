@@ -12,7 +12,7 @@
 // on a phone), each saying what waits in it, and the pages of the open job sit
 // under them as tabs that wrap. Nothing is hidden off the edge.
 
-import { LayoutDashboard, Search, Rocket, Send, Inbox, Clapperboard, UploadCloud, CalendarDays, Lightbulb, BarChart3, ListChecks, Bell, Megaphone, ChevronRight, type LucideIcon } from 'lucide-react'
+import { LayoutDashboard, Search, Rocket, Send, Inbox, Clapperboard, UploadCloud, CalendarDays, Lightbulb, BarChart3, ListChecks, Bell, Megaphone, ChevronRight, MessageCircle, Check, Star, type LucideIcon } from 'lucide-react'
 import type { Tab } from '@/components/labs/TrybeOutreach'
 
 type Item = { label: string; icon: LucideIcon; tabs: Tab[]; count?: 'queue' | 'unread' }
@@ -40,21 +40,70 @@ const GROUPS: Group[] = [
   ] },
 ]
 
-/** The job a page belongs to (Home when it is not in the menu). Pure. */
-export function groupOf(tab: Tab): string {
-  return (GROUPS.find((g) => g.items.some((it) => it.tabs.includes(tab))) ?? GROUPS[0]).id
+// FIVE JOBS, IN THE ORDER A CREATOR WORKS (labs-preview trybe_layout; Seb,
+// 2026-11-08: "I like what's under home ... But then the get brands has find,
+// star brands, outreach, inbox, all that stuff. I think this could be better.
+// Then the next one is called make videos, and it has brand scripts, uploads,
+// this week, and what's working. I don't know if that also makes sense there
+// ... Can we have a better, I guess, hierarchy of things?").
+//   Home holds what is happening: today, the week's plan, what changed.
+//   Find brands holds the searching, and only that.
+//   Messages holds every word to and from a brand: replies, requests waiting
+//   to go, requests sent. The red number lives here.
+//   Videos holds a video's whole life: its script, its upload, what the brand
+//   said about it, and what is working for others.
+//   Earnings holds what came of it, in all and by brand.
+// Every page is its own button: no page holds a second switch inside it.
+export const GROUPS_V3: Group[] = [
+  { id: 'home', label: 'Home', icon: LayoutDashboard, hint: 'What needs you', items: [
+    { label: 'Today', icon: LayoutDashboard, tabs: ['home'] },
+    { label: 'This week', icon: CalendarDays, tabs: ['week'] },
+    { label: 'What changed', icon: Bell, tabs: ['changes'] },
+  ] },
+  { id: 'find', label: 'Find brands', icon: Search, hint: 'Search TRYBE', items: [
+    { label: 'Find brands', icon: Search, tabs: ['find'] },
+    { label: 'Star brands', icon: Rocket, tabs: ['stars'] },
+  ] },
+  { id: 'messages', label: 'Messages', icon: MessageCircle, hint: 'Replies, requests', items: [
+    { label: 'Inbox', icon: Inbox, tabs: ['inbox'], count: 'unread' },
+    { label: 'Ready to send', icon: Send, tabs: ['queue'], count: 'queue' },
+    { label: 'Sent', icon: Check, tabs: ['sent'] },
+  ] },
+  { id: 'videos', label: 'Videos', icon: Clapperboard, hint: 'Script to approval', items: [
+    { label: 'Brand scripts', icon: Clapperboard, tabs: ['create'] },
+    { label: 'Upload', icon: UploadCloud, tabs: ['upload'] },
+    { label: 'Submissions', icon: ListChecks, tabs: ['submissions'] },
+    { label: 'What\u2019s working', icon: Lightbulb, tabs: ['working'] },
+  ] },
+  { id: 'earnings', label: 'Earnings', icon: BarChart3, hint: 'Pay, by brand', items: [
+    { label: 'Earnings', icon: BarChart3, tabs: ['analytics'] },
+    { label: 'By brand', icon: Star, tabs: ['brands'] },
+  ] },
+]
+
+/** What the new menu calls a page, for the header above it. */
+export function pageLabelV3(tab: Tab): string | null {
+  for (const g of GROUPS_V3) for (const it of g.items) if (it.tabs.includes(tab)) return it.label
+  return null
 }
 
-export default function TrybeNav({ tab, queue, unread, go }: { tab: Tab; queue: number; unread: number; go: (t: Tab) => void }) {
-  const open = groupOf(tab)
+/** The job a page belongs to (Home when it is not in the menu). Pure. */
+export function groupOf(tab: Tab, layout = false): string {
+  const groups = layout ? GROUPS_V3 : GROUPS
+  return (groups.find((g) => g.items.some((it) => it.tabs.includes(tab))) ?? groups[0]).id
+}
+
+export default function TrybeNav({ tab, queue, unread, go, layout = false }: { tab: Tab; queue: number; unread: number; go: (t: Tab) => void; layout?: boolean }) {
+  const groups = layout ? GROUPS_V3 : GROUPS
+  const open = groupOf(tab, layout)
   const countOf = (it: Item) => (it.count === 'queue' ? queue : it.count === 'unread' ? unread : 0)
-  const firstOf = (it: Item): Tab => (it.count === 'queue' ? (queue ? 'queue' : 'sent') : it.tabs[0])
-  const active = GROUPS.find((g) => g.id === open)!
+  const firstOf = (it: Item): Tab => (it.count === 'queue' && it.tabs.includes('sent') ? (queue ? 'queue' : 'sent') : it.tabs[0])
+  const active = groups.find((g) => g.id === open)!
   return (
     <nav aria-label="TRYBE" className="rounded-2xl overflow-hidden" style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
       {/* The four jobs. */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-1.5 p-1.5">
-        {GROUPS.map((g) => {
+      <div className={layout ? 'grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-1.5 p-1.5 [&>*:last-child]:col-span-2 sm:[&>*:last-child]:col-span-1' : 'grid grid-cols-2 md:grid-cols-4 gap-1.5 p-1.5'}>
+        {groups.map((g) => {
           const on = g.id === open
           const waiting = g.items.reduce((n, it) => n + countOf(it), 0)
           const Icon = g.icon

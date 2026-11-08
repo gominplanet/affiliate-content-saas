@@ -130,7 +130,7 @@ check('the middle half needs 4 lengths', middleHalf([10, 20, 30]) === null && JS
   check(`the menu has three groups, and every tab sits in one of them (${tabCount} tabs, ${tabGroups.length} with a group)`,
     groupIds.join() === 'create,brands,track' && tabCount >= 9 && tabGroups.length === tabCount
     && tabGroups.every((g) => groupIds.includes(g)) && groupIds.every((g) => tabGroups.includes(g)))
-  check('the tab you are on says so to a screen reader, with its name and purpose shown under the menu', /aria-current=\{on \? 'page' : undefined\}/.test(ui) && /<h2 className="text-\[20px\] font-bold leading-tight">\{t\.label\}<\/h2>/.test(ui))
+  check('the tab you are on says so to a screen reader, with its name and purpose shown under the menu', /aria-current=\{on \? 'page' : undefined\}/.test(ui) && /<h2 className="text-\[20px\] font-bold leading-tight">\{\(layout && pageLabelV3\(t\.id\)\) \|\| t\.label\}<\/h2>/.test(ui))
   check('a tab name is never cut short on a phone', !/truncate">\{label\}/.test(ui))
 }
 

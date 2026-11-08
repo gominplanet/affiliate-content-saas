@@ -40,9 +40,9 @@ check('the dropdowns are native, labelled selects', /<select value=\{value\}/.te
 // The page.
 check('the page uses the toolbar, with its sorts and pay types', /<FinderToolbar filters=\{filters\}/.test(P) && /sorts=\{SORTS\.filter\(s => \(!preview \|\| s\.id !== 'fit'\)[^\n]*?\)(\.map\([^\n]*?\))?\}/.test(P) && /pays=\{PAYS\.map\(/.test(P))
 check('the old rows are gone', !/aria-label="Sort brands"/.test(P) && !/aria-label="Filter by pay type"/.test(P) && !/FinderFilterBar/.test(P + C))
-check('Your priorities sit in view under Best bets, and in the panel otherwise', /panelExtra=\{sortBy === 'picks' \? undefined : priorityBox\}/.test(P) && /\{sortBy === 'picks' && priorityBox\}/.test(P))
+check('Your priorities sit in view under Best bets, and in the panel otherwise', /panelExtra=\{sortBy === 'picks' \? undefined : finderPriorityBox\}/.test(P) && /\{sortBy === 'picks' && finderPriorityBox\}/.test(P))
 check('the admin box starts closed', /<details className="rounded-lg border border-dashed/.test(P) && /<summary className="cursor-pointer font-semibold">Admin only/.test(P))
-check('Quick lists come first, as before', P.indexOf('<FinderPresets') > 0 && P.indexOf('<FinderPresets') < P.indexOf('<FinderToolbar'))
+check('Quick lists come first, as before', P.indexOf('<FinderPresets') > 0 && P.indexOf('<FinderPresets') < P.indexOf('{!layout && finderToolbar(false)}'))
 check('purple words stay readable on the dark theme', /const ON_TEXT = 'text-\[#7C3AED\] dark:text-\[#B9A2FF\]'/.test(C))
 check('the words on screen have no dashes', !/[–—]/.test((C.slice(C.indexOf('export function FinderToolbar'), C.indexOf('/** What the filters did')).match(/>[^<>{}\n]{3,}</g) || []).join(' ')))
 

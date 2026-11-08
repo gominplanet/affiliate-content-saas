@@ -78,7 +78,7 @@ export const panelFiltersOn = (f: FinderFilters) =>
  *  dropdowns, and a Filters button that opens the rest, grouped. Every choice
  *  that is on shows as a chip with an x under the bar, so a filter inside a
  *  closed panel is never on without being seen. */
-export function FinderToolbar({ filters, onFilters, name, onName, sort, sorts, onSort, pay, pays, onPay, panelExtra, noCreators = false }: {
+export function FinderToolbar({ filters, onFilters, name, onName, sort, sorts, onSort, pay, pays, onPay, panelExtra, noCreators = false, compact = false, lead }: {
   filters: FinderFilters
   onFilters: (f: FinderFilters) => void
   name: string
@@ -93,6 +93,11 @@ export function FinderToolbar({ filters, onFilters, name, onName, sort, sorts, o
   panelExtra?: React.ReactNode
   /** TRYBE's list gives no creator counts: the creator limit says so. */
   noCreators?: boolean
+  /** Beside the filter column (FinderSidebar): Sort and the chips of what is
+   *  on; the name, pay, sells and filters live in the column and the search. */
+  compact?: boolean
+  /** Shown first on the bar in compact mode (the count of brands). */
+  lead?: React.ReactNode
 }) {
   const [open, setOpen] = useState(false)
   const inPanel = panelFiltersOn(filters)
@@ -129,6 +134,13 @@ export function FinderToolbar({ filters, onFilters, name, onName, sort, sorts, o
 
   return (
     <div className="mb-3 space-y-2.5">
+      {compact ? (
+        <div className="flex flex-wrap items-center gap-2" role="toolbar" aria-label="Sort brands">
+          {lead}
+          <span className="ml-auto" />
+          <Picker label="Sort" value={sort} options={sorts} onChange={onSort} changed={sort !== sorts[0]?.id} />
+        </div>
+      ) : (
       <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center" role="toolbar" aria-label="Find and sort brands">
         <label className="col-span-2 flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[13px] sm:flex-1 sm:min-w-[11rem] sm:max-w-[18rem] focus-within:ring-2 focus-within:ring-[#7C3AED]/40" style={{ borderColor: name ? PURPLE : 'var(--border-2)' }}>
           <Search size={14} style={soft} />
@@ -150,8 +162,9 @@ export function FinderToolbar({ filters, onFilters, name, onName, sort, sorts, o
           <ChevronDown size={14} className={`transition-transform duration-200 ${open ? 'rotate-180' : ''}`} />
         </button>
       </div>
+      )}
 
-      {open && (
+      {open && !compact && (
         <div id="finder-filters" role="region" aria-label="Filters" className="rounded-xl p-3 sm:p-4 space-y-4" style={{ background: 'var(--surface-2)' }}>
           <div className="grid gap-4 sm:grid-cols-3">
             {group('Pay', <>
@@ -724,4 +737,136 @@ export function ReviewChip({ review }: { review: { reviewDays?: number | null; s
   if (!w) return null
   const style = w.tone === 'good' ? { background: 'rgba(22,163,74,0.12)', color: GREEN } : w.tone === 'bad' ? { background: 'rgba(180,83,9,0.12)', color: AMBER } : { background: 'var(--surface-2)', color: 'var(--text-2)' }
   return <span className="text-[11px] font-semibold rounded-md px-2 py-0.5 inline-flex items-center gap-1 cursor-help" style={style} title="From MVP members' own videos with this brand: how long it takes to approve or reject one (the middle member), and how many wait over a week. Shown once 5 members have results."><Clock size={11} />{w.text}</span>
+}
+
+/** FILTERS IN ONE COLUMN (labs-preview trybe_layout; Seb, 2026-11-08: "when
+ *  I'm searching for brands, I feel like it's still a mess to filter. It
+ *  should be a lot easier to find brands"). Every filter is in view at once,
+ *  in a column beside the brands, the way a shop lays out its filters: quick
+ *  lists, niche, pay, room, the brand, what it sells. Each is a plain tick or
+ *  a number, never hidden in a panel, and the same chips with an x say what is
+ *  on above the brands. On a phone the column opens from a Filters button. */
+export function FinderSidebar({ filters, onFilters, pay, pays, onPay, sort, onPreset, noCreators = false, niches, nicheOptions, onNiches, extra }: {
+  filters: FinderFilters
+  onFilters: (f: FinderFilters) => void
+  pay: string
+  pays: PickOption[]
+  onPay: (p: string) => void
+  sort: string
+  onPreset: (p: (typeof PRESETS)[number] | null) => void
+  noCreators?: boolean
+  niches: string[]
+  nicheOptions: string[]
+  onNiches: (n: string[]) => void
+  /** Your priorities, at the foot of the column. */
+  extra?: React.ReactNode
+}) {
+  const [allNiches, setAllNiches] = useState(false)
+  const preset = presetOf(filters, sort)
+  const isOn = (n: string) => niches.some((o) => o.toLowerCase() === n.toLowerCase())
+  const box = 'w-4 h-4 shrink-0 accent-[var(--accent)] cursor-pointer'
+  const rowCls = 'flex items-center gap-2 py-[5px] text-[13.5px] leading-tight cursor-pointer rounded-md hover:bg-[color:var(--surface-2)] -mx-1.5 px-1.5'
+  const tick = (k: ToggleKey, title?: string) => (
+    <label key={k} className={rowCls} title={title}>
+      <input type="checkbox" className={box} checked={!!filters[k]} onChange={() => onFilters({ ...filters, [k]: !filters[k] })} />
+      <span className={filters[k] ? 'font-semibold' : undefined}>{TOGGLE_WORDS[k]}</span>
+    </label>
+  )
+  const num = (k: NumberKey, before: string, after: string, title: string, step?: number) => (
+    <label key={k} className="flex flex-wrap items-center gap-x-1.5 gap-y-1 py-[5px] text-[13.5px] leading-tight" title={title}>
+      <span>{before}</span>
+      <input type="number" inputMode={step ? 'decimal' : 'numeric'} min={step ?? 1} step={step ?? 1} value={filters[k] ?? ''} placeholder="any"
+        onChange={(e) => { const n = Number(e.target.value); onFilters({ ...filters, [k]: e.target.value && Number.isFinite(n) && n > 0 ? n : null }) }}
+        className="w-[4.5rem] rounded-md border px-1.5 py-0.5 text-center tabular-nums font-semibold bg-transparent outline-none focus:ring-2 focus:ring-[color:var(--accent)]/40"
+        style={{ borderColor: filters[k] ? PURPLE : 'var(--border-2)', color: 'var(--text)' }} aria-label={`${before} ${after}`.trim()} />
+      <span>{after}</span>
+    </label>
+  )
+  const radio = (name: string, value: string, options: PickOption[], onChange: (v: string) => void) => (
+    <div role="radiogroup" aria-label={name}>
+      {options.map((o) => (
+        <label key={o.id} className={rowCls} title={o.says}>
+          <input type="radio" name={name} className={box} checked={value === o.id} onChange={() => onChange(o.id)} />
+          <span className={value === o.id && o.id !== options[0].id ? 'font-semibold' : undefined}>{o.label}</span>
+        </label>
+      ))}
+    </div>
+  )
+  const section = (title: string, count: number, children: React.ReactNode) => (
+    <section className="py-3 border-t first:border-t-0 first:pt-0" style={{ borderColor: 'var(--border)' }}>
+      <h3 className="flex items-center gap-2 text-[11px] font-bold uppercase mb-1" style={{ color: 'var(--text-3)', letterSpacing: '0.08em' }}>
+        {title}
+        {count > 0 && <span className="ml-auto rounded-full px-1.5 min-w-[18px] text-center text-[10.5px] leading-[18px] tabular-nums normal-case tracking-normal" style={{ background: PURPLE, color: '#fff' }}>{count}</span>}
+      </h3>
+      {children}
+    </section>
+  )
+  const nicheList = [...nicheOptions.filter(isOn), ...nicheOptions.filter((n) => !isOn(n))]
+  const NICHES_FIRST = 8
+  const shownNiches = allNiches ? nicheList : nicheList.slice(0, Math.max(NICHES_FIRST, niches.length))
+  const payCount = (pay !== pays[0]?.id ? 1 : 0) + [filters.minPerVideo, filters.minSpend, filters.paidCreators, filters.tierUp].filter(Boolean).length
+  const roomCount = [filters.openOnly, filters.newOnly, filters.maxCreators, filters.maxVideos].filter(Boolean).length
+  const brandCount = [filters.minRating, filters.spending, filters.fastReview, filters.samples, filters.onAmazon, filters.tiktokShop, filters.starred].filter(Boolean).length
+  const anyOn = payCount + roomCount + brandCount + (filters.sells ? 1 : 0) > 0
+  return (
+    <div role="region" aria-label="Filters" className="text-[13.5px]">
+      {section('Quick lists', preset ? 1 : 0, (
+        <div className="flex flex-col">
+          {PRESETS.filter((p) => !(noCreators && p.filters.maxCreators)).map((p) => (
+            <button key={p.id} type="button" onClick={() => onPreset(preset === p.id ? null : p)} aria-pressed={preset === p.id} title={p.says}
+              className="text-left rounded-md -mx-1.5 px-1.5 py-[5px] text-[13.5px] leading-tight hover:bg-[color:var(--surface-2)]"
+              style={preset === p.id ? { background: GREEN, color: '#fff', fontWeight: 700 } : undefined}>
+              {p.label}
+            </button>
+          ))}
+        </div>
+      ))}
+      {nicheOptions.length > 0 && section('Niche', niches.length, (
+        <div>
+          {shownNiches.map((n) => (
+            <label key={n} className={rowCls}>
+              <input type="checkbox" className={box} checked={isOn(n)} onChange={() => onNiches(isOn(n) ? niches.filter((o) => o.toLowerCase() !== n.toLowerCase()) : niches.length < 12 ? [...niches, n] : niches)} />
+              <span className={isOn(n) ? 'font-semibold' : undefined}>{n}</span>
+            </label>
+          ))}
+          {nicheList.length > shownNiches.length || allNiches ? (
+            <button type="button" onClick={() => setAllNiches((v) => !v)} className={`mt-1 text-[12.5px] font-semibold ${ON_TEXT}`}>
+              {allNiches ? 'Show fewer' : `Show all ${nicheList.length}`}
+            </button>
+          ) : null}
+        </div>
+      ))}
+      {section('Pay', payCount, (<>
+        {radio('How it pays', pay, pays, onPay)}
+        <div className="mt-1.5">
+          {num('minPerVideo', 'At least $', 'a video', 'Pays at least this much per approved video: from your results with it, members’ results, or its flat fee and retainer. A brand with no dollar figure (a % of sales alone, or no pay on TRYBE) is left out.')}
+          {num('minSpend', 'Pays creators $', 'a month+', 'Pays TRYBE creators at least this much a month, estimated: its videos approved in the last 30 days times what it pays per approved video. A brand MVP cannot estimate is left out.')}
+          {tick('paidCreators', 'TRYBE says it has paid creators.')}
+          {tick('tierUp', 'TRYBE’s payout tier for it went up in the last 30 days, in MVP’s daily log of TRYBE: it is paying creators more.')}
+        </div>
+      </>))}
+      {section('Room for you', roomCount, (<>
+        {tick('openOnly', noCreators ? 'Brands with room for you: few videos posted in the last 30 days (TRYBE gives no creator counts yet).' : 'Brands with room for you: few creators, and few joining or posting in the last 30 days.')}
+        {tick('newOnly', 'New on TRYBE: joined in the last 30 days, or MVP first saw it in the last 14.')}
+        {!noCreators && num('maxCreators', 'Up to', 'creators', 'Fewer creators means more of the budget for you.')}
+        {num('maxVideos', 'Up to', 'videos approved', 'Few videos approved so far: room for you.')}
+      </>))}
+      {section('The brand', brandCount, (<>
+        {num('minRating', 'Rated', '★ or more', 'Creators’ rating of the brand on TRYBE, out of 5 stars. A rating counts once a brand has 3 reviews or more; one with fewer is left out.', 0.1)}
+        {tick('spending', 'Meta ads running now, or videos in TRYBE’s Top 100.')}
+        {tick('fastReview', 'Decides videos in 5 days or less, from MVP members’ results. Brands without enough members’ results are listed after.')}
+        {tick('samples', 'Takes sample requests on TRYBE.')}
+        {tick('onAmazon', 'Brands you already filmed on Amazon, have in your storefront, or that run Creator Connections on Amazon.')}
+        {tick('tiktokShop', 'Sells on TikTok Shop, from its own website. Brands whose website MVP has not checked yet are listed after.')}
+        {tick('starred', 'Brands you starred.')}
+      </>))}
+      {section('Sells', filters.sells ? 1 : 0, radio('What it sells', filters.sells ?? 'any',
+        [{ id: 'any', label: 'Anything', says: 'Every brand, whatever it sells.' }, ...SELLS.map((k) => ({ id: k, label: SELLS_WORDS[k].label, says: SELLS_WORDS[k].says }))],
+        (v) => onFilters({ ...filters, sells: v === 'any' ? null : v as FinderFilters['sells'] })))}
+      {extra && <div className="pt-3 border-t" style={{ borderColor: 'var(--border)' }}>{extra}</div>}
+      {anyOn && (
+        <button type="button" onClick={() => { onFilters(NO_FILTERS); onPay(pays[0].id) }} className={`mt-2 text-[12.5px] font-semibold underline ${ON_TEXT}`}>Clear every filter</button>
+      )}
+    </div>
+  )
 }

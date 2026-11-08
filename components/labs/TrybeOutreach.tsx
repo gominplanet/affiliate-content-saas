@@ -25,7 +25,7 @@ import { useEffectiveTier } from '@/lib/useEffectiveTier'
 import { toast } from 'sonner'
 import { Loader2, Lock, Search, Sparkles, Send, Square, ExternalLink, Check, AlertTriangle, Globe, Star, Handshake, RotateCcw, X, Trash2, Tag,
   Dumbbell, Shirt, House, UtensilsCrossed, Baby, PawPrint, Gem, Cpu, Tent, Plane, BookOpen, Church, Palette, SprayCan, Moon, Pill, HeartPulse,
-  Scissors, Droplet, Coffee, Leaf, Wand2, MessageCircle, Pencil, ChevronUp, Bell, Lightbulb, CalendarDays, Inbox, ArrowRight, Clapperboard, UploadCloud, BarChart3, Rocket, ListChecks, LayoutDashboard, type LucideIcon } from 'lucide-react'
+  Scissors, Droplet, Coffee, Leaf, Wand2, MessageCircle, Pencil, ChevronUp, Bell, Lightbulb, CalendarDays, Inbox, ArrowRight, Clapperboard, UploadCloud, BarChart3, Rocket, ListChecks, LayoutDashboard, SlidersHorizontal, type LucideIcon } from 'lucide-react'
 import { nameKey, trybeSearchPath, brandsNamed, TRYBE_SEARCH_PARAMS } from '@/lib/trybe-name-lookup'
 import { TOP100, META_ROUND, META_ROUNDS_MAX } from '@/lib/trybe-top100'
 import { ensureTrybeTab, requestTrybeTab, requestTrybeTabOpen, requestTrybeMorning, type TrybeMorning, requestTrybeApi, requestTrybeAccess, requestTrybeScan, requestTrybeSend, requestTrybeHarvest, requestTrybeRun, requestTrybeRunStatus, requestTrybeRunStop, type TrybeScanPass, type TrybeRun } from '@/lib/extension-frame'
@@ -52,7 +52,7 @@ import { readJoinedBrandIds } from '@/lib/trybe-joined'
 import { type PeekActions } from '@/components/labs/TrybeBrandPeek'
 import TrybeDossier from '@/components/labs/TrybeDossier'
 import TrybeHome from '@/components/labs/TrybeHome'
-import TrybeNav from '@/components/labs/TrybeNav'
+import TrybeNav, { pageLabelV3 } from '@/components/labs/TrybeNav'
 import TrybeBrandTable from '@/components/labs/TrybeBrandTable'
 import { morningWords, autoRunWords, type AutoRunRecord } from '@/lib/trybe-morning'
 import { APP, AppChip } from '@/components/labs/trybe-ui'
@@ -66,7 +66,7 @@ import TrybeRetainers from '@/components/labs/TrybeRetainers'
 import TrybeIntroVideo from '@/components/labs/TrybeIntroVideo'
 import TrybeSampleGuard from '@/components/labs/TrybeSampleGuard'
 import { readScript, readBrandStats } from '@/lib/trybe-mybrands'
-import { FinderToolbar, FinderFilterNote, FinderPriorities, FinderPresets, PopularityChips, RatingChip, BrandExtras, StarButton, PassButton, AmazonLine, PayChip, RoomPayChip, SpendChip, SpendNote, NewChip, StaticsChip, SellsChip, VerdictChip, ReviewChip, PaidOutChip, TikTokShopChip, CompareButton, BrandMark, NO_FILTERS, filtersOn, type LiveAmazon, type LivePayEst } from '@/components/labs/TrybeFinderControls'
+import { FinderToolbar, FinderSidebar, panelFiltersOn, FinderFilterNote, FinderPriorities, FinderPresets, PopularityChips, RatingChip, BrandExtras, StarButton, PassButton, AmazonLine, PayChip, RoomPayChip, SpendChip, SpendNote, NewChip, StaticsChip, SellsChip, VerdictChip, ReviewChip, PaidOutChip, TikTokShopChip, CompareButton, BrandMark, NO_FILTERS, filtersOn, type LiveAmazon, type LivePayEst } from '@/components/labs/TrybeFinderControls'
 import TrybeCompare from '@/components/labs/TrybeCompare'
 import { COMPARE_MAX } from '@/lib/trybe-compare'
 import { useTrybeAmazon } from '@/components/labs/useTrybeAmazon'
@@ -532,7 +532,7 @@ function sentShows(r: { b: { name: string; status: string }; reply: string; rq?:
   return r.reply !== 'replied' && (WENT as string[]).includes(r.b.status)
 }
 
-export default function TrybeOutreach({ preview = false, v2 = false }: { preview?: boolean; v2?: boolean } = {}) {
+export default function TrybeOutreach({ preview = false, v2 = false, layout = false }: { preview?: boolean; v2?: boolean; layout?: boolean } = {}) {
   // THE NEW TRYBE (Seb, 2026-11-06): team only first (labs-preview
   // 'trybe_v2'), so members keep the page they know until it is opened to them.
   const [dossierOf, setDossierOf] = useState<{ id: string; name: string } | null>(null)
@@ -652,6 +652,11 @@ export default function TrybeOutreach({ preview = false, v2 = false }: { preview
   // filters, a brand's name, and the creator's priorities for Best bets.
   const [filters, setFilters] = useState<FinderFilters>(NO_FILTERS)
   const [nameQ, setNameQ] = useState('')
+  // The filter column on a phone opens from a Filters button (trybe_layout).
+  const [filtersOpen, setFiltersOpen] = useState(false)
+  // On a wide screen the column can be put away so the table has the width (kept on this device).
+  const [filtersHidden, setFiltersHidden] = useState(false)
+  useEffect(() => { try { setFiltersHidden(localStorage.getItem('mvp.trybe.filtersHidden') === '1') } catch { /* this visit only */ } }, [])
   const [priorities, setPriorities] = useState<Priorities>(DEFAULT_PRIORITIES)
   const [prioritiesEdited, setPrioritiesEdited] = useState(false)
   const [prioritiesNote, setPrioritiesNote] = useState<{ text: string; tone: 'ok' | 'warn' } | null>(null)
@@ -2065,6 +2070,56 @@ export default function TrybeOutreach({ preview = false, v2 = false }: { preview
   const cardStyle = { borderColor: 'var(--border)', background: 'var(--surface)' }
   const soft = { color: 'var(--text-soft)' }
   const btn = 'inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-[13px] font-semibold disabled:opacity-50'
+  const finderPriorityBox = (
+                <FinderPriorities priorities={priorities} onChange={changePriorities}
+                  note={prioritiesNote ?? (live && live.prioritiesSaved === false ? { text: isAdmin ? 'Saving priorities and stars needs migration 430 in Supabase. They work for this visit meanwhile.' : 'Your priorities work for this visit; saving them is being set up.', tone: 'warn' } : null)} />
+              )
+  // THE BAR OVER THE BRANDS: the full toolbar, or in the new layout
+  // (trybe_layout) the count, the Filters button and Sort, beside the column.
+  const finderToolbar = (compact: boolean) => (
+                  <FinderToolbar filters={filters} onFilters={setFilters} name={nameQ} onName={setNameQ}
+                    sort={sortBy} sorts={SORTS.filter(s => (!preview || s.id !== 'fit') && (live?.creatorsKnown !== false || s.id !== 'creators' || sortBy === 'creators')).map(s => live?.creatorsKnown !== false ? s : s.id === 'creators' ? { ...s, label: 'Fewest creators (no counts yet)' } : s.id === 'adsPerCreator' ? { ...s, label: 'Most ads per review' } : s)} onSort={v => setSortBy(v as LiveSort)}
+                    noCreators={live?.creatorsKnown === false}
+                    pay={payType} pays={PAYS.map(p => ({ ...p, label: p.id === 'any' ? 'Any' : p.label, says: PAY_SAYS[p.id] }))} onPay={v => setPayType(v as LivePay)}
+                    panelExtra={sortBy === 'picks' ? undefined : finderPriorityBox}
+                    compact={compact}
+                    lead={compact ? (() => {
+                      const n = panelFiltersOn(filters) + (payType !== 'any' ? 1 : 0) + (filters.sells ? 1 : 0) + (cats.length ? 1 : 0)
+                      const badge = n > 0 && <span className="min-w-[1.25rem] rounded-full px-1.5 text-[11px] leading-5 text-center tabular-nums" style={{ background: PURPLE, color: '#fff' }}>{n}</span>
+                      const look = { borderColor: n ? PURPLE : 'var(--border-2)', color: n ? PURPLE : undefined }
+                      return (<>
+                        <p className="text-[17px] font-bold mr-1">{live ? live.matched.toLocaleString() : '...'}{live?.capped ? '+' : ''} brand{live?.matched === 1 ? '' : 's'} match</p>
+                        {liveLoading && <Loader2 size={14} className="animate-spin" style={{ color: PURPLE }} />}
+                        {/* A phone opens the column above the brands. */}
+                        <button type="button" onClick={() => setFiltersOpen(o => !o)} aria-expanded={filtersOpen} aria-controls="trybe-filters"
+                          className="lg:hidden inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[13px] font-semibold" style={look}>
+                          <SlidersHorizontal size={14} /> {filtersOpen ? 'Hide filters' : 'Filters'}{badge}
+                        </button>
+                        {/* A wide screen can put the column away to give the table the room. */}
+                        <button type="button" onClick={() => setFiltersHidden(h => { try { localStorage.setItem('mvp.trybe.filtersHidden', h ? '0' : '1') } catch { /* this visit only */ } return !h })} aria-expanded={!filtersHidden} aria-controls="trybe-filters"
+                          className="hidden lg:inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[13px] font-semibold" style={look}>
+                          <SlidersHorizontal size={14} /> {filtersHidden ? 'Show filters' : 'Hide filters'}{filtersHidden && badge}
+                        </button>
+                      </>)
+                    })() : undefined} />
+  )
+  // THE DAILY SETTINGS: under the search before; in the outreach setup in the
+  // new layout (trybe_layout), with every other setting, so Find brands holds
+  // only finding.
+  const capRow = preview ? null : (
+    <div className="flex flex-wrap items-center gap-3">
+      <label className="text-[13px] flex items-center gap-2">Daily cap
+        <input type="number" min={1} max={MAX_DAILY_CAP} value={cap} onChange={e => setCap(Math.min(MAX_DAILY_CAP, Number(e.target.value)))} className="w-16 rounded border px-2 py-1" style={{ borderColor: 'var(--border)', background: 'transparent' }} />
+        <span className="text-[12px]" style={{ color: 'var(--text-faint)' }}>per rolling 24 hours (up to {MAX_DAILY_CAP}; each send frees up 24 hours after it went)</span>
+      </label>
+      <label className="text-[13px] flex items-center gap-2">
+        <input type="checkbox" checked={dailyFind} onChange={e => setDailyFind(e.target.checked)} className="accent-[#7C3AED]" />
+        Write messages to {DAILY_FIND} new brands every day when I open this page
+      </label>
+      <button onClick={() => void saveSettings(false, { prefs: true })} disabled={savingSettings} className={btn} style={{ background: PURPLE, color: '#fff' }}>{savingSettings ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />} Save</button>
+      {unsavedNiche && <span className="text-[12px]" style={{ color: AMBER }}>The list below already uses these. Save keeps them for the daily messages.</span>}
+    </div>
+  )
   // SCOUT sending by itself does not lock the page: its copy says keep
   // working, and a draft never touches a brand being sent (the server writes
   // drafts only to brands still waiting).
@@ -2353,7 +2408,7 @@ export default function TrybeOutreach({ preview = false, v2 = false }: { preview
       )}
 
       {v2
-        ? <TrybeNav tab={tab} queue={queue.length} unread={navUnread} go={go} />
+        ? <TrybeNav tab={tab} queue={queue.length} unread={navUnread} go={go} layout={layout} />
         : <TrybeMenu tab={tab} lockedTab={lockedTab} preview={preview} queue={queue} history={history} unread={navUnread} changes={changes} go={go} />}
       {/* Where you are, and what it is for. */}
       {(() => {
@@ -2361,14 +2416,16 @@ export default function TrybeOutreach({ preview = false, v2 = false }: { preview
         if (!t || t.id === 'home') return null
         const Icon = t.icon
         // Outreach and Earnings hold two pages each: the switch between them.
+        // The new menu (trybe_layout) gives every page its own button, so
+        // no page carries a second switch.
         const tile = TILES.find((x) => x.tabs.includes(t.id))
         const color = tile?.color ?? PURPLE
-        const pair = tile && tile.tabs.length > 1 ? tile.tabs : null
+        const pair = !layout && tile && tile.tabs.length > 1 ? tile.tabs : null
         return (
           <div className="flex flex-wrap items-start gap-3 -mt-1">
             <span className="mt-0.5 w-9 h-9 shrink-0 rounded-xl inline-flex items-center justify-center" style={{ background: `${color}1f`, color }}><Icon size={18} /></span>
             <div className="min-w-0 flex-1">
-              <h2 className="text-[20px] font-bold leading-tight">{t.label}</h2>
+              <h2 className="text-[20px] font-bold leading-tight">{(layout && pageLabelV3(t.id)) || t.label}</h2>
               <p className="text-[14px]" style={{ color: 'var(--text-3)' }}>{t.says}</p>
             </div>
             {pair && (
@@ -2460,13 +2517,14 @@ export default function TrybeOutreach({ preview = false, v2 = false }: { preview
           </>)}
           {coreHits.length > 0 && <p className="text-[12px] mt-2 font-semibold" style={{ color: '#B45309' }}>Your core message says {quoteHits(coreHits)}, which reads as talk about pay or rates. TRYBE brands set the pay, so MVP will not write requests from it until {coreHits.length === 1 ? 'that part is' : 'those parts are'} out.</p>}
         </div>}
+        {layout && capRow && <div className={card} style={cardStyle}><p className="text-[14px] font-semibold mb-2">Daily messages</p>{capRow}</div>}
           </>)
           if (!(v2 && !preview && core.trim() && !editingCore)) return setup
           return (
             <details className={card} style={cardStyle}>
               <summary className="cursor-pointer flex flex-wrap items-center gap-x-3 gap-y-1 list-none [&::-webkit-details-marker]:hidden">
                 <span className="text-[14px] font-semibold">Your outreach setup</span>
-                <span className="text-[12px]" style={soft}>Core message saved{savedCap ? `, ${savedCap} messages a day at most` : ''}. Your intro video and your stage are in here too.</span>
+                <span className="text-[12px]" style={soft}>Core message saved{savedCap ? `, ${savedCap} messages a day at most` : ''}. Your intro video and your stage are in here too{layout ? ', with your daily cap' : ''}.</span>
                 <span className="ml-auto text-[12px] font-semibold" style={{ color: PURPLE }}>Open</span>
               </summary>
               <div className="mt-4 space-y-4">{setup}</div>
@@ -2477,6 +2535,52 @@ export default function TrybeOutreach({ preview = false, v2 = false }: { preview
         {/* 2. Find brands. Seb, 2026-10-07: one click on a niche shows its
             brands, but make it very visible that searching a keyword is the
             better way, because a keyword matches what each brand sells. */}
+        {layout ? (
+          // ONE SEARCH ROW (trybe_layout): what you review, or a brand by name.
+          // The niches are in the filter column beside the brands.
+          <div className={card} style={cardStyle}>
+            <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_17rem]">
+              <div className="min-w-0">
+                <label htmlFor="trybe-kw" className="text-[13px] font-semibold">Search what you review</label>
+                <div className="flex gap-2 mt-1.5">
+                  <div className="relative flex-1 min-w-0">
+                    <Search size={17} className="absolute left-3.5 top-1/2 -translate-y-1/2" style={{ color: PURPLE }} />
+                    <input id="trybe-kw" ref={searchRef} value={kwInput} onChange={e => setKwInput(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' || e.key === ',') { e.preventDefault(); addKeyword() } }}
+                      placeholder="A product or topic: golf, dog toys, coffee" className="w-full h-11 rounded-xl border pl-10 pr-3 text-[15px]" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }} />
+                  </div>
+                  <button onClick={addKeyword} disabled={!kwInput.trim()} className="h-11 rounded-xl px-5 text-[14px] font-semibold disabled:opacity-50" style={{ background: PURPLE, color: '#fff' }}>Search</button>
+                </div>
+              </div>
+              <div className="min-w-0">
+                <label htmlFor="trybe-name" className="text-[13px] font-semibold">Or a brand by name</label>
+                <div className="relative mt-1.5">
+                  <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2" style={soft} />
+                  <input id="trybe-name" value={nameQ} onChange={e => setNameQ(e.target.value)} placeholder="Every brand on TRYBE"
+                    className="w-full h-11 rounded-xl border pl-9 pr-8 text-[14px]" style={{ borderColor: nameQ ? PURPLE : 'var(--border)', background: 'var(--surface)' }} />
+                  {nameQ && <button onClick={() => setNameQ('')} aria-label="Clear the name" className="absolute right-2.5 top-1/2 -translate-y-1/2"><X size={14} /></button>}
+                </div>
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center gap-1.5 mt-3">
+              {kws.map(k => (
+                <span key={k} className="rounded-full pl-3 pr-2 py-1 text-[13px] font-medium inline-flex items-center gap-1.5" style={{ background: PURPLE, color: '#fff' }}>
+                  {k} <button onClick={() => setKws(ks => ks.filter(o => o !== k))} aria-label={`Remove ${k}`} className="opacity-80 hover:opacity-100"><X size={12} /></button>
+                </span>
+              ))}
+              {!kws.length && (<>
+                <span className="text-[12px] mr-0.5" style={soft}>Try</span>
+                {KEYWORD_EXAMPLES.map(k => (
+                  <button key={k} onClick={() => setKws(ks => ks.some(o => o.toLowerCase() === k) ? ks : [...ks, k].slice(0, 12))}
+                    className="rounded-full border px-2.5 py-1 text-[12px] hover:border-current" style={{ borderColor: 'var(--border)', color: PURPLE }}>{k}</button>
+                ))}
+              </>)}
+              {kws.length > 0 && <span className="text-[12px] ml-1" style={soft}>A keyword finds brands by what they sell, on TRYBE and on their own website.</span>}
+            </div>
+            {!preview && !canHarvest && access === 'granted' && (
+              <p className="text-[12px] mt-3" style={{ color: AMBER }}>Your SCOUT ({scoutVersion || 'unknown'}) reads TRYBE&rsquo;s screen a brand at a time. SCOUT {SCOUT_TRYBE_HARVEST_MIN_VERSION} collects every TRYBE brand at once so MVP can search them all by your niche. MVP checks every brand against your niche either way.</p>
+            )}
+          </div>
+        ) : (
         <div className={card} style={cardStyle}>
           <p className="text-[14px] font-semibold">{preview ? '' : '2. '}Find brands for your channel</p>
 
@@ -2542,32 +2646,34 @@ export default function TrybeOutreach({ preview = false, v2 = false }: { preview
           {!preview && !canHarvest && access === 'granted' && (
             <p className="text-[12px] mt-3" style={{ color: AMBER }}>Your SCOUT ({scoutVersion || 'unknown'}) reads TRYBE&rsquo;s screen a brand at a time. SCOUT {SCOUT_TRYBE_HARVEST_MIN_VERSION} collects every TRYBE brand at once so MVP can search them all by your niche. MVP checks every brand against your niche either way.</p>
           )}
-          {!preview && <div className="flex flex-wrap items-center gap-3 mt-5 pt-4 border-t" style={{ borderColor: 'var(--border)' }}>
-            <label className="text-[13px] flex items-center gap-2">Daily cap
-              <input type="number" min={1} max={MAX_DAILY_CAP} value={cap} onChange={e => setCap(Math.min(MAX_DAILY_CAP, Number(e.target.value)))} className="w-16 rounded border px-2 py-1" style={{ borderColor: 'var(--border)', background: 'transparent' }} />
-              <span className="text-[12px]" style={{ color: 'var(--text-faint)' }}>per rolling 24 hours (up to {MAX_DAILY_CAP}; each send frees up 24 hours after it went)</span>
-            </label>
-            <label className="text-[13px] flex items-center gap-2">
-              <input type="checkbox" checked={dailyFind} onChange={e => setDailyFind(e.target.checked)} className="accent-[#7C3AED]" />
-              Write messages to {DAILY_FIND} new brands every day when I open this page
-            </label>
-            <button onClick={() => void saveSettings(false, { prefs: true })} disabled={savingSettings} className={btn} style={{ background: PURPLE, color: '#fff' }}>{savingSettings ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />} Save</button>
-            {unsavedNiche && <span className="text-[12px]" style={{ color: AMBER }}>The list below already uses these. Save keeps them for the daily messages.</span>}
-          </div>}
+          {capRow && <div className="mt-5 pt-4 border-t" style={{ borderColor: 'var(--border)' }}>{capRow}</div>}
         </div>
+        )}
 
         {/* 3. The live list, from MVP's copy of TRYBE */}
         {hasDirectory ? (
-          <div className={card} style={cardStyle}>
+          <div className={layout && !filtersHidden ? 'lg:grid lg:grid-cols-[15.5rem_minmax(0,1fr)] lg:gap-4 lg:items-start' : undefined}>
+          {/* THE FILTER COLUMN (trybe_layout): every filter in view beside the
+              brands; on a phone it opens from the Filters button. */}
+          {layout && (
+            <aside id="trybe-filters" className={`${filtersOpen ? 'block mb-3' : 'hidden'} ${filtersHidden ? 'lg:hidden' : 'lg:block'} lg:mb-0 lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)] lg:overflow-y-auto rounded-2xl border p-4`} style={cardStyle}>
+              <FinderSidebar filters={filters} onFilters={setFilters} pay={payType} onPay={v => setPayType(v as LivePay)}
+                pays={PAYS.map(p => ({ ...p, label: p.id === 'any' ? 'Any way' : p.label, says: PAY_SAYS[p.id] }))}
+                sort={sortBy} onPreset={p => { if (p) { setFilters(p.filters); setSortBy(p.sort) } else setFilters(NO_FILTERS) }}
+                noCreators={live?.creatorsKnown === false} niches={cats} nicheOptions={catOptions} onNiches={setCats} />
+            </aside>
+          )}
+          <div className={`${card} min-w-0`} style={cardStyle}>
+            {layout && finderToolbar(true)}
             <div className="flex flex-wrap items-center gap-2 mb-1">
-              <p className="text-[14px] font-semibold">{preview ? '' : '3. '}Brands that match ({live ? live.matched.toLocaleString() : '...'}{live?.capped ? '+' : ''})</p>
-              {liveLoading && <Loader2 size={13} className="animate-spin" style={{ color: PURPLE }} />}
+              {!layout && <p className="text-[14px] font-semibold">{preview ? '' : '3. '}Brands that match ({live ? live.matched.toLocaleString() : '...'}{live?.capped ? '+' : ''})</p>}
+              {!layout && liveLoading && <Loader2 size={13} className="animate-spin" style={{ color: PURPLE }} />}
               {preview && (
                 <a href="/billing" className="ml-auto inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12px] font-semibold" style={{ border: `1px solid ${PURPLE}`, color: PURPLE }} title="Pro writes each brand a first message in your words and SCOUT sends it">
                   <Lock size={12} /> Message brands on Pro
                 </a>
               )}
-              {!preview && <div className="ml-auto flex flex-wrap gap-2">
+              {!preview && <div className={layout ? 'w-full flex flex-wrap gap-2' : 'ml-auto flex flex-wrap gap-2'}>
                 <button onClick={() => void runTop100()} disabled={busy || !!top100Busy} className={btn} style={{ background: GREEN, color: '#fff' }}
                   title="MVP reads your blog posts, social pushes, TRYBE submissions and the brands you work with, then finds 100 TRYBE brands new to you that spend on ads and send samples.">
                   {top100Busy ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />} My top 100
@@ -2682,24 +2788,10 @@ export default function TrybeOutreach({ preview = false, v2 = false }: { preview
             {/* ONE TOOLBAR (Seb, 2026-10-16: "very overwhelming"): Quick lists,
                 then search, Sort, Pay, Sells and Filters; every choice that is
                 on shows as a chip with an x (components/labs/TrybeFinderControls). */}
-            <FinderPresets filters={filters} sort={sortBy} noCreators={live?.creatorsKnown === false} onPick={p => { if (p) { setFilters(p.filters); setSortBy(p.sort) } else setFilters(NO_FILTERS) }} />
-            {(() => {
-              const priorityBox = (
-                <FinderPriorities priorities={priorities} onChange={changePriorities}
-                  note={prioritiesNote ?? (live && live.prioritiesSaved === false ? { text: isAdmin ? 'Saving priorities and stars needs migration 430 in Supabase. They work for this visit meanwhile.' : 'Your priorities work for this visit; saving them is being set up.', tone: 'warn' } : null)} />
-              )
-              return (
-                <>
-                  <FinderToolbar filters={filters} onFilters={setFilters} name={nameQ} onName={setNameQ}
-                    sort={sortBy} sorts={SORTS.filter(s => (!preview || s.id !== 'fit') && (live?.creatorsKnown !== false || s.id !== 'creators' || sortBy === 'creators')).map(s => live?.creatorsKnown !== false ? s : s.id === 'creators' ? { ...s, label: 'Fewest creators (no counts yet)' } : s.id === 'adsPerCreator' ? { ...s, label: 'Most ads per review' } : s)} onSort={v => setSortBy(v as LiveSort)}
-                    noCreators={live?.creatorsKnown === false}
-                    pay={payType} pays={PAYS.map(p => ({ ...p, label: p.id === 'any' ? 'Any' : p.label, says: PAY_SAYS[p.id] }))} onPay={v => setPayType(v as LivePay)}
-                    panelExtra={sortBy === 'picks' ? undefined : priorityBox} />
-                  {/* Your priorities rank Best bets: in view when that is the sort. */}
-                  {sortBy === 'picks' && priorityBox}
-                </>
-              )
-            })()}
+            {!layout && <FinderPresets filters={filters} sort={sortBy} noCreators={live?.creatorsKnown === false} onPick={p => { if (p) { setFilters(p.filters); setSortBy(p.sort) } else setFilters(NO_FILTERS) }} />}
+            {/* Your priorities rank Best bets: in view when that is the sort. */}
+            {!layout && finderToolbar(false)}
+            {sortBy === 'picks' && finderPriorityBox}
             {!preview && <TrybeSampleGuard onFilm={() => go('week')} />}
             {live?.mix?.says && <p className="text-[12px] mb-2 rounded-lg px-2.5 py-1.5" style={{ background: 'rgb(var(--brand-rgb) / 0.06)' }}><b>Your mix:</b> {live.mix.says}</p>}
             {filters.onAmazon && live && (live.amazonVideos ?? 0) === 0 && (
@@ -2971,6 +3063,7 @@ export default function TrybeOutreach({ preview = false, v2 = false }: { preview
             )}
             {compare.length > 0 && <div className="h-20" aria-hidden />}
             <TrybeCompare brands={compare} onRemove={(id) => setCompare(c => c.filter(x => x.brand_id !== id))} onClear={() => setCompare([])} />
+          </div>
           </div>
         ) : preview ? (
           <p className="text-[13px]" style={soft}>MVP&rsquo;s copy of TRYBE&rsquo;s brands is not ready yet. Check back soon.</p>
