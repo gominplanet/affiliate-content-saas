@@ -46,10 +46,10 @@ import {
   UserCog, AlertTriangle, DollarSign, Newspaper, Plug, Wrench, ImageOff,
   Camera, MessageCircle, Activity, BarChart3, Wand2, ShieldCheck,
   Share2, UserSquare, LifeBuoy, Link2, FlaskConical, Store, Send, ShoppingBag, Megaphone,
-  Inbox, PackageSearch, Rocket, Database, History, Globe, Radio, Gauge, Repeat, Star, Pin, Menu, X, Scissors, ClipboardList, ListChecks, UploadCloud, Clapperboard } from 'lucide-react'
+  Inbox, PackageSearch, Rocket, Database, History, Globe, Radio, Gauge, Repeat, Star, Pin, Menu, X, Scissors, ClipboardList, ListChecks, UploadCloud, Clapperboard, LayoutGrid } from 'lucide-react'
 import { useNavFavorites, MAX_NAV_FAVORITES } from '@/lib/nav-favorites'
 import { type Look } from '@/lib/look'
-import { ShellNavContext, ShellLookContext, ShellActiveContext, type ShellNavGroup, type ShellActive } from './shell-nav-context'
+import { ShellNavContext, ShellSectionsContext, type ShellSection, ShellLookContext, ShellActiveContext, type ShellNavGroup, type ShellActive } from './shell-nav-context'
 import { cn } from '@/lib/utils'
 // Deals Hub runs only while Amazon has a real sale event on (Prime Day, Big
 // Deal Days, Black Friday and so on) and is deliberately off between them. The
@@ -1008,6 +1008,42 @@ export default function DashboardShellV2({
     })
     .filter((g) => g.items.length > 0)
 
+  // ── MAIN AREAS ON THE LEFT, PAGES INSIDE (lib/labs-preview section_nav;
+  // Seb, 2026-11-08: "Could this be just the ones that you see on the left?
+  // ... if I click on find products, it would bring me to a page where inside
+  // that page, I would have the different sub pages ... Tribe should be its
+  // own kind of main menu"). The same menu, drawn as its areas: each opens
+  // /area/<area> with its tools, and every page of an area wears a strip of its
+  // sister pages (SectionStrip). TRYBE comes out of Find products to stand on
+  // its own, and opens straight away, like the Dashboard.
+  const sectionNav = canUsePreview('section_nav', effectiveTier)
+  const slugOf = (label: string) => label.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
+  const navSections: Array<ShellSection & { rows: NavItemDef[] }> = (() => {
+    const out: Array<ShellSection & { rows: NavItemDef[] }> = []
+    const toItem = (it: NavItemDef) => ({ href: it.href, label: it.label, badge: it.badge, icon: it.icon, aliases: (it.tabs ?? []).map((t) => t.href).filter((h) => h !== it.href) })
+    for (const g of groupsWithFavorites) {
+      const rows = g.items.filter((it) => it.gate !== false && !it.external)
+      if (!g.label) { for (const it of rows) out.push({ label: it.label, slug: slugOf(it.label), href: it.href, icon: it.icon, direct: true, items: [toItem(it)], rows: [it] }); continue }
+      const palette = SECTION_ACCENTS[g.label]
+      const color = g.accent ?? (palette ? (isDark ? palette.dark : palette.light) : undefined)
+      const tint = color ? hexToRgba(color, isDark ? 0.14 : 0.10) : undefined
+      const icon = g.icon ?? SECTION_ICONS[g.label]
+      const mine = g.label === 'My features'
+      const trybe = mine ? undefined : rows.find((it) => it.href === '/trybe')
+      const rest = trybe ? rows.filter((it) => it !== trybe) : rows
+      // My features always shows: its page says how to pin when it is empty.
+      if (mine || rest.length) out.push({ label: g.label, slug: slugOf(g.label), href: `/area/${slugOf(g.label)}`, color, tint, icon, direct: false, items: rest.map(toItem), rows: rest })
+      if (trybe) out.push({ label: 'TRYBE', slug: 'trybe', href: '/trybe', color, tint, icon: trybe.icon, direct: true, items: [toItem(trybe)], rows: [trybe] })
+    }
+    return out
+  })()
+  // The area the page you are on belongs to: its own area first, My features
+  // only on My features' own page.
+  const activeSection = navSections.find((s2) => !s2.direct && s2.label !== 'My features' && (pathname === s2.href || s2.rows.some((it) => itemActive(it))))
+    ?? navSections.find((s2) => s2.label === 'My features' && pathname === s2.href)
+  const sectionLit = (s2: (typeof navSections)[number]) => pathname === s2.href || (s2.direct ? s2.rows.some((it) => itemActive(it)) : s2 === activeSection)
+  const sectionBadge = (s2: (typeof navSections)[number]) => { const n = s2.rows.reduce((t, it) => t + (typeof it.badge === 'number' ? it.badge : 0), 0); return n > 0 ? n : undefined }
+
   // The row the page you are on belongs to, for the new look's page header.
   const activeNav: ShellActive = (() => {
     for (const g of orderedGroups) for (const it of g.items) {
@@ -1030,6 +1066,7 @@ export default function DashboardShellV2({
   return (
     <ShellLookContext.Provider value={look}>
     <ShellNavContext.Provider value={jobGroups}>
+    <ShellSectionsContext.Provider value={navSections}>
     <ShellActiveContext.Provider value={activeNav}>
     <div
       data-look={teal ? 'teal' : undefined}
@@ -1147,7 +1184,17 @@ export default function DashboardShellV2({
         {/* Nav groups */}
         {/* A thin scrollbar: the wide one took a label's last letters. */}
         <nav className="flex-1 px-2 flex flex-col gap-3 overflow-y-auto pb-3 [scrollbar-width:thin]">
-          {groupsWithFavorites.map((group) => {
+          {/* THE MAIN AREAS ONLY (section_nav): one row each, its tools inside. */}
+          {sectionNav && (
+            <div className="flex flex-col gap-0.5">
+              {navSections.map((s2) => (
+                <NavItem key={s2.href}
+                  item={{ href: s2.href, label: s2.label, icon: s2.icon ?? <LayoutGrid size={15} />, badge: sectionBadge(s2) }}
+                  active={sectionLit(s2)} collapsed={railCollapsed} tint={teal ? s2.color : undefined} teal={teal} />
+              ))}
+            </div>
+          )}
+          {!sectionNav && groupsWithFavorites.map((group) => {
             const visibleItems = group.items.filter((it) => it.gate !== false)
             const isFavorites = group.label === 'My features'
             // An empty My features says how to fill it, once, until dismissed.
@@ -1576,6 +1623,9 @@ export default function DashboardShellV2({
           <MvpNews tier={String(effectiveTier)} />
           <ReconnectCheckup />
           <div className="max-w-7xl px-4 sm:px-6 lg:px-8 pt-6 pb-12">
+            {!amazonLocked && sectionNav && activeSection && !activeSection.direct && activeSection.rows.length > 0 && (
+              <SectionStrip section={activeSection} rows={activeSection.rows} onHub={pathname === activeSection.href} itemActive={itemActive} />
+            )}
             {!amazonLocked && tabbedItem && <SectionTabs item={tabbedItem} isActive={isActive} teal={teal} />}
             {amazonLocked ? <AmazonUpgradeGate feature={amazonLocked.label} redirect={amazonLocked.redirect} /> : children}
           </div>
@@ -1583,6 +1633,7 @@ export default function DashboardShellV2({
       </div>
     </div>
     </ShellActiveContext.Provider>
+    </ShellSectionsContext.Provider>
     </ShellNavContext.Provider>
     </ShellLookContext.Provider>
   )
@@ -1727,6 +1778,35 @@ function NavItem({ item, active, collapsed, starSpace = false, tint, teal = fals
 // The tab bar of a merged row (Brand campaigns, Connections, Brand inbox...),
 // drawn above each of its pages so the pages read as one tool. Only the tabs
 // this account can open are shown; the current page is underlined.
+/** THE AREA'S PAGES, ABOVE EVERY ONE OF THEM (section_nav): a band in the
+ *  area's colour, its name opening the area's page, then each tool as a
+ *  button, the one you are on solid. Tools with tabs keep their own tab bar
+ *  (SectionTabs) under it. */
+function SectionStrip({ section, rows, onHub, itemActive }: { section: ShellSection; rows: NavItemDef[]; onHub: boolean; itemActive: (it: NavItemDef) => boolean }) {
+  const color = section.color || 'var(--accent)'
+  return (
+    <nav aria-label={section.label} className="mb-4 -mt-1 rounded-2xl px-3 py-2.5 flex flex-wrap items-center gap-2"
+      style={{ background: section.tint || 'rgb(var(--brand-rgb) / 0.08)', border: `1px solid ${section.tint ? color : 'rgb(var(--brand-rgb) / 0.25)'}33` }}>
+      <Link href={section.href} aria-current={onHub ? 'page' : undefined}
+        className="inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-[12px] font-extrabold uppercase tracking-[0.08em] transition hover:brightness-[1.05]"
+        style={onHub ? { background: color, color: '#fff' } : { color }}>
+        {section.icon}{section.label}
+      </Link>
+      {rows.map((it) => {
+        const on = !onHub && itemActive(it)
+        return (
+          <Link key={it.href + it.label} href={it.href} aria-current={on ? 'page' : undefined}
+            className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-xl px-3 py-1.5 text-[13.5px] font-bold transition hover:brightness-[1.04]"
+            style={on ? { background: color, color: '#fff', border: `1px solid ${color}` } : { background: 'var(--surface)', color: 'var(--text)', border: '1px solid var(--border)' }}>
+            {it.label}
+            {typeof it.badge === 'number' && it.badge > 0 && <span className="rounded-full px-1.5 text-[10px] font-bold text-white" style={{ backgroundColor: '#ff3b30' }}>{it.badge > 99 ? '99+' : it.badge}</span>}
+          </Link>
+        )
+      })}
+    </nav>
+  )
+}
+
 function SectionTabs({ item, isActive, teal = false }: { item: NavItemDef; isActive: (href: string) => boolean; teal?: boolean }) {
   const tabs = (item.tabs ?? []).filter((t) => t.gate !== false)
   // The new look: the same pages as round tabs, the one you are on in teal.

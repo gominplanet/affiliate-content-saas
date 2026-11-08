@@ -9,7 +9,7 @@
 import { normalizeTier } from '@/lib/tier'
 import { canSeeNav } from '@/lib/feature-access'
 
-export type PreviewFeature = 'on_sale' | 'amazon_live' | 'comparison' | 'shorts_mode' | 'first_comment' | 'brand_recap' | 'deal_aftercare' | 'post_refresh' | 'facebook_reels' | 'whole_video' | 'sold_campaigns' | 'liftoff_split' | 'earnings' | 'live_followup' | 'video_plan' | 'studio_upload' | 'facebook_setup' | 'group_queue' | 'trybe_outreach' | 'hashtag_trends' | 'drop' | 'video_qr' | 'deals_import' | 'product_scripts' | 'review_edit' | 'creator_look' | 'new_look' | 'trybe_v2'
+export type PreviewFeature = 'on_sale' | 'amazon_live' | 'comparison' | 'shorts_mode' | 'first_comment' | 'brand_recap' | 'deal_aftercare' | 'post_refresh' | 'facebook_reels' | 'whole_video' | 'sold_campaigns' | 'liftoff_split' | 'earnings' | 'live_followup' | 'video_plan' | 'studio_upload' | 'facebook_setup' | 'group_queue' | 'trybe_outreach' | 'hashtag_trends' | 'drop' | 'video_qr' | 'deals_import' | 'product_scripts' | 'review_edit' | 'creator_look' | 'new_look' | 'trybe_v2' | 'section_nav'
 
 /** Who may use each preview feature: 'admin' while testing, 'labs' once open to Pro. */
 const OPEN_TO: Record<PreviewFeature, 'admin' | 'labs'> = {
@@ -114,6 +114,13 @@ const OPEN_TO: Record<PreviewFeature, 'admin' | 'labs'> = {
   // Opened to Pro the same day (Seb: "open video script to members"), in
   // Make videos.
   product_scripts: 'labs',
+  // SECTIONS ON THE LEFT, PAGES INSIDE (Seb, 2026-11-08: "Could this be just
+  // the ones that you see on the left? ... if I click on find products, it
+  // would bring me to a page where inside that page, I would have the
+  // different sub pages ... Tribe should be its own kind of main menu"). The
+  // menu shows only the main areas; each opens a page with its tools, and
+  // every page of an area wears a strip of its sister pages. Admin first.
+  section_nav: 'admin',
 }
 
 /** Every preview feature. A check can then ask which are still admin only

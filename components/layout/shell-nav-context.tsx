@@ -31,6 +31,26 @@ export type ShellNavGroup = {
 
 export const ShellNavContext = createContext<ShellNavGroup[] | null>(null)
 
+/** A main area of the menu (lib/labs-preview section_nav): what the left side
+ *  shows, and what its page lists. `direct` areas (the Dashboard, TRYBE) open
+ *  their one page straight away. */
+export type ShellSection = {
+  label: string
+  slug: string
+  href: string
+  color?: string
+  tint?: string
+  icon?: ReactNode
+  direct: boolean
+  items: ShellNavItem[]
+}
+export const ShellSectionsContext = createContext<ShellSection[] | null>(null)
+
+/** Every main area this member can open, in menu order; null outside the shell. */
+export function useShellSections(): ShellSection[] | null {
+  return useContext(ShellSectionsContext)
+}
+
 /** The job sections, or null outside the dashboard shell. */
 export function useShellNav(): ShellNavGroup[] | null {
   return useContext(ShellNavContext)
