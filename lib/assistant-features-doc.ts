@@ -110,16 +110,17 @@ members may still use it):
   Deal Radar, Brand campaigns (tabs: All campaigns, Joined, Saved, Best
   paying), Partner programs (tabs: Levanta, PartnerBoost and Walmart,
   Wayward, LTK), Idea lists.
-- Make videos: YouTube Co-Pilot, Thumbnails (formerly Thumbnail Generator),
-  Scriptwriter, Clip Factory, Bulk Amazon upload (formerly Liftoff), YouTube
-  comments (tabs: Pinned comments, On sale comments, formerly Encore), Amazon
-  Live (tabs: Prep, Follow-up).
+- Make videos: Drop, Review Editor, Video Scripts, YouTube Co-Pilot,
+  Thumbnails (formerly Thumbnail Generator), Scriptwriter, Clip Factory, Bulk
+  Amazon upload (formerly Liftoff), Amazon Live (tabs: Prep, Follow-up).
 - Blog: Blog posts (formerly Blog Post Generator), Comparisons and guides
   (tabs: Comparisons, Buying guides), Articles, Ended deals, SEO and indexing,
   Ads, Blog design (formerly Customize Blog).
-- Share: Social Push, Social designs (formerly Social Influencer), Social
-  Launch Kit, Meta Hub, Hashtag insights (formerly Pulse), Link in Bio,
-  Passport links, Deals Hub.
+- Share: Social Push, Deals Hub, Social designs (formerly Social
+  Influencer), Social Launch Kit, Meta Hub, Group Post Queue, YouTube comments
+  (tabs: Pinned comments, On sale comments, formerly Encore), Instagram
+  Auto-DM, Link in Bio, Passport links. (YouTube comments and Instagram
+  Auto-DM moved here from Make videos on 2026-11-08.)
 - Work with brands: Brand pitches (formerly Brand Deals), Brand inbox (tabs:
   Inquiries, History, formerly Brand Hub, and Recap).
 - Your setup: Connections (tabs: Blog, formerly WordPress, YouTube, Socials,
@@ -671,9 +672,9 @@ formerly Brand Deals), and for Amazon campaign research use Brand campaigns
 
 ---
 
-## INSTAGRAM / FACEBOOK DM (Labs)
+## INSTAGRAM AUTO-DM
 
-URL: /instagram-dm · Sidebar: Labs (not shown to members yet)
+URL: /instagram-dm · Sidebar: Share → Instagram Auto-DM (every plan that posts to Instagram)
 
 Comment-to-DM automation: when someone comments a keyword (e.g. "LINK") on
 your Instagram or Facebook post, they automatically get a DM with that post's

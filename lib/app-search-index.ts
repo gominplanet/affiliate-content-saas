@@ -60,7 +60,7 @@ export const APP_SEARCH_INDEX: AppSearchEntry[] = [
   { label: 'Bulk Amazon upload', href: '/liftoff', group: 'Make videos', keywords: 'liftoff launch batch upload videos amazon storefront countries youtube' },
   { label: 'Pinned comments', href: '/first-comments', group: 'YouTube comments', keywords: 'first comment pinned comment product link youtube comments' },
   { label: 'On sale comments', href: '/encore', group: 'YouTube comments', keywords: 'encore on sale now sale comment youtube comments price drop' },
-  { label: 'Instagram Auto-DM', href: '/instagram-dm', group: 'Make videos', keywords: 'instagram auto dm direct message comment keyword link reels' },
+  { label: 'Instagram Auto-DM', href: '/instagram-dm', group: 'Share', keywords: 'instagram auto dm direct message comment keyword link reels' },
   { label: 'Amazon Live', href: '/amazon-live', group: 'Make videos', keywords: 'amazon live prep livestream show lineup teleprompter' },
   { label: 'Live follow-up', href: '/live-followup', group: 'Amazon Live', keywords: 'live follow up replay clips roundup after the live' },
 

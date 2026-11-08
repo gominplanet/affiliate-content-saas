@@ -658,20 +658,6 @@ export default function DashboardShellV2({
         // Was Liftoff: up to ten videos to YouTube and every chosen Amazon
         // country from one press. Pro and the Amazon plan.
         { href: '/liftoff', icon: <Rocket size={15} />, label: 'Bulk Amazon upload', gate: hasVideoTools(effectiveTier), badge: 'New', onAmazon: 'included' },
-        // Pinned Comments and Encore (on sale comments) both write the comment
-        // under the creator's own videos; Encore edits the pinned one.
-        {
-          href: '/first-comments', icon: <Pin size={15} />, label: 'YouTube comments', badge: 'New', onAmazon: 'included',
-          gate: canUsePreview('first_comment', effectiveTier) || canUsePreview('on_sale', effectiveTier),
-          tabs: [
-            { href: '/first-comments', icon: null, label: 'Pinned comments', gate: canUsePreview('first_comment', effectiveTier) },
-            { href: '/encore', icon: null, label: 'On sale comments', gate: canUsePreview('on_sale', effectiveTier) },
-          ],
-        },
-        // INSTAGRAM AUTO-DM, out of Labs (Seb, 2026-10-23, the day Meta approved
-        // the messaging permissions: "let's open to users"). Every plan that
-        // posts to Instagram (lib/ig-dm-access).
-        { href: '/instagram-dm', icon: <MessageCircle size={15} />, label: 'Instagram Auto-DM', gate: canUseIgDm(effectiveTier), badge: 'New' },
         // Before the show and after it.
         {
           href: '/amazon-live', icon: <Radio size={15} />, label: 'Amazon Live', badge: 'New', onAmazon: 'included',
@@ -729,6 +715,23 @@ export default function DashboardShellV2({
         // pooled across MVP per niche. Admin only since 2026-10-20 (Seb: "I
         // don't think users would ever need this"): captions use it anyway.
         { href: '/pulse', icon: <Activity size={15} />, label: 'Hashtag insights', gate: isAdmin },
+        // IN SHARE, NOT MAKE VIDEOS (Seb, 2026-11-08: "Instagram auto DM
+        // probably fits more into share. YouTube comments as well ... It has
+        // nothing to do with make video"): both work on what is already posted.
+        // Pinned Comments and Encore (on sale comments) both write the comment
+        // under the creator's own videos; Encore edits the pinned one.
+        {
+          href: '/first-comments', icon: <Pin size={15} />, label: 'YouTube comments', badge: 'New', onAmazon: 'included',
+          gate: canUsePreview('first_comment', effectiveTier) || canUsePreview('on_sale', effectiveTier),
+          tabs: [
+            { href: '/first-comments', icon: null, label: 'Pinned comments', gate: canUsePreview('first_comment', effectiveTier) },
+            { href: '/encore', icon: null, label: 'On sale comments', gate: canUsePreview('on_sale', effectiveTier) },
+          ],
+        },
+        // INSTAGRAM AUTO-DM, out of Labs (Seb, 2026-10-23, the day Meta approved
+        // the messaging permissions: "let's open to users"). Every plan that
+        // posts to Instagram (lib/ig-dm-access).
+        { href: '/instagram-dm', icon: <MessageCircle size={15} />, label: 'Instagram Auto-DM', gate: canUseIgDm(effectiveTier), badge: 'New' },
         { href: '/link-in-bio', icon: <Link2 size={15} />, label: 'Link in Bio', gate: canSeeNav('dealRadar', effectiveTier), onAmazon: 'included' },
         // The Amazon plan includes Passport (lib/feature-access NAV_ACCESS.passport).
         { href: '/passport', icon: <Globe size={15} />, label: 'Passport links', gate: canUsePassport(effectiveTier), onAmazon: 'included' },
