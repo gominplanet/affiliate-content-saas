@@ -533,7 +533,16 @@ export interface FinderFilters {
    *  score out of 100: its rating is creators' reviews, 3.1 to 4.9 stars on
    *  the 604 brands with reviews that day, so 90% is 4.5 stars. */
   minRating?: number | null
+  /** MVP members' videos with it are mostly approved (APPROVES_MIN or more),
+   *  from the pooled results (lib/trybe-changes poolBrands). Seb, 2026-11-08:
+   *  "use all that information that Tribe is giving us". */
+  approves?: boolean
+  /** Has room and pays well: not crowded, and its pay reads as paying
+   *  (roomPayOf), the best two rows of the Room and pay verdict. */
+  roomAndPay?: boolean
 }
+/** "Approves most videos": members' approval rate at or over this. */
+export const APPROVES_MIN = 0.6
 /** Is this brand spending on ads: true, false, or null when MVP cannot say.
  *
  *  NOT IN THE TOP 100 IS NOT "NOT SPENDING" (Seb, 2026-10-18: GentGolfers,
@@ -574,7 +583,7 @@ export const FAST_REVIEW_DAYS = 5
 /** A filter body from the page, read safely. Pure. */
 /** Whether any finder filter is on (the page's filtersOn, for the server). Pure. */
 export function anyFilterOn(f: FinderFilters): boolean {
-  return !!(f.minPerVideo || f.maxCreators || f.maxVideos || f.paidCreators || f.samples || f.onAmazon || f.starred || f.openOnly || f.spending || f.newOnly || f.fastReview || f.sells || f.minSpend || f.tiktokShop || f.tierUp || f.minRating)
+  return !!(f.minPerVideo || f.maxCreators || f.maxVideos || f.paidCreators || f.samples || f.onAmazon || f.starred || f.openOnly || f.spending || f.newOnly || f.fastReview || f.sells || f.minSpend || f.tiktokShop || f.tierUp || f.minRating || f.approves || f.roomAndPay)
 }
 
 export function readFilters(v: unknown): FinderFilters {
@@ -587,6 +596,7 @@ export function readFilters(v: unknown): FinderFilters {
     sells: readSells(o.sells), minSpend: pos(o.minSpend),
     tiktokShop: o.tiktokShop === true, tierUp: o.tierUp === true,
     minRating: (() => { const n = pos(o.minRating); return n == null ? null : Math.min(5, Math.round(n * 10) / 10) })(),
+    approves: o.approves === true, roomAndPay: o.roomAndPay === true,
   }
 }
 
@@ -614,8 +624,12 @@ export interface FilterRow {
   tierUp?: boolean | null
   /** TRYBE's rating, stars of 5 from creators' reviews; null when it has none. */
   rating?: number | null
+  /** Members' approval rate, 0 to 1; null below the pool's minimum. */
+  approval?: number | null
+  /** The Room and pay verdict (roomPayOf). */
+  roomPay?: Pick<RoomPayRead, 'crowd' | 'pay'> | null
 }
-export type FilterId = 'minPerVideo' | 'maxCreators' | 'maxVideos' | 'paidCreators' | 'samples' | 'onAmazon' | 'starred' | 'openOnly' | 'spending' | 'newOnly' | 'fastReview' | 'sells' | 'minSpend' | 'tiktokShop' | 'tierUp' | 'minRating'
+export type FilterId = 'minPerVideo' | 'maxCreators' | 'maxVideos' | 'paidCreators' | 'samples' | 'onAmazon' | 'starred' | 'openOnly' | 'spending' | 'newOnly' | 'fastReview' | 'sells' | 'minSpend' | 'tiktokShop' | 'tierUp' | 'minRating' | 'approves' | 'roomAndPay'
 
 /** Where a brand stands with each filter that is on: passes, fails, or not
  *  known (TRYBE did not say). Pure.
@@ -654,6 +668,10 @@ export function filterCheck(r: FilterRow, f: FinderFilters): { pass: boolean; un
   // A RATING MINIMUM NEEDS A RATING, like a pay minimum: a brand with no
   // reviews yet is left out and counted, never listed as if it passed.
   if (f.minRating) { if (r.rating == null) { failed.push('minRating'); blank.push('minRating') } else judge('minRating', r.rating >= f.minRating) }
+  // APPROVES MOST VIDEOS: known once 5 members have results, listed after otherwise.
+  if (f.approves) judge('approves', r.approval == null ? null : r.approval >= APPROVES_MIN)
+  // ROOM AND PAYS WELL: both sides read, or not known.
+  if (f.roomAndPay) judge('roomAndPay', !r.roomPay?.crowd || !r.roomPay?.pay ? null : r.roomPay.crowd !== 'crowded' && r.roomPay.pay === 'paying')
   return { pass: !failed.length, unknown, failed, blank }
 }
 
@@ -662,6 +680,7 @@ export const FILTER_WORDS: Record<FilterId, string> = {
   paidCreators: 'what it has paid creators', samples: 'samples', onAmazon: 'Amazon', starred: 'stars',
   openOnly: 'how crowded', spending: 'ad spend', newOnly: 'new on TRYBE', fastReview: 'how fast it decides', sells: 'what it sells', minSpend: 'what it pays creators a month',
   tiktokShop: 'TikTok Shop', tierUp: 'payout tier', minRating: 'TRYBE rating',
+  approves: 'how often it approves', roomAndPay: 'room and pay',
 }
 
 // ── 4. YOUR STAGE: VOLUME FIRST, THEN DOUBLE DOWN ──────────────────────────

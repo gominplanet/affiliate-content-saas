@@ -66,7 +66,7 @@ import TrybeRetainers from '@/components/labs/TrybeRetainers'
 import TrybeIntroVideo from '@/components/labs/TrybeIntroVideo'
 import TrybeSampleGuard from '@/components/labs/TrybeSampleGuard'
 import { readScript, readBrandStats } from '@/lib/trybe-mybrands'
-import { FinderToolbar, FinderSidebar, panelFiltersOn, FinderFilterNote, FinderPriorities, FinderPresets, PopularityChips, RatingChip, BrandExtras, StarButton, PassButton, AmazonLine, PayChip, RoomPayChip, SpendChip, SpendNote, NewChip, StaticsChip, SellsChip, VerdictChip, ReviewChip, PaidOutChip, TikTokShopChip, CompareButton, BrandMark, NO_FILTERS, filtersOn, type LiveAmazon, type LivePayEst } from '@/components/labs/TrybeFinderControls'
+import { FinderToolbar, FinderSidebar, panelFiltersOn, AdsChip, ApprovalChip, RepliesChip, FinderFilterNote, FinderPriorities, FinderPresets, PopularityChips, RatingChip, BrandExtras, StarButton, PassButton, AmazonLine, PayChip, RoomPayChip, SpendChip, SpendNote, NewChip, StaticsChip, SellsChip, VerdictChip, ReviewChip, PaidOutChip, TikTokShopChip, CompareButton, BrandMark, NO_FILTERS, filtersOn, type LiveAmazon, type LivePayEst } from '@/components/labs/TrybeFinderControls'
 import TrybeCompare from '@/components/labs/TrybeCompare'
 import { COMPARE_MAX } from '@/lib/trybe-compare'
 import { useTrybeAmazon } from '@/components/labs/useTrybeAmazon'
@@ -158,6 +158,9 @@ interface LiveBrand {
   sells?: SellsRead | null
   /** How fast it decides videos, from MVP members' results. */
   review?: { reviewDays: number | null; slowShare: number | null } | null
+  /** MVP members' approval rate (0 to 1), and how often it answers their requests. */
+  approval?: number | null
+  replies?: { rate: number | null; days: number | null } | null
   /** TRYBE's payout range, the range before when it went up lately, TikTok Shop, and the Top 100 (Seb, 2026-10-17). */
   earnings_bucket?: string | null
   tier_up?: { before: string | null; after: string | null; at: string } | null
@@ -2983,8 +2986,11 @@ export default function TrybeOutreach({ preview = false, v2 = false, layout = fa
                         {b.stats?.paidOut == null && <PaidOutChip bucket={b.earnings_bucket} up={b.tier_up} />}
                         <TikTokShopChip on={b.tiktok_shop} />
                         <RatingChip stars={b.review_rating} reviews={b.review_count} />
+                        <AdsChip count={b.meta_ads} fresh={b.meta_fresh} trust={b.meta_trust} top100={b.top100_hits} />
                         <PopularityChips b={b} perCreator={sortBy === 'adsPerCreator'} />
                         <ReviewChip review={b.review} />
+                        <ApprovalChip rate={b.approval} />
+                        <RepliesChip replies={b.replies} />
                         <StaticsChip on={b.statics} />
                         <SellsChip sells={b.sells} />
                         {b.trybe_score != null && <span className="text-[11px] font-semibold rounded-md px-2 py-0.5 inline-flex items-center gap-0.5 cursor-help" style={{ background: 'rgb(var(--brand-rgb) / 0.08)', color: PURPLE }} title="TRYBE's own rating of this brand, as shown on TRYBE."><Star size={10} /> TRYBE score {b.trybe_score}</span>}

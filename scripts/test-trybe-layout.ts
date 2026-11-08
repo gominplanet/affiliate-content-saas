@@ -12,6 +12,7 @@
 import { readFileSync } from 'node:fs'
 import { canUsePreview } from '../lib/labs-preview'
 import { GROUPS_V3, groupOf, pageLabelV3 } from '../components/labs/TrybeNav'
+import { filterCheck, readFilters, anyFilterOn } from '../lib/trybe-finder'
 
 const fails: string[] = []
 const check = (name: string, ok: boolean | undefined) => { if (!ok) fails.push(name) }
@@ -52,6 +53,31 @@ check('every filter group is in the column, in view', ['Quick lists', 'Niche', '
 check('filters are plain ticks, radios and numbers', /type="checkbox"/.test(side) && /type="radio"/.test(side) && /type="number"/.test(side))
 check('each group says how many of its filters are on', /const payCount = /.test(side) && /const roomCount = /.test(side) && /const brandCount = /.test(side))
 check('no dashes in the column', !/[–—]/.test(side.replace(/\/\*[\s\S]*?\*\//g, '')))
+
+// ── WHAT MVP ALREADY HAD, SHOWN AND FILTERED ON (Seb, 2026-11-08: "You have
+// to utilize all that information that Tribe is giving us") ──
+{
+  const base = { perVideo: 30, creators: null, stats: { videosApproved: null, videos30d: null, paidOut: null, samples: null, joinedAt: null } as never, earningsBucket: null, amazon: null, starred: false }
+  const f = { ...{ approves: true } }
+  check('Approves most videos passes at 60% and up, fails under, and waits when the pool is too small',
+    filterCheck({ ...base, approval: 0.6 }, f).pass && !filterCheck({ ...base, approval: 0.55 }, f).pass && filterCheck({ ...base, approval: null }, f).unknown.includes('approves'))
+  const g = { roomAndPay: true }
+  check('Room and pays well wants both sides read: not crowded and paying',
+    filterCheck({ ...base, roomPay: { crowd: 'filling', pay: 'paying' } }, g).pass && !filterCheck({ ...base, roomPay: { crowd: 'crowded', pay: 'paying' } }, g).pass
+    && !filterCheck({ ...base, roomPay: { crowd: 'open', pay: 'some' } }, g).pass && filterCheck({ ...base, roomPay: { crowd: 'open', pay: null } }, g).unknown.includes('roomAndPay'))
+  check('the new filters are read from the page and counted as on', readFilters({ approves: true, roomAndPay: true }).approves === true && readFilters({ roomAndPay: true }).roomAndPay === true && anyFilterOn({ approves: true }))
+  const R = read('app/api/labs/trybe/route.ts')
+  check('the members\u2019 approval rate comes with every brand, and feeds the filter', /if \(p\.approvalRate != null\) approval\.set\(id, p\.approvalRate\)/.test(R) && /approval: results\.approval\.get\(x\.r\.brand_id\) \?\? null, roomPay: roomPayBy\.get\(x\.r\.brand_id\) \?\? null/.test(R) && /approval: results\.approval\.get\(r\.brand_id\) \?\? null,/.test(R))
+  check('how often it answers: other members\u2019 requests to the brands shown, pooled like the brand page', /\.in\('brand_id', top\.map\(x => x\.r\.brand_id as string\)\)\.neq\('user_id', ownerId\)\.in\('status', \['sent', 'already'\]\)/.test(R) && /const p = replyPool\(list\); if \(p\.shown\) repliesBy\.set/.test(R) && /replies: repliesBy\.get\(r\.brand_id\) \?\? null/.test(R))
+  const T = read('components/labs/TrybeBrandTable.tsx')
+  check('the table shows what a month pays, TikTok Shop, approvals and answers, in the spreadsheet too',
+    ["{ id: 'month', label: 'Pays a month'", "{ id: 'tiktok', label: 'TikTok Shop'", "{ id: 'approves', label: 'Approves'", "{ id: 'answers', label: 'Answers'"].every((x) => T.includes(x)) && /'Pays a month \(\$\)'.*'TikTok Shop'.*'Approves \(%\)', 'Answers \(%\)'/.test(T))
+  check('the brand\u2019s name stays in view while the table scrolls', /position: 'sticky', left: preview \? 0 : 40/.test(T) && /sticky left-0 z-\[1\]/.test(T))
+  check('a brand not read says so in the new columns, never a zero', /<Unknown>Not checked<\/Unknown>/.test(T) && (T.match(/<Unknown>Not yet<\/Unknown>/g) || []).length >= 3)
+  check('every card shows its Meta ads and Top 100, its approvals and its answers', /<AdsChip count=\{b\.meta_ads\} fresh=\{b\.meta_fresh\} trust=\{b\.meta_trust\} top100=\{b\.top100_hits\} \/>/.test(O) && /<ApprovalChip rate=\{b\.approval\} \/>/.test(O) && /<RepliesChip replies=\{b\.replies\} \/>/.test(O))
+  check('a Meta count that is not the brand\u2019s own is never shown as its number', /const own = typeof count === 'number' && fresh && \(!trust \|\| trust === 'own' \|\| trust === 'unchecked'\)/.test(C))
+  check('the column offers the new filters', /tick\('approves'/.test(side) && /tick\('roomAndPay'/.test(side))
+}
 
 if (fails.length) { console.error(`✗ ${fails.length} TRYBE layout check(s) failed:\n  ${fails.join('\n  ')}`); process.exit(1) }
 console.log('✓ TRYBE layout: five jobs in the order a creator works, and Find brands with every filter in one column')

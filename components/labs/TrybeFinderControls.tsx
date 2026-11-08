@@ -32,8 +32,8 @@ export interface LiveAmazon {
 }
 export interface FilmedLive { asin: string; title: string | null; url: string; videos: string[] }
 
-export const NO_FILTERS: FinderFilters = { minPerVideo: null, maxCreators: null, maxVideos: null, paidCreators: false, samples: false, onAmazon: false, starred: false, openOnly: false, spending: false, newOnly: false, fastReview: false, sells: null, minSpend: null, tiktokShop: false, tierUp: false, minRating: null }
-export const filtersOn = (f: FinderFilters) => !!(f.minPerVideo || f.maxCreators || f.maxVideos || f.paidCreators || f.samples || f.onAmazon || f.starred || f.openOnly || f.spending || f.newOnly || f.fastReview || f.sells || f.minSpend || f.tiktokShop || f.tierUp || f.minRating)
+export const NO_FILTERS: FinderFilters = { minPerVideo: null, maxCreators: null, maxVideos: null, paidCreators: false, samples: false, onAmazon: false, starred: false, openOnly: false, spending: false, newOnly: false, fastReview: false, sells: null, minSpend: null, tiktokShop: false, tierUp: false, minRating: null, approves: false, roomAndPay: false }
+export const filtersOn = (f: FinderFilters) => !!(f.minPerVideo || f.maxCreators || f.maxVideos || f.paidCreators || f.samples || f.onAmazon || f.starred || f.openOnly || f.spending || f.newOnly || f.fastReview || f.sells || f.minSpend || f.tiktokShop || f.tierUp || f.minRating || f.approves || f.roomAndPay)
 
 const WEIGHTS: Array<{ w: Weight; label: string }> = [{ w: 0, label: 'Skip' }, { w: 1, label: 'Normal' }, { w: 2, label: 'A lot' }]
 
@@ -54,12 +54,13 @@ function Picker({ label, value, options, onChange, changed }: { label: string; v
   )
 }
 
-type ToggleKey = 'paidCreators' | 'samples' | 'onAmazon' | 'starred' | 'openOnly' | 'spending' | 'newOnly' | 'fastReview' | 'tiktokShop' | 'tierUp'
+type ToggleKey = 'paidCreators' | 'samples' | 'onAmazon' | 'starred' | 'openOnly' | 'spending' | 'newOnly' | 'fastReview' | 'tiktokShop' | 'tierUp' | 'approves' | 'roomAndPay'
 type NumberKey = 'minPerVideo' | 'maxCreators' | 'maxVideos' | 'minSpend' | 'minRating'
 export const TOGGLE_WORDS: Record<ToggleKey, string> = {
   starred: 'Starred', onAmazon: 'On Amazon', openOnly: 'Open only', newOnly: 'New', spending: 'Spending on ads',
   fastReview: 'Decides fast', paidCreators: 'Has paid creators', samples: 'Sends samples',
   tiktokShop: 'On TikTok Shop', tierUp: 'Payout tier went up',
+  approves: 'Approves most videos', roomAndPay: 'Room and pays well',
 }
 export const NUMBER_WORDS: Record<NumberKey, (n: number) => string> = {
   minPerVideo: (n) => `At least $${n.toLocaleString()} a video`,
@@ -176,6 +177,7 @@ export function FinderToolbar({ filters, onFilters, name, onName, sort, sorts, o
             {group('Room for you', <>
               {toggle('openOnly', <Users size={12} />, noCreators ? 'Brands with room for you: few videos posted in the last 30 days (TRYBE gives no creator counts yet).' : 'Brands with room for you: few creators, and few joining or posting in the last 30 days.')}
               {toggle('newOnly', <Sparkles size={12} />, 'New on TRYBE: joined in the last 30 days, or MVP first saw it in the last 14.')}
+              {toggle('roomAndPay', undefined, 'Not crowded, and pays well: the top of the Room and pay verdict.')}
               {/* No creator counts from TRYBE: a limit that narrows nothing is not offered. */}
               {!noCreators && numberBox('maxCreators', 'Up to', 'creators', 'Fewer creators means more of the budget for you.')}
               {numberBox('maxVideos', 'Up to', 'videos approved', 'Few videos approved so far: room for you.')}
@@ -184,6 +186,7 @@ export function FinderToolbar({ filters, onFilters, name, onName, sort, sorts, o
               {numberBox('minRating', 'TRYBE rating', '\u2605 or more', 'Creators\u2019 rating of the brand on TRYBE, out of 5 stars: 4.5 is 90%. A rating counts once a brand has 3 reviews or more; one with fewer is left out.', 0.1)}
               {toggle('spending', undefined, 'Meta ads running now, or videos in TRYBE\u2019s Top 100.')}
               {toggle('fastReview', <Clock size={12} />, 'Decides videos in 5 days or less, from MVP members\u2019 results. Brands without enough members\u2019 results are listed after.')}
+              {toggle('approves', <Check size={12} />, 'MVP members\u2019 videos with it are approved 60% of the time or more, once 5 members have results with it.')}
               {toggle('samples')}
               {toggle('onAmazon', <ShoppingBag size={12} />, 'Brands you already filmed on Amazon, have in your storefront, or that run Creator Connections on Amazon.')}
               {toggle('starred', <Star size={12} />)}
@@ -251,6 +254,8 @@ export function FinderFilterNote({ hiddenBy, blankBy, unknownBy }: { hiddenBy?: 
     tiktokShop: (n) => `MVP has not read the website of ${brands(n)} yet, which is where TikTok Shop shows.`,
     fastReview: (n) => `No MVP member has had videos decided by ${brands(n)} yet, so how fast they decide is not known.`,
     tierUp: (n) => `MVP\u2019s log of TRYBE\u2019s payout tiers could not be read for ${brands(n)}.`,
+    approves: (n) => `Fewer than 5 MVP members have had videos decided by ${brands(n)}, so how often they approve is not known yet.`,
+    roomAndPay: (n) => `MVP cannot yet judge both how crowded ${brands(n)} are and how well they pay.`,
     onAmazon: (n) => `Your Amazon videos or Creator Connections could not be read just now, so ${brands(n)} not found there may still be on Amazon.`,
     openOnly: (n) => `TRYBE gives no creator count and no recent videos for ${brands(n)}, so how crowded they are is not known.`,
   }
@@ -805,8 +810,8 @@ export function FinderSidebar({ filters, onFilters, pay, pays, onPay, sort, onPr
   const NICHES_FIRST = 8
   const shownNiches = allNiches ? nicheList : nicheList.slice(0, Math.max(NICHES_FIRST, niches.length))
   const payCount = (pay !== pays[0]?.id ? 1 : 0) + [filters.minPerVideo, filters.minSpend, filters.paidCreators, filters.tierUp].filter(Boolean).length
-  const roomCount = [filters.openOnly, filters.newOnly, filters.maxCreators, filters.maxVideos].filter(Boolean).length
-  const brandCount = [filters.minRating, filters.spending, filters.fastReview, filters.samples, filters.onAmazon, filters.tiktokShop, filters.starred].filter(Boolean).length
+  const roomCount = [filters.openOnly, filters.newOnly, filters.roomAndPay, filters.maxCreators, filters.maxVideos].filter(Boolean).length
+  const brandCount = [filters.minRating, filters.spending, filters.fastReview, filters.approves, filters.samples, filters.onAmazon, filters.tiktokShop, filters.starred].filter(Boolean).length
   const anyOn = payCount + roomCount + brandCount + (filters.sells ? 1 : 0) > 0
   return (
     <div role="region" aria-label="Filters" className="text-[13.5px]">
@@ -848,6 +853,7 @@ export function FinderSidebar({ filters, onFilters, pay, pays, onPay, sort, onPr
       {section('Room for you', roomCount, (<>
         {tick('openOnly', noCreators ? 'Brands with room for you: few videos posted in the last 30 days (TRYBE gives no creator counts yet).' : 'Brands with room for you: few creators, and few joining or posting in the last 30 days.')}
         {tick('newOnly', 'New on TRYBE: joined in the last 30 days, or MVP first saw it in the last 14.')}
+        {tick('roomAndPay', 'Not crowded, and pays well: the top of the Room and pay verdict, from how crowded it is and what a video, a month and its time on TRYBE pay.')}
         {!noCreators && num('maxCreators', 'Up to', 'creators', 'Fewer creators means more of the budget for you.')}
         {num('maxVideos', 'Up to', 'videos approved', 'Few videos approved so far: room for you.')}
       </>))}
@@ -855,6 +861,7 @@ export function FinderSidebar({ filters, onFilters, pay, pays, onPay, sort, onPr
         {num('minRating', 'Rated', '★ or more', 'Creators’ rating of the brand on TRYBE, out of 5 stars. A rating counts once a brand has 3 reviews or more; one with fewer is left out.', 0.1)}
         {tick('spending', 'Meta ads running now, or videos in TRYBE’s Top 100.')}
         {tick('fastReview', 'Decides videos in 5 days or less, from MVP members’ results. Brands without enough members’ results are listed after.')}
+        {tick('approves', 'MVP members’ videos with it are approved 60% of the time or more. Shown once 5 members have results with it; brands without enough are listed after.')}
         {tick('samples', 'Takes sample requests on TRYBE.')}
         {tick('onAmazon', 'Brands you already filmed on Amazon, have in your storefront, or that run Creator Connections on Amazon.')}
         {tick('tiktokShop', 'Sells on TikTok Shop, from its own website. Brands whose website MVP has not checked yet are listed after.')}
@@ -869,4 +876,49 @@ export function FinderSidebar({ filters, onFilters, pay, pays, onPay, sort, onPr
       )}
     </div>
   )
+}
+
+/** META ADS AND THE TOP 100 ON EVERY CARD (Seb, 2026-11-08: "things are still
+ *  missing as far as information"). Both showed only under two sorts. A count
+ *  that is not the brand's own is said by PopularityChips, never shown here as
+ *  a number; one older than four weeks is not shown at all. */
+export function AdsChip({ count, fresh, trust, top100 }: { count: number | null | undefined; fresh: boolean | undefined; trust: MetaTrust | null | undefined; top100: number | null | undefined }) {
+  const own = typeof count === 'number' && fresh && (!trust || trust === 'own' || trust === 'unchecked')
+  const ads = own ? (count as number) : null
+  const hits = typeof top100 === 'number' && top100 > 0 ? top100 : 0
+  if (ads == null && !hits) return null
+  return (<>
+    {ads != null && (
+      <span className="text-[11px] font-semibold rounded-md px-2 py-0.5 inline-flex items-center gap-1 cursor-help"
+        style={ads > 0 ? { background: 'rgba(22,163,74,0.10)', color: GREEN } : { background: 'var(--surface-2)', color: 'var(--text-3)' }}
+        title={ads > 0 ? `${ads.toLocaleString()} of its own ads running on Meta, counted in the last four weeks: it spends on ads.` : 'No ads of its own running on Meta at the last count.'}>
+        <Megaphone size={11} />{ads > 0 ? `${ads.toLocaleString()} Meta ad${ads === 1 ? '' : 's'}` : 'No Meta ads'}
+      </span>
+    )}
+    {hits > 0 && (
+      <span className="text-[11px] font-semibold rounded-md px-2 py-0.5 inline-flex items-center gap-1 cursor-help" style={{ background: 'rgba(245,158,11,0.14)', color: AMBER }}
+        title={`${hits} of its videos seen in TRYBE’s Top 100: it is putting ad money behind creators’ videos.`}>
+        <TrendingUp size={11} />Top 100 {'×'}{hits}
+      </span>
+    )}
+  </>)
+}
+
+/** How often MVP members' videos with it are approved (0 to 1), once five
+ *  members have results. Nothing below that. */
+export function ApprovalChip({ rate }: { rate: number | null | undefined }) {
+  if (typeof rate !== 'number') return null
+  const pct = Math.round(rate * 100)
+  const style = rate >= 0.6 ? { background: 'rgba(22,163,74,0.12)', color: GREEN } : rate < 0.35 ? { background: 'rgba(180,83,9,0.12)', color: AMBER } : { background: 'var(--surface-2)', color: 'var(--text-2)' }
+  return <span className="text-[11px] font-semibold rounded-md px-2 py-0.5 inline-flex items-center gap-1 cursor-help" style={style} title={`MVP members’ videos with this brand are approved ${pct}% of the time. Shown once 5 members have results.`}><Check size={11} />Approves {pct}%</span>
+}
+
+/** How often it answers MVP members' requests, and the middle wait, once five
+ *  members have messaged it. The only reply time anywhere: TRYBE shows none. */
+export function RepliesChip({ replies }: { replies: { rate: number | null; days: number | null } | null | undefined }) {
+  if (!replies || typeof replies.rate !== 'number') return null
+  const pct = Math.round(replies.rate * 100)
+  const style = replies.rate >= 0.5 ? { background: 'rgba(22,163,74,0.12)', color: GREEN } : replies.rate < 0.2 ? { background: 'rgba(180,83,9,0.12)', color: AMBER } : { background: 'var(--surface-2)', color: 'var(--text-2)' }
+  const wait = replies.days != null ? `, about ${Math.max(1, Math.round(replies.days))} day${Math.round(replies.days) === 1 ? '' : 's'}` : ''
+  return <span className="text-[11px] font-semibold rounded-md px-2 py-0.5 inline-flex items-center gap-1 cursor-help" style={style} title={`Of MVP members’ requests to this brand, it answered ${pct}%${replies.days != null ? `, in about ${Math.round(replies.days)} days (the middle wait)` : ''}. Shown once 5 members have messaged it.`}><Clock size={11} />Answers {pct}%{wait}</span>
 }

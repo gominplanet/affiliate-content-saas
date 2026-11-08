@@ -560,17 +560,21 @@ async function firstCollected(admin: Db): Promise<string | null> {
 /** For each brand: what members earn per approved video with it (pooled, 5
  *  members at least), and what this member earned. Empty, never wrong, when
  *  members' numbers are not set up (migration 428). */
-async function payResults(admin: Db, ownerId: string, ids: string[]): Promise<{ members: Map<string, number>; yours: Map<string, { earnings: number; approved: number }>; review: Map<string, { reviewDays: number | null; slowShare: number | null }> }> {
+async function payResults(admin: Db, ownerId: string, ids: string[]): Promise<{ members: Map<string, number>; yours: Map<string, { earnings: number; approved: number }>; review: Map<string, { reviewDays: number | null; slowShare: number | null }>; approval: Map<string, number> }> {
   const members = new Map<string, number>(), yours = new Map<string, { earnings: number; approved: number }>()
   const review = new Map<string, { reviewDays: number | null; slowShare: number | null }>()
+  // Members' approval rate, 0 to 1, once the pool shows it (Find brands
+  // shows and filters on it; it was on the brand page alone).
+  const approval = new Map<string, number>()
   const { rows, error: e } = await memberRows(admin, ids)
-  if (e) return { members, yours, review }
+  if (e) return { members, yours, review, approval }
   for (const [id, p] of poolBrands(rows, { exclude: ownerId })) {
     if (p.payPerApproved != null) members.set(id, p.payPerApproved)
+    if (p.approvalRate != null) approval.set(id, p.approvalRate)
     if (p.reviewDays != null || p.slowShare != null) review.set(id, { reviewDays: p.reviewDays ?? null, slowShare: p.slowShare ?? null })
   }
   for (const r of rows) if (r.user_id === ownerId && (r.approved ?? 0) > 0 && (r.earnings ?? 0) > 0) yours.set(r.brand_id, { earnings: r.earnings as number, approved: r.approved as number })
-  return { members, yours, review }
+  return { members, yours, review, approval }
 }
 
 /** Members' rows for these brands, with review speed when migration 431 is
@@ -2103,6 +2107,7 @@ Weigh posts pushed to social, and TRYBE brands they earned with or submitted to,
       const c = filterCheck({ perVideo: estBy.get(x.r.brand_id)?.dollars ?? null, creators: typeof x.r.total_creators === 'number' ? x.r.total_creators : null, stats: statsWith(x.r.brand_id), earningsBucket: x.r.earnings_bucket ?? null, amazon: amazonBy.get(x.r.brand_id) ?? null, amazonUnknown: amazonNotes.length > 0, starred: starredIds.has(x.r.brand_id), crowd: crowdBy.get(x.r.brand_id)?.level ?? null,
         spending: spendingOf(x.r), isNew: newBy.get(x.r.brand_id), reviewDays: results.review.get(x.r.brand_id)?.reviewDays ?? null, sells: sellsBy.get(x.r.brand_id) ?? null, spend: spendBy.get(x.r.brand_id)?.dollars ?? null,
         tiktokShop: tiktokShopOf(x.r), tierUp: tierLog ? !!tierLog.get(x.r.brand_id)?.up : null,
+        approval: results.approval.get(x.r.brand_id) ?? null, roomPay: roomPayBy.get(x.r.brand_id) ?? null,
         // A rating counts with STAR_MIN_REVIEWS reviews or more (Seb, 2026-10-24).
         rating: (ratingOf(x.r)?.reviews ?? 0) >= STAR_MIN_REVIEWS ? ratingOf(x.r)?.stars ?? null : null }, filters)
       for (const f of c.failed) hiddenBy[f] = (hiddenBy[f] ?? 0) + 1
@@ -2300,6 +2305,23 @@ Weigh posts pushed to social, and TRYBE brands they earned with or submitted to,
     }
     const shown = top100Shown ?? (includeMine ? ranked : ranked.filter(x => !isDone(x.r.brand_id)))
     const top = shown.slice(0, want)
+    // HOW OFTEN IT ANSWERS (Seb, 2026-11-08: "people are able to find brands
+    // or contact brands ... a lot easier"): other members' requests to the
+    // brands shown, and how many were answered, pooled like the brand page
+    // (lib/trybe-dossier replyPool: five members at least, never one creator's
+    // own). For the brands on screen only, so it costs one read.
+    const repliesBy = new Map<string, { rate: number | null; days: number | null }>()
+    if (top.length) {
+      const { data: sentRows, error: sentErr } = await admin.from('trybe_brands').select('user_id, brand_id, status, sent_at, replied_at')
+        .in('brand_id', top.map(x => x.r.brand_id as string)).neq('user_id', ownerId).in('status', ['sent', 'already']).not('sent_at', 'is', null).limit(20000)
+      if (!sentErr) {
+        const byBrand = new Map<string, Array<{ user_id: string; status: string | null; sent_at: string | null; replied_at: string | null }>>()
+        for (const r of (sentRows || []) as Array<{ user_id: string; brand_id: string; status: string | null; sent_at: string | null; replied_at: string | null }>) {
+          const list = byBrand.get(r.brand_id) ?? []; list.push(r); byBrand.set(r.brand_id, list)
+        }
+        for (const [id, list] of byBrand) { const p = replyPool(list); if (p.shown) repliesBy.set(id, { rate: p.rate, days: p.medianDays }) }
+      }
+    }
     // HOW MUCH OF THE LIST IS READ (Star brands): Meta ads, website rank and
     // Google, counted over every brand matched, not only the ones shown, so
     // a list ranked on a few counts never looks complete. And the brands with
@@ -2391,6 +2413,9 @@ Weigh posts pushed to social, and TRYBE brands they earned with or submitted to,
           room_pay: roomPayBy.get(r.brand_id) ?? null,
           is_new: newBy.get(r.brand_id) ?? false,
           review: results.review.get(r.brand_id) ?? null,
+          // Members' approval rate (0 to 1) and how often it answers requests.
+          approval: results.approval.get(r.brand_id) ?? null,
+          replies: repliesBy.get(r.brand_id) ?? null,
           statics: staticsOf(r.raw, r.about),
           sells: sellsBy.get(r.brand_id) ?? null,
           first_seen_at: r.first_seen_at ?? null,
