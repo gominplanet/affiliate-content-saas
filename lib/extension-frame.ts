@@ -14,7 +14,7 @@
  */
 
 import { rankScoutCopies, type ScoutCopy } from '@/lib/scout-copies'
-import { trybeTabError, TRYBE_NOT_OPEN, type TrybeTabState } from '@/lib/trybe-tab'
+import { trybeTabError, TRYBE_NOT_OPEN, trybeDropped, trybeDroppedWords, TRYBE_DROP_WAITS_MS, type TrybeTabState } from '@/lib/trybe-tab'
 import { scoutAtLeast, SCOUT_FB_GROUP_MIN_VERSION, SCOUT_FB_GROUP_MEDIA_MIN_VERSION, SCOUT_FB_GROUP_WATCH_MIN_VERSION, SCOUT_FB_ACCESS_MIN_VERSION, SCOUT_FB_GROUP_CLIP_MIN_VERSION, SCOUT_TRYBE_MIN_VERSION, SCOUT_TRYBE_TAB_OPEN_MIN_VERSION, SCOUT_HASHTAG_TRENDS_MIN_VERSION, SCOUT_FB_REEL_JOB_MIN_VERSION, SCOUT_FB_GROUP_SEARCH_MIN_VERSION, SCOUT_TIKTOK_LIBRARY_MIN_VERSION } from '@/lib/scout-version'
 
 export const SCOUT_EXTENSION_ID = process.env.NEXT_PUBLIC_SCOUT_EXTENSION_ID || ''
@@ -1338,13 +1338,26 @@ export async function requestTrybeApi(method: 'GET' | 'POST' | 'DELETE', path: s
   }
   // Writes are never queued, shared or repeated, and a read that started
   // before a write is never handed to a read after it (a reply, then the
-  // conversation read again to confirm it).
-  if (method !== 'GET') { trybeInFlight.clear(); return once() }
+  // conversation read again to confirm it). A write whose connection dropped
+  // is said as not known, never sent again by itself.
+  if (method !== 'GET') {
+    trybeInFlight.clear()
+    const w = await once()
+    return !w.ok && trybeDropped(w) ? { ...w, error: trybeDroppedWords(true) } : w
+  }
   const kept = trybeInFlight.get(path)
   if (kept) return kept
   const p: Promise<TrybeApiResult> = trybeSlot(async () => {
-    const r = await once()
-    return !r.ok && TRYBE_ASK_AGAIN(r) ? once() : r
+    let r = await once()
+    if (!r.ok && TRYBE_ASK_AGAIN(r)) r = await once()
+    // A dropped connection (the TRYBE tab reloading): asked again after a
+    // pause, twice, then said in words.
+    for (const wait of TRYBE_DROP_WAITS_MS) {
+      if (r.ok || !trybeDropped(r)) break
+      await new Promise((ok) => setTimeout(ok, wait))
+      r = await once()
+    }
+    return !r.ok && trybeDropped(r) ? { ...r, error: trybeDroppedWords(false) } : r
   }).finally(() => { if (trybeInFlight.get(path) === p) trybeInFlight.delete(path) })
   trybeInFlight.set(path, p)
   return p

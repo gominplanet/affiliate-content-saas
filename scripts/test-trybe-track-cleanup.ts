@@ -97,8 +97,8 @@ check('a flat fee plus a percent on one line is two terms', JSON.stringify(readT
 // names Cole: his advice is said in MVP's own voice.
 {
   const EF = read('lib/extension-frame.ts')
-  check('TRYBE reads go a few at a time, shared, asked once more on a timeout', /const TRYBE_READS_AT_ONCE = 3/.test(EF) && /const kept = trybeInFlight\.get\(path\)/.test(EF) && /return !r\.ok && TRYBE_ASK_AGAIN\(r\) \? once\(\) : r/.test(EF))
-  check('a write is never queued or repeated, and ends sharing of earlier reads', /if \(method !== 'GET'\) \{ trybeInFlight\.clear\(\); return once\(\) \}/.test(EF))
+  check('TRYBE reads go a few at a time, shared, asked once more on a timeout', /const TRYBE_READS_AT_ONCE = 3/.test(EF) && /const kept = trybeInFlight\.get\(path\)/.test(EF) && /if \(!r\.ok && TRYBE_ASK_AGAIN\(r\)\) r = await once\(\)/.test(EF))
+  check('a write is never queued or repeated, and ends sharing of earlier reads', /if \(method !== 'GET'\) \{\n\s*trybeInFlight\.clear\(\)\n\s*const w = await once\(\)/.test(EF) && !/if \(method !== 'GET'\)[\s\S]{0,200}once\(\)[\s\S]{0,80}once\(\)\n\s*\}/.test(EF))
   check('My brands reads the ad numbers after the brand list', /useTrybeAds\(canRead && readAt != null, '30d'\)/.test(MB))
   check('a timeout is said in words', /e === 'timeout' \? 'TRYBE did not answer within 75 seconds, asked twice/.test(MB))
   const { readdirSync, statSync } = require('node:fs') as typeof import('node:fs')

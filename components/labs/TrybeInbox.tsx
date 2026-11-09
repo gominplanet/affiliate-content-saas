@@ -231,6 +231,10 @@ export default function TrybeInbox({ scoutVersion, allowed, openRequest, onOpene
   directory?: Array<{ id: string; name: string; website?: string | null }>
 }) {
   const [convos, setConvos] = useState<Conversation[] | null>(null)
+  // The last list read, so a failed refresh keeps it on screen (Seb, 2026-11-09:
+  // a dropped read wiped the inbox to one red line, "this happens too often").
+  const convosRef = useRef<Conversation[]>([])
+  useEffect(() => { convosRef.current = convos || [] }, [convos])
   const [listNote, setListNote] = useState<string | null>(null)
   const [loadingList, setLoadingList] = useState(false)
   const [openId, setOpenId] = useState<string | null>(null)
@@ -277,7 +281,7 @@ export default function TrybeInbox({ scoutVersion, allowed, openRequest, onOpene
         if (po) setMyName(fullName(po as Obj))
       }
       const r = await requestTrybeApi('GET', '/backend/api/channels?page=1&limit=100')
-      if (!r.ok) { setListNote(errWords(r)); setConvos([]); return null }
+      if (!r.ok) { const had = convosRef.current.length; setListNote(had ? `${errWords(r)}. The chats below are from the last read.` : errWords(r)); return null }
       const list = listOf(r.json).map(readConversation).filter((c): c is Conversation => !!c).sort((a, b) => b.at - a.at)
       setConvos(list)
       onConvos?.(list)

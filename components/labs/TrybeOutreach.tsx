@@ -549,7 +549,7 @@ export default function TrybeOutreach({ preview = false, v2 = false, layout = fa
   // THE NEW TRYBE (Seb, 2026-11-06): team only first (labs-preview
   // 'trybe_v2'), so members keep the page they know until it is opened to them.
   const [dossierOf, setDossierOf] = useState<{ id: string; name: string } | null>(null)
-  const [scriptsFor, setScriptsFor] = useState<{ id: string; name: string } | null>(null)
+  const [scriptsFor, setScriptsFor] = useState<{ id: string; name: string; product?: string | null } | null>(null)
   const openDossier = useCallback((id: string, name: string) => setDossierOf({ id, name }), [])
   // Find brands as a table or as cards (the new TRYBE), kept for the next visit.
   const [listView, setListView] = useState<'table' | 'cards'>('table')
@@ -2477,7 +2477,9 @@ export default function TrybeOutreach({ preview = false, v2 = false, layout = fa
       {tab === 'upload' && <TrybeUpload inbox={inbox} canChat={canInbox} onOpenChat={(id) => { setOpenChat(o => ({ id, n: (o?.n ?? 0) + 1 })); setTab('inbox') }} />}
 
       {tab === 'filmed' && !lockedTab && (
-        <TrybeTikTokMatch hasCore={!!core.trim()} onWrite={(ids) => draftPicked(ids)} scoutOpens={scoutOpens} />
+        <TrybeTikTokMatch hasCore={!!core.trim()} onWrite={(ids) => draftPicked(ids)} scoutOpens={scoutOpens}
+          onSend={peekActions ? (id) => peekActions.send(id) : undefined} sendBlocked={sendBlocked && !/Nothing drafted/.test(sendBlocked) ? sendBlocked : null}
+          onScripts={(id, name, product) => { setScriptsFor({ id, name, product }); go('create') }} onOpenQueue={() => go('queue')} />
       )}
 
       {tab === 'stars' && !lockedTab && (

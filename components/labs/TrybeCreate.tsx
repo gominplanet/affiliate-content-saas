@@ -29,7 +29,7 @@ const AMBER = '#B45309'
 export default function TrybeCreate({ canRead, isAdmin, onFind, start, onStarted }: {
   canRead: boolean; isAdmin: boolean; onFind: () => void
   /** Opened from a brand's page ("Make scripts for it"): start on that brand. */
-  start?: { id: string; name: string } | null
+  start?: { id: string; name: string; product?: string | null } | null
   onStarted?: () => void
 }) {
   const [brands, setBrands] = useState<MyBrand[] | null>(null)
@@ -100,10 +100,13 @@ export default function TrybeCreate({ canRead, isAdmin, onFind, start, onStarted
   // Scripts are made for brands you work with on TRYBE, so one that is not
   // among them is said by name, never silently dropped back to the list.
   const [startMiss, setStartMiss] = useState<string | null>(null)
+  // What it sells, when the page that opened this knows (Match my TikTok): the
+  // way to scripts from the product in Video Scripts while the brand is not yours yet.
+  const [missProduct, setMissProduct] = useState<string | null>(null)
   useEffect(() => {
     if (!start || !brands) return
     const b = brands.find((x) => x.id === start.id)
-    if (b) { setStartMiss(null); void pickBrand(b) } else setStartMiss(start.name)
+    if (b) { setStartMiss(null); void pickBrand(b) } else { setStartMiss(start.name); setMissProduct(start.product || start.name) }
     onStarted?.()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [start, brands])
@@ -161,7 +164,7 @@ export default function TrybeCreate({ canRead, isAdmin, onFind, start, onStarted
       {/* 1. The brand */}
       {step === 1 && (
         <section className={card} style={cardStyle}>
-          {startMiss && <p className="text-[13px] mb-3 inline-flex items-start gap-1.5" style={{ color: AMBER }}><AlertTriangle size={14} className="mt-0.5 shrink-0" /> {startMiss} is not one of the brands you work with on TRYBE yet, so MVP cannot open its brief for scripts. Message it first, or pick one of yours below.</p>}
+          {startMiss && <p className="text-[13px] mb-3 inline-flex items-start gap-1.5" style={{ color: AMBER }}><AlertTriangle size={14} className="mt-0.5 shrink-0" /> {startMiss} is not one of the brands you work with on TRYBE yet, so MVP cannot open its brief for scripts. Message it first, or pick one of yours below.{missProduct && <> To start filming now, <a href={`/video-scripts?product=${encodeURIComponent(missProduct)}`} className="font-semibold underline">write scripts from its product in Video Scripts</a>.</>}</p>}
           <div className="flex flex-wrap items-center gap-3 mb-3">
             <h2 className="text-[20px] font-bold">Which brand are you making videos for?</h2>
             {(brands?.length ?? 0) > 8 && (

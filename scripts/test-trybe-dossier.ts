@@ -144,7 +144,7 @@ check('a home with a failed read is said and never kept for 20 minutes', /readEr
   const O = read('components/labs/TrybeOutreach.tsx')
   check('a new brand page starts fresh (keyed by brand)', /<TrybeDossier key=\{dossierOf\.id\}/.test(O))
   check('the home tab only opens with the new TRYBE switched on', /if \(t === 'home' && !v2\) return/.test(O))
-  check('Make scripts for it opens Make videos on that brand', /setScriptsFor\(\{ id, name: nm \}\)/.test(O) && /start=\{scriptsFor\}/.test(O) && /start\?: \{ id: string; name: string \}/.test(read('components/labs/TrybeCreate.tsx')))
+  check('Make scripts for it opens Make videos on that brand', /setScriptsFor\(\{ id, name: nm \}\)/.test(O) && /start=\{scriptsFor\}/.test(O) && /start\?: \{ id: string; name: string(; product\?: string \| null)? \}/.test(read('components/labs/TrybeCreate.tsx')))
   const D = read('components/labs/TrybeDossier.tsx')
   check('the brand page waits while another send runs, and says why a send cannot start', /actions\.busy/.test(D) && /actions\.sendBlocked/.test(D))
   const B = read('components/labs/TrybeBriefCheck.tsx')

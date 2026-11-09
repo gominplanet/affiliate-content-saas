@@ -66,7 +66,8 @@ import { samplePool, replyPool, metaSeries, timelineOf, dossierProducts } from '
 import { evidenceOf, retainerOf } from '@/lib/trybe-evidence'
 import { dailySeries, windowTotals, adsMovers, payMoves, payIndex, type ChangeRow } from '@/lib/trybe-home'
 import { TOP100, adSpendProof, samplesProof, sampleSignsByBrand, activityCounts, activityDigest, cleanProfile, pushesOf, readTop100Ask, readCatalogSamples, CATALOG_KEEP_DAYS, CATALOG_READS_MAX, CATALOG_REFRESH_CHUNK, type Activity, type CatalogSamples } from '@/lib/trybe-top100'
-import { filmedBrandIds } from '@/lib/tiktok-library'
+import { filmedBrandIds, filmedVideos } from '@/lib/tiktok-library'
+import { filmedLine, withFilmedLine } from '@/lib/tiktok-match'
 import {
   clampCap, countsTowardCap, sanitizeScanned, sendUrl, tidyDraft,
   DRAFT_SYSTEM, draftUserPrompt, DEFAULT_DAILY_CAP, type ScannedBrand,
@@ -2830,6 +2831,10 @@ Weigh posts pushed to social, and TRYBE brands they earned with or submitted to,
     // The creator's own messages to brands, for their voice (lib/trybe-voice).
     const draftVoice = readVoiceBody(body.voice)
     const { data: rows } = await admin.from('trybe_brands').select('*').eq('user_id', ownerId).in('brand_id', ids)
+    // A BRAND YOU ALREADY FILMED (Match my TikTok): the request carries one
+    // line with the video, its strongest match first (lib/tiktok-match
+    // filmedLine). Nothing changes for any other brand, or before migration 465.
+    const filmedFor = await filmedVideos(admin, ownerId, ids).catch(() => new Map<string, { url: string; product: string | null }>())
     const client = createAnthropicClient()
     const results = await Promise.all(((rows || []) as Array<Record<string, any>>).map(async (r) => { // eslint-disable-line @typescript-eslint/no-explicit-any
       if (r.status === 'sent' || r.status === 'sending' || r.status === 'already') return { brandId: r.brand_id, ok: false, error: 'Already requested.' }
@@ -2857,6 +2862,8 @@ Weigh posts pushed to social, and TRYBE brands they earned with or submitted to,
         const firstHit = text ? termsHit(text) : null
         if (firstHit) text = await write(`\n\n(Your last try said “${firstHit}”, which talks about pay, rates or prices. On TRYBE the brand sets the pay. Write it again without that or anything like it.)`)
         if (!text) throw new Error('The draft came back empty.')
+        const fv = filmedFor.get(r.brand_id)
+        if (fv) text = withFilmedLine(text, filmedLine({ core: settings.coreMessage, url: fv.url, product: fv.product, brand: String(r.name || '') }))
         const lastHit = termsHit(text)
         if (lastHit) throw new Error(`The draft kept saying “${lastHit}”, which reads as talk about pay or rates. TRYBE brands set the pay, so it was not kept. Try again.`)
         const { data: saved, error: upErr } = await admin.from('trybe_brands').update({

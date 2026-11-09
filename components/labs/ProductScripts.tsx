@@ -40,6 +40,11 @@ function keep(list: Kept[]) { try { localStorage.setItem(RECENT_KEY, JSON.string
 
 export default function ProductScripts() {
   const [input, setInput] = useState('')
+  // A product handed over in the address (Brand scripts, from Match my TikTok)
+  // fills the box; nothing is written until the creator presses the button.
+  useEffect(() => {
+    try { const p = new URLSearchParams(window.location.search).get('product'); if (p) setInput(p.slice(0, 300)) } catch { /* no address */ }
+  }, [])
   const [notes, setNotes] = useState('')
   const [notesOpen, setNotesOpen] = useState(false)
   const [image, setImage] = useState<string | null>(null)

@@ -18,7 +18,7 @@
 //   - the page says how the scan ended, not just "0 brands matched"
 import { readFileSync } from 'node:fs'
 import { cleanHandle, captionTags, parseWebItem, parseOfficialVideo, productTags, itemsOfBody, cleanProfile, withProductCount, type TikTokVideo } from '../lib/tiktok-videos'
-import { buildIndex, matchVideos, nameIsDistinct, brandName, productKey, isMatch, type MatchBrand } from '../lib/tiktok-match'
+import { buildIndex, matchVideos, nameIsDistinct, brandName, productKey, isMatch, filmedLine, withFilmedLine, type MatchBrand } from '../lib/tiktok-match'
 import { tiktokScopes, videoListSwitchOn, scopesIncludeVideoList, readVideoList } from '../lib/tiktok-video-list'
 import { filterCheck, readFilters, anyFilterOn } from '../lib/trybe-finder'
 import { PRESETS } from '../components/labs/TrybeFinderControls'
@@ -108,6 +108,31 @@ check('You filmed on TikTok is a quick list', PRESETS.some((p) => p.id === 'film
 const R = read('app/api/labs/trybe/route.ts')
 check('Find brands adds the filmed brands directly under the filter, and marks each card', /filmedBrandIds\(admin, ownerId\)/.test(R) && /filmed: filmedBy\.has\(x\.r\.brand_id\)/.test(R) && /filmed: filmedBy\.get\(r\.brand_id\) \?\? null/.test(R))
 check('each card wears the Filmed on TikTok chip', /<FilmedChip filmed=\{b\.filmed\} \/>/.test(read('components/labs/TrybeOutreach.tsx')))
+
+// ── RIGHT FROM THE MATCH: REQUEST AND SCRIPTS (Seb, 2026-11-09: "is there a
+// direct way right there to request partnership with the brand and then also
+// create scripts all from there?") ──
+{
+  const url = 'https://www.tiktok.com/@gominreviews/video/7300000000000000001'
+  const line = filmedLine({ core: 'Hi! I review kitchen gear for 40K followers.', url, product: 'Ninja CREAMi Deluxe $199.99', brand: 'Ninja Kitchen' })
+  check('a request to a brand you filmed names your TikTok video of it, in your voice, never a price', line === `I already made a TikTok video featuring your Ninja CREAMi Deluxe: ${url}`)
+  check('a team writes we', /^We already made/.test(filmedLine({ core: 'We are a couple who review home finds.', url, brand: 'Arcadia' }) || ''))
+  check('no TikTok video address, no line', filmedLine({ core: 'x', url: 'https://example.com/v/1', brand: 'B' }) === null)
+  const draft = 'Hi Ninja Kitchen, so glad to have found you here.\n\nI review kitchen gear.\n\nSpeak soon,\nSeb'
+  const out = withFilmedLine(draft, line)
+  check('the line goes right after the greeting, and the rest is kept as written', out.split('\n\n')[1] === line && out.endsWith('Speak soon,\nSeb') && out.startsWith('Hi Ninja Kitchen'))
+  check('it is never added twice', withFilmedLine(out, line) === out)
+  const R2 = read('app/api/labs/trybe/route.ts')
+  check('the request writer adds it for matched brands only, after the pay check', /const filmedFor = await filmedVideos\(admin, ownerId, ids\)/.test(R2) && /if \(fv\) text = withFilmedLine\(text, filmedLine\(/.test(R2) && R2.indexOf('withFilmedLine(text') < R2.indexOf('const lastHit = termsHit(text)'))
+  const P2 = read('components/labs/TrybeTikTokMatch.tsx')
+  check('each match has Request partnership, then Send request now and a way to read it first, and Write scripts', /Request partnership/.test(P2) && /Send request now/.test(P2) && /Read it first in Ready to send/.test(P2) && /Write scripts/.test(P2))
+  check('a request already gone shows where it stands instead of a second request', /\{!gone && !drafted && \(/.test(P2))
+  check('sending says why it cannot start, never a dead button', /title=\{actions\.sendBlocked \|\| /.test(P2) && /\{drafted && actions\.sendBlocked && <span/.test(P2))
+  const O = read('components/labs/TrybeOutreach.tsx')
+  check('the TRYBE page hands the card its send, its scripts and Ready to send', /onSend=\{peekActions \? \(id\) => peekActions\.send\(id\) : undefined\}/.test(O) && /onScripts=\{\(id, name, product\) => \{ setScriptsFor\(\{ id, name, product \}\); go\('create'\) \}\}/.test(O))
+  const C = read('components/labs/TrybeCreate.tsx')
+  check('before the brand accepts, Brand scripts offers scripts from its product in Video Scripts', /href=\{`\/video-scripts\?product=\$\{encodeURIComponent\(missProduct\)\}`\}/.test(C) && /get\('product'\)/.test(read('components/labs/ProductScripts.tsx')))
+}
 
 // ── THE OFFICIAL ROUTE, OFF UNTIL TIKTOK APPROVES ──
 check('MVP never asks TikTok for video.list before the switch is on', !tiktokScopes({}).includes('video.list') && tiktokScopes({ TIKTOK_VIDEO_LIST: 'on' }).endsWith(',video.list') && !videoListSwitchOn({ TIKTOK_VIDEO_LIST: 'yes please' }))

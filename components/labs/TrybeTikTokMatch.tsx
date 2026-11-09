@@ -21,7 +21,7 @@
 
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { toast } from 'sonner'
-import { Loader2, ScanSearch, Square, ExternalLink, Check, RefreshCw, Cloud, Eye, ShoppingBag, AtSign, Hash, Type, Package } from 'lucide-react'
+import { Loader2, ScanSearch, Square, ExternalLink, Check, RefreshCw, Cloud, Eye, ShoppingBag, AtSign, Hash, Type, Package, Send, Clapperboard } from 'lucide-react'
 import { cleanHandle } from '@/lib/tiktok-videos'
 import { isMatch, SURENESS_WORDS, type MatchKind, type Sureness } from '@/lib/tiktok-match'
 import { requestTikTokLibraryAccess, requestTikTokLibraryScan, requestTikTokLibraryStop, requestTikTokLibraryDaily } from '@/lib/extension-frame'
@@ -54,7 +54,9 @@ const SURE_CLS: Record<Sureness, string> = {
   likely: 'bg-[rgba(13,148,136,0.14)] text-[#0F766E] dark:text-[#2DD4BF]',
   maybe: 'bg-[color:var(--surface-2)] text-[color:var(--text-2)]',
 }
-const ASKED: Record<string, string> = { sent: 'Asked on TRYBE', sending: 'Sending now', already: 'Already asked', drafted: 'In Ready to send', replied: 'Replied', accepted: 'Accepted' }
+const ASKED: Record<string, string> = { sent: 'Asked on TRYBE', sending: 'Sending now', already: 'Already asked', drafted: 'Request written, not sent', replied: 'Replied', accepted: 'Accepted' }
+/** Statuses where the request has gone (or is going) to TRYBE. */
+const GONE = new Set(['sent', 'sending', 'already', 'replied', 'accepted'])
 
 const day = (at: string | null) => { const t = at ? Date.parse(at) : NaN; return Number.isFinite(t) ? new Date(t).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : null }
 const compact = (n: number | null) => (n == null ? null : n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1).replace(/\.0$/, '')}M` : n >= 1000 ? `${(n / 1000).toFixed(1).replace(/\.0$/, '')}K` : String(n))
@@ -66,7 +68,23 @@ async function post(body: Record<string, unknown>) {
   return j
 }
 
-export default function TrybeTikTokMatch({ hasCore, onWrite, scoutOpens = false }: { hasCore: boolean; onWrite: (ids: string[]) => Promise<string[] | void>; scoutOpens?: boolean }) {
+export interface MatchActions {
+  /** Write the request for one brand into Ready to send. */
+  request: (id: string) => Promise<void>
+  /** Send a written request now, through SCOUT. */
+  send?: (id: string) => Promise<void>
+  /** Why sending cannot start right now (TRYBE not allowed, its tab closed, the daily limit). */
+  sendBlocked?: string | null
+  /** Open Brand scripts for the brand, with the product the videos show. */
+  scripts?: (id: string, name: string, product: string | null) => void
+  openQueue?: () => void
+}
+
+export default function TrybeTikTokMatch({ hasCore, onWrite, scoutOpens = false, onSend, sendBlocked = null, onScripts, onOpenQueue }: {
+  hasCore: boolean; onWrite: (ids: string[]) => Promise<string[] | void>; scoutOpens?: boolean
+  onSend?: (id: string) => Promise<void>; sendBlocked?: string | null
+  onScripts?: (id: string, name: string, product: string | null) => void; onOpenQueue?: () => void
+}) {
   const [data, setData] = useState<Data | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [handle, setHandle] = useState('')
@@ -160,6 +178,12 @@ export default function TrybeTikTokMatch({ hasCore, onWrite, scoutOpens = false 
   const shown = useMemo(() => matches.filter(isMatch), [matches])
   const maybes = useMemo(() => matches.filter((m) => !isMatch(m)), [matches])
   const askable = (id: string) => !data?.brands?.[id]?.requested
+  // One brand at a time from its card: write the request, send it, or scripts.
+  const actions: MatchActions = {
+    request: async (id) => { if (!hasCore) { toast.error('Write your core message in Find brands first: requests are written from it.'); return } await onWrite([id]); await load() },
+    send: onSend ? async (id) => { await onSend(id); await load() } : undefined,
+    sendBlocked, scripts: onScripts, openQueue: onOpenQueue,
+  }
   const pickable = shown.filter((m) => askable(m.brandId))
 
   async function writeRequests() {
@@ -301,7 +325,7 @@ export default function TrybeTikTokMatch({ hasCore, onWrite, scoutOpens = false 
             </p>
           ) : (
             <div className="grid grid-cols-[minmax(0,1fr)] gap-3">
-              {shown.map((m) => <MatchCard key={m.brandId} m={m} videos={data?.videos ?? {}} brand={data?.brands?.[m.brandId]} picked={picked.has(m.brandId)} scoutOpens={scoutOpens}
+              {shown.map((m) => <MatchCard key={m.brandId} m={m} videos={data?.videos ?? {}} brand={data?.brands?.[m.brandId]} picked={picked.has(m.brandId)} scoutOpens={scoutOpens} actions={actions}
                 onPick={(on) => setPicked((p) => { const n = new Set(p); if (on) n.add(m.brandId); else n.delete(m.brandId); return n })} />)}
             </div>
           )}
@@ -312,7 +336,7 @@ export default function TrybeTikTokMatch({ hasCore, onWrite, scoutOpens = false 
               </button>
               {showMaybe && (
                 <div className="grid grid-cols-[minmax(0,1fr)] gap-3 mt-3">
-                  {maybes.map((m) => <MatchCard key={m.brandId} m={m} videos={data?.videos ?? {}} brand={data?.brands?.[m.brandId]} picked={picked.has(m.brandId)} scoutOpens={scoutOpens}
+                  {maybes.map((m) => <MatchCard key={m.brandId} m={m} videos={data?.videos ?? {}} brand={data?.brands?.[m.brandId]} picked={picked.has(m.brandId)} scoutOpens={scoutOpens} actions={actions}
                     onPick={(on) => setPicked((p) => { const n = new Set(p); if (on) n.add(m.brandId); else n.delete(m.brandId); return n })} />)}
                 </div>
               )}
@@ -350,8 +374,22 @@ function ScanEnd({ scan, total, kept, matched }: { scan: Scan; total: number | n
   return <div>{line}{chips}</div>
 }
 
-function MatchCard({ m, videos, brand, picked, onPick, scoutOpens }: { m: Match; videos: Record<string, Video>; brand?: { website: string | null; requested: string | null }; picked: boolean; onPick: (on: boolean) => void; scoutOpens: boolean }) {
-  const asked = brand?.requested ? ASKED[brand.requested] || 'On your TRYBE list' : null
+/** The product these videos show, for scripts: a TikTok Shop tag's title, else
+ *  the product the caption named, else null (Brand scripts uses the brief). */
+function productOf(m: Match, videos: Record<string, Video>): string | null {
+  for (const id of m.videoIds) for (const p of videos[id]?.products || []) if (p.title) return p.title
+  const named = m.how.find((h) => h.kind === 'product')?.text.match(/\u201C([^\u201D]+)\u201D/)
+  return named ? named[1] : null
+}
+
+function MatchCard({ m, videos, brand, picked, onPick, scoutOpens, actions }: { m: Match; videos: Record<string, Video>; brand?: { website: string | null; requested: string | null }; picked: boolean; onPick: (on: boolean) => void; scoutOpens: boolean; actions: MatchActions }) {
+  const [busy, setBusy] = useState<'request' | 'send' | null>(null)
+  const status = brand?.requested ?? null
+  const asked = status ? ASKED[status] || 'On your TRYBE list' : null
+  const gone = !!status && GONE.has(status)
+  const drafted = status === 'drafted'
+  const run = async (kind: 'request' | 'send', fn: () => Promise<void>) => { setBusy(kind); try { await fn() } finally { setBusy(null) } }
+  const btn = 'rounded-lg px-3 py-1.5 text-[12.5px] font-bold inline-flex items-center gap-1.5 disabled:opacity-50'
   const joined = m.joinedTrybeAt && Date.now() - Date.parse(m.joinedTrybeAt) < 30 * 86_400_000 ? day(m.joinedTrybeAt) : null
   const vids = m.videoIds.map((id) => videos[id]).filter(Boolean).slice(0, 4)
   return (
@@ -393,6 +431,32 @@ function MatchCard({ m, videos, brand, picked, onPick, scoutOpens }: { m: Match;
             {m.videoIds.length > vids.length && <span className="self-center text-[12px] shrink-0" style={soft}>and {m.videoIds.length - vids.length} more</span>}
           </div>
         )}
+        {/* RIGHT FROM THE MATCH (Seb, 2026-11-09: "is there a direct way right
+            there to request partnership with the brand and then also create
+            scripts all from there?"). */}
+        <div className="mt-2.5 flex flex-wrap items-center gap-2">
+          {!gone && !drafted && (
+            <button type="button" onClick={() => void run('request', () => actions.request(m.brandId))} disabled={!!busy} className={btn} style={{ background: ACCENT, color: '#fff' }}
+              title="MVP writes your request from your core message and adds a line with your TikTok video of this brand. It waits in Ready to send for you to read or send.">
+              {busy === 'request' ? <Loader2 size={13} className="animate-spin" /> : <Send size={13} />} Request partnership
+            </button>
+          )}
+          {drafted && actions.send && (
+            <button type="button" onClick={() => void run('send', () => actions.send!(m.brandId))} disabled={!!busy || !!actions.sendBlocked} title={actions.sendBlocked || 'SCOUT sends it on TRYBE now, under your daily limit.'} className={btn} style={{ background: ACCENT, color: '#fff' }}>
+              {busy === 'send' ? <Loader2 size={13} className="animate-spin" /> : <Send size={13} />} Send request now
+            </button>
+          )}
+          {drafted && actions.openQueue && (
+            <button type="button" onClick={actions.openQueue} className="text-[12.5px] font-semibold underline" style={{ color: ACCENT }}>Read it first in Ready to send</button>
+          )}
+          {actions.scripts && (
+            <button type="button" onClick={() => actions.scripts!(m.brandId, m.name, productOf(m, videos))} className={`${btn} border`} style={{ borderColor: 'var(--border-2)', color: 'var(--text)' }}
+              title="Brand scripts for this brand from its TRYBE brief. Before it accepts you, write them from its product in Video Scripts.">
+              <Clapperboard size={13} /> Write scripts
+            </button>
+          )}
+          {drafted && actions.sendBlocked && <span className="text-[12px]" style={{ color: AMBER }}>{actions.sendBlocked}</span>}
+        </div>
       </div>
     </div>
   )
