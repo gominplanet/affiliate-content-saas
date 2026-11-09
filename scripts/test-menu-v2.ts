@@ -9,14 +9,14 @@
 // dropped, TRYBE right under the Dashboard, Needs you first on the Dashboard,
 // and the market news shown once, in What changed.
 import { readFileSync } from 'node:fs'
-import { canUsePreview } from '../lib/labs-preview'
+import { previewOpenToPro } from '../lib/labs-preview'
 import { MENU_V2, REDRAWN, regroupMenu } from '../lib/menu-areas'
 
 const fails: string[] = []
 const check = (name: string, ok: boolean | undefined) => { if (!ok) fails.push(name) }
 const read = (f: string) => readFileSync(f, 'utf8')
 
-check('admin only until Seb opens it', canUsePreview('menu_v2', 'admin') && !canUsePreview('menu_v2', 'pro'))
+check('on for every account on every plan (Seb, 2026-11-09: "turn it on for everyone")', previewOpenToPro('menu_v2'))
 
 // ── THE PLAN ──
 check('one job per area, in the order a creator works', MENU_V2.map((a) => a.label).join() === 'Find products,Make videos,Post videos,Social,Blog,Brand deals')
@@ -56,13 +56,13 @@ if (missing.length) fails.push(`not in the plan: ${missing.join(', ')}`)
 }
 
 // ── IN THE SHELL ──
-check('the shell redraws the menu only under the switch', /const menuV2 = canUsePreview\('menu_v2', effectiveTier\)/.test(S) && /const NAV_GROUPS: NavGroupDef\[\] = menuV2 \? regroupMenu<NavItemDef, NavGroupDef>\(builtNav\) : builtNav/.test(S))
+check('the shell redraws the menu for every account once open', /const menuV2 = previewOpenToPro\('menu_v2'\) \|\| canUsePreview\('menu_v2', effectiveTier\)/.test(S) && /const NAV_GROUPS: NavGroupDef\[\] = menuV2 \? regroupMenu<NavItemDef, NavGroupDef>\(builtNav\) : builtNav/.test(S))
 check('TRYBE sits right under the Dashboard in the redrawn menu', /if \(menuV2\) \{\n\s*const at = out\.findIndex\(\(s2\) => s2\.slug === 'trybe'\)/.test(S) && /out\.splice\(dash \+ 1, 0, t\)/.test(S))
 check('every new area has its colour and icon, and is listed on the Dashboard', ['Post videos', 'Social', 'Brand deals'].every((l) => S.includes(`'${l}':`) && S.includes(`'${l}': <`)) && /const JOB_SECTIONS = \[[^\]]*'Post videos', 'Social', 'Brand deals'\]/.test(S))
 
 // ── THE DASHBOARD ──
 const D = read('components/dashboard/TealDashboard.tsx')
-check('Needs you comes first under the switch, right under the welcome', /const menuV2 = viewTier \? canUsePreview\('menu_v2', viewTier\) : false/.test(D) && D.includes('{menuV2 ? <>{needsBlock}{pinnedBlock}{monthBlock}</> : <>{pinnedBlock}{monthBlock}{needsBlock}</>}'))
+check('Needs you comes first, right under the welcome', /const menuV2 = previewOpenToPro\('menu_v2'\) \|\| \(viewTier \? canUsePreview\('menu_v2', viewTier\) : false\)/.test(D) && D.includes('{menuV2 ? <>{needsBlock}{pinnedBlock}{monthBlock}</> : <>{pinnedBlock}{monthBlock}{needsBlock}</>}'))
 
 // ── TRYBE: TODAY APART FROM WHAT CHANGED ──
 const H = read('components/labs/TrybeHome.tsx')

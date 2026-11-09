@@ -51,13 +51,14 @@ export const WHATS_NEW: WhatsNewItem[] = [
     desc: 'Your menu now lists everything Pro has, including TRYBE, Drop, the Review Editor, Video Scripts and Clip Factory. The ones your plan does not include wear a small lock and the word Pro. Open one to see what it does and how to move to Pro. Everything your plan has today stays exactly as it is.',
     href: '/dashboard',
   },
-  // A cleaner menu (Seb, 2026-11-08: "turn it on for everyone").
+  // A cleaner menu (Seb, 2026-11-08), redrawn one job per area (Seb,
+  // 2026-11-09: "turn it on for everyone").
   {
-    date: '2026-11-08',
+    date: '2026-11-09',
     badge: 'NEW',
     tone: '#0B7A6E',
-    title: 'A cleaner menu',
-    desc: 'The menu on the left now shows only the main areas: Find products, TRYBE, Make videos, Blog, Share, Work with brands, Your setup and Help. Open one to see all of its tools on one page, each with a line on what it does and a pin to put it at the top of your Dashboard. Inside a tool, the strip at the top takes you to the others in the same area. YouTube comments and Instagram Auto-DM are now under Share.',
+    title: 'A clearer menu, one job per area',
+    desc: 'The menu on the left now shows the main areas only, one job each: TRYBE right under the Dashboard, then Find products, Make videos, Post videos, Social, Blog and Brand deals. Post videos holds Drop, Bulk Amazon upload, YouTube Co-Pilot and YouTube comments. Share is now Social, Work with brands is now Brand deals, and the Deals Hub sits in Blog because it writes blog posts. Open an area to see all its tools on one page, each with a pin to put it at the top of your Dashboard, where Needs you now comes first.',
     href: '/dashboard',
   },
   // The new look, open to Pro (Seb, 2026-11-03: "open it to pro").

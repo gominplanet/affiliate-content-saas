@@ -98,31 +98,38 @@ rather than inventing a feature.
 
 ## NAVIGATION OVERVIEW
 
-The left sidebar starts with Dashboard, then groups tools by job under
-collapsible headings: Find products, Make videos, Blog, Share, Work with
-brands, Your setup, Help. Some items open a page with tabs along the top; a
-sidebar direction written as "Section → Item → Tab" means click the item,
-then the tab. A topbar "Search MVP" box jumps straight to any tool by name.
+The left sidebar starts with Dashboard, then TRYBE, then groups tools by job,
+one job per area (since 2026-11-09): Find products, Make videos, Post videos,
+Social, Blog, Brand deals, Your setup, Help. Each area opens a page listing its
+tools, and every tool's page has a strip of its sister tools at the top. Some
+items open a page with tabs along the top; a sidebar direction written as
+"Section → Item → Tab" means click the item, then the tab. A topbar "Search
+MVP" box jumps straight to any tool by name.
 
-What sits under each heading (renamed tools show their old name once, since
-members may still use it):
+What sits under each area (renamed tools and areas show their old name once,
+since members may still use it):
+- TRYBE: its own page, right under the Dashboard (menu inside: Home, Find
+  brands, Messages, Videos, Earnings).
 - Find products: Product research (tabs: Catalog search, Amazon research),
   Deal Radar, Brand campaigns (tabs: All campaigns, Joined, Saved, Best
   paying), Partner programs (tabs: Levanta, PartnerBoost and Walmart,
   Wayward, LTK), Idea lists.
-- Make videos: Drop, Review Editor, Video Scripts, YouTube Co-Pilot,
-  Thumbnails (formerly Thumbnail Generator), Scriptwriter, Clip Factory, Bulk
-  Amazon upload (formerly Liftoff), Amazon Live (tabs: Prep, Follow-up).
-- Blog: Blog posts (formerly Blog Post Generator), Comparisons and guides
-  (tabs: Comparisons, Buying guides), Articles, Ended deals, SEO and indexing,
-  Ads, Blog design (formerly Customize Blog).
-- Share: Social Push, Deals Hub, Social designs (formerly Social
-  Influencer), Social Launch Kit, Meta Hub, Group Post Queue, YouTube comments
-  (tabs: Pinned comments, On sale comments, formerly Encore), Instagram
-  Auto-DM, Link in Bio, Passport links. (YouTube comments and Instagram
-  Auto-DM moved here from Make videos on 2026-11-08.)
-- Work with brands: Brand pitches (formerly Brand Deals), Brand inbox (tabs:
-  Inquiries, History, formerly Brand Hub, and Recap).
+- Make videos: Video Scripts, Scriptwriter, Review Editor, Thumbnails
+  (formerly Thumbnail Generator), Clip Factory, Amazon Live (tabs: Prep,
+  Follow-up).
+- Post videos: Drop, Bulk Amazon upload (formerly Liftoff), YouTube Co-Pilot,
+  YouTube comments (tabs: Pinned comments, On sale comments, formerly Encore).
+  These were under Make videos and Share until 2026-11-09.
+- Social (formerly Share): Social Push, Social designs (formerly Social
+  Influencer), Social Launch Kit, Instagram Auto-DM, Meta Hub, Group Post
+  Queue, Link in Bio, Passport links.
+- Blog: Blog posts (formerly Blog Post Generator), Deals Hub (moved here from
+  Share on 2026-11-09: it writes blog posts), Comparisons and guides (tabs:
+  Comparisons, Buying guides), Articles, Ended deals, SEO and indexing, Ads,
+  Blog design (formerly Customize Blog).
+- Brand deals (formerly Work with brands): Brand pitches (formerly Brand
+  Deals), Brand inbox (tabs: Inquiries, History, formerly Brand Hub, and
+  Recap).
 - Your setup: Connections (tabs: Blog, formerly WordPress, YouTube, Socials,
   Other tools), Brand and voice (tabs: Brand profile, Writing voice, formerly
   Voice Training), Face models, Team (formerly Virtual Assistant), Plan and
@@ -220,7 +227,7 @@ to WordPress automatically via /api/wordpress/sync-brand.
 
 ## YOUTUBE CO-PILOT
 
-URL: /co-pilot · Sidebar: Make videos → YouTube Co-Pilot
+URL: /co-pilot · Sidebar: Post videos → YouTube Co-Pilot
 
 The flagship feature. Workflow:
 
@@ -278,7 +285,7 @@ Generate a topic-based guide ("Best Wireless Vacuums for Pet Hair").
 Pro can use this — minimal but visible buying-guide template.
 
 ### Deal Posts
-URL: /deals · Sidebar: Share → Deals Hub
+URL: /deals · Sidebar: Blog → Deals Hub
 For TIME-SENSITIVE Amazon deals with a price drop or discount code.
 Paste any Amazon URL, Geniuslink, amzn.to short link, or bare ASIN.
 The agent writes a deal post with a baked thumbnail, end-date countdown
@@ -334,7 +341,7 @@ requires Amazon Influencer status, which has its own qualifications.
 
 ## BRAND PITCHES (formerly Brand Deals)
 
-URL: /collaborations · Sidebar: Work with brands → Brand pitches
+URL: /collaborations · Sidebar: Brand deals → Brand pitches
 
 Generates personalized brand-outreach pitch emails. Fill in the brand
 name + product URL + the user's Brand Profile feeds the rest (their
@@ -551,7 +558,7 @@ Amazon report ranges while SCOUT is installed so it can capture them.
 
 ## HASHTAG INSIGHTS (formerly Pulse; hashtag reach learning)
 
-URL: /pulse · Sidebar: Share → Hashtag insights
+URL: /pulse · Sidebar: Social → Hashtag insights
 
 Hashtag insights (formerly Pulse) learns which hashtags actually earn reach on your Instagram Reels. It
 checks each post's reach about a day after publishing, ranks your tags by how
@@ -643,7 +650,7 @@ Quick one-purpose fixers for a blog:
 
 ## BRAND HISTORY (formerly Brand Hub; all brand relationships in one place)
 
-URL: /brand-hub · Sidebar: Work with brands → Brand inbox → History tab
+URL: /brand-hub · Sidebar: Brand deals → Brand inbox → History tab
 
 One consolidated history of every brand the creator has dealt with, pulled
 together from three places that used to be separate: inbound inquiries (blog
@@ -661,7 +668,7 @@ message a brand in Brand campaigns).
 
 ## BRAND INQUIRIES (inbound inbox)
 
-URL: /brand-inquiries · Sidebar: Work with brands → Brand inbox → Inquiries tab
+URL: /brand-inquiries · Sidebar: Brand deals → Brand inbox → Inquiries tab
 
 The inbox for brands that message you through the "Work with brands" form on
 your own blog. See unread messages, read/archive them, and reply by email.
@@ -674,7 +681,7 @@ formerly Brand Deals), and for Amazon campaign research use Brand campaigns
 
 ## INSTAGRAM AUTO-DM
 
-URL: /instagram-dm · Sidebar: Share → Instagram Auto-DM (every plan that posts to Instagram)
+URL: /instagram-dm · Sidebar: Social → Instagram Auto-DM (every plan that posts to Instagram)
 
 Comment-to-DM automation: when someone comments a keyword (e.g. "LINK") on
 your Instagram or Facebook post, they automatically get a DM with that post's
@@ -687,7 +694,7 @@ sending live yet.
 
 ## SOCIAL LAUNCH KIT
 
-URL: /social-launch-kit · Sidebar: Share → Social Launch Kit
+URL: /social-launch-kit · Sidebar: Social → Social Launch Kit
 
 Generates a matching set to spin up new social accounts fast: handle/name
 ideas, a bio, a banner, and an avatar, aligned to the user's brand.

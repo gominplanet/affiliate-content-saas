@@ -51,16 +51,16 @@ export const APP_SEARCH_INDEX: AppSearchEntry[] = [
   { label: 'Idea lists', href: '/idea-lists', group: 'Find products', keywords: 'idea list amazon storefront shopping guide list to blog roundup shoppable list top picks curated products' },
 
   // ── Make videos ──────────────────────────────────────────────────────────
-  { label: 'Drop', href: '/drop', group: 'Make videos', keywords: 'drop upload finished videos send everywhere launch youtube amazon blog' },
+  { label: 'Drop', href: '/drop', group: 'Post videos', keywords: 'drop upload finished videos send everywhere launch youtube amazon blog' },
   { label: 'Review Editor', href: '/review-editor', group: 'Make videos', keywords: 'review editor edit my review video editing cut takes b-roll broll captions talking head' },
-  { label: 'YouTube Co-Pilot', href: '/co-pilot', group: 'Make videos', keywords: 'co-pilot copilot youtube drafts calendar metadata titles descriptions chapters' },
+  { label: 'YouTube Co-Pilot', href: '/co-pilot', group: 'Post videos', keywords: 'co-pilot copilot youtube drafts calendar metadata titles descriptions chapters' },
   { label: 'Thumbnails', href: '/amazon/thumbnails', group: 'Make videos', keywords: 'thumbnail generator art director youtube amazon video thumbnail' },
   { label: 'Scriptwriter', href: '/script', group: 'Make videos', keywords: 'script video script write scriptwriter' },
   { label: 'Clip Factory', href: '/clip-factory', group: 'Make videos', keywords: 'clips shorts reels tiktok vertical find moments' },
-  { label: 'Bulk Amazon upload', href: '/liftoff', group: 'Make videos', keywords: 'liftoff launch batch upload videos amazon storefront countries youtube' },
+  { label: 'Bulk Amazon upload', href: '/liftoff', group: 'Post videos', keywords: 'liftoff launch batch upload videos amazon storefront countries youtube' },
   { label: 'Pinned comments', href: '/first-comments', group: 'YouTube comments', keywords: 'first comment pinned comment product link youtube comments' },
   { label: 'On sale comments', href: '/encore', group: 'YouTube comments', keywords: 'encore on sale now sale comment youtube comments price drop' },
-  { label: 'Instagram Auto-DM', href: '/instagram-dm', group: 'Share', keywords: 'instagram auto dm direct message comment keyword link reels' },
+  { label: 'Instagram Auto-DM', href: '/instagram-dm', group: 'Social', keywords: 'instagram auto dm direct message comment keyword link reels' },
   { label: 'Amazon Live', href: '/amazon-live', group: 'Make videos', keywords: 'amazon live prep livestream show lineup teleprompter' },
   { label: 'Live follow-up', href: '/live-followup', group: 'Amazon Live', keywords: 'live follow up replay clips roundup after the live' },
 
@@ -86,20 +86,20 @@ export const APP_SEARCH_INDEX: AppSearchEntry[] = [
   { label: 'Fix Formatting', href: '/tools/fix-formatting', group: 'SEO and indexing', keywords: 'fix formatting raw block code gutenberg broken layout repair' },
 
   // ── Share ────────────────────────────────────────────────────────────────
-  { label: 'Social Push', href: '/content?tab=posts', group: 'Share', keywords: 'social push publish schedule posts pinterest tiktok instagram facebook cascade share' },
-  { label: 'Social designs', href: '/amazon/social', group: 'Share', keywords: 'social influencer pins pinterest instagram story designs amazon product' },
-  { label: 'Social Launch Kit', href: '/social-launch-kit', group: 'Share', keywords: 'social launch kit name bio banner avatar setup guide new accounts' },
-  { label: 'Meta Hub', href: '/meta', group: 'Share', keywords: 'facebook page group meta hub' },
-  { label: 'Group Post Queue', href: '/group-queue', group: 'Share', keywords: 'facebook group post queue batch sponsored products page post' },
-  { label: 'Hashtag insights', href: '/pulse', group: 'Share', keywords: 'pulse hashtags reach instagram reels tags', admin: true },
-  { label: 'Link in Bio', href: '/link-in-bio', group: 'Share', keywords: 'link in bio shop grid profile link storefront page' },
-  { label: 'Passport links', href: '/passport', group: 'Share', keywords: 'passport links geo country amazon short links clicks geniuslink' },
-  { label: 'Deals Hub', href: '/deals', group: 'Share', keywords: 'deals sale prime day discount occasion' },
+  { label: 'Social Push', href: '/content?tab=posts', group: 'Social', keywords: 'social push publish schedule posts pinterest tiktok instagram facebook cascade share' },
+  { label: 'Social designs', href: '/amazon/social', group: 'Social', keywords: 'social influencer pins pinterest instagram story designs amazon product' },
+  { label: 'Social Launch Kit', href: '/social-launch-kit', group: 'Social', keywords: 'social launch kit name bio banner avatar setup guide new accounts' },
+  { label: 'Meta Hub', href: '/meta', group: 'Social', keywords: 'facebook page group meta hub' },
+  { label: 'Group Post Queue', href: '/group-queue', group: 'Social', keywords: 'facebook group post queue batch sponsored products page post' },
+  { label: 'Hashtag insights', href: '/pulse', group: 'Social', keywords: 'pulse hashtags reach instagram reels tags', admin: true },
+  { label: 'Link in Bio', href: '/link-in-bio', group: 'Social', keywords: 'link in bio shop grid profile link storefront page' },
+  { label: 'Passport links', href: '/passport', group: 'Social', keywords: 'passport links geo country amazon short links clicks geniuslink' },
+  { label: 'Deals Hub', href: '/deals', group: 'Blog', keywords: 'deals sale prime day discount occasion' },
 
   // ── Work with brands ─────────────────────────────────────────────────────
-  { label: 'Brand pitches', href: '/collaborations', group: 'Work with brands', keywords: 'brand deals collaborations pitch outreach sponsor media kit share with brand' },
+  { label: 'Brand pitches', href: '/collaborations', group: 'Brand deals', keywords: 'brand deals collaborations pitch outreach sponsor media kit share with brand' },
   { label: 'Media Kit', href: '/collaborations', group: 'Brand pitches', keywords: 'media kit press kit stats one sheet brand recap' },
-  { label: 'Brand inbox', href: '/brand-inquiries', group: 'Work with brands', keywords: 'brand inquiries inbox messages work with brands inbound' },
+  { label: 'Brand inbox', href: '/brand-inquiries', group: 'Brand deals', keywords: 'brand inquiries inbox messages work with brands inbound' },
   { label: 'Brand history', href: '/brand-hub', group: 'Brand inbox', keywords: 'brand hub history timeline relationships crm messages campaigns contacted inbound pitches consolidated all brands who reached out' },
   { label: 'Brand recap', href: '/brand-recap', group: 'Brand inbox', keywords: 'brand recap links per brand message creator connections' },
 

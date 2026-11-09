@@ -886,7 +886,8 @@ export default function DashboardShellV2({
   const legacyView = seesProLocked(effectiveTier)
   // THE MENU REDRAWN (lib/menu-areas, labs-preview menu_v2): the same rows,
   // gates and tabs, one job per area.
-  const menuV2 = canUsePreview('menu_v2', effectiveTier)
+  // Every account on every plan once open (Seb, 2026-11-09: "turn it on for everyone").
+  const menuV2 = previewOpenToPro('menu_v2') || canUsePreview('menu_v2', effectiveTier)
   const builtNav: NavGroupDef[] = legacyView ? lockProRows<NavItemDef, NavGroupDef>(navFor(effectiveTier), navFor('pro')) : navFor(effectiveTier)
   const NAV_GROUPS: NavGroupDef[] = menuV2 ? regroupMenu<NavItemDef, NavGroupDef>(builtNav) : builtNav
   const proLocked = legacyView ? lockedPageAt(NAV_GROUPS, pathname) : undefined

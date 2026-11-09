@@ -29,7 +29,7 @@ import { useShellNav, type ShellNavItem } from '@/components/layout/shell-nav-co
 import { useNavFavorites, MAX_NAV_FAVORITES } from '@/lib/nav-favorites'
 import { pickBuckets, type UsageBucket } from '@/lib/usage-highlights'
 import { useEffectiveTier } from '@/lib/useEffectiveTier'
-import { canUsePreview } from '@/lib/labs-preview'
+import { canUsePreview, previewOpenToPro } from '@/lib/labs-preview'
 
 type Usage = { buckets: UsageBucket[]; resetLabel: string | null; introNote?: string | null }
 
@@ -97,7 +97,7 @@ export default function TealDashboard({ firstName, today, meta, primary, seconda
   const groups = useShellNav()
   // The redrawn menu's Dashboard order (labs-preview menu_v2): Needs you first.
   const viewTier = useEffectiveTier()
-  const menuV2 = viewTier ? canUsePreview('menu_v2', viewTier) : false
+  const menuV2 = previewOpenToPro('menu_v2') || (viewTier ? canUsePreview('menu_v2', viewTier) : false)
   // ── PINNED (Seb, 2026-11-07: "on the cards, have a little box that says
   // pin it to the top. And if I pin that card to the top, it becomes a
   // pinned card to the top of the dashboard"). Saved to the account so it

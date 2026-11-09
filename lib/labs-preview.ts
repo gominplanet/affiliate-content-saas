@@ -100,8 +100,9 @@ const OPEN_TO: Record<PreviewFeature, 'admin' | 'labs'> = {
   // THE LEFT MENU REDRAWN (lib/menu-areas; Seb, 2026-11-08: "still not
   // organized the way I want it to be organized. It's a little bit all over
   // the place"): one job per area, TRYBE right under the Dashboard, and the
-  // Dashboard with Needs you first. Admin while Seb tries it.
-  menu_v2: 'admin',
+  // Dashboard with Needs you first. Admin while Seb tried it; on for every
+  // account on every plan 2026-11-09 (Seb: "turn it on for everyone").
+  menu_v2: 'labs',
   // SCOUT reading TikTok Creative Center and Instagram's tag counts for the
   // hashtag engine (Seb, 2026-10-16). Admin while it is tested on real pages.
   hashtag_trends: 'admin',
