@@ -1260,6 +1260,8 @@ export interface TikTokDownloadResult {
   tried?: Array<{ from: string; way: string; result: string }>
   /** SCOUT 1.60.2: the step it reached and how much had come in, also when it ran out of time. */
   step?: string; total?: number
+  /** SCOUT 1.60.3: what the video's page and the profile showed, when neither gave an address. */
+  seen?: string
 }
 /** How far a download is, as SCOUT 1.60.2 says (MVP_TIKTOK_DL_STATUS). */
 export interface TikTokDownloadProgress {

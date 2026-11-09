@@ -382,7 +382,7 @@ function ScanEnd({ scan, total, kept, matched }: { scan: Scan; total: number | n
 const DL_WORDS: Record<string, string> = {
   puzzle: 'TikTok asked to confirm you are a person, so SCOUT stopped. Open tiktok.com in Chrome, do it once, then press Download again.',
   gone: 'TikTok says this video is private or no longer there, so there is nothing to save.',
-  'no-video-address': 'TikTok\u2019s page did not show where it plays the video from, so nothing was saved.',
+  'no-video-address': 'Neither the video\u2019s page nor your profile on TikTok showed where it plays the video from, so nothing was saved.',
   'not-saved': 'TikTok would not hand over the video file, so nothing was saved.',
   'no-access': 'SCOUT is not allowed to read tiktok.com in this Chrome. Press Scan again and choose Allow.',
   'no-answer-from-page': 'TikTok\u2019s page did not load in time, so nothing was saved. Try again.',
@@ -396,6 +396,7 @@ const STEP_WORDS: Record<string, string> = {
   starting: 'starting',
   opening: 'opening your video on TikTok',
   finding: 'looking for the video file on TikTok\u2019s page',
+  profile: 'looking for the video on your TikTok profile',
   chrome: 'saving it through Chrome',
   page: 'saving it from TikTok\u2019s page',
 }
@@ -405,7 +406,7 @@ function progressWords(p: TikTokDownloadProgress): string {
   if (p.waiting) return 'Waiting'
   if (p.asking) return 'Choose a folder'
   if (p.bytes > 0) return p.total > 0 ? `${mb(p.bytes)} of ${mb(p.total)} MB` : `${mb(p.bytes)} MB`
-  return p.step === 'finding' ? 'Finding it' : p.step === 'chrome' || p.step === 'page' ? 'Saving' : 'Opening'
+  return p.step === 'finding' || p.step === 'profile' ? 'Finding it' : p.step === 'chrome' || p.step === 'page' ? 'Saving' : 'Opening'
 }
 /** What each try SCOUT made means (SCOUT 1.60.1 says what it tried). */
 function tryWords(raw: string): string {
@@ -466,7 +467,9 @@ async function downloadVideo(handle: string, brand: string, v: { id: string; pos
     : r.error === 'too-slow' ? `Not saved: SCOUT ran out of time while ${STEP_WORDS[r.step || ''] || 'saving it'}.${came}`
       : r.error === 'not-saved' && tried ? 'Not saved.'
         : (r.error && DL_WORDS[r.error]) || `Not saved: ${r.error || 'SCOUT did not say why'}.`
-  const why = tried ? `${base} ${tried}` : base
+  // What the page and the profile showed, when neither gave an address (SCOUT 1.60.3).
+  const seen = r.error === 'no-video-address' && r.seen ? ` (What SCOUT saw: ${r.seen})` : ''
+  const why = `${tried ? `${base} ${tried}` : base}${seen}`
   toast.error(why, { duration: 12000 })
   return false
 }

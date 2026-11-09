@@ -14,13 +14,16 @@
 //   TikTok's page never answers SCOUT: stopped at the limit, and the answer
 //     says which step it reached (1.60.1 said only "took too long")
 //   TikTok stops sending part way: not saved, with how much had come in
+//   the video's page gives no address (Seb's try on 1.60.2): found in the
+//     profile's own video grid, scrolled until it comes, and saved
+//   neither gives one: said, with what the page and the profile showed
 import { readFileSync } from 'node:fs'
 
 const fails: string[] = []
 const check = (name: string, ok: boolean | undefined) => { if (!ok) fails.push(name) }
 
 const B = readFileSync('extension/background.js', 'utf8')
-const from = B.indexOf('// ── MATCH MY TIKTOK: DOWNLOAD A VIDEO (1.60.0 to 1.60.2)')
+const from = B.indexOf('// ── MATCH MY TIKTOK: DOWNLOAD A VIDEO (1.60.0 to 1.60.3)')
 const to = B.indexOf('let ttDlBusy = Promise.resolve()')
 check('the download section is where this check looks for it', from > 0 && to > from)
 let sec = B.slice(from, to)
@@ -62,7 +65,9 @@ const URLS = () => ({ urls: [{ url: 'https://v16-webapp-prime.tiktok.com/a', fro
 // The page's own read, whole after `ms`.
 const pageRead = (ms: number, size = 4e6) => () => { const t0 = Date.now(); return { state: async () => { const p = Math.min(1, (Date.now() - t0) / ms); return { bytes: Math.round(size * p), total: size, done: p >= 1, ok: p >= 1, error: null, still: 0 } } } }
 
-interface Case { urls: () => Any; chromeDl: () => Any; page?: (args: Any[]) => Any; blobDl?: () => Any; windows: string[] }
+interface Case { urls: () => Any; chromeDl: () => Any; page?: (args: Any[]) => Any; blobDl?: () => Any; windows: string[]; grid?: (scrolls: number) => Any
+  /** A longer whole limit, for a case that also reads the profile. */
+  max?: number }
 function scout(c: Case) {
   const dls: Record<number, Any> = {}
   let next = 1
@@ -77,12 +82,16 @@ function scout(c: Case) {
       removeFile: (_id: number, cb?: () => void) => { if (cb) cb() },
       onCreated: { addListener: (f: Any) => created.push(f), removeListener: (f: Any) => { const i = created.indexOf(f); if (i >= 0) created.splice(i, 1) } },
     },
-    tabs: { get: async () => ({ windowId: 9 }), remove: async () => {} },
+    tabs: { get: async () => ({ windowId: 9 }), remove: async () => {}, update: async () => ({}) },
+    scripting: { registerContentScripts: async () => {}, unregisterContentScripts: async () => {} },
     windows: { update: async (_id: number, o: { state: string }) => { c.windows.push(o.state) } },
   }
   let save: Any = null
+  let scrolls = 0
   const trybeRun = async (func: Any, args: Any[]) => {
     if (func.name === 'ttVideoUrlsInPage') return c.urls()
+    if (func.name === 'ttItemUrlsInPage') return c.grid ? c.grid(scrolls) : { found: false, urls: [], have: 0, hasMore: false, hooked: true }
+    if (func.name === 'ttScrollInPage') { scrolls++; return 1 }
     if (func.name === 'ttPageSaveStartInPage') { save = c.page!(args); return true }
     if (func.name === 'ttPageSaveStateInPage') {
       const s = await save.state()
@@ -96,8 +105,10 @@ function scout(c: Case) {
   const env: Record<string, Any> = {
     chrome, trybeRun, openWorkTab: async () => ({ id: 5 }), waitForTabLoad: async () => {}, quietTabIds: new Set(), quietShim: async () => {},
     startKeepAlive: () => null, stopKeepAlive: () => {}, hasOrigins: async () => true, TT_ORIGINS: [], _sleep: sleep,
+    ttRun: null, TT_HOOK_ID: 'hook', ttScrollInPage: function ttScrollInPage() { return 0 },
   }
-  const make = new Function(...Object.keys(env), `${sec}\nreturn { run: ttDownloadBounded, now: () => ttDlNow }`)
+  const code = c.max ? sec.replace('const TT_DL_MAX_MS = 6000', `const TT_DL_MAX_MS = ${c.max}`) : sec
+  const make = new Function(...Object.keys(env), `${code}\nreturn { run: ttDownloadBounded, now: () => ttDlNow }`)
   return make(...Object.values(env)) as { run: (a: Any) => Promise<Any>; now: () => Any }
 }
 const ARGS = { handle: 'gominreviews', videoId: '7471234567890123456', filename: 'vigority-2026-02-15' }
@@ -139,8 +150,22 @@ const ways = (r: Any) => (r.tried || []).map((t: Any) => `${t.way}:${t.result}`)
       const r = await s.run(ARGS)
       check(`TikTok stopping part way is not saved, and says how much had come in (${ways(r)})`, !r.ok && r.error === 'not-saved' && r.bytes === 1e6 && r.total === 4e6 && /page:page-stalled/.test(ways(r)))
     },
+    async () => {
+      // The video's page shows nothing (Seb, 2026-11-09, on 1.60.2); the profile's grid has it after two scrolls.
+      const noAddr = () => ({ urls: [], found: false, seen: 'page /@gominreviews/video/747; data yes (webapp.app-context); video not found; player blob' })
+      const s = scout({ urls: noAddr, chromeDl: () => item({ size: 3e6, rate: 3e6 }), windows: [], max: 25000,
+        grid: (n: number) => n >= 2 ? { found: true, urls: [{ url: 'https://v16-webapp-prime.tiktok.com/g', from: 'grid-bitrate' }], have: 90, hasMore: true, hooked: true } : { found: false, urls: [], have: 30 * (n + 1), hasMore: true, hooked: true } })
+      const r = await s.run(ARGS)
+      check(`a video page with no address is found in the profile’s own grid and saved (${ways(r)})`, r.ok && r.way === 'chrome' && r.from === 'grid-bitrate' && r.step === 'chrome')
+    },
+    async () => {
+      const noAddr = () => ({ urls: [], found: false, seen: 'page /@gominreviews/video/747; data no; video not found; player none' })
+      const s = scout({ urls: noAddr, chromeDl: () => item(), windows: [], max: 25000, grid: () => ({ found: false, urls: [], have: 120, hasMore: false, hooked: true }) })
+      const r = await s.run(ARGS)
+      check(`with no address on the page or the profile, it says what each showed (${r.seen})`, !r.ok && r.error === 'no-video-address' && /data no; video not found/.test(r.seen || '') && /profile: 120 videos read, this one not among them/.test(r.seen || ''))
+    },
   ].map((f) => f()))
   if (fails.length) { console.error(`✗ ${fails.length} SCOUT TikTok download check(s) failed:\n  ${fails.join('\n  ')}`); process.exit(1) }
-  console.log('✓ SCOUT TikTok download: a refused, slow, asking, silent or broken download each ends saved or says where it stopped and how much came in')
+  console.log('✓ SCOUT TikTok download: a refused, slow, asking, silent or broken download each ends saved or says where it stopped and how much came in, and a video its page hides is found on the profile')
   process.exit(0)
 })()
