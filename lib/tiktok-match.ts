@@ -17,14 +17,32 @@
 //                 on its store or on TRYBE                             likely
 //
 // A NAME THAT IS AN EVERYDAY WORD IS NEVER ENOUGH ALONE. A brand called
-// "Glow" or "Pure" would match half of TikTok; a name like that, or one of
-// three letters or fewer, only counts with a stronger sign, and is otherwise
-// a "maybe" the page shows apart, never as a match. Pure.
+// "Glow" or "Pure" would match half of TikTok. Seb's first real scan
+// (2026-11-09: "so many are wrong") matched Volume, Boost, Needed, Nights and
+// The Goodbye Company ("say goodbye to hand cramps") on everyday words. So a
+// brand's name is weighed against 102,293 English dictionary words
+// (lib/common-english):
+//
+//   distinct   a name with a word no dictionary has (Lumineux, Olaplex):
+//              said in a caption, it is the brand                    likely
+//   as a name  every word is an everyday word (Ninja Kitchen, The Goodbye
+//              Company): it counts only written as a name, each word
+//              capitalised ("Goodbye Company", never "say goodbye")  likely
+//   everyday   one everyday word (Volume, Boost, Needed): never enough
+//              alone, from a caption or a hashtag                    maybe
+//
+// "The" and "Company" are taken off a name only when what is left is still
+// distinct: "The Goodbye Company" is matched as "Goodbye Company", never as
+// "goodbye". A product named in a caption counts only when its name has a
+// word of its own ("CREAMi", "Atom One"), never a generic one ("stainless
+// steel lemon squeezer"). Pure.
 
 import type { TikTokVideo } from './tiktok-videos'
+import { COMMON_ENGLISH } from './common-english'
+import { isMatch, SURENESS_WORDS, type MatchKind, type Sureness } from './tiktok-match-words'
 
-export type MatchKind = 'product_tag' | 'mention' | 'hashtag' | 'name' | 'product'
-export type Sureness = 'sure' | 'likely' | 'maybe'
+export { isMatch, SURENESS_WORDS }
+export type { MatchKind, Sureness }
 
 export interface MatchBrand {
   id: string
@@ -40,6 +58,8 @@ export interface MatchHow {
   videoId: string
   /** In words, for the page: what in the video matched. */
   text: string
+  /** How many videos say the same thing (one line for them all). */
+  count?: number
 }
 
 export interface BrandMatch {
@@ -56,46 +76,83 @@ const KIND_RANK: Record<MatchKind, number> = { product_tag: 5, mention: 4, produ
 
 /** Lowercase plain letters and digits, single spaced, accents dropped. */
 export function norm(s: string | null | undefined): string {
-  return String(s ?? '').normalize('NFKD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/&/g, ' and ').replace(/[^a-z0-9]+/g, ' ').trim()
+  return String(s ?? '').normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/&/g, ' and ').replace(/[^a-z0-9]+/g, ' ').trim()
 }
 export const squash = (s: string | null | undefined) => norm(s).replace(/ /g, '')
 
 // Words a company name carries that no caption does.
 const SUFFIX = /\s+(inc|llc|ltd|limited|co|corp|corporation|company|official|store|shop|brand|brands|usa|us)$/
+/** The name without "The" and company words ("Lumineux Oral Essentials Inc"
+ *  is "lumineux oral essentials"). */
 export function brandName(name: string): string {
   let n = norm(name)
   for (let i = 0; i < 3 && SUFFIX.test(n); i++) n = n.replace(SUFFIX, '')
   return n.replace(/^the\s+/, '').trim()
 }
 
-// Everyday words brands are named after. Alone, they say nothing.
-const EVERYDAY = new Set(('glow pure bloom simple fresh happy smart home love life live good great best daily basic basics natural organic clean beauty baby kids pet pets dog cat cats dogs family health wellness fit fitness active style studio lab labs co one true wild free real bright clear calm soft sweet gold golden silver black white blue green red pink rose luxe lux nova luna sol sun moon star stars ocean wave waves mint honey sugar salt spice glam chic bold kind rise shine spark vibe vibes zen bliss joy hope grace pure via go now new next prime plus pro max ultra mega mini tiny little big bee bear fox wolf lion owl hive nest root roots leaf seed tree forest earth terra aqua hydro core flow form shape body skin hair face nails lips eyes care heal well kitchen cook chef bake grill garden plant plants flower flowers coffee tea juice water snack snacks treat treats bar bars box boxes bag bags cup mug bottle bottles light lights lamp tech gear tools tool kit kits hub link links play toy toys game games art craft paper print ink pen book books note notes travel trip camp outdoor outdoors sport sports run walk ride bike yoga mat mats sleep dream dreams rest relax comfort cozy warm cool ice fire storm rain snow cloud air wind').split(' '))
+// Everyday words brands are named after that a dictionary list can miss
+// (short forms, trade words).
+const EVERYDAY = 'glow pure luxe lux nova luna sol zen vibe vibes glam chic terra aqua hydro co lab labs hub kit kits pro max mini mega ultra prime plus bee fox owl'.split(' ')
+let common: Set<string> | null = null
+/** Whether a word is an everyday English word (or an everyday brand word). */
+export function isCommonWord(w: string): boolean {
+  if (!common) common = new Set([...COMMON_ENGLISH.split(' '), ...EVERYDAY])
+  return w.length < 4 || common.has(w)
+}
+
+export type NameStrength = 'distinct' | 'as-name' | 'everyday'
+export interface NameForm {
+  /** The words matched in a caption, lowercase. */
+  phrase: string
+  strength: NameStrength
+}
+
+/** How a brand's name is matched (see the top of this file). */
+export function nameForm(name: string): NameForm {
+  const core = brandName(name)
+  const words = core.split(' ').filter(Boolean)
+  const distinct = (ws: string[]) => ws.some((w) => w.length >= 4 && !/^\d+$/.test(w) && !isCommonWord(w))
+  if (words.length && distinct(words) && core.replace(/ /g, '').length >= 5) return { phrase: core, strength: 'distinct' }
+  // Every word everyday: the fuller name, when it has more words, matched as a name.
+  const full = norm(name).replace(/^the\s+/, '')
+  const fullWords = full.split(' ').filter(Boolean)
+  if (words.length >= 2) return { phrase: core, strength: 'as-name' }
+  if (fullWords.length >= 2) return { phrase: full, strength: 'as-name' }
+  return { phrase: core, strength: 'everyday' }
+}
 
 /** Whether a brand's name, alone in a caption, is enough to say it is the brand. */
 export function nameIsDistinct(name: string): boolean {
-  const n = brandName(name)
-  const s = n.replace(/ /g, '')
-  if (s.length < 4) return false
-  const words = n.split(' ')
-  if (words.length === 1) return s.length >= 5 && !EVERYDAY.has(s)
-  // Two everyday words together ("Pure Glow") are still a name people write.
-  return s.length >= 6 && !words.every((w) => EVERYDAY.has(w) || w.length <= 2)
+  return nameForm(name).strength === 'distinct'
+}
+
+/** The phrase written as a name in the caption: each word starting with a
+ *  capital ("Goodbye Company", "Ninja Kitchen"), whole words. */
+export function writtenAsName(caption: string, phrase: string): boolean {
+  const words = phrase.split(' ').filter(Boolean)
+  if (!words.length) return false
+  const part = (w: string) => `[${w[0].toUpperCase()}]${w.slice(1).split('').map((c) => /[a-z]/.test(c) ? `[${c}${c.toUpperCase()}]` : c).join('')}`
+  return new RegExp(`(^|[^A-Za-z0-9])${words.map(part).join('[\\s\\-]+')}(?![A-Za-z0-9])`).test(caption)
 }
 
 /** A product name worth matching in a caption: three words or more, long
- *  enough that it cannot be a phrase anyone writes by chance. */
+ *  enough that it cannot be a phrase anyone writes by chance, and with a word
+ *  of its own (a model or product name), never all everyday words. */
 export function productKey(p: string): string | null {
   const n = norm(p).replace(/\b(\d+\s*(pack|pcs|count|ct|oz|ml|lb|lbs|inch|ft))\b/g, ' ').replace(/\s+/g, ' ').trim()
   const words = n.split(' ').filter(Boolean)
   if (words.length < 3 || n.length < 14) return null
   // Keep the first six words: store titles run on with sizes and colours.
-  return words.slice(0, 6).join(' ')
+  const key = words.slice(0, 6)
+  if (!key.some((w) => w.length >= 4 && !/^\d+$/.test(w) && !isCommonWord(w))) return null
+  return key.join(' ')
 }
 
+interface Named { brand: MatchBrand; form: NameForm }
 export interface MatchIndex {
   byHandle: Map<string, MatchBrand[]>
-  bySquash: Map<string, MatchBrand[]>
-  byFirstWord: Map<string, Array<{ brand: MatchBrand; name: string }>>
+  bySquash: Map<string, Named[]>
+  byFirstWord: Map<string, Named[]>
   byProductStart: Map<string, Array<{ brand: MatchBrand; key: string; original: string }>>
 }
 
@@ -108,10 +165,13 @@ export function buildIndex(brands: MatchBrand[]): MatchIndex {
   for (const b of brands) {
     const h = String(b.tiktokHandle ?? '').trim().replace(/^@/, '').toLowerCase()
     if (/^[a-z0-9_.]{2,24}$/.test(h)) push(idx.byHandle, h, b)
-    const name = brandName(b.name)
-    const s = name.replace(/ /g, '')
-    if (s.length >= 3) push(idx.bySquash, s, b)
-    if (name.length >= 3) push(idx.byFirstWord, name.split(' ')[0], { brand: b, name })
+    const form = nameForm(b.name)
+    if (form.phrase.replace(/ /g, '').length < 3) continue
+    const named = { brand: b, form }
+    // The name run together, as a hashtag or a handle: the phrase, and the
+    // whole name with its company words (#thegoodbyecompany).
+    for (const s of new Set([form.phrase.replace(/ /g, ''), squash(b.name)])) if (s.length >= 4) push(idx.bySquash, s, named)
+    push(idx.byFirstWord, form.phrase.split(' ')[0], named)
     const seen = new Set<string>()
     for (const p of (b.products || []).slice(0, 200)) {
       const key = productKey(p)
@@ -123,22 +183,30 @@ export function buildIndex(brands: MatchBrand[]): MatchIndex {
   return idx
 }
 
-const quote = (s: string) => `“${s}”`
+const quote = (s: string) => `\u201C${s}\u201D`
+
+/** What a name run together (a hashtag, an @handle) is worth: a distinct name,
+ *  or an everyday one of two words or more (#ninjakitchen), is likely; one
+ *  everyday word (#boost, #needed) is nothing at all: it is a tag anyone uses. */
+const runTogether = (f: NameForm): Sureness | null => (f.strength === 'everyday' ? null : 'likely')
 
 /** What in one video points at which brands. */
 export function matchVideo(v: TikTokVideo, idx: MatchIndex): Array<{ brand: MatchBrand; how: MatchHow; sureness: Sureness }> {
   const out: Array<{ brand: MatchBrand; how: MatchHow; sureness: Sureness }> = []
   const add = (brand: MatchBrand, kind: MatchKind, sureness: Sureness, text: string) => out.push({ brand, sureness, how: { kind, videoId: v.id, text } })
 
-  // 1. TikTok Shop product tags.
+  // 1. TikTok Shop product tags: the shop's name, or a distinct brand name in the product's.
   for (const p of v.products || []) {
     const shop = squash(p.shop)
     const hits = new Set<MatchBrand>()
-    if (shop.length >= 3) for (const b of [...(idx.bySquash.get(shop) || []), ...(idx.byHandle.get(shop) || [])]) hits.add(b)
+    if (shop.length >= 3) {
+      for (const n of idx.bySquash.get(shop) || []) hits.add(n.brand)
+      for (const b of idx.byHandle.get(shop) || []) hits.add(b)
+    }
     const title = ` ${norm(p.title)} `
     if (title.trim()) {
       for (const w of title.trim().split(' ')) {
-        for (const c of idx.byFirstWord.get(w) || []) if (nameIsDistinct(c.brand.name) && title.includes(` ${c.name} `)) hits.add(c.brand)
+        for (const n of idx.byFirstWord.get(w) || []) if (n.form.strength === 'distinct' && title.includes(` ${n.form.phrase} `)) hits.add(n.brand)
       }
     }
     for (const b of Array.from(hits)) add(b, 'product_tag', 'sure', `It carries a TikTok Shop product tag: ${quote(p.title || p.shop || 'a product')}${p.shop && p.title ? `, sold by ${p.shop}` : ''}.`)
@@ -146,12 +214,13 @@ export function matchVideo(v: TikTokVideo, idx: MatchIndex): Array<{ brand: Matc
 
   // 2. The caption tags the brand's account.
   for (const m of v.mentions || []) {
-    for (const b of idx.byHandle.get(m) || []) add(b, 'mention', 'sure', `Your caption tags @${m}, the brand’s TikTok account.`)
+    for (const b of idx.byHandle.get(m) || []) add(b, 'mention', 'sure', `Your caption tags @${m}, the brand\u2019s TikTok account.`)
     // A handle that is the brand's name run together, when MVP has not read the
-    // brand's own handle: likely, not sure.
-    for (const b of idx.bySquash.get(m.replace(/[._]/g, '')) || []) {
-      if (b.tiktokHandle) continue
-      add(b, 'mention', nameIsDistinct(b.name) ? 'likely' : 'maybe', `Your caption tags @${m}, which is the brand’s name.`)
+    // brand's own handle: likely at best, not sure.
+    for (const n of idx.bySquash.get(m.replace(/[._]/g, '')) || []) {
+      const sure = runTogether(n.form)
+      if (n.brand.tiktokHandle || !sure) continue
+      add(n.brand, 'mention', sure, `Your caption tags @${m}, which is the brand\u2019s name.`)
     }
   }
 
@@ -159,20 +228,23 @@ export function matchVideo(v: TikTokVideo, idx: MatchIndex): Array<{ brand: Matc
   for (const h of v.hashtags || []) {
     const s = squash(h)
     if (s.length < 4) continue
-    for (const b of idx.bySquash.get(s) || []) add(b, 'hashtag', nameIsDistinct(b.name) ? 'likely' : 'maybe', `#${h} in your caption.`)
+    for (const n of idx.bySquash.get(s) || []) { const sure = runTogether(n.form); if (sure) add(n.brand, 'hashtag', sure, `#${h} in your caption.`) }
   }
 
   // 4. The brand's name in the caption, as whole words. Hashtags and @tags
   // are taken out first: they were weighed above, and one word must not count
   // twice (a "#glow" is not also a caption that says Glow).
-  const cap = ` ${norm(v.caption.replace(/[#@][\p{L}\p{N}_.]+/gu, ' '))} `
+  const plain = v.caption.replace(/[#@][\p{L}\p{N}_.]+/gu, ' ')
+  const cap = ` ${norm(plain)} `
   const words = cap.trim() ? cap.trim().split(' ') : []
-  const firsts = new Set(words)
-  for (const w of Array.from(firsts)) {
-    for (const c of idx.byFirstWord.get(w) || []) {
-      if (c.name.replace(/ /g, '').length < 4) continue
-      if (!cap.includes(` ${c.name} `)) continue
-      add(c.brand, 'name', nameIsDistinct(c.brand.name) ? 'likely' : 'maybe', `Your caption says ${quote(c.brand.name)}.`)
+  for (const w of Array.from(new Set(words))) {
+    for (const n of idx.byFirstWord.get(w) || []) {
+      if (n.form.phrase.replace(/ /g, '').length < 4 || !cap.includes(` ${n.form.phrase} `)) continue
+      if (n.form.strength === 'distinct') add(n.brand, 'name', 'likely', `Your caption says ${quote(n.brand.name)}.`)
+      else if (n.form.strength === 'as-name' && writtenAsName(plain, n.form.phrase)) add(n.brand, 'name', 'likely', `Your caption writes ${quote(n.brand.name)} as a name.`)
+      // An everyday word is only worth a look when it is written as a name
+      // ("Volume", not "volume"); otherwise it is not listed at all.
+      else if (n.form.strength === 'as-name' || writtenAsName(plain, n.form.phrase)) add(n.brand, 'name', 'maybe', `Your caption uses ${quote(n.form.phrase)}, which is also this brand\u2019s name.`)
     }
   }
 
@@ -185,17 +257,18 @@ export function matchVideo(v: TikTokVideo, idx: MatchIndex): Array<{ brand: Matc
   return out
 }
 
-/** Every brand these videos point at, the surest first, with how MVP knows. */
+/** Every brand these videos point at, the surest first, with how MVP knows.
+ *  The same words from several videos are one line with a count. */
 export function matchVideos(videos: TikTokVideo[], idx: MatchIndex): BrandMatch[] {
-  const by = new Map<string, BrandMatch & { kinds: Set<MatchKind> }>()
+  const by = new Map<string, BrandMatch>()
   for (const v of videos) {
     for (const hit of matchVideo(v, idx)) {
-      const m = by.get(hit.brand.id) ?? { brandId: hit.brand.id, name: hit.brand.name, sureness: hit.sureness, videoIds: [], how: [], newestAt: null, kinds: new Set<MatchKind>() }
+      const m = by.get(hit.brand.id) ?? { brandId: hit.brand.id, name: hit.brand.name, sureness: hit.sureness, videoIds: [], how: [], newestAt: null }
       if (RANK[hit.sureness] > RANK[m.sureness]) m.sureness = hit.sureness
       if (!m.videoIds.includes(v.id)) m.videoIds.push(v.id)
-      // One line per video and kind, the strongest kinds first, at most eight.
-      if (!m.how.some((h) => h.videoId === v.id && h.kind === hit.how.kind)) m.how.push(hit.how)
-      m.kinds.add(hit.how.kind)
+      const same = m.how.find((h) => h.kind === hit.how.kind && h.text === hit.how.text)
+      if (same) { if (same.videoId !== v.id) same.count = (same.count ?? 1) + 1 }
+      else m.how.push({ ...hit.how, count: 1 })
       if (v.postedAt && (!m.newestAt || v.postedAt > m.newestAt)) m.newestAt = v.postedAt
       by.set(hit.brand.id, m)
     }
@@ -203,49 +276,12 @@ export function matchVideos(videos: TikTokVideo[], idx: MatchIndex): BrandMatch[
   // Each sign stands on its own: an everyday name seen as a hashtag and in a
   // caption is still the same everyday word, so it stays a maybe. Only a sign
   // that is likely or sure by itself makes the brand a match.
-  const list = Array.from(by.values()).map(({ kinds: _kinds, ...m }) => {
-    const how = m.how.sort((a, b) => KIND_RANK[b.kind] - KIND_RANK[a.kind]).slice(0, 8)
-    return { ...m, how }
-  })
+  const list = Array.from(by.values()).map((m) => ({ ...m, how: m.how.sort((a, b) => KIND_RANK[b.kind] - KIND_RANK[a.kind] || (b.count ?? 1) - (a.count ?? 1)).slice(0, 8) }))
   return list.sort((a, b) => RANK[b.sureness] - RANK[a.sureness] || b.videoIds.length - a.videoIds.length || a.name.localeCompare(b.name))
 }
 
-/** The matches the page shows as matches: sure and likely. Maybes are shown
- *  apart and never counted as a brand you filmed. */
-export const isMatch = (m: Pick<BrandMatch, 'sureness'>) => m.sureness !== 'maybe'
+/** When the matching rules last changed: matches kept from before are worked
+ *  out again on the next look (lib/tiktok-library matchesStale). */
+export const MATCH_RULES_AT = '2026-11-09T15:15:00Z'
 
-export const SURENESS_WORDS: Record<Sureness, { label: string; says: string }> = {
-  sure: { label: 'Sure', says: 'The video’s product tag or your caption’s @tag points at this brand.' },
-  likely: { label: 'Likely', says: 'Your caption names the brand or one of its products.' },
-  maybe: { label: 'Maybe', says: 'The brand’s name is an everyday word, so it could be chance. Check the video.' },
-}
-
-// ── THE REQUEST TO A BRAND YOU FILMED (Seb, 2026-11-09: "request partnership
-// with the brand ... all from there") ─────────────────────────────────────
-// A request to a brand Match my TikTok matched says, in one line of MVP's own,
-// that the creator already made a video with it, with the video's TikTok
-// address. Written by MVP, not the request writer, so it is there every time,
-// exact, and the writer's "keep the core message word for word" holds.
-
-/** The line: "I already made a TikTok video featuring your Ninja CREAMi
- *  Deluxe: <url>", in the core message's voice (we or I). Null without a
- *  TikTok video address. Never a price: a product title's $ amount is dropped. */
-export function filmedLine(o: { core: string; url: string | null | undefined; product?: string | null; brand: string }): string | null {
-  const url = String(o.url || '').trim()
-  if (!/^https:\/\/(www\.)?tiktok\.com\/@[^/\s]+\/video\/\d+/i.test(url)) return null
-  const we = /\b(we|we're|we've|our|us)\b/i.test(o.core) && !/\b(I|I'm|I've|my)\b/.test(o.core)
-  const product = String(o.product || '').replace(/\$\s?\d[\d,.]*/g, '').replace(/\s+/g, ' ').trim()
-  const what = product && product.length <= 70 ? `your ${product}` : o.brand.trim() || 'your brand'
-  return `${we ? 'We' : 'I'} already made a TikTok video featuring ${what}: ${url}`
-}
-
-/** The draft with the line after its greeting (its first paragraph). Left as
- *  it was when the address is already in it. */
-export function withFilmedLine(draft: string, line: string | null): string {
-  if (!line) return draft
-  const url = line.slice(line.lastIndexOf(' ') + 1)
-  if (draft.includes(url)) return draft
-  const parts = draft.split(/\n\s*\n/)
-  if (parts.length < 2) return `${draft.trim()}\n\n${line}`
-  return [parts[0], line, ...parts.slice(1)].join('\n\n')
-}
+export { filmedLine, withFilmedLine } from './tiktok-match-words'

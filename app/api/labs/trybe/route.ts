@@ -66,8 +66,8 @@ import { samplePool, replyPool, metaSeries, timelineOf, dossierProducts } from '
 import { evidenceOf, retainerOf } from '@/lib/trybe-evidence'
 import { dailySeries, windowTotals, adsMovers, payMoves, payIndex, type ChangeRow } from '@/lib/trybe-home'
 import { TOP100, adSpendProof, samplesProof, sampleSignsByBrand, activityCounts, activityDigest, cleanProfile, pushesOf, readTop100Ask, readCatalogSamples, CATALOG_KEEP_DAYS, CATALOG_READS_MAX, CATALOG_REFRESH_CHUNK, type Activity, type CatalogSamples } from '@/lib/trybe-top100'
-import { filmedBrandIds, filmedVideos } from '@/lib/tiktok-library'
-import { filmedLine, withFilmedLine } from '@/lib/tiktok-match'
+import { filmedBrandIds, filmedVideos } from '@/lib/tiktok-filmed'
+import { filmedLine, withFilmedLine } from '@/lib/tiktok-match-words'
 import {
   clampCap, countsTowardCap, sanitizeScanned, sendUrl, tidyDraft,
   DRAFT_SYSTEM, draftUserPrompt, DEFAULT_DAILY_CAP, type ScannedBrand,

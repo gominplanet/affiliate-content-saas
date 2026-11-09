@@ -12,7 +12,7 @@
 // (which is how a brand you filmed that joins later is found), and kept on the
 // creator's row with when and how far the check got.
 
-import { buildIndex, matchVideos, isMatch, type BrandMatch, type MatchBrand } from './tiktok-match'
+import { buildIndex, matchVideos, isMatch, MATCH_RULES_AT, type BrandMatch, type MatchBrand } from './tiktok-match'
 import type { TikTokVideo, TikTokProductTag } from './tiktok-videos'
 import { readCatalogSamples } from './trybe-top100'
 
@@ -148,43 +148,11 @@ export async function recomputeMatches(admin: Db, userId: string, opts: { budget
  *  or brands have joined TRYBE since. */
 export async function matchesStale(admin: Db, matchedAt: string | null): Promise<boolean> {
   if (!matchedAt) return true
+  // Worked out under older rules (MATCH_RULES_AT): again, with today's.
+  if (Date.parse(matchedAt) < Date.parse(MATCH_RULES_AT)) return true
   if (Date.now() - Date.parse(matchedAt) > 24 * 3600_000) return true
   const { count } = await admin.from('trybe_directory').select('brand_id', { count: 'exact', head: true }).gt('first_seen_at', matchedAt)
   return (count ?? 0) > 0
 }
 
-/** The brand ids a creator filmed, sure and likely, for Find brands. */
-export async function filmedBrandIds(admin: Db, userId: string): Promise<Map<string, { sureness: string; videos: number }>> {
-  const out = new Map<string, { sureness: string; videos: number }>()
-  const { data, error } = await admin.from('tiktok_library').select('matches').eq('user_id', userId).maybeSingle()
-  if (error || !data) return out
-  for (const m of (Array.isArray(data.matches) ? data.matches : []) as KeptMatch[]) {
-    if (m && m.brandId && isMatch(m)) out.set(m.brandId, { sureness: m.sureness, videos: (m.videoIds || []).length })
-  }
-  return out
-}
-
-/** For a request to a brand you filmed: the video to name, the strongest match
- *  first, and the product it shows when TikTok tagged one. */
-export async function filmedVideos(admin: Db, userId: string, brandIds: string[]): Promise<Map<string, { url: string; product: string | null }>> {
-  const out = new Map<string, { url: string; product: string | null }>()
-  const { data, error } = await admin.from('tiktok_library').select('matches').eq('user_id', userId).maybeSingle()
-  if (error || !data) return out
-  const want = new Set(brandIds)
-  const picks = new Map<string, string>()
-  for (const m of (Array.isArray(data.matches) ? data.matches : []) as KeptMatch[]) {
-    if (!m || !want.has(m.brandId) || !isMatch(m)) continue
-    const vid = m.how?.[0]?.videoId || m.videoIds?.[0]
-    if (vid) picks.set(m.brandId, vid)
-  }
-  if (!picks.size) return out
-  const { data: vids } = await admin.from('tiktok_videos').select('video_id, url, products').eq('user_id', userId).in('video_id', Array.from(new Set(picks.values())))
-  const byId = new Map(((vids || []) as Array<{ video_id: string; url: string; products: unknown }>).map((v) => [v.video_id, v]))
-  for (const [brandId, vid] of Array.from(picks.entries())) {
-    const v = byId.get(vid)
-    if (!v?.url) continue
-    const tags = Array.isArray(v.products) ? (v.products as Array<{ title?: string | null }>) : []
-    out.set(brandId, { url: v.url, product: tags.find((p) => p?.title)?.title ?? null })
-  }
-  return out
-}
+export { filmedBrandIds, filmedVideos } from './tiktok-filmed'

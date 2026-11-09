@@ -23,7 +23,7 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react
 import { toast } from 'sonner'
 import { Loader2, ScanSearch, Square, ExternalLink, Check, RefreshCw, Cloud, Eye, ShoppingBag, AtSign, Hash, Type, Package, Send, Clapperboard } from 'lucide-react'
 import { cleanHandle } from '@/lib/tiktok-videos'
-import { isMatch, SURENESS_WORDS, type MatchKind, type Sureness } from '@/lib/tiktok-match'
+import { isMatch, SURENESS_WORDS, type MatchKind, type Sureness } from '@/lib/tiktok-match-words'
 import { requestTikTokLibraryAccess, requestTikTokLibraryScan, requestTikTokLibraryStop, requestTikTokLibraryDaily } from '@/lib/extension-frame'
 import { SCOUT_STORE_LISTING_URL, SCOUT_TIKTOK_LIBRARY_MIN_VERSION } from '@/lib/scout-version'
 import { BrandMark } from '@/components/labs/TrybeFinderControls'
@@ -37,7 +37,7 @@ const AMBER = '#B45309'
 const RED = '#B91C1C'
 
 interface Video { id: string; url: string; caption: string; postedAt: string | null; views: number | null; cover: string | null; products: Array<{ title: string | null; shop: string | null }> }
-interface Match { brandId: string; name: string; sureness: Sureness; videoIds: string[]; how: Array<{ kind: MatchKind; videoId: string; text: string }>; newestAt: string | null; foundAt: string; joinedTrybeAt: string | null }
+interface Match { brandId: string; name: string; sureness: Sureness; videoIds: string[]; how: Array<{ kind: MatchKind; videoId: string; text: string; count?: number }>; newestAt: string | null; foundAt: string; joinedTrybeAt: string | null }
 interface Scan { id: string | null; source: string | null; status: string | null; read: number; total: number | null; withProduct: number; reachedEnd: boolean | null; error: string | null; startedAt: string | null; updatedAt: string | null; finishedAt: string | null }
 interface Library { handle: string; name: string | null; avatar: string | null; videoCount: number | null; privateAccount: boolean | null; scan: Scan; daily: boolean; kept: number; matchedAt: string | null; matchedNote: string | null; matchedBrands: number }
 interface Data {
@@ -408,7 +408,7 @@ function MatchCard({ m, videos, brand, picked, onPick, scoutOpens, actions }: { 
         <ul className="mt-1.5 space-y-0.5">
           {m.how.slice(0, 3).map((h, i) => {
             const Icon = KIND_ICON[h.kind]
-            return <li key={i} className="text-[12.5px] flex items-start gap-1.5" style={{ color: 'var(--text-2)' }}><Icon size={12} className="mt-[3px] shrink-0" style={soft} /><span>{h.text}</span></li>
+            return <li key={i} className="text-[12.5px] flex items-start gap-1.5" style={{ color: 'var(--text-2)' }}><Icon size={12} className="mt-[3px] shrink-0" style={soft} /><span>{h.text}{(h.count ?? 1) > 1 ? ` (${h.count} videos)` : ''}</span></li>
           })}
         </ul>
         {vids.length > 0 && (

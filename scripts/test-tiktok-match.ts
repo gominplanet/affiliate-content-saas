@@ -90,9 +90,35 @@ const mk = (id: string, caption: string, extra: Partial<TikTokVideo> = {}): TikT
   const m = matchVideos([mk('6', 'glow serum #glow'), mk('7', 'My Glow routine')], idx)
   check('an everyday name in two videos is still only a maybe', m.every((x) => x.brandId !== 'b-glow' || x.sureness === 'maybe'))
 }
+// SEB'S FIRST REAL SCAN (2026-11-09: "so many are wrong"): everyday words
+// matched as brands. Each of these captions is from his videos.
+{
+  const real: MatchBrand[] = [
+    { id: 'goodbye', name: 'The Goodbye Company' }, { id: 'volume', name: 'Volume' }, { id: 'needed', name: 'Needed' },
+    { id: 'nights', name: 'Nights' }, { id: 'boost', name: 'Boost' }, { id: 'ninja', name: 'Ninja Kitchen' },
+  ]
+  const ix = buildIndex(real)
+  const caps = [
+    'Why settle for less? Our Stainless Steel Lemon Squeezer is built for maximum juice. Say goodbye to hand cramps and wasted juice.',
+    'Michelle said she didn\u2019t think she needed these until she tried them on camera. The Atom One amplifies everyday sounds, no more turning up the volume.',
+    'Volume for days! This hot brush works like a charm for sleepless nights and lazy mornings',
+    'Charge on the go! A tiny power bank to boost your phone',
+    'Vaginal health is a thing? #boost #needed #nights',
+  ]
+  const m = matchVideos(caps.map((c, i) => mk(`r${i}`, c)), ix)
+  check('everyday words in a caption are not brands: The Goodbye Company, Volume, Needed, Nights and Boost all stay out of the matches', m.filter(isMatch).length === 0)
+  check('lowercase everyday words are not even listed as possible', !m.some((x) => x.brandId === 'needed' || x.brandId === 'boost' || x.brandId === 'goodbye'))
+  check('"say goodbye" is never The Goodbye Company', !m.some((x) => x.brandId === 'goodbye'))
+  const g = matchVideos([mk('g1', 'Unboxing from The Goodbye Company, finally a squeezer that works')], ix)
+  check('The Goodbye Company written as its name is a match', g[0]?.brandId === 'goodbye' && g[0].sureness === 'likely')
+  const n = matchVideos([mk('n1', 'My Ninja Kitchen blender after a month'), mk('n2', 'ninja kitchen hacks for busy nights')], ix)
+  check('an all-everyday name counts written as a name, lowercase it is only possible', n[0]?.brandId === 'ninja' && n[0].sureness === 'likely' && n[0].how.some((h) => /as a name/.test(h.text)))
+  const rep2 = matchVideos([mk('a', 'Testing Lumineux strips'), mk('b', 'Lumineux day 7'), mk('c', 'Lumineux results')], buildIndex([{ id: 'lumi', name: 'Lumineux' }]))
+  check('the same words from several videos are one line with a count', rep2[0].how.length === 1 && rep2[0].how[0].count === 3 && rep2[0].videoIds.length === 3)
+}
 check('company words are not part of the name a caption says', brandName('Lumineux Oral Essentials Inc') === 'lumineux oral essentials' && brandName('The Arcadia Sleep Co') === 'arcadia sleep')
-check('a short or everyday name is not distinct; a real name is', !nameIsDistinct('Glow') && !nameIsDistinct('Zap') && !nameIsDistinct('Pure Glow') && nameIsDistinct('Lumineux') && nameIsDistinct('Ninja Kitchen'))
-check('a product name too short to be safe is not matched', productKey('Ice Cream') === null && productKey('Ninja CREAMi Ice Cream Maker 7 in 1') === 'ninja creami ice cream maker 7')
+check('a short or everyday name is not distinct; a name no dictionary has is', !nameIsDistinct('Glow') && !nameIsDistinct('Zap') && !nameIsDistinct('Pure Glow') && !nameIsDistinct('Volume') && !nameIsDistinct('The Goodbye Company') && nameIsDistinct('Lumineux') && nameIsDistinct('Olaplex'))
+check('a product name too short or too generic to be safe is not matched', productKey('Ice Cream') === null && productKey('Stainless Steel Lemon Squeezer') === null && productKey('Ninja CREAMi Ice Cream Maker 7 in 1') === 'ninja creami ice cream maker 7')
 {
   const many: MatchBrand[] = Array.from({ length: 8000 }, (_, i) => ({ id: `x${i}`, name: `Brandname ${i} Labs`, products: [`Product line number ${i} deluxe edition`] }))
   const t0 = Date.now()
