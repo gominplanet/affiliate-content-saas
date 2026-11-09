@@ -23,7 +23,7 @@ const WINDOWS: { days: number | null; label: string }[] = [
   { days: null, label: 'All time' }, { days: 90, label: 'Last 90 days' }, { days: 30, label: 'Last 30 days' }, { days: 7, label: 'Last 7 days' },
 ]
 
-export default function TrybeSubmissions({ canRead }: { canRead: boolean }) {
+export default function TrybeSubmissions({ canRead, isAdmin = false }: { canRead: boolean; isAdmin?: boolean }) {
   const { state, reload } = useTrybeAllSubs(canRead)
   const [filter, setFilter] = useState<SubFilter>('all')
   const [query, setQuery] = useState('')
@@ -79,7 +79,7 @@ export default function TrybeSubmissions({ canRead }: { canRead: boolean }) {
       {!state && <p className="text-[12px] inline-flex items-center gap-1.5" style={soft}><Loader2 size={12} className="animate-spin" /> Reading your submissions from TRYBE</p>}
       {state && (
         <TrybeSubList state={{ ...state, list: inWindow }} filter={filter} setFilter={setFilter} query={query}
-          brandId={brand?.id ?? null} brandName={brand?.name ?? null} days={days} />
+          brandId={brand?.id ?? null} brandName={brand?.name ?? null} days={days} showClues={isAdmin} />
       )}
     </section>
   )

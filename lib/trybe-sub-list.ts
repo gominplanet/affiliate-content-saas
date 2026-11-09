@@ -8,7 +8,7 @@
 // period rule is the counts' own (lib/trybe-analytics countSubmissions), so
 // the list and its chips agree. Pure, tested in scripts/test-trybe-sub-list.
 
-import { analyticsStatus, type AnalyticsStatus } from '@/lib/trybe-analytics'
+import { analyticsStatus, type AnalyticsStatus, type SubmissionCounts } from '@/lib/trybe-analytics'
 import type { Submission } from '@/lib/trybe-mybrands'
 
 export interface ListedSub {
@@ -24,6 +24,11 @@ export interface ListedSub {
   product: string | null
   thumbnail: string | null
   reason: string | null
+  /** Where the status came from: a field of TRYBE's answer, or 'brand totals'
+   *  (placeByTotals). */
+  statusFrom?: string
+  /** For a status MVP could not place: what TRYBE sent that might hold it. */
+  clues?: string
 }
 
 export type SubFilter = AnalyticsStatus | 'all'
@@ -42,7 +47,28 @@ export function listedOf(brand: { id: string; name: string; logo: string | null 
     id: s.id, brandId: brand.id, brand: brand.name, logo: brand.logo,
     status: analyticsStatus(s.rawStatus), rawStatus: s.rawStatus,
     at: s.at, decidedAt: s.decidedAt ?? null, product: s.product, thumbnail: s.thumbnail, reason: s.reason ?? null,
+    statusFrom: s.statusFrom, clues: s.clues,
   }))
+}
+
+/** A BRAND'S TOTALS PLACE ITS VIDEOS when TRYBE's list did not say their
+ *  status: only when every video the brand has is in one row (all approved,
+ *  say), and none MVP did place says otherwise. A brand with videos in two
+ *  rows is left as TRYBE sent it, never guessed. Pure. */
+export function placeByTotals(list: ListedSub[], totals: SubmissionCounts | null): ListedSub[] {
+  if (!totals || !list.some((s) => s.status === 'other')) return list
+  const rows = (['approved', 'pending', 'revision', 'rejected'] as const).filter((k) => totals[k] > 0)
+  if (rows.length !== 1) return list
+  const only = rows[0]
+  if (totals[only] !== totals.total || list.some((s) => s.status !== 'other' && s.status !== only)) return list
+  return list.map((s) => (s.status === 'other' ? { ...s, status: only, statusFrom: 'brand totals' } : s))
+}
+
+/** TRYBE's own word for a status MVP could not place, readable:
+ *  "IN_PROGRESS" as "In progress". */
+export const rawWords = (raw: string) => {
+  const w = raw.replace(/[_-]+/g, ' ').trim().toLowerCase()
+  return w ? w[0].toUpperCase() + w.slice(1) : ''
 }
 
 /** Every word of the search is somewhere in the product, the brand, the

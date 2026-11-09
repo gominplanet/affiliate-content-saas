@@ -125,6 +125,11 @@ export interface Submission {
   /** What the brand wrote when it rejected it or asked for changes, when
    *  TRYBE sends it. */
   reason?: string | null
+  /** Where in TRYBE's answer the status was found (statusOf). */
+  statusFrom?: string
+  /** When no status could be placed: the fields TRYBE sent that might hold
+   *  one, with their values, so it can be traced instead of guessed at. */
+  clues?: string
 }
 
 /** TRYBE's status word, in whichever spelling it uses. "Pending approval"
@@ -139,6 +144,70 @@ export function subStatus(raw: string): SubStatus {
   if (/(approv|accept|live|publish|paid|payout|complete)/.test(s)) return 'approved'
   if (/(pend|review|submit|wait|process|new|queue)/.test(s)) return 'pending'
   return 'other'
+}
+
+// ── WHERE A SUBMISSION'S STATUS IS (Seb, 2026-11-09: all 54 of his videos
+// showed "Unknown", every one in Other: TRYBE's list carried no status under
+// the five names MVP looked for). Looked for, in order: a status word MVP can
+// place, under any of TRYBE's likely names, or inside an object kept there
+// ({ name: 'APPROVED' }); the same inside the submission's review, its latest
+// review or its video; a yes or no flag (isApproved); a decision's date
+// (rejectedAt); then any other field named for a status. A word MVP cannot
+// place is kept to show as TRYBE wrote it; with nothing at all, the fields
+// that might hold one are kept as clues.
+const STATUS_KEYS = ['status', 'submissionStatus', 'submission_status', 'reviewStatus', 'review_status', 'approvalStatus', 'approval_status',
+  'state', 'submissionState', 'submission_state', 'reviewState', 'review_state', 'videoStatus', 'contentStatus', 'currentStatus', 'statusName',
+  'statusLabel', 'statusText', 'statusDisplay', 'displayStatus', 'decision', 'reviewDecision', 'outcome']
+const STATUS_PARTS = ['review', 'latestReview', 'latest_review', 'lastReview', 'currentReview', 'approval', 'submission', 'video', 'content', 'brandReview']
+const INNER_KEYS = ['name', 'value', 'label', 'code', 'key', 'status', 'state', 'type', 'text', 'displayName']
+/** A status word from one value: a word or number, or an object holding one. */
+function wordOf(v: unknown): string {
+  if (typeof v === 'string' || typeof v === 'number') return str(v)
+  if (isObj(v)) for (const k of INNER_KEYS) { const w = str(v[k]); if (w) return w }
+  return ''
+}
+const placeable = (w: string) => subStatus(w) !== 'other' || /revis|changes?.?request|resubmi|needs.?(edit|change)/i.test(w)
+const truthy = (v: unknown) => v === true || v === 1 || v === 'true'
+
+/** TRYBE's status for one submission, and where in its answer it was found.
+ *  An empty word when TRYBE's answer holds none. Pure. */
+export function statusOf(raw: Obj): { word: string; from: string } {
+  const words: Array<{ word: string; from: string }> = []
+  for (const k of STATUS_KEYS) { const w = wordOf(raw[k]); if (w) words.push({ word: w, from: k }) }
+  for (const part of STATUS_PARTS) {
+    const o = raw[part]
+    if (isObj(o)) for (const k of ['status', 'state', 'decision', 'outcome', 'result', 'reviewStatus', 'approvalStatus']) { const w = wordOf(o[k]); if (w) words.push({ word: w, from: `${part}.${k}` }) }
+  }
+  const reviews = Array.isArray(raw.reviews) ? raw.reviews.filter(isObj) : []
+  const latest = reviews[reviews.length - 1]
+  if (latest) for (const k of ['status', 'state', 'decision', 'outcome']) { const w = wordOf(latest[k]); if (w) words.push({ word: w, from: `reviews.${k}` }) }
+  for (const [k, v] of Object.entries(raw)) if (/status|state|decision|outcome/i.test(k) && !STATUS_KEYS.includes(k)) { const w = wordOf(v); if (w) words.push({ word: w, from: k }) }
+  const placed = words.find((x) => placeable(x.word))
+  if (placed) return placed
+  // Yes or no flags, then a decision's date.
+  if (['isRejected', 'rejected', 'isDeclined', 'declined'].some((k) => truthy(raw[k]))) return { word: 'REJECTED', from: 'a rejected flag' }
+  if (['needsRevision', 'revisionRequested', 'isRevisionRequested', 'changesRequested', 'needs_revision'].some((k) => truthy(raw[k]))) return { word: 'REVISION_REQUESTED', from: 'a revision flag' }
+  if (['isApproved', 'approved', 'isAccepted', 'accepted'].some((k) => truthy(raw[k]))) return { word: 'APPROVED', from: 'an approved flag' }
+  if (['isPending', 'pending', 'inReview', 'isInReview'].some((k) => truthy(raw[k]))) return { word: 'PENDING', from: 'a pending flag' }
+  if (pick(raw, ['rejectedAt', 'rejected_at', 'declinedAt', 'declined_at'])) return { word: 'REJECTED', from: 'its rejected date' }
+  if (pick(raw, ['revisionRequestedAt', 'revision_requested_at', 'changesRequestedAt'])) return { word: 'REVISION_REQUESTED', from: 'its revision date' }
+  if (pick(raw, ['approvedAt', 'approved_at', 'acceptedAt'])) return { word: 'APPROVED', from: 'its approved date' }
+  return words[0] ?? { word: '', from: '' }
+}
+
+/** The fields of one submission that might hold its status, with their
+ *  values, for a status MVP could not place; with none, its field names. Pure. */
+export function statusClues(raw: Obj): string {
+  const show = (v: unknown): string => typeof v === 'string' ? `"${v.slice(0, 40)}"` : typeof v === 'number' || typeof v === 'boolean' || v === null ? String(v)
+    : Array.isArray(v) ? `[${v.length}]` : isObj(v) ? `{${Object.keys(v).slice(0, 6).join(', ')}}` : typeof v
+  const out: string[] = []
+  const near = /status|state|approv|reject|declin|review|revis|decision|outcome|result|pending/i
+  for (const [k, v] of Object.entries(raw)) {
+    if (near.test(k)) out.push(`${k}=${show(v)}`)
+    if (isObj(v)) for (const [k2, v2] of Object.entries(v)) if (near.test(k2)) out.push(`${k}.${k2}=${show(v2)}`)
+  }
+  const text = out.length ? out.join(', ') : `no status field; fields: ${Object.keys(raw).slice(0, 24).join(', ')}`
+  return text.length > 320 ? `${text.slice(0, 317)}...` : text
 }
 
 const dateOf = (v: unknown): number | null => {
@@ -157,7 +226,8 @@ export function readSubmissions(json: unknown): Submission[] {
     if (!isObj(raw)) continue
     const id = str(raw.id ?? raw.submissionId ?? raw.submission_id ?? raw._id)
     if (!id) continue
-    const rawStatus = str(pick(raw, ['status', 'submissionStatus', 'reviewStatus', 'approvalStatus', 'state']))
+    const found = statusOf(raw)
+    const rawStatus = found.word
     const product = isObj(raw.product) ? raw.product : null
     const meta = isObj(raw.metadata) ? raw.metadata : null
     const review = isObj(raw.review) ? raw.review : null
@@ -177,6 +247,8 @@ export function readSubmissions(json: unknown): Submission[] {
       reason: subStatus(rawStatus) === 'approved' ? null
         : str(pick(raw, ['rejectionReason', 'rejection_reason', 'revisionReason', 'revisionNotes', 'revision_notes', 'reviewFeedback', 'review_feedback', 'brandFeedback', 'feedback', 'reviewNotes', 'reviewNote', 'declineReason', 'statusReason'])
           ?? review?.feedback ?? review?.reason ?? review?.notes ?? review?.comment).slice(0, 600) || null,
+      statusFrom: found.from,
+      clues: placeable(rawStatus) ? undefined : statusClues(raw),
     })
   }
   return out

@@ -7,8 +7,8 @@
 // counts' own period rule; a brand TRYBE did not give and nothing matching
 // are said; Sent has said yes, not answered and said no chips, and a search.
 import { readFileSync } from 'node:fs'
-import { listedOf, filterSubs, statusTally, subMatches } from '../lib/trybe-sub-list'
-import { readSubmissions } from '../lib/trybe-mybrands'
+import { listedOf, filterSubs, statusTally, subMatches, placeByTotals } from '../lib/trybe-sub-list'
+import { readSubmissions, statusOf } from '../lib/trybe-mybrands'
 
 const fails: string[] = []
 const check = (name: string, ok: boolean | undefined, detail?: unknown) => { if (!ok) fails.push(`${name}${detail !== undefined ? `: ${JSON.stringify(detail)}` : ''}`) }
@@ -49,7 +49,7 @@ check('each status count opens its videos', /onClick=\{\(\) => setSubFilter\(sub
 check('one search box, so typing never jumps to another box', (A.match(/type="search"/g) ?? []).length === 1 && !/type="search"/.test(L))
 check('still reading, a brand not given, brands past the cap and nothing matching are each said',
   /Reading your videos from TRYBE: \{state\.done\} of \{state\.of\} brands/.test(L) && /TRYBE did not give the videos for/.test(L) && /more are not in this list/.test(L) && /No \$\{word\}videos/.test(L))
-check('a status MVP cannot place shows TRYBE’s own word', /s\.status === 'other' \? \(s\.rawStatus \|\| 'Unknown'\)/.test(L))
+check('a status MVP cannot place shows TRYBE’s own word', /s\.status === 'other' \? \(rawWords\(s\.rawStatus\) \|\| 'Not said'\)/.test(L))
 check('what the brand wrote is shown as theirs', /\{s\.brand\} wrote: &ldquo;\{s\.reason\}&rdquo;/.test(L))
 
 const O = read('components/labs/TrybeOutreach.tsx')
@@ -71,6 +71,34 @@ check('a read that failed outright is said, never an empty list', /state\?\.erro
 
 const copy = code.match(/"[^"\n]{12,}"|`[^`]{12,}`|>[^<>{}\n]{12,}</g)?.join(' ') ?? ''
 check('no dashes in what a creator reads', !/[–—]| - /.test(copy) && !/[–—]/.test('Search your videos: product, brand, or what the brand wrote See all your videos'), (copy.match(/.{20}(?:[–—]| - ).{20}/g) ?? []).slice(0, 3))
+
+// ── WHERE THE STATUS IS (Seb, 2026-11-09: all 54 of his videos showed
+// "Unknown", every one in Other) ──
+{
+  const st = (raw: Record<string, unknown>) => listedOf({ id: 'b', name: 'B', logo: null }, readSubmissions({ data: [{ id: 'x1', submittedAt: ago(1), ...raw }] }), 3650, now)[0]
+  check('a status kept inside an object is read', st({ status: { name: 'APPROVED', id: 3 } }).status === 'approved' && st({ status: { label: 'Rejected' } }).status === 'rejected')
+  check('a status kept in the submission’s review or its latest review is read', st({ review: { status: 'REVISION_REQUESTED' } }).status === 'revision' && st({ reviews: [{ status: 'PENDING' }, { status: 'APPROVED' }] }).status === 'approved')
+  check('other names TRYBE may use are read', st({ submissionState: 'IN_REVIEW' }).status === 'pending' && st({ reviewDecision: 'DECLINED' }).status === 'rejected' && st({ videoApprovalStatus: 'APPROVED' }).status === 'approved')
+  check('a yes or no flag, or a decision’s date, places it', st({ isApproved: true, isRejected: false }).status === 'approved' && st({ rejectedAt: ago(1) }).status === 'rejected' && st({ needsRevision: true }).status === 'revision')
+  check('a word MVP can place wins over one it cannot', st({ state: 'CA', submissionStatus: 'PENDING_APPROVAL' }).status === 'pending' && statusOf({ state: 'CA', submissionStatus: 'PENDING_APPROVAL' }).from === 'submissionStatus')
+  const none = st({ product: { title: 'Gum' }, thumbnailUrl: 'https://x/t.jpg' })
+  check('with no status anywhere it stays Other, and keeps the fields TRYBE sent', none.status === 'other' && none.rawStatus === '' && /no status field; fields: id, submittedAt, product, thumbnailUrl/.test(none.clues || ''), none.clues)
+  const odd = st({ status: 'ON_HOLD', reviewer: { decision: null } })
+  check('a word MVP cannot place is kept as TRYBE wrote it, with its clues', odd.status === 'other' && odd.rawStatus === 'ON_HOLD' && /status="ON_HOLD"/.test(odd.clues || ''), odd.clues)
+  check('a placed status keeps no clues', st({ status: 'APPROVED' }).clues === undefined)
+
+  const two = [none, { ...none, id: 'x2' }]
+  const all = (o: Partial<Record<'approved' | 'pending' | 'revision' | 'rejected' | 'other', number>>) => ({ total: Object.values(o).reduce((a, b) => a + (b ?? 0), 0), approved: 0, pending: 0, revision: 0, rejected: 0, other: 0, ...o })
+  const placed = placeByTotals(two, all({ pending: 2 }))
+  check('a brand whose totals put every video in one row places the ones TRYBE’s list left unsaid, and says so', placed.every((s) => s.status === 'pending' && s.statusFrom === 'brand totals'))
+  check('a brand with videos in two rows is never guessed', placeByTotals(two, all({ pending: 1, approved: 1 })).every((s) => s.status === 'other'))
+  check('totals with unplaced videos of their own place nothing', placeByTotals(two, all({ approved: 1, other: 1 })).every((s) => s.status === 'other'))
+  check('a placed video that disagrees with the totals stops the guess', placeByTotals([none, { ...st({ status: 'REJECTED' }), id: 'x3' }], all({ approved: 2 })).some((s) => s.status === 'other'))
+  const H2 = read('components/labs/useTrybeSubmissions.ts')
+  check('the Submissions tab places by TRYBE’s all time totals', /list\.push\(\.\.\.placeByTotals\(listedOf\(\{ id: b\.id, name: b\.name, logo: b\.logo \}, subs, ALL_TIME\), brandCounts\(b\)\)\)/.test(H2))
+  const L2 = read('components/labs/TrybeSubList.tsx')
+  check('a status not said reads "Not said", never "Unknown", and an admin sees what TRYBE sent', /rawWords\(s\.rawStatus\) \|\| 'Not said'/.test(L2) && !/'Unknown'/.test(L2) && /showClues && s\.status === 'other' && s\.clues/.test(L2) && /<TrybeSubmissions canRead=\{canMyBrands\} isAdmin=\{isAdmin\} \/>/.test(read('components/labs/TrybeOutreach.tsx')))
+}
 
 if (fails.length) { console.error(`\n❌ trybe-sub-list: ${fails.length} failure(s)\n`); for (const f of fails) console.error(`   • ${f}`); process.exit(1) }
 console.log('✅ trybe-sub-list: submissions filtered by status and searched, brands that said yes or no filtered and searched')

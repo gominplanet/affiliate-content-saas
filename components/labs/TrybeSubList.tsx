@@ -8,7 +8,7 @@
 // an empty list never stands in for one MVP could not read.
 
 import { Loader2, X, AlertTriangle } from 'lucide-react'
-import { filterSubs, statusTally, STATUS_WORDS, FILTER_ORDER, type SubFilter } from '@/lib/trybe-sub-list'
+import { filterSubs, statusTally, rawWords, STATUS_WORDS, FILTER_ORDER, type SubFilter } from '@/lib/trybe-sub-list'
 import { MAX_LIST_BRANDS, ALL_TIME_BRANDS, type SubList } from '@/components/labs/useTrybeSubmissions'
 import { brandPageUrl } from '@/lib/trybe-brand-page'
 
@@ -19,7 +19,7 @@ const COLORS: Record<string, string> = { approved: '#16A34A', pending: '#3B82F6'
 const waited = (at: number | null) => (at ? Math.floor((Date.now() - at) / 86_400_000) : 0)
 const day = (ms: number | null) => (ms == null ? null : new Date(ms).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }))
 
-export default function TrybeSubList({ state, filter, setFilter, query, brandId, brandName, days, onClose }: {
+export default function TrybeSubList({ state, filter, setFilter, query, brandId, brandName, days, onClose, showClues }: {
   state: SubList | null
   filter: SubFilter
   setFilter: (f: SubFilter) => void
@@ -31,6 +31,8 @@ export default function TrybeSubList({ state, filter, setFilter, query, brandId,
   days: number | null
   /** Analytics closes it; the Submissions tab is always open. */
   onClose?: () => void
+  /** Admin: under a video whose status MVP could not place, what TRYBE sent. */
+  showClues?: boolean
 }) {
   const list = state?.list ?? []
   const tally = statusTally(list, query, brandId)
@@ -92,9 +94,11 @@ export default function TrybeSubList({ state, filter, setFilter, query, brandId,
                   {' '}<a href={brandPageUrl(s.brandId)} target="_blank" rel="noopener noreferrer" className="underline">Open {s.brand} on TRYBE</a>
                 </p>
                 {s.reason && <p className="text-[12px] mt-0.5" style={{ color: 'var(--text-2)' }}>{s.brand} wrote: &ldquo;{s.reason}&rdquo;</p>}
+                {showClues && s.status === 'other' && s.clues && <p className="text-[11px] mt-0.5 font-mono break-all" style={soft}>TRYBE sent: {s.clues}</p>}
               </div>
-              <span className="shrink-0 text-[11px] font-semibold px-2 py-0.5 rounded-full" style={{ background: `${COLORS[s.status]}1F`, color: COLORS[s.status] }}>
-                {s.status === 'other' ? (s.rawStatus || 'Unknown') : STATUS_WORDS[s.status]}
+              <span className="shrink-0 text-[11px] font-semibold px-2 py-0.5 rounded-full" style={{ background: `${COLORS[s.status]}1F`, color: COLORS[s.status] }}
+                title={s.statusFrom === 'brand totals' ? `TRYBE's list did not say; its totals for ${s.brand} put every video you sent them in ${STATUS_WORDS[s.status].toLowerCase()}.` : s.status === 'other' ? 'TRYBE did not say a status MVP could read for this video.' : undefined}>
+                {s.status === 'other' ? (rawWords(s.rawStatus) || 'Not said') : STATUS_WORDS[s.status]}
               </span>
             </li>
           ))}

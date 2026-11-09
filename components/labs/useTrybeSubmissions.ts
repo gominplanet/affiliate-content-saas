@@ -19,7 +19,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { requestTrybeApi } from '@/lib/extension-frame'
 import { readBrandStats, readSubmissions, keysOf, type MyBrand, type Submission } from '@/lib/trybe-mybrands'
-import { listedOf, type ListedSub } from '@/lib/trybe-sub-list'
+import { listedOf, placeByTotals, type ListedSub } from '@/lib/trybe-sub-list'
 import { countSubmissions, readSubmissionTotals, brandCounts, addCounts, NO_COUNTS, type SubmissionCounts } from '@/lib/trybe-analytics'
 import { PERIOD_DAYS, type AdPeriod } from '@/lib/trybe-ads'
 
@@ -234,7 +234,9 @@ export function useTrybeAllSubs(canRead: boolean) {
       const part = await Promise.all(go.slice(i, i + 4).map(async (b) => ({ b, subs: await listOf(b.id, 'all', fresh).catch(() => null) })))
       if (mine !== run.current) return
       for (const { b, subs } of part) {
-        if (subs) list.push(...listedOf({ id: b.id, name: b.name, logo: b.logo }, subs, ALL_TIME))
+        // All time against TRYBE's all time totals, which place a brand's
+        // videos the list left without a status when all are in one row.
+        if (subs) list.push(...placeByTotals(listedOf({ id: b.id, name: b.name, logo: b.logo }, subs, ALL_TIME), brandCounts(b)))
         else failed.push(b.name)
       }
       setState({ list: [...list], done: Math.min(i + 4, go.length), of: go.length, failed: [...failed], skipped, loading: i + 4 < go.length })

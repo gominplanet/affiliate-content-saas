@@ -3248,7 +3248,7 @@ export default function TrybeOutreach({ preview = false, v2 = false, layout = fa
         directory={inboxDirectory} />}
 
       {tab === 'analytics' && canMyBrands && <TrybeAds canRead={canMyBrands} isAdmin={isAdmin} onPlan={() => go('week')} />}
-      {tab === 'submissions' && canMyBrands && <TrybeSubmissions canRead={canMyBrands} />}
+      {tab === 'submissions' && canMyBrands && <TrybeSubmissions canRead={canMyBrands} isAdmin={isAdmin} />}
       {tab === 'submissions' && !canMyBrands && (
         <p className="text-[13px] rounded-xl border p-4" style={{ borderColor: 'var(--border-2)', color: 'var(--text-2)' }}>
           {access === 'no-scout' ? 'Your submissions are read from your own TRYBE through SCOUT, MVP\u2019s Chrome extension. Install SCOUT from the Chrome Web Store (top of this page), and they show here.'
