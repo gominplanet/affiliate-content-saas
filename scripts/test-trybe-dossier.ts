@@ -160,7 +160,7 @@ check('and in Star brands, and on the home', /<BrandName id=\{b\.brand_id\}/.tes
 check('Find brands as a sortable table in the new TRYBE, cards kept as a choice', /\{v2 && listView === 'table' \? \(\s*<TrybeBrandTable/.test(U) && /localStorage\.setItem\('mvp\.trybe\.listView', v\)/.test(U))
 {
   const T = read('components/labs/TrybeBrandTable.tsx')
-  check('the table says what it has not read, never a zero', /Not counted/.test(T) && /Not known/.test(T) && /Not shown/.test(T))
+  check('the table says what it has not read, never a zero', /Meta ads not counted/.test(T) && /A month not known/.test(T) && /Paid out not shown/.test(T) && /Room not known/.test(T) && /Pay not shown/.test(T))
   check('every column sorts, unknown always last', /if \(x == null\) return 1/.test(T) && /aria-sort=/.test(T))
   check('a brand already written or sent cannot be picked again', /disabled=\{isTaken\}/.test(T))
   check('the table downloads as a spreadsheet, rows as shown, blank where not read', /Download these \{rows\.length\} as a spreadsheet/.test(T) && /text\/csv/.test(T) && /metaOf\(b\) \?\? ''/.test(T))

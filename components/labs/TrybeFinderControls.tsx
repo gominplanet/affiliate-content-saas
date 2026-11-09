@@ -939,9 +939,13 @@ export function RepliesChip({ replies }: { replies: { rate: number | null; days:
  *  from in the hover, and in the proof box under it. */
 export function RetainerBadge({ retainer }: { retainer: RetainerRead | null | undefined }) {
   if (!retainer) return null
+  // Set in its TRYBE terms: solid gold. Only mentioned in its own words: a
+  // gold outline, so a mention never looks like a retainer TRYBE shows.
+  const set = retainer.source === 'terms'
   return (
-    <span className="text-[11.5px] font-extrabold rounded-full px-2.5 py-0.5 inline-flex items-center gap-1 cursor-help whitespace-nowrap" style={{ background: '#F59E0B', color: '#1F1300' }} title={retainerSource(retainer)}>
-      <DollarSign size={12} />{retainerShort(retainer)}
+    <span className={`text-[11.5px] ${set ? 'font-extrabold' : 'font-bold'} rounded-full px-2.5 py-0.5 inline-flex items-center gap-1 cursor-help whitespace-nowrap`}
+      style={set ? { background: '#F59E0B', color: '#1F1300' } : { border: '1.5px solid #F59E0B', color: 'var(--text)' }} title={retainerSource(retainer)}>
+      <DollarSign size={12} style={set ? undefined : { color: '#D97706' }} />{retainerShort(retainer)}
     </span>
   )
 }

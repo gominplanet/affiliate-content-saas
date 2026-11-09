@@ -73,7 +73,18 @@ check('no dashes in the column', !/[–—]/.test(side.replace(/\/\*[\s\S]*?\*\/
   check('the table shows what a month pays, TikTok Shop, approvals and answers, in the spreadsheet too',
     ["{ id: 'month', label: 'Pays a month'", "{ id: 'tiktok', label: 'TikTok Shop'", "{ id: 'approves', label: 'Approves'", "{ id: 'answers', label: 'Answers'"].every((x) => T.includes(x)) && /'Pays a month \(\$\)'.*'TikTok Shop'.*'Approves \(%\)', 'Answers \(%\)'/.test(T))
   check('the brand\u2019s name stays in view while the table scrolls', /position: 'sticky', left: preview \? 0 : 40/.test(T) && /sticky left-0 z-\[1\]/.test(T))
-  check('a brand not read says so in the new columns, never a zero', /<Unknown>Not checked<\/Unknown>/.test(T) && (T.match(/<Unknown>Not yet<\/Unknown>/g) || []).length >= 3)
+  check('a brand not read says so in the new columns, never a zero', /'TikTok Shop not checked'/.test(T) && /Members&rsquo; results not yet/.test(T) && /'Samples not known'/.test(T) && /'No rating'/.test(T))
+  // FOUR COLUMNS THAT FIT (Seb, 2026-11-09: "Can we make this a table that
+  // actually sits on the page without having to scroll? ... I do love the
+  // information"): every fact grouped by the question it answers, each with
+  // its own sort button, and nothing that forces 1,500px.
+  const groups = T.slice(T.indexOf('const GROUPS'), T.indexOf('const colOf'))
+  const facts = Array.from(groups.matchAll(/'(\w+)'/g)).map((m) => m[1])
+  check('the table is four grouped columns that hold every fact, each fact sortable on its own', (groups.match(/\{ id: '/g) || []).length === 4
+    && ['brand', 'pick', 'pay', 'month', 'paidOut', 'retainer', 'meta', 'top100', 'tiktok', 'room', 'rating', 'samples', 'approves', 'answers', 'decides'].every((f) => facts.includes(f))
+    && /g\.facts\.map\(\(f\) => \{/.test(T) && /onClick=\{\(\) => flip\(f\)\}/.test(T))
+  check('it fits beside the filters: no 1,500px floor, only a phone scrolls sideways', !/min-w-\[1500px\]/.test(T) && /min-w-\[600px\] table-fixed/.test(T))
+  check('the fact the list is sorted by stands out in every row', /const hl = \(c: Col\)/.test(T) && /style=\{hl\('meta'\)\}/.test(T))
   check('every card shows its Meta ads and Top 100, its approvals and its answers', /<AdsChip count=\{b\.meta_ads\} fresh=\{b\.meta_fresh\} trust=\{b\.meta_trust\} top100=\{b\.top100_hits\} \/>/.test(O) && /<ApprovalChip rate=\{b\.approval\} \/>/.test(O) && /<RepliesChip replies=\{b\.replies\} \/>/.test(O))
   check('a Meta count that is not the brand\u2019s own is never shown as its number', /const own = typeof count === 'number' && fresh && \(!trust \|\| trust === 'own' \|\| trust === 'unchecked'\)/.test(C))
   check('the column offers the new filters', /tick\('approves'/.test(side) && /tick\('roomAndPay'/.test(side))

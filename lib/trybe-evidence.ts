@@ -43,6 +43,10 @@ export interface RetainerRead {
   /** TRYBE's terms, or the brand's own sentence. */
   text: string
   source: 'terms' | 'about' | 'website'
+  /** Smart (a guaranteed amount the creator's commission counts toward, the
+   *  brand tops up the rest) or standard (a set fee on top of commission),
+   *  when its words say which; null when they do not. */
+  kind: 'smart' | 'standard' | null
 }
 export interface BrandEvidence { pays: ClaimProof; ads: ClaimProof; retainer: RetainerRead | null }
 
@@ -116,9 +120,12 @@ export function evidenceOf(i: EvidenceInput): BrandEvidence {
   }
 }
 
-// A retainer word only counts next to creators or monthly pay; a product
+// A retainer word in a brand's own text only counts next to a word for
+// creators: "pay", "partners" or "content" alone let agency and service pages
+// through (Seb, 2026-11-09: "how do you figure out which brand offers
+// retainers ... I can't see it straight onto the Tribe website"). A product
 // called a retainer (teeth, aligners) never does.
-const NEAR = /\b(?:creators?|influencers?|ugc|content|ambassadors?|affiliates?|partners?|monthly|per month|a month|\/mo\b|paid|pay|top performers?|videos?)\b/i
+const NEAR = /\b(?:creators?|influencers?|ugc|ambassadors?|affiliates?|top performers?)\b/i
 const PRODUCT = /\b(?:teeth|tooth|orthodont\w*|aligners?|dental|dentist|smile|night ?guards?|mouth ?guards?|retainer cases?|clear retainers?|bite)\b/i
 const OFFER = /\bretainers?\b|\bguaranteed (?:monthly )?pay\b|\bmonthly (?:creator )?(?:stipend|pay)\b|\bbase pay\b/gi
 
@@ -145,23 +152,47 @@ export function retainerWords(text: string | null | undefined): string | null {
  *  "no": a brand can still offer one in chat. Pure. */
 export function retainerOf(i: { payLines: string[]; about: string | null; siteText: string | null }): RetainerRead | null {
   const term = readTerms(i.payLines).terms.find((t) => t.kind === 'retainer')
-  if (term) return { amount: term.amount ?? null, videos: term.videos ?? null, text: term.text, source: 'terms' }
+  if (term) return { amount: term.amount ?? null, videos: term.videos ?? null, text: term.text, source: 'terms', kind: retainerKindOf(term.text) }
   const about = retainerWords(i.about)
-  if (about) return { amount: null, videos: null, text: about, source: 'about' }
+  if (about) return { amount: null, videos: null, text: about, source: 'about', kind: retainerKindOf(about) }
   const site = retainerWords(i.siteText)
-  if (site) return { amount: null, videos: null, text: site, source: 'website' }
+  if (site) return { amount: null, videos: null, text: site, source: 'website', kind: retainerKindOf(site) }
   return null
+}
+
+/** SMART OR STANDARD (Seb, 2026-11-09: "can you make a differentiation
+ *  between standard and smart retainers?"), from the words themselves:
+ *  named as one, or a guaranteed amount or a top up (smart: the commission
+ *  counts toward it), or a set fee, stipend or pay on top of commission
+ *  (standard). Null when the words do not say: never guessed. Pure. */
+export function retainerKindOf(text: string | null | undefined): 'smart' | 'standard' | null {
+  const t = String(text || '').toLowerCase()
+  if (/\bsmart retainers?\b/.test(t)) return 'smart'
+  if (/\bstandard retainers?\b/.test(t)) return 'standard'
+  if (/\bguarantee[ds]?\b|\bminimum\b|\btops? ?up\b|\btop-up\b|commission (?:counts?|goes) (?:toward|towards|to)/.test(t)) return 'smart'
+  if (/\bflat\b|\bfixed\b|\bstipend\b|\bmonthly fee\b|\bbase pay\b|\bon top of\b|\bin addition to\b|\bplus (?:your )?commission\b/.test(t)) return 'standard'
+  return null
+}
+
+export const RETAINER_KIND_WORDS: Record<'smart' | 'standard', string> = {
+  smart: 'Smart retainer: a guaranteed amount your commission counts toward; the brand tops up the rest',
+  standard: 'Standard retainer: a set fee on top of your commission',
 }
 
 /** A retainer in a few words, for a badge. Pure. */
 export function retainerShort(r: RetainerRead): string {
-  if (r.amount != null) return `Retainer ${money(r.amount)}${r.videos ? ` for ${count(r.videos, 'video')}` : ''}`
-  return 'Offers retainers'
+  const name = r.kind === 'smart' ? 'Smart retainer' : r.kind === 'standard' ? 'Standard retainer' : 'Retainer'
+  if (r.source === 'terms') return `${name}${r.amount != null ? ` ${money(r.amount)}${r.videos ? ` for ${count(r.videos, 'video')}` : ''}` : ''}`
+  // Only the brand's own words: it mentions one, TRYBE's terms do not set one.
+  return r.kind ? `Mentions ${name.toLowerCase()}s` : 'Mentions retainers'
 }
 
 /** Where a retainer was read, for its hover and the proof box. Pure. */
 export function retainerSource(r: RetainerRead): string {
-  return r.source === 'terms' ? `TRYBE’s pay terms: “${r.text}”`
+  const where = r.source === 'terms' ? `TRYBE’s pay terms: “${r.text}”`
     : r.source === 'about' ? `Its own words on TRYBE: “${r.text}”`
       : `Its website: “${r.text}”`
+  const kind = r.kind ? ` ${RETAINER_KIND_WORDS[r.kind]}.` : r.source === 'terms' ? ' Its terms do not say whether it is smart or standard.' : ''
+  const words = r.source === 'terms' ? '' : ' A mention in its own words, not a retainer set in its TRYBE terms: ask the brand.'
+  return `${where}${kind}${words}`
 }
