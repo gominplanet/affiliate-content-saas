@@ -66,6 +66,7 @@ import { samplePool, replyPool, metaSeries, timelineOf, dossierProducts } from '
 import { evidenceOf, retainerOf } from '@/lib/trybe-evidence'
 import { dailySeries, windowTotals, adsMovers, payMoves, payIndex, type ChangeRow } from '@/lib/trybe-home'
 import { TOP100, adSpendProof, samplesProof, sampleSignsByBrand, activityCounts, activityDigest, cleanProfile, pushesOf, readTop100Ask, readCatalogSamples, CATALOG_KEEP_DAYS, CATALOG_READS_MAX, CATALOG_REFRESH_CHUNK, type Activity, type CatalogSamples } from '@/lib/trybe-top100'
+import { filmedBrandIds } from '@/lib/tiktok-library'
 import {
   clampCap, countsTowardCap, sanitizeScanned, sendUrl, tidyDraft,
   DRAFT_SYSTEM, draftUserPrompt, DEFAULT_DAILY_CAP, type ScannedBrand,
@@ -1981,6 +1982,21 @@ Weigh posts pushed to social, and TRYBE brands they earned with or submitted to,
         rows.push(...((up || []) as Array<Record<string, any>>)) // eslint-disable-line @typescript-eslint/no-explicit-any
       }
     }
+    // ALREADY FILMED ON TIKTOK (Match my TikTok, lib/tiktok-library): the
+    // matches kept on the creator's row. With the filter on, those brands are
+    // added directly, like New only, so one outside the search's best matches
+    // is not missed. Before migration 465 this is empty and the filter says so.
+    const filmedBy = await filmedBrandIds(admin, ownerId).catch(() => new Map<string, { sureness: string; videos: number }>())
+    if (filters.filmed && filmedBy.size) {
+      const have = new Set(rows.map(r => r.brand_id))
+      const want = Array.from(filmedBy.keys()).filter((id) => !have.has(id)).slice(0, 600)
+      for (let i = 0; i < want.length; i += 200) {
+        let q = admin.from('trybe_directory').select(COLS).in('brand_id', want.slice(i, i + 200))
+        if (since) q = q.gte('last_seen_at', since)
+        const { data: got } = await q
+        rows.push(...((got || []) as Array<Record<string, any>>)) // eslint-disable-line @typescript-eslint/no-explicit-any
+      }
+    }
     // THE BRAND ON AMAZON (amazonContext): said as not read when a read
     // fails, never as "not on Amazon".
     const today = now.slice(0, 10)
@@ -2113,7 +2129,7 @@ Weigh posts pushed to social, and TRYBE brands they earned with or submitted to,
       const c = filterCheck({ perVideo: estBy.get(x.r.brand_id)?.dollars ?? null, creators: typeof x.r.total_creators === 'number' ? x.r.total_creators : null, stats: statsWith(x.r.brand_id), earningsBucket: x.r.earnings_bucket ?? null, amazon: amazonBy.get(x.r.brand_id) ?? null, amazonUnknown: amazonNotes.length > 0, starred: starredIds.has(x.r.brand_id), crowd: crowdBy.get(x.r.brand_id)?.level ?? null,
         spending: spendingOf(x.r), isNew: newBy.get(x.r.brand_id), reviewDays: results.review.get(x.r.brand_id)?.reviewDays ?? null, sells: sellsBy.get(x.r.brand_id) ?? null, spend: spendBy.get(x.r.brand_id)?.dollars ?? null,
         tiktokShop: tiktokShopOf(x.r), tierUp: tierLog ? !!tierLog.get(x.r.brand_id)?.up : null,
-        approval: results.approval.get(x.r.brand_id) ?? null, roomPay: roomPayBy.get(x.r.brand_id) ?? null, retainer: !!retainerBy.get(x.r.brand_id),
+        approval: results.approval.get(x.r.brand_id) ?? null, roomPay: roomPayBy.get(x.r.brand_id) ?? null, retainer: !!retainerBy.get(x.r.brand_id), filmed: filmedBy.has(x.r.brand_id),
         // A rating counts with STAR_MIN_REVIEWS reviews or more (Seb, 2026-10-24).
         rating: (ratingOf(x.r)?.reviews ?? 0) >= STAR_MIN_REVIEWS ? ratingOf(x.r)?.stars ?? null : null }, filters)
       for (const f of c.failed) hiddenBy[f] = (hiddenBy[f] ?? 0) + 1
@@ -2426,6 +2442,8 @@ Weigh posts pushed to social, and TRYBE brands they earned with or submitted to,
           // the data backing it up from tribe?"): each claim with its facts,
           // where each came from and when; and its retainer, with the words read.
           retainer: retainerBy.get(r.brand_id) ?? null,
+          // You filmed it on TikTok (Match my TikTok): how sure, and in how many videos.
+          filmed: filmedBy.get(r.brand_id) ?? null,
           evidence: (() => {
             const st = statsBy.get(r.brand_id), tl = tierLog?.get(r.brand_id)
             const ev = evidenceOf({

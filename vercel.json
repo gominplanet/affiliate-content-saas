@@ -89,6 +89,10 @@
       "schedule": "41 * * * *"
     },
     {
+      "path": "/api/cron/tiktok-library",
+      "schedule": "17 10 * * *"
+    },
+    {
       "path": "/api/cron/trybe-directory",
       "schedule": "*/10 * * * *"
     },

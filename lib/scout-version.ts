@@ -8,12 +8,12 @@
  *     store installs to "update" — isScoutOutdated survives only as a
  *     low-level helper, not a user-facing gate.
  */
-export const SCOUT_LATEST_VERSION = '1.58.0'
+export const SCOUT_LATEST_VERSION = '1.59.0'
 
 /** One-line "what's new". No longer shown in a nag (store installs auto-update);
  *  kept as a changelog note for whoever bumps the version. */
 export const SCOUT_WHATS_NEW =
-  'Bulk Amazon upload: up to three products tagged on one Amazon video. Each extra one is checked on the store first, and one Amazon will not take is left off and named.'
+  'Match my TikTok: SCOUT reads your public TikTok videos out of sight so MVP can find the TRYBE brands you already filmed. Read only; it asks once to read tiktok.com.'
 
 /** Canonical download for the latest SCOUT build (public/, rebuilt from
  *  extension/ on every version bump). Used by the EPC banner + the top-bar
@@ -197,3 +197,8 @@ export function scoutAtLeast(installed: string | null | undefined, min: string):
   }
   return true
 }
+
+/** SCOUT reads the creator's own public TikTok videos for Match my TikTok, in
+ *  its own minimized window, and hands them to MVP itself (MVP_TIKTOK_SCAN;
+ *  Seb, 2026-11-09: "we're going to use Scout to start"). */
+export const SCOUT_TIKTOK_LIBRARY_MIN_VERSION = '1.59.0'

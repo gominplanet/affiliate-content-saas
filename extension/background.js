@@ -12584,6 +12584,46 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
       .catch((e) => { clearTimeout(timeout); sendResponse({ ok: false, error: e && e.message ? e.message : 'error' }) })
     return true // async
   }
+  if (msg.type === 'MVP_TIKTOK_ACCESS') {
+    // 1.59.0: may SCOUT read the creator's TikTok profile (Match my TikTok).
+    tiktokAccess(!!msg.ask).then(sendResponse).catch(() => sendResponse({ granted: false }))
+    return true // async
+  }
+  if (msg.type === 'MVP_TIKTOK_SCAN') {
+    // 1.59.0: read @handle's videos for MVP's scan. Answers at once; the scan
+    // goes on in SCOUT and hands each batch to MVP itself.
+    let origin = null
+    try { origin = new URL((sender && (sender.url || (sender.tab && sender.tab.url))) || '').origin } catch (e) {}
+    const handle = String(msg.handle || '').trim().replace(/^@+/, '').toLowerCase()
+    if (!/^[a-z0-9_.]{2,24}$/.test(handle) || !msg.scanId) { sendResponse({ ok: false, error: 'bad-request' }); return false }
+    if (ttRun) { sendResponse({ ok: false, error: 'busy' }); return false }
+    void ttScan({ handle, scanId: String(msg.scanId), origin })
+    sendResponse({ ok: true, started: true })
+    return false
+  }
+  if (msg.type === 'MVP_TIKTOK_STATUS') {
+    ttState().then((st) => sendResponse({ ok: true, running: !!ttRun, state: st })).catch(() => sendResponse({ ok: false }))
+    return true // async
+  }
+  if (msg.type === 'MVP_TIKTOK_STOP') {
+    if (ttRun) ttRun.stop = true
+    sendResponse({ ok: true, wasRunning: !!ttRun })
+    return false
+  }
+  if (msg.type === 'MVP_TIKTOK_DAILY') {
+    // 1.59.0: check the creator's TikTok for new videos once a day, in this Chrome.
+    let origin = null
+    try { origin = new URL((sender && (sender.url || (sender.tab && sender.tab.url))) || '').origin } catch (e) {}
+    (async () => {
+      const prev = await ttDailyState()
+      const handle = String(msg.handle || prev.handle || '').trim().replace(/^@+/, '').toLowerCase()
+      const next = { on: msg.on === true && /^[a-z0-9_.]{2,24}$/.test(handle), handle, origin: origin || prev.origin || null }
+      try { await chrome.storage.local.set({ [TT_DAILY_KEY]: next }) } catch (e) {}
+      const at = await ttDailyArm(next)
+      return { ok: true, on: next.on, next: at }
+    })().then(sendResponse).catch(() => sendResponse({ ok: false }))
+    return true // async
+  }
   if (msg.type === 'MVP_TRYBE_SCAN') {
     const timeout = setTimeout(() => sendResponse({ ok: false, error: 'timeout' }), 890000)
     trybeScan({ knownNames: Array.isArray(msg.knownNames) ? msg.knownNames.slice(0, 2000) : [], max: msg.max, keywords: msg.keywords, categories: msg.categories }, sender && sender.tab ? sender.tab.id : null)
@@ -16383,3 +16423,277 @@ async function hashtagInstagram({ tags, quiet }) {
     stopKeepAlive(ka)
   }
 }
+// ── MATCH MY TIKTOK (1.59.0) ────────────────────────────────────────────────
+// Seb, 2026-11-09: TrybeDaily "can scan user's tiktok accounts and retrieve
+// their videos and match them to brands and products on trybe"; "build both,
+// but we're going to use Scout to start". SCOUT opens the creator's own public
+// TikTok profile in its own minimized window (told it is on screen so it keeps
+// drawing), keeps the answers TikTok's page receives for its video grid
+// (tiktok-videos-hook.js), scrolls the grid at a person's pace so the page
+// loads the rest, and hands each batch to MVP's server, which reads them
+// (lib/tiktok-videos) and matches them to TRYBE brands (lib/tiktok-match).
+//
+//   MVP_TIKTOK_ACCESS   is SCOUT allowed on tiktok.com; ask: the Allow window.
+//   MVP_TIKTOK_SCAN     read @handle for MVP's scan id. Answers at once; the
+//                       scan goes on in SCOUT with MVP's tab closed.
+//   MVP_TIKTOK_STATUS   what SCOUT's scan is doing now.
+//   MVP_TIKTOK_STOP     stop it.
+//   MVP_TIKTOK_DAILY    check for new videos once a day (on, handle).
+//
+// READING ONLY. Nothing is pressed, liked, followed or posted. If TikTok asks
+// to confirm a person (a puzzle), SCOUT stops and says so: it never solves one.
+// The creator opens TikTok, does it once, and scans again. A scan that ends
+// says how it ended (the end of the grid, TikTok stopped loading, stopped, a
+// puzzle), never a bare success.
+const TT_ORIGINS = ['https://www.tiktok.com/*']
+const TT_HOOK_ID = 'mvp-tiktok-videos-hook'
+const TT_STATE_KEY = 'mvpTikTokScan'
+const TT_DAILY_KEY = 'mvpTikTokDaily'
+const TT_DAILY_ALARM = 'mvp-tiktok-daily'
+const TT_MAX_VIDEOS = 3000
+const TT_MAX_MS = 15 * 60 * 1000
+// Scrolls in a row with nothing new before SCOUT takes it that TikTok has
+// stopped loading.
+const TT_IDLE_ROUNDS = 6
+let ttRun = null
+
+async function ttState() { try { const got = await chrome.storage.local.get(TT_STATE_KEY); return (got && got[TT_STATE_KEY]) || null } catch (e) { return null } }
+async function ttSave(st) { try { await chrome.storage.local.set({ [TT_STATE_KEY]: st }) } catch (e) {} return st }
+
+function askTikTokAccess() {
+  return new Promise((resolve) => {
+    let done = false
+    let winId = null
+    const finish = (granted) => {
+      if (done) return
+      done = true
+      try { chrome.runtime.onMessage.removeListener(onMsg) } catch (e) {}
+      try { chrome.windows.onRemoved.removeListener(onClosed) } catch (e) {}
+      resolve(!!granted)
+    }
+    const onMsg = (m) => { if (m && m.type === 'SCOUT_TIKTOK_ALLOW_RESULT') finish(m.granted) }
+    const onClosed = (id) => { if (id === winId) setTimeout(() => finish(false), 300) }
+    chrome.runtime.onMessage.addListener(onMsg)
+    chrome.windows.onRemoved.addListener(onClosed)
+    chrome.windows.create({ url: chrome.runtime.getURL('tiktok-allow.html'), type: 'popup', width: 480, height: 380, focused: true })
+      .then((w) => { winId = w && w.id })
+      .catch(() => finish(false))
+    setTimeout(() => finish(false), 180000)
+  })
+}
+
+async function tiktokAccess(ask) {
+  let granted = await hasOrigins(TT_ORIGINS)
+  if (!granted && ask) { await askTikTokAccess(); granted = await hasOrigins(TT_ORIGINS) }
+  return { granted }
+}
+
+// MVP's Match my TikTok API from the worker, with the creator's MVP session:
+// the page's own origin first, then apex and www.
+async function ttApi(origin, body) {
+  const origins = Array.from(new Set([origin, 'https://www.mvpaffiliate.io', 'https://mvpaffiliate.io'].filter((o) => TRYBE_CALLERS.test(o || ''))))
+  for (const o of origins) {
+    try {
+      const res = await fetch(`${o}/api/labs/tiktok-library`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include', redirect: 'follow', body: JSON.stringify(body) })
+      let data = null
+      try { data = await res.json() } catch (e) {}
+      return { reached: true, status: res.status, ok: res.ok, data: data || {} }
+    } catch (e) {}
+  }
+  return { reached: false, status: 0, ok: false, data: {} }
+}
+
+// In page: what the profile has shown so far, and the videos SCOUT has not
+// handed MVP yet (at most maxNew). EVERYTHING IT USES IS INSIDE IT (Chrome
+// copies only this function into the page).
+function ttReadInPage(maxNew) {
+  const t = window.__mvpTt || { items: [], hasMore: null, answers: 0 }
+  if (!window.__mvpTtHanded) window.__mvpTtHanded = {}
+  const handed = window.__mvpTtHanded
+  const cap = (v, n) => { try { const s = JSON.stringify(v); return s && s.length <= n ? v : null } catch (e) { return null } }
+  const trim = (it) => {
+    const out = { id: String(it.id), desc: it.desc || '', createTime: it.createTime || null }
+    if (it.author) out.author = { uniqueId: it.author.uniqueId || null }
+    if (it.stats) out.stats = { playCount: it.stats.playCount, diggCount: it.stats.diggCount }
+    if (it.statsV2) out.statsV2 = { playCount: it.statsV2.playCount, diggCount: it.statsV2.diggCount }
+    if (it.video) out.video = { cover: it.video.cover || null, originCover: it.video.originCover || null, duration: it.video.duration || null }
+    if (Array.isArray(it.textExtra)) out.textExtra = it.textExtra.slice(0, 40).map((x) => ({ hashtagName: x && x.hashtagName, userUniqueId: x && x.userUniqueId, type: x && x.type }))
+    if (Array.isArray(it.challenges)) out.challenges = it.challenges.slice(0, 40).map((c) => ({ title: c && c.title }))
+    for (const k of Object.keys(it)) if (/anchor|product|shop|commerce|ecom/i.test(k)) { const v = cap(it[k], 20000); if (v != null) out[k] = v }
+    return out
+  }
+  let profile = null
+  const ssr = []
+  try {
+    const el = document.getElementById('__UNIVERSAL_DATA_FOR_REHYDRATION__')
+    const j = el ? JSON.parse(el.textContent || '{}') : null
+    const d = j && j.__DEFAULT_SCOPE__ && j.__DEFAULT_SCOPE__['webapp.user-detail']
+    const u = d && d.userInfo
+    if (u && u.user) {
+      const vc = u.stats && u.stats.videoCount != null ? Number(u.stats.videoCount) : u.statsV2 && u.statsV2.videoCount != null ? Number(u.statsV2.videoCount) : null
+      profile = { uniqueId: u.user.uniqueId || null, name: u.user.nickname || null, avatar: u.user.avatarLarger || u.user.avatarMedium || null, videoCount: Number.isFinite(vc) ? vc : null, privateAccount: typeof u.user.privateAccount === 'boolean' ? u.user.privateAccount : null }
+    }
+    if (d && typeof d.statusCode === 'number' && d.statusCode !== 0) profile = Object.assign(profile || {}, { statusCode: d.statusCode })
+    if (d && Array.isArray(d.itemList)) ssr.push(...d.itemList)
+  } catch (e) {}
+  try { const sigi = window.SIGI_STATE; if (sigi && sigi.ItemModule) ssr.push(...Object.values(sigi.ItemModule)) } catch (e) {}
+  const items = []
+  for (const it of ssr.concat(t.items || [])) {
+    if (!it || !it.id || handed[it.id]) continue
+    if (items.length >= maxNew) break
+    handed[it.id] = 1
+    items.push(trim(it))
+  }
+  const visible = (el) => { if (!el) return false; const r = el.getBoundingClientRect(); return r.width > 120 && r.height > 120 }
+  const text = String((document.body && document.body.innerText) || '').slice(0, 6000)
+  const puzzle = Array.from(document.querySelectorAll('#captcha-verify-container, .captcha-verify-container, [class*="captcha_verify"], [class*="CaptchaVerify"], [id*="captcha-verify"]')).some(visible) || /drag the (puzzle|slider)|verify to continue|select 2 objects that are the same/i.test(text)
+  return {
+    profile, items, hasMore: t.hasMore, answers: t.answers || 0, puzzle,
+    privateAccount: /this account is private/i.test(text),
+    missing: /couldn.?t find this account/i.test(text),
+    grid: document.querySelectorAll('[data-e2e="user-post-item"]').length,
+    handed: Object.keys(handed).length,
+    ready: document.readyState === 'complete',
+  }
+}
+
+// In page: scroll to the last video in the grid, so TikTok's page loads more.
+function ttScrollInPage() {
+  const items = document.querySelectorAll('[data-e2e="user-post-item"]')
+  const last = items[items.length - 1]
+  try { if (last) last.scrollIntoView({ block: 'end' }) } catch (e) {}
+  try { window.scrollTo(0, document.documentElement.scrollHeight || document.body.scrollHeight) } catch (e) {}
+  try { window.dispatchEvent(new Event('scroll')) } catch (e) {}
+  return items.length
+}
+
+const TT_SAY = {
+  puzzle: 'TikTok asked to confirm you are a person, so SCOUT stopped (it never answers those). Open tiktok.com in Chrome, do it once, then press Scan again. What SCOUT read before is kept.',
+  private: 'This TikTok account is private, so its videos cannot be read.',
+  missing: 'TikTok could not find that account. Check the handle.',
+  nothing: 'TikTok’s page showed no videos for SCOUT to read. If the account has videos, open it in Chrome to check it loads, then scan again.',
+  noAccess: 'SCOUT is not allowed to read tiktok.com yet.',
+  signedOut: 'This Chrome is signed out of MVP, so SCOUT could not hand the videos over. Sign in to MVP, then scan again.',
+  unreachable: 'SCOUT could not reach MVP three times in a row. Check the internet, then scan again.',
+}
+
+async function ttScan(job) {
+  if (ttRun) return { ok: false, error: 'busy' }
+  const run = { stop: false }
+  ttRun = run
+  const st = { on: true, handle: job.handle, scanId: job.scanId, origin: job.origin, daily: !!job.daily, startedAt: Date.now(), read: 0, phase: 'opening', error: null, endedAt: null, ended: null }
+  await ttSave(st)
+  const ka = startKeepAlive()
+  let tabId = null
+  let misses = 0
+  let reachedEnd = false
+  let error = null
+  let profileSent = false
+  // Hand one batch to MVP. False: stop (MVP said so, or cannot be reached).
+  const hand = async (items, profile, done) => {
+    const body = { action: 'batch', scanId: job.scanId, items, done: !!done }
+    if (profile && !profileSent) { body.profile = profile; profileSent = true }
+    if (done) { body.reachedEnd = reachedEnd; if (error) body.error = error }
+    const r = await ttApi(job.origin, body)
+    if (!r.reached) { misses++; if (misses >= 3) { error = error || TT_SAY.unreachable; return false } return true }
+    misses = 0
+    if (r.status === 401) { error = error || TT_SAY.signedOut; return false }
+    const d = r.data || {}
+    if (d.keep === false && !done) { run.stop = true; return false }
+    // The daily check stops at the first batch MVP already had in full.
+    if (job.daily && items.length && d.known === items.length) { run.stop = true; return false }
+    return true
+  }
+  try {
+    if (!(await hasOrigins(TT_ORIGINS))) { error = TT_SAY.noAccess; return { ok: false, error } }
+    try { await chrome.scripting.unregisterContentScripts({ ids: [TT_HOOK_ID] }) } catch (e) {}
+    await chrome.scripting.registerContentScripts([{ id: TT_HOOK_ID, matches: TT_ORIGINS, js: ['tiktok-videos-hook.js'], runAt: 'document_start', world: 'MAIN', persistAcrossSessions: false }])
+    const tab = await openWorkTab(`https://www.tiktok.com/@${encodeURIComponent(job.handle)}`)
+    tabId = tab.id
+    quietTabIds.add(tabId)
+    void quietShim(tabId)
+    await waitForTabLoad(tabId, 45000)
+    st.phase = 'reading'; await ttSave(st)
+    let read = null
+    let profile = null
+    // The first videos: wait for the page to draw them.
+    for (let i = 0; i < 20; i++) {
+      await _sleep(1500)
+      read = await trybeRun(ttReadInPage, [60], tabId)
+      if (!read) continue
+      if (read.profile) profile = read.profile
+      if (read.puzzle || read.privateAccount || read.missing || read.items.length) break
+    }
+    if (!read) { error = TT_SAY.nothing; return { ok: false, error } }
+    if (read.puzzle) error = TT_SAY.puzzle
+    else if (read.missing) error = TT_SAY.missing
+    else if (read.privateAccount) error = TT_SAY.private
+    if (read.items.length || profile) { if (!(await hand(read.items, profile, false))) return { ok: false, error } }
+    st.read = read.handed; await ttSave(st)
+    if (error) return { ok: false, error }
+    if (!read.items.length && read.hasMore !== true) { if (profile && profile.videoCount === 0) reachedEnd = true; else error = TT_SAY.nothing; return { ok: !error, error } }
+    let idle = 0
+    while (!run.stop) {
+      if (Date.now() - st.startedAt > TT_MAX_MS || read.handed >= TT_MAX_VIDEOS) break
+      if (read.hasMore === false) { reachedEnd = true; break }
+      await trybeRun(ttScrollInPage, [], tabId)
+      await _sleep(1800 + Math.round(Math.random() * 1700))
+      read = (await trybeRun(ttReadInPage, [60], tabId)) || read
+      if (read.profile && !profileSent) profile = read.profile
+      if (read.puzzle) { error = TT_SAY.puzzle; break }
+      if (read.items.length) {
+        idle = 0
+        if (!(await hand(read.items, profile, false))) break
+      } else if (++idle >= TT_IDLE_ROUNDS) {
+        // A last look: the end, or TikTok stopped loading.
+        if (read.hasMore === false) reachedEnd = true
+        break
+      }
+      st.read = read.handed; await ttSave(st)
+    }
+    // Whatever arrived during the last pause.
+    if (!error) {
+      const last = await trybeRun(ttReadInPage, [200], tabId)
+      if (last && last.items.length) await hand(last.items, null, false)
+      if (last && last.hasMore === false) reachedEnd = true
+      if (last) st.read = last.handed
+    }
+    return { ok: !error, error }
+  } catch (e) {
+    error = error || (e && e.message ? `SCOUT hit an error reading TikTok (${e.message}).` : 'SCOUT hit an error reading TikTok.')
+    return { ok: false, error }
+  } finally {
+    // The scan's end, said as it happened. After a stop from MVP's page MVP
+    // already holds it as stopped and refuses this; the daily check that met
+    // videos MVP already had ends here as done.
+    try { await hand([], null, true) } catch (e) {}
+    if (tabId != null) { try { await chrome.tabs.remove(tabId) } catch (e) {} }
+    try { await chrome.scripting.unregisterContentScripts({ ids: [TT_HOOK_ID] }) } catch (e) {}
+    stopKeepAlive(ka)
+    st.on = false; st.endedAt = Date.now(); st.error = error; st.reachedEnd = reachedEnd
+    st.ended = run.stop && !error ? (job.daily ? 'daily-done' : 'stopped') : error ? 'failed' : 'done'
+    await ttSave(st)
+    if (ttRun === run) ttRun = null
+  }
+}
+
+// The daily check, in this Chrome: once a day, at a quiet minute.
+async function ttDailyState() { try { const got = await chrome.storage.local.get(TT_DAILY_KEY); return (got && got[TT_DAILY_KEY]) || {} } catch (e) { return {} } }
+async function ttDailyArm(st) {
+  try { await chrome.alarms.clear(TT_DAILY_ALARM) } catch (e) {}
+  if (!st || !st.on) return null
+  // Some time in the next day, never on the hour, so creators do not all read at once.
+  const when = Date.now() + (6 + Math.random() * 18) * 3600_000
+  try { chrome.alarms.create(TT_DAILY_ALARM, { when, periodInMinutes: 24 * 60 }) } catch (e) {}
+  return when
+}
+async function ttDailyTick() {
+  const d = await ttDailyState()
+  if (!d.on || !d.handle || ttRun) return
+  if (!(await hasOrigins(TT_ORIGINS))) return
+  const s = await ttApi(d.origin, { action: 'start', handle: d.handle, daily: true })
+  if (!s.reached || !s.ok || !s.data || !s.data.scanId) return
+  await ttScan({ handle: d.handle, scanId: s.data.scanId, origin: d.origin, daily: true })
+}
+try { chrome.alarms.onAlarm.addListener((a) => { if (a && a.name === TT_DAILY_ALARM) void ttDailyTick() }) } catch (e) {}
+

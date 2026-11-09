@@ -8,7 +8,7 @@
 // asks and shows, and says how many brands a filter hid or could not check.
 
 import { useState } from 'react'
-import { Star, Search, X, ExternalLink, Copy, Check, SlidersHorizontal, PlayCircle, ShoppingBag, Ban, RotateCcw, DollarSign, Users, Sparkles, Clock, ChevronDown, TrendingUp, ArrowLeftRight, Globe, Megaphone, Image as ImageIcon } from 'lucide-react'
+import { Star, Search, X, ExternalLink, Copy, Check, SlidersHorizontal, PlayCircle, ShoppingBag, Ban, RotateCcw, DollarSign, Users, Sparkles, Clock, ChevronDown, TrendingUp, ArrowLeftRight, Globe, Megaphone, Clapperboard, Image as ImageIcon } from 'lucide-react'
 import { GRID_FACTORS, FORMATS, DEFAULT_PRIORITIES, verdictOf, VERDICT_WORDS, metaTrustWords, type Factor, type Priorities, type Weight, type MetaTrust } from '@/lib/trybe-pick'
 import { reviewWords } from '@/lib/trybe-mybrands'
 import { retainerShort, retainerSource, type ClaimProof, type RetainerRead } from '@/lib/trybe-evidence'
@@ -33,8 +33,8 @@ export interface LiveAmazon {
 }
 export interface FilmedLive { asin: string; title: string | null; url: string; videos: string[] }
 
-export const NO_FILTERS: FinderFilters = { minPerVideo: null, maxCreators: null, maxVideos: null, paidCreators: false, samples: false, onAmazon: false, starred: false, openOnly: false, spending: false, newOnly: false, fastReview: false, sells: null, minSpend: null, tiktokShop: false, tierUp: false, minRating: null, approves: false, roomAndPay: false, retainer: false }
-export const filtersOn = (f: FinderFilters) => !!(f.minPerVideo || f.maxCreators || f.maxVideos || f.paidCreators || f.samples || f.onAmazon || f.starred || f.openOnly || f.spending || f.newOnly || f.fastReview || f.sells || f.minSpend || f.tiktokShop || f.tierUp || f.minRating || f.approves || f.roomAndPay || f.retainer)
+export const NO_FILTERS: FinderFilters = { minPerVideo: null, maxCreators: null, maxVideos: null, paidCreators: false, samples: false, onAmazon: false, starred: false, openOnly: false, spending: false, newOnly: false, fastReview: false, sells: null, minSpend: null, tiktokShop: false, tierUp: false, minRating: null, approves: false, roomAndPay: false, retainer: false, filmed: false }
+export const filtersOn = (f: FinderFilters) => !!(f.minPerVideo || f.maxCreators || f.maxVideos || f.paidCreators || f.samples || f.onAmazon || f.starred || f.openOnly || f.spending || f.newOnly || f.fastReview || f.sells || f.minSpend || f.tiktokShop || f.tierUp || f.minRating || f.approves || f.roomAndPay || f.retainer || f.filmed)
 
 const WEIGHTS: Array<{ w: Weight; label: string }> = [{ w: 0, label: 'Skip' }, { w: 1, label: 'Normal' }, { w: 2, label: 'A lot' }]
 
@@ -55,13 +55,13 @@ function Picker({ label, value, options, onChange, changed }: { label: string; v
   )
 }
 
-type ToggleKey = 'paidCreators' | 'samples' | 'onAmazon' | 'starred' | 'openOnly' | 'spending' | 'newOnly' | 'fastReview' | 'tiktokShop' | 'tierUp' | 'approves' | 'roomAndPay' | 'retainer'
+type ToggleKey = 'paidCreators' | 'samples' | 'onAmazon' | 'starred' | 'openOnly' | 'spending' | 'newOnly' | 'fastReview' | 'tiktokShop' | 'tierUp' | 'approves' | 'roomAndPay' | 'retainer' | 'filmed'
 type NumberKey = 'minPerVideo' | 'maxCreators' | 'maxVideos' | 'minSpend' | 'minRating'
 export const TOGGLE_WORDS: Record<ToggleKey, string> = {
   starred: 'Starred', onAmazon: 'On Amazon', openOnly: 'Open only', newOnly: 'New', spending: 'Spending on ads',
   fastReview: 'Decides fast', paidCreators: 'Has paid creators', samples: 'Sends samples',
   tiktokShop: 'On TikTok Shop', tierUp: 'Payout tier went up',
-  approves: 'Approves most videos', roomAndPay: 'Room and pays well', retainer: 'Offers retainers',
+  approves: 'Approves most videos', roomAndPay: 'Room and pays well', retainer: 'Offers retainers', filmed: 'Filmed on TikTok',
 }
 export const NUMBER_WORDS: Record<NumberKey, (n: number) => string> = {
   minPerVideo: (n) => `At least $${n.toLocaleString()} a video`,
@@ -191,6 +191,7 @@ export function FinderToolbar({ filters, onFilters, name, onName, sort, sorts, o
               {toggle('approves', <Check size={12} />, 'MVP members\u2019 videos with it are approved 60% of the time or more, once 5 members have results with it.')}
               {toggle('samples')}
               {toggle('onAmazon', <ShoppingBag size={12} />, 'Brands you already filmed on Amazon, have in your storefront, or that run Creator Connections on Amazon.')}
+              {toggle('filmed', undefined, 'Brands you already filmed on TikTok, from Match my TikTok.')}
               {toggle('starred', <Star size={12} />)}
               {toggle('tiktokShop', undefined, 'Sells on TikTok Shop, from its own website. Brands whose website MVP has not checked yet are listed after.')}
             </>)}
@@ -239,6 +240,7 @@ export function FinderFilterNote({ hiddenBy, blankBy, unknownBy }: { hiddenBy?: 
       const low = n - blank
       return [low > 0 ? `${low.toLocaleString()} rated lower` : null, `${blank.toLocaleString()} with fewer than 3 creator reviews on TRYBE`].filter(Boolean).join(' and ')
     }
+    if (f === 'filmed') return `${n.toLocaleString()} that Match my TikTok has not matched to your TikTok videos`
     if (f === 'retainer') return `${n.toLocaleString()} that say nothing of a retainer in their TRYBE terms or their own words (one may still offer it in chat)`
     if (f === 'sells' && blank > 0) {
       const other = n - blank
@@ -693,7 +695,7 @@ export function StaticsChip({ on }: { on: boolean | null | undefined }) {
 // ── HUNTR'S IDEAS (Seb, 2026-10-14: "do 1,2,3,4,5") ─────────────────────────
 
 /** One tap lists: each sets the filters and the sort in one go. */
-export type PresetId = 'untapped' | 'new' | 'spenders' | 'fast' | 'pays' | 'budgets' | 'retainers'
+export type PresetId = 'untapped' | 'new' | 'spenders' | 'fast' | 'pays' | 'budgets' | 'retainers' | 'filmed'
 export const PRESETS: Array<{ id: PresetId; label: string; says: string; filters: FinderFilters; sort: 'picks' | 'pay' | 'spend' }> = [
   { id: 'untapped', label: 'Untapped', says: 'Spending on ads (Meta ads or TRYBE’s Top 100) with 30 creators or fewer: the budget is there and few creators share it.', filters: { ...NO_FILTERS, spending: true, maxCreators: 30 }, sort: 'picks' },
   { id: 'new', label: 'New on TRYBE', says: 'Joined TRYBE in the last 30 days, or new to MVP in the last 14, best bets first. Get in early and become one of their top creators.', filters: { ...NO_FILTERS, newOnly: true }, sort: 'picks' },
@@ -701,6 +703,8 @@ export const PRESETS: Array<{ id: PresetId; label: string; says: string; filters
   { id: 'fast', label: 'Fast deciders', says: 'Brands that decide videos in 5 days or less, from MVP members’ results.', filters: { ...NO_FILTERS, fastReview: true }, sort: 'picks' },
   { id: 'pays', label: 'Pays $25+ a video', says: 'At least $25 per approved video, from your results, members’ results or its fee. A brand with no pay figure is left out. Highest first.', filters: { ...NO_FILTERS, minPerVideo: 25 }, sort: 'pay' },
   { id: 'retainers', label: 'Offers retainers', says: 'Brands that offer creators a retainer, in their TRYBE pay terms or their own words, highest pay first. Each says where MVP read it.', filters: { ...NO_FILTERS, retainer: true }, sort: 'pay' },
+  // MATCH MY TIKTOK (Seb, 2026-11-09): the TRYBE brands you already filmed.
+  { id: 'filmed', label: 'You filmed on TikTok', says: 'TRYBE brands you already filmed on TikTok, from Match my TikTok: your videos\u2019 product tags, @tags and captions. Best bets first.', filters: { ...NO_FILTERS, filmed: true }, sort: 'picks' },
   { id: 'budgets', label: 'Big creator budgets', says: 'Pays TRYBE creators about $1,000 a month or more, estimated from its videos approved in the last 30 days and its pay per video. Biggest first. A brand MVP cannot estimate is left out.', filters: { ...NO_FILTERS, minSpend: 1000 }, sort: 'spend' },
 ]
 const sameFilters = (a: FinderFilters, b: FinderFilters) => (Object.keys({ ...a, ...b }) as Array<keyof FinderFilters>).every((k) => (a[k] || null) === (b[k] || null))
@@ -815,7 +819,7 @@ export function FinderSidebar({ filters, onFilters, pay, pays, onPay, sort, onPr
   const shownNiches = allNiches ? nicheList : nicheList.slice(0, Math.max(NICHES_FIRST, niches.length))
   const payCount = (pay !== pays[0]?.id ? 1 : 0) + [filters.retainer, filters.minPerVideo, filters.minSpend, filters.paidCreators, filters.tierUp].filter(Boolean).length
   const roomCount = [filters.openOnly, filters.newOnly, filters.roomAndPay, filters.maxCreators, filters.maxVideos].filter(Boolean).length
-  const brandCount = [filters.minRating, filters.spending, filters.fastReview, filters.approves, filters.samples, filters.onAmazon, filters.tiktokShop, filters.starred].filter(Boolean).length
+  const brandCount = [filters.minRating, filters.spending, filters.fastReview, filters.approves, filters.samples, filters.onAmazon, filters.filmed, filters.tiktokShop, filters.starred].filter(Boolean).length
   const anyOn = payCount + roomCount + brandCount + (filters.sells ? 1 : 0) > 0
   return (
     <div role="region" aria-label="Filters" className="text-[13.5px]">
@@ -869,6 +873,7 @@ export function FinderSidebar({ filters, onFilters, pay, pays, onPay, sort, onPr
         {tick('approves', 'MVP members’ videos with it are approved 60% of the time or more. Shown once 5 members have results with it; brands without enough are listed after.')}
         {tick('samples', 'Takes sample requests on TRYBE.')}
         {tick('onAmazon', 'Brands you already filmed on Amazon, have in your storefront, or that run Creator Connections on Amazon.')}
+        {tick('filmed', 'Brands you already filmed on TikTok, from Match my TikTok: a video\u2019s product tag, your caption\u2019s @tag, or the brand or its product named in your caption.')}
         {tick('tiktokShop', 'Sells on TikTok Shop, from its own website. Brands whose website MVP has not checked yet are listed after.')}
         {tick('starred', 'Brands you starred.')}
       </>))}
@@ -938,6 +943,19 @@ export function RetainerBadge({ retainer }: { retainer: RetainerRead | null | un
     <span className="text-[11.5px] font-extrabold rounded-full px-2.5 py-0.5 inline-flex items-center gap-1 cursor-help whitespace-nowrap" style={{ background: '#F59E0B', color: '#1F1300' }} title={retainerSource(retainer)}>
       <DollarSign size={12} />{retainerShort(retainer)}
     </span>
+  )
+}
+
+/** YOU FILMED IT ON TIKTOK (Match my TikTok, Seb 2026-11-09). A link to the
+ *  page that shows the videos and how MVP knows. */
+export function FilmedChip({ filmed }: { filmed: { sureness: string; videos: number } | null | undefined }) {
+  if (!filmed) return null
+  const n = filmed.videos
+  return (
+    <a href="/trybe?tab=filmed" onClick={(e) => e.stopPropagation()} className="text-[11.5px] font-bold rounded-full px-2.5 py-0.5 inline-flex items-center gap-1 whitespace-nowrap hover:brightness-95 bg-[rgba(13,148,136,0.14)] text-[#0F766E] dark:text-[#2DD4BF]"
+      title={`${filmed.sureness === 'sure' ? 'Sure' : 'Likely'}: ${n} of your TikTok videos ${n === 1 ? 'shows' : 'show'} this brand. Open Match my TikTok to see ${n === 1 ? 'it' : 'them'} and how MVP knows.`}>
+      <Clapperboard size={12} />Filmed on TikTok{n > 1 ? ` \u00b7 ${n} videos` : ''}
+    </a>
   )
 }
 

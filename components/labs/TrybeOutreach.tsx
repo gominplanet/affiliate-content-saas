@@ -25,13 +25,14 @@ import { useEffectiveTier } from '@/lib/useEffectiveTier'
 import { toast } from 'sonner'
 import { Loader2, Lock, Search, Sparkles, Send, Square, ExternalLink, Check, AlertTriangle, Globe, Star, Handshake, RotateCcw, X, Trash2, Tag,
   Dumbbell, Shirt, House, UtensilsCrossed, Baby, PawPrint, Gem, Cpu, Tent, Plane, BookOpen, Church, Palette, SprayCan, Moon, Pill, HeartPulse,
-  Scissors, Droplet, Coffee, Leaf, Wand2, MessageCircle, Pencil, ChevronUp, Bell, Lightbulb, CalendarDays, Inbox, ArrowRight, Clapperboard, UploadCloud, BarChart3, Rocket, ListChecks, LayoutDashboard, SlidersHorizontal, type LucideIcon } from 'lucide-react'
+  ScanSearch, Scissors, Droplet, Coffee, Leaf, Wand2, MessageCircle, Pencil, ChevronUp, Bell, Lightbulb, CalendarDays, Inbox, ArrowRight, Clapperboard, UploadCloud, BarChart3, Rocket, ListChecks, LayoutDashboard, SlidersHorizontal, type LucideIcon } from 'lucide-react'
 import { nameKey, trybeSearchPath, brandsNamed, TRYBE_SEARCH_PARAMS } from '@/lib/trybe-name-lookup'
 import { TOP100, META_ROUND, META_ROUNDS_MAX } from '@/lib/trybe-top100'
 import { ensureTrybeTab, requestTrybeTab, requestTrybeTabOpen, requestTrybeMorning, type TrybeMorning, requestTrybeApi, requestTrybeAccess, requestTrybeScan, requestTrybeSend, requestTrybeHarvest, requestTrybeRun, requestTrybeRunStatus, requestTrybeRunStop, type TrybeScanPass, type TrybeRun } from '@/lib/extension-frame'
 import { readMetaAds, readMetaAdsAll, metaAdsWords, metaBrandOf, type MetaAdsRun } from '@/components/labs/metaAdsRead'
 import TrybeTabGate from '@/components/labs/TrybeTabGate'
 import TrybeStarBrands from '@/components/labs/TrybeStarBrands'
+import TrybeTikTokMatch from '@/components/labs/TrybeTikTokMatch'
 import { TRYBE_OPEN_URL, TRYBE_NOT_OPEN, TRYBE_NOT_OPEN_WORDS, trybeTabWords, type TrybeTabState } from '@/lib/trybe-tab'
 import { nextGapMs, prefsKey, CATEGORY_SUGGESTIONS, DAILY_FIND, SCAN_READ, SHORT_RUN_UNDER, SHORT_GAP_MS, MAX_DAILY_CAP, termsHits, quoteHits } from '@/lib/trybe-outreach'
 import TrybeInbox, { fetchTrybeInbox, lastIsMine, type Conversation } from '@/components/labs/TrybeInbox'
@@ -67,7 +68,7 @@ import TrybeRetainers from '@/components/labs/TrybeRetainers'
 import TrybeIntroVideo from '@/components/labs/TrybeIntroVideo'
 import TrybeSampleGuard from '@/components/labs/TrybeSampleGuard'
 import { readScript, readBrandStats } from '@/lib/trybe-mybrands'
-import { FinderToolbar, FinderSidebar, panelFiltersOn, AdsChip, ApprovalChip, RepliesChip, RetainerBadge, BrandProof, FinderFilterNote, FinderPriorities, FinderPresets, PopularityChips, RatingChip, BrandExtras, StarButton, PassButton, AmazonLine, PayChip, RoomPayChip, SpendChip, SpendNote, NewChip, StaticsChip, SellsChip, VerdictChip, ReviewChip, PaidOutChip, TikTokShopChip, CompareButton, BrandMark, NO_FILTERS, filtersOn, type LiveAmazon, type LivePayEst } from '@/components/labs/TrybeFinderControls'
+import { FinderToolbar, FinderSidebar, panelFiltersOn, AdsChip, ApprovalChip, RepliesChip, RetainerBadge, FilmedChip, BrandProof, FinderFilterNote, FinderPriorities, FinderPresets, PopularityChips, RatingChip, BrandExtras, StarButton, PassButton, AmazonLine, PayChip, RoomPayChip, SpendChip, SpendNote, NewChip, StaticsChip, SellsChip, VerdictChip, ReviewChip, PaidOutChip, TikTokShopChip, CompareButton, BrandMark, NO_FILTERS, filtersOn, type LiveAmazon, type LivePayEst } from '@/components/labs/TrybeFinderControls'
 import TrybeCompare from '@/components/labs/TrybeCompare'
 import { COMPARE_MAX } from '@/lib/trybe-compare'
 import { useTrybeAmazon } from '@/components/labs/useTrybeAmazon'
@@ -133,7 +134,7 @@ type Access = 'checking' | 'granted' | 'not-granted' | 'no-scout' | 'old' | 'no-
 interface Directory { brands: number; listed?: number | null; firstCountAt?: string | null; joinedSinceFirst?: number | null; joinedStillListed?: number | null; withWebsite: number; websitesRead: number; lastCollectedAt: string | null; lastPartial?: { at: string; pages: number | null; totalPages: number | null } | null; categories: string[]; top100?: { at?: string; entries?: number; brands?: number; matched?: number } | null }
 /** The whole list is collected again after this long. */
 const RECOLLECT_MS = 20 * 3600_000
-export type Tab = 'home' | 'create' | 'upload' | 'find' | 'stars' | 'queue' | 'sent' | 'inbox' | 'analytics' | 'submissions' | 'brands' | 'week' | 'changes' | 'working'
+export type Tab = 'home' | 'create' | 'upload' | 'find' | 'stars' | 'filmed' | 'queue' | 'sent' | 'inbox' | 'analytics' | 'submissions' | 'brands' | 'week' | 'changes' | 'working'
 /** One brand from MVP's copy of TRYBE, as the live list shows it. */
 interface LiveBrand {
   brand_id: string; name: string; website: string | null; categories: string[]; about: string | null
@@ -162,6 +163,8 @@ interface LiveBrand {
   /** Its retainer, and the proof behind "pays creators" and "spends on ads" (lib/trybe-evidence). */
   retainer?: RetainerRead | null
   evidence?: { pays: ClaimProof; ads: ClaimProof } | null
+  /** You filmed it on TikTok (Match my TikTok): how sure, in how many videos. */
+  filmed?: { sureness: string; videos: number } | null
   /** MVP members' approval rate (0 to 1), and how often it answers their requests. */
   approval?: number | null
   replies?: { rate: number | null; days: number | null } | null
@@ -386,6 +389,8 @@ const TABS: Array<{ id: Tab; label: string; icon: LucideIcon; group: TabGroup; s
   // STAR BRANDS (Seb, 2026-10-21: "a fourth button that basically has a new
   // page ... find the next big opportunity, MVP's star brand of the week").
   { id: 'stars', label: 'Star brands', icon: Rocket, group: 'brands', says: 'The next big opportunity: top rated TRYBE brands running the most Meta ads per review, and how known each one is.' },
+  // MATCH MY TIKTOK (Seb, 2026-11-09): the TRYBE brands you already filmed.
+  { id: 'filmed', label: 'Match my TikTok', icon: ScanSearch, group: 'brands', says: 'The TRYBE brands you already filmed: SCOUT reads your public TikTok videos and MVP matches each one, saying how it knows.' },
   { id: 'queue', label: 'Ready to send', icon: Send, group: 'brands', says: 'Messages written and waiting. SCOUT sends them slowly, under your daily limit.' },
   { id: 'sent', label: 'Sent', icon: Check, group: 'brands', says: 'Who you asked, who answered, and what to do next with each brand.' },
   { id: 'inbox', label: 'Inbox', icon: Inbox, group: 'brands', says: 'Your TRYBE chats, each with a suggested reply.' },
@@ -413,6 +418,7 @@ const TILES: Tile[] = [
   { id: 'working', label: 'What\u2019s working', icon: Lightbulb, group: 'create', color: '#D97706', line: 'Your hook next to the Top 100', tabs: ['working'] },
   { id: 'find', label: 'Find brands', icon: Search, group: 'brands', color: '#7C3AED', line: 'Brands that fit, first message written', tabs: ['find'] },
   { id: 'stars', label: 'Star brands', icon: Rocket, group: 'brands', color: '#C026D3', line: 'Top rated, most Meta ads per review', tabs: ['stars'] },
+  { id: 'filmed', label: 'Match my TikTok', icon: ScanSearch, group: 'brands', color: '#0D9488', line: 'TRYBE brands you already filmed', tabs: ['filmed'] },
   { id: 'outreach', label: 'Outreach', icon: Send, group: 'brands', color: '#4F46E5', line: 'Ready to send and sent, in one place', tabs: ['queue', 'sent'] },
   { id: 'inbox', label: 'Inbox', icon: Inbox, group: 'brands', color: '#9333EA', line: 'Brand chats, a reply suggested', tabs: ['inbox'] },
   { id: 'earnings', label: 'Earnings', icon: BarChart3, group: 'track', color: '#059669', line: 'Pay, approvals and ads, by brand', tabs: ['analytics', 'brands'] },
@@ -2470,6 +2476,10 @@ export default function TrybeOutreach({ preview = false, v2 = false, layout = fa
 
       {tab === 'upload' && <TrybeUpload inbox={inbox} canChat={canInbox} onOpenChat={(id) => { setOpenChat(o => ({ id, n: (o?.n ?? 0) + 1 })); setTab('inbox') }} />}
 
+      {tab === 'filmed' && !lockedTab && (
+        <TrybeTikTokMatch hasCore={!!core.trim()} onWrite={(ids) => draftPicked(ids)} scoutOpens={scoutOpens} />
+      )}
+
       {tab === 'stars' && !lockedTab && (
         <TrybeStarBrands canCount={canPlaybook} cards={isAdmin} scoutVersion={scoutVersion} hasCore={!!core.trim()} onWrite={(ids) => draftPicked(ids)} onOpenQueue={() => setTab('queue')} scoutOpens={scoutOpens} />
       )}
@@ -2968,6 +2978,7 @@ export default function TrybeOutreach({ preview = false, v2 = false, layout = fa
                       <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
                         <BrandName id={b.brand_id} name={b.name} className="text-[15px] font-semibold" />
                         <RetainerBadge retainer={b.retainer} />
+                        <FilmedChip filmed={b.filmed} />
                         {b.proof?.app && <AppChip />}
                         <StarButton on={!!b.starred} onClick={() => void star(b)} />
                         <CompareButton on={compare.some(x => x.brand_id === b.brand_id)} full={compare.length >= COMPARE_MAX} onClick={() => flipCompare(b)} />

@@ -29,6 +29,17 @@ export interface WhatsNewItem {
 }
 
 export const WHATS_NEW: WhatsNewItem[] = [
+  // Match my TikTok (Seb, 2026-11-09: "build both, but we're going to use
+  // Scout to start").
+  {
+    date: '2026-11-09',
+    gate: 'trybe',
+    badge: 'NEW',
+    tone: '#0D9488',
+    title: 'Match my TikTok',
+    desc: 'Find the TRYBE brands you already filmed. Type your TikTok handle and SCOUT reads your public videos out of sight, then MVP lists each brand you filmed with the videos and how it knows: a TikTok Shop tag, your @tag of the brand, or the brand or its product named in your caption. Pick them and MVP writes your requests. Find brands marks them Filmed on TikTok too.',
+    href: '/trybe?tab=filmed',
+  },
   // The new TRYBE menu and Find brands (Seb, 2026-11-09: "push it live").
   {
     date: '2026-11-09',

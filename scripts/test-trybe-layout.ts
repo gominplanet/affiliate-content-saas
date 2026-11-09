@@ -24,11 +24,11 @@ check('open to every Pro account (Seb, 2026-11-09: "push it live"), and to no pl
 const shape = GROUPS_V3.map((g) => `${g.label}: ${g.items.map((it) => `${it.label}[${it.tabs.join(',')}]`).join(' ')}`)
 check('five jobs in the order a creator works', GROUPS_V3.map((g) => g.label).join() === 'Home,Find brands,Messages,Videos,Earnings')
 check('Home holds what is happening', shape[0] === 'Home: Today[home] This week[week] What changed[changes]')
-check('Find brands holds the searching only', shape[1] === 'Find brands: Find brands[find] Star brands[stars]')
+check('Find brands holds the searching, and the brands you already filmed', shape[1] === 'Find brands: Find brands[find] Star brands[stars] Match my TikTok[filmed]')
 check('Messages holds every word to and from a brand', shape[2] === 'Messages: Inbox[inbox] Ready to send[queue] Sent[sent]')
 check('Videos holds a video from script to approval', shape[3] === 'Videos: Brand scripts[create] Upload[upload] Submissions[submissions] What’s working[working]')
 check('Earnings holds what came of it', shape[4] === 'Earnings: Earnings[analytics] By brand[brands]')
-const ALL = ['home', 'create', 'upload', 'find', 'stars', 'queue', 'sent', 'inbox', 'analytics', 'submissions', 'brands', 'week', 'changes', 'working']
+const ALL = ['home', 'create', 'upload', 'find', 'stars', 'filmed', 'queue', 'sent', 'inbox', 'analytics', 'submissions', 'brands', 'week', 'changes', 'working']
 const seen = GROUPS_V3.flatMap((g) => g.items.flatMap((it) => it.tabs))
 check('every page is in exactly one job, and each is its own button', ALL.every((t) => seen.filter((x) => x === t).length === 1) && seen.length === ALL.length && GROUPS_V3.every((g) => g.items.every((it) => it.tabs.length === 1)))
 check('the red number sits on the Inbox, the queue count on Ready to send', GROUPS_V3[2].items[0].count === 'unread' && GROUPS_V3[2].items[1].count === 'queue')

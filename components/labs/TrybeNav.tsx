@@ -12,7 +12,7 @@
 // on a phone), each saying what waits in it, and the pages of the open job sit
 // under them as tabs that wrap. Nothing is hidden off the edge.
 
-import { LayoutDashboard, Search, Rocket, Send, Inbox, Clapperboard, UploadCloud, CalendarDays, Lightbulb, BarChart3, ListChecks, Bell, Megaphone, ChevronRight, MessageCircle, Check, Star, type LucideIcon } from 'lucide-react'
+import { LayoutDashboard, Search, Rocket, ScanSearch, Send, Inbox, Clapperboard, UploadCloud, CalendarDays, Lightbulb, BarChart3, ListChecks, Bell, Megaphone, ChevronRight, MessageCircle, Check, Star, type LucideIcon } from 'lucide-react'
 import type { Tab } from '@/components/labs/TrybeOutreach'
 
 type Item = { label: string; icon: LucideIcon; tabs: Tab[]; count?: 'queue' | 'unread' }
@@ -22,6 +22,7 @@ const GROUPS: Group[] = [
   { id: 'get', label: 'Get brands', icon: Megaphone, hint: 'Find, message, answer', items: [
     { label: 'Find brands', icon: Search, tabs: ['find'] },
     { label: 'Star brands', icon: Rocket, tabs: ['stars'] },
+    { label: 'Match my TikTok', icon: ScanSearch, tabs: ['filmed'] },
     { label: 'Outreach', icon: Send, tabs: ['queue', 'sent'], count: 'queue' },
     { label: 'Inbox', icon: Inbox, tabs: ['inbox'], count: 'unread' },
   ] },
@@ -63,6 +64,8 @@ export const GROUPS_V3: Group[] = [
   { id: 'find', label: 'Find brands', icon: Search, hint: 'Search TRYBE', items: [
     { label: 'Find brands', icon: Search, tabs: ['find'] },
     { label: 'Star brands', icon: Rocket, tabs: ['stars'] },
+    // MATCH MY TIKTOK (Seb, 2026-11-09): the TRYBE brands you already filmed.
+    { label: 'Match my TikTok', icon: ScanSearch, tabs: ['filmed'] },
   ] },
   { id: 'messages', label: 'Messages', icon: MessageCircle, hint: 'Replies, requests', items: [
     { label: 'Inbox', icon: Inbox, tabs: ['inbox'], count: 'unread' },

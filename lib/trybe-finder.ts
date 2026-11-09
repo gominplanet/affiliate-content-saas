@@ -542,6 +542,9 @@ export interface FinderFilters {
   roomAndPay?: boolean
   /** Offers retainers, in its TRYBE terms or its own words (lib/trybe-evidence). */
   retainer?: boolean
+  /** You already filmed it on TikTok (Match my TikTok, lib/tiktok-match): sure
+   *  and likely matches only. */
+  filmed?: boolean
 }
 /** "Approves most videos": members' approval rate at or over this. */
 export const APPROVES_MIN = 0.6
@@ -585,7 +588,7 @@ export const FAST_REVIEW_DAYS = 5
 /** A filter body from the page, read safely. Pure. */
 /** Whether any finder filter is on (the page's filtersOn, for the server). Pure. */
 export function anyFilterOn(f: FinderFilters): boolean {
-  return !!(f.minPerVideo || f.maxCreators || f.maxVideos || f.paidCreators || f.samples || f.onAmazon || f.starred || f.openOnly || f.spending || f.newOnly || f.fastReview || f.sells || f.minSpend || f.tiktokShop || f.tierUp || f.minRating || f.approves || f.roomAndPay || f.retainer)
+  return !!(f.minPerVideo || f.maxCreators || f.maxVideos || f.paidCreators || f.samples || f.onAmazon || f.starred || f.openOnly || f.spending || f.newOnly || f.fastReview || f.sells || f.minSpend || f.tiktokShop || f.tierUp || f.minRating || f.approves || f.roomAndPay || f.retainer || f.filmed)
 }
 
 export function readFilters(v: unknown): FinderFilters {
@@ -598,7 +601,7 @@ export function readFilters(v: unknown): FinderFilters {
     sells: readSells(o.sells), minSpend: pos(o.minSpend),
     tiktokShop: o.tiktokShop === true, tierUp: o.tierUp === true,
     minRating: (() => { const n = pos(o.minRating); return n == null ? null : Math.min(5, Math.round(n * 10) / 10) })(),
-    approves: o.approves === true, roomAndPay: o.roomAndPay === true, retainer: o.retainer === true,
+    approves: o.approves === true, roomAndPay: o.roomAndPay === true, retainer: o.retainer === true, filmed: o.filmed === true,
   }
 }
 
@@ -632,8 +635,10 @@ export interface FilterRow {
   roomPay?: Pick<RoomPayRead, 'crowd' | 'pay'> | null
   /** It offers a retainer, in its terms or its own words. */
   retainer?: boolean
+  /** You filmed it on TikTok, as Match my TikTok matched it. */
+  filmed?: boolean
 }
-export type FilterId = 'minPerVideo' | 'maxCreators' | 'maxVideos' | 'paidCreators' | 'samples' | 'onAmazon' | 'starred' | 'openOnly' | 'spending' | 'newOnly' | 'fastReview' | 'sells' | 'minSpend' | 'tiktokShop' | 'tierUp' | 'minRating' | 'approves' | 'roomAndPay' | 'retainer'
+export type FilterId = 'minPerVideo' | 'maxCreators' | 'maxVideos' | 'paidCreators' | 'samples' | 'onAmazon' | 'starred' | 'openOnly' | 'spending' | 'newOnly' | 'fastReview' | 'sells' | 'minSpend' | 'tiktokShop' | 'tierUp' | 'minRating' | 'approves' | 'roomAndPay' | 'retainer' | 'filmed'
 
 /** Where a brand stands with each filter that is on: passes, fails, or not
  *  known (TRYBE did not say). Pure.
@@ -679,6 +684,9 @@ export function filterCheck(r: FilterRow, f: FinderFilters): { pass: boolean; un
   // OFFERS RETAINERS: a brand that says nothing of one is left out and
   // counted apart, never called a no (it can still offer one in chat).
   if (f.retainer && !r.retainer) { failed.push('retainer'); blank.push('retainer') }
+  // ALREADY FILMED ON TIKTOK: a brand Match my TikTok did not match is left
+  // out and counted apart (a video it could not read may still show it).
+  if (f.filmed && !r.filmed) { failed.push('filmed'); blank.push('filmed') }
   return { pass: !failed.length, unknown, failed, blank }
 }
 
@@ -687,7 +695,7 @@ export const FILTER_WORDS: Record<FilterId, string> = {
   paidCreators: 'what it has paid creators', samples: 'samples', onAmazon: 'Amazon', starred: 'stars',
   openOnly: 'how crowded', spending: 'ad spend', newOnly: 'new on TRYBE', fastReview: 'how fast it decides', sells: 'what it sells', minSpend: 'what it pays creators a month',
   tiktokShop: 'TikTok Shop', tierUp: 'payout tier', minRating: 'TRYBE rating',
-  approves: 'how often it approves', roomAndPay: 'room and pay', retainer: 'retainers',
+  approves: 'how often it approves', roomAndPay: 'room and pay', retainer: 'retainers', filmed: 'filmed on TikTok',
 }
 
 // ── 4. YOUR STAGE: VOLUME FIRST, THEN DOUBLE DOWN ──────────────────────────

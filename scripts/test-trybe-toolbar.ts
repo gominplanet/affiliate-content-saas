@@ -26,7 +26,7 @@ const numbers = C.slice(C.indexOf('export const NUMBER_WORDS'), C.indexOf('expor
 // 2026-10-21: TRYBE score or more (Star brands). 18 since 2026-11-08:
 // Approves most videos and Room and pays well (the new TRYBE layout). 19
 // since 2026-11-09: Offers retainers.
-check('the finder still has all its filters', keys.length === 19, keys)
+check('the finder still has all its filters (Filmed on TikTok the twentieth)', keys.length === 20, keys)
 const missing = keys.filter((k) => k !== 'sells' && !new RegExp(`\\b${k}:`).test(toggles) && !new RegExp(`\\b${k}:`).test(numbers))
 check('every filter has words for its chip', missing.length === 0, missing)
 const noControl = keys.filter((k) => k !== 'sells' && !new RegExp(`(toggle|numberBox)\\('${k}'`).test(C))

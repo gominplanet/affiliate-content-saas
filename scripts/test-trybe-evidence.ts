@@ -70,7 +70,7 @@ const none: EvidenceInput = { paidOut: null, earningsBucket: null, videosApprove
 // ── ON SCREEN ──
 const R = read('app/api/labs/trybe/route.ts')
 check('the brand search reads retainers for every brand matched, and filters on them', /const retainerBy = new Map\(rows\.map\(r => \[r\.brand_id as string, retainerOf\(/.test(R) && /retainer: !!retainerBy\.get\(x\.r\.brand_id\),/.test(R))
-check('each brand shown carries its proof and its retainer', /retainer: retainerBy\.get\(r\.brand_id\) \?\? null,\n\s*evidence: \(\(\) => \{/.test(R) && /const ev = evidenceOf\(\{/.test(R))
+check('each brand shown carries its proof and its retainer', /retainer: retainerBy\.get\(r\.brand_id\) \?\? null,\n[\s\S]{0,240}?evidence: \(\(\) => \{/.test(R) && /const ev = evidenceOf\(\{/.test(R))
 const C = read('components/labs/TrybeFinderControls.tsx')
 const O = read('components/labs/TrybeOutreach.tsx')
 check('every card wears its retainer by its name, in gold, and its proof box under it', /<RetainerBadge retainer=\{b\.retainer\} \/>/.test(O) && /<BrandProof evidence=\{b\.evidence\} retainer=\{b\.retainer\} \/>/.test(O) && /background: '#F59E0B', color: '#1F1300'/.test(C))

@@ -109,7 +109,17 @@ MVP" box jumps straight to any tool by name.
 What sits under each area (renamed tools and areas show their old name once,
 since members may still use it):
 - TRYBE: its own page, right under the Dashboard (menu inside: Home, Find
-  brands, Messages, Videos, Earnings).
+  brands, Messages, Videos, Earnings). Find brands holds Find brands, Star
+  brands and Match my TikTok: the member types their TikTok handle, SCOUT
+  reads their public TikTok videos in its own minimized window (it asks Chrome
+  once to read tiktok.com), and MVP lists the TRYBE brands they already
+  filmed, each marked Sure (a TikTok Shop product tag or an @tag of the
+  brand's account) or Likely (the brand or its product named in the caption),
+  with the videos and how MVP knows. A brand name that is an everyday word is
+  only a possible match. Find brands then shows a "Filmed on TikTok" chip and
+  has a "You filmed on TikTok" quick list. An optional daily check reads new
+  videos once a day. Reading only: SCOUT never posts, likes or follows, and if
+  TikTok shows a puzzle SCOUT stops and says so.
 - Find products: Product research (tabs: Catalog search, Amazon research),
   Deal Radar, Brand campaigns (tabs: All campaigns, Joined, Saved, Best
   paying), Partner programs (tabs: Levanta, PartnerBoost and Walmart,

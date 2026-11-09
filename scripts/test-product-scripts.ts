@@ -151,7 +151,7 @@ check('SCOUT reads the words and stars, never a reviewer\'s name or picture', /\
     /^1\.(5[8-9]|[6-9]\d)\./.test(M.version) && read('lib/scout-version.ts').includes(`SCOUT_LATEST_VERSION = '${M.version}'`) && /SCOUT_AMAZON_REVIEWS_MIN_VERSION = '1\.58\.0'/.test(read('lib/scout-version.ts'))
     && M.host_permissions.includes('https://www.amazon.com/product-reviews/*') && M.host_permissions.includes('https://www.amazon.com/dp/*')
     && JSON.stringify(M.permissions.slice().sort()) === JSON.stringify(['activeTab', 'alarms', 'downloads', 'scripting', 'storage', 'tabs']))
-  check('the store note says what 1.58.0 reads', /Latest release: \*\*1\.58\.0\*\*: Amazon reviews for MVP's Video Scripts/.test(read('extension/CHROME-WEB-STORE.md')))
+  check('the store note says what 1.58.0 reads', /\*\*1\.58\.0\*\*: Amazon reviews for MVP's Video Scripts/.test(read('extension/CHROME-WEB-STORE.md')))
 
   // ── THE PAGE AND THE ROUTE ─────────────────────────────────────────────────
   const R = read('app/api/labs/product-scripts/route.ts')

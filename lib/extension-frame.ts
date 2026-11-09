@@ -15,7 +15,7 @@
 
 import { rankScoutCopies, type ScoutCopy } from '@/lib/scout-copies'
 import { trybeTabError, TRYBE_NOT_OPEN, type TrybeTabState } from '@/lib/trybe-tab'
-import { scoutAtLeast, SCOUT_FB_GROUP_MIN_VERSION, SCOUT_FB_GROUP_MEDIA_MIN_VERSION, SCOUT_FB_GROUP_WATCH_MIN_VERSION, SCOUT_FB_ACCESS_MIN_VERSION, SCOUT_FB_GROUP_CLIP_MIN_VERSION, SCOUT_TRYBE_MIN_VERSION, SCOUT_TRYBE_TAB_OPEN_MIN_VERSION, SCOUT_HASHTAG_TRENDS_MIN_VERSION, SCOUT_FB_REEL_JOB_MIN_VERSION, SCOUT_FB_GROUP_SEARCH_MIN_VERSION } from '@/lib/scout-version'
+import { scoutAtLeast, SCOUT_FB_GROUP_MIN_VERSION, SCOUT_FB_GROUP_MEDIA_MIN_VERSION, SCOUT_FB_GROUP_WATCH_MIN_VERSION, SCOUT_FB_ACCESS_MIN_VERSION, SCOUT_FB_GROUP_CLIP_MIN_VERSION, SCOUT_TRYBE_MIN_VERSION, SCOUT_TRYBE_TAB_OPEN_MIN_VERSION, SCOUT_HASHTAG_TRENDS_MIN_VERSION, SCOUT_FB_REEL_JOB_MIN_VERSION, SCOUT_FB_GROUP_SEARCH_MIN_VERSION, SCOUT_TIKTOK_LIBRARY_MIN_VERSION } from '@/lib/scout-version'
 
 export const SCOUT_EXTENSION_ID = process.env.NEXT_PUBLIC_SCOUT_EXTENSION_ID || ''
 
@@ -1230,6 +1230,42 @@ export async function requestHashtagAccess(ask: boolean): Promise<{ state: 'gran
   if (!scoutAtLeast(status.version, SCOUT_HASHTAG_TRENDS_MIN_VERSION)) return { state: 'old', version: status.version ?? null }
   const res = await sendToExtension<{ granted?: boolean; tiktok?: boolean; instagram?: boolean }>({ type: 'MVP_HASHTAG_ACCESS', ask }, ask ? 185_000 : 10_000)
   return { state: res?.granted ? 'granted' : 'not-granted', tiktok: !!res?.tiktok, instagram: !!res?.instagram, version: status.version ?? null }
+}
+
+/** Match my TikTok (SCOUT 1.59.0+). Is SCOUT allowed to read tiktok.com;
+ *  ask: show the Allow window now. Resolves, never throws. */
+export async function requestTikTokLibraryAccess(ask: boolean): Promise<{ state: 'granted' | 'not-granted' | 'no-scout' | 'old'; version?: string | null }> {
+  const status = await getScoutStatus()
+  if (!status.installed) return { state: 'no-scout' }
+  if (!scoutAtLeast(status.version, SCOUT_TIKTOK_LIBRARY_MIN_VERSION)) return { state: 'old', version: status.version ?? null }
+  const res = await sendToExtension<{ granted?: boolean }>({ type: 'MVP_TIKTOK_ACCESS', ask }, ask ? 185_000 : 10_000)
+  return { state: res?.granted ? 'granted' : 'not-granted', version: status.version ?? null }
+}
+
+/** SCOUT 1.59.0+: read @handle's public TikTok videos for MVP's scan. Answers
+ *  at once; SCOUT hands each batch to MVP itself, so the scan goes on with
+ *  this tab closed. 'busy': SCOUT is already reading. */
+export async function requestTikTokLibraryScan(handle: string, scanId: string): Promise<{ ok: boolean; error?: string }> {
+  const res = await sendToExtension<{ ok?: boolean; error?: string }>({ type: 'MVP_TIKTOK_SCAN', handle, scanId }, 15_000)
+  return res ? { ok: !!res.ok, error: res.error } : { ok: false, error: 'SCOUT did not answer.' }
+}
+
+/** SCOUT 1.59.0+: stop the scan SCOUT is running. */
+export async function requestTikTokLibraryStop(): Promise<void> {
+  await sendToExtension({ type: 'MVP_TIKTOK_STOP' }, 5_000)
+}
+
+export interface TikTokScoutState { on?: boolean; handle?: string; scanId?: string; read?: number; phase?: string; error?: string | null; ended?: string | null; endedAt?: number | null; reachedEnd?: boolean }
+/** SCOUT 1.59.0+: what SCOUT's TikTok scan is doing, as SCOUT sees it. */
+export async function requestTikTokLibraryStatus(): Promise<{ running: boolean; state: TikTokScoutState | null } | null> {
+  const res = await sendToExtension<{ ok?: boolean; running?: boolean; state?: TikTokScoutState | null }>({ type: 'MVP_TIKTOK_STATUS' }, 5_000)
+  return res?.ok ? { running: !!res.running, state: res.state ?? null } : null
+}
+
+/** SCOUT 1.59.0+: check the creator's TikTok for new videos once a day, in this Chrome. */
+export async function requestTikTokLibraryDaily(on: boolean, handle: string): Promise<{ ok: boolean; on?: boolean; next?: number | null }> {
+  const res = await sendToExtension<{ ok?: boolean; on?: boolean; next?: number | null }>({ type: 'MVP_TIKTOK_DAILY', on, handle }, 8_000)
+  return res ? { ok: !!res.ok, on: res.on, next: res.next ?? null } : { ok: false }
 }
 
 export interface TikTokTrendsResult {

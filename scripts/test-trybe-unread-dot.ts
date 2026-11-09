@@ -14,7 +14,7 @@ const nav = readFileSync('components/labs/TrybeNav.tsx', 'utf8')
 const page = readFileSync('components/labs/TrybeOutreach.tsx', 'utf8')
 const shell = readFileSync('components/layout/DashboardShellV2.tsx', 'utf8')
 
-check('the Inbox lives under Get brands', /\{ id: 'get', label: 'Get brands'[\s\S]{0,300}\{ label: 'Inbox', icon: Inbox, tabs: \['inbox'\], count: 'unread' \}/.test(nav))
+check('the Inbox lives under Get brands', /\{ id: 'get', label: 'Get brands'[\s\S]{0,400}\{ label: 'Inbox', icon: Inbox, tabs: \['inbox'\], count: 'unread' \}/.test(nav))
 check('the job holding the Inbox shows the red number', /\{g\.items\.some\(\(it\) => it\.count === 'unread'\) && unread > 0 && <UnreadDot n=\{unread\} \/>\}/.test(nav))
 check('the Inbox page button shows it in red too', /\{n > 0 && \(it\.count === 'unread' \? <UnreadDot n=\{n\} \/>/.test(nav))
 check('the same red as the sidebar', /backgroundColor: '#ff3b30'/.test(shell) && /function UnreadDot[\s\S]*backgroundColor: '#ff3b30'/.test(nav))

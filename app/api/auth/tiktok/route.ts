@@ -18,6 +18,7 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { tierAllowsSocial, type Tier } from '@/lib/tier'
 import { startOAuthState, callbackHostRedirect } from '@/lib/oauth-state'
+import { tiktokScopes } from '@/lib/tiktok-video-list'
 
 export async function GET(request: Request) {
   const appUrl = process.env.NEXT_PUBLIC_APP_URL!
@@ -70,7 +71,12 @@ export async function GET(request: Request) {
   //   video.publish      — direct-posts the uploaded video to the user's feed
   //                        using the caption + privacy picked inside MVP, via
   //                        /v2/post/publish/video/init/.
-  url.searchParams.set('scope', 'user.info.basic,user.info.profile,video.upload,video.publish')
+  //   video.list         reads the creator's public videos for Match my TikTok
+  //                      (lib/tiktok-video-list). Asked for ONLY when the
+  //                      TIKTOK_VIDEO_LIST switch is on, which is set once
+  //                      TikTok approves the scope: asking for a scope the app
+  //                      is not approved for fails the whole connection.
+  url.searchParams.set('scope', tiktokScopes())
   url.searchParams.set('redirect_uri', redirectUri)
   url.searchParams.set('state', state)
 

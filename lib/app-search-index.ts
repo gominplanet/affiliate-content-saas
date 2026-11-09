@@ -48,6 +48,7 @@ export const APP_SEARCH_INDEX: AppSearchEntry[] = [
   { label: 'Wayward', href: '/wayward', group: 'Partner programs', keywords: 'mvp x wayward amazon attribution catalog commission' },
   { label: 'LTK', href: '/ltk', group: 'Partner programs', keywords: 'mvp x ltk liketoknowit shopltk rewardstyle link post' },
   { label: 'TRYBE', href: '/trybe', group: 'Find products', keywords: 'trybe brands brand deals ad videos ugc join requests outreach inbox paid' },
+  { label: 'Match my TikTok', href: '/trybe?tab=filmed', group: 'Find products', keywords: 'match my tiktok scan tiktok videos already filmed brands trybe library product tags' },
   { label: 'Idea lists', href: '/idea-lists', group: 'Find products', keywords: 'idea list amazon storefront shopping guide list to blog roundup shoppable list top picks curated products' },
 
   // ── Make videos ──────────────────────────────────────────────────────────
