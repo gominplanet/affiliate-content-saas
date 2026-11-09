@@ -94,8 +94,9 @@ const OPEN_TO: Record<PreviewFeature, 'admin' | 'labs'> = {
   // I am met with a lot of confusion ... Can we have a better hierarchy of
   // things? ... It should be a lot easier to find brands"). Five jobs in the
   // order a creator works: Home, Find brands, Messages, Videos, Earnings; and
-  // Find brands with its filters in one column. Admin while Seb tries it.
-  trybe_layout: 'admin',
+  // Find brands with its filters in one column. Admin while Seb tried it;
+  // opened to Pro 2026-11-09 (Seb: "push it live").
+  trybe_layout: 'labs',
   // SCOUT reading TikTok Creative Center and Instagram's tag counts for the
   // hashtag engine (Seb, 2026-10-16). Admin while it is tested on real pages.
   hashtag_trends: 'admin',

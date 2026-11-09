@@ -29,6 +29,16 @@ export interface WhatsNewItem {
 }
 
 export const WHATS_NEW: WhatsNewItem[] = [
+  // The new TRYBE menu and Find brands (Seb, 2026-11-09: "push it live").
+  {
+    date: '2026-11-09',
+    gate: 'trybe_layout',
+    badge: 'NEW',
+    tone: '#0B7A6E',
+    title: 'TRYBE, easier to find brands',
+    desc: 'TRYBE has a clearer menu: Home, Find brands, Messages, Videos and Earnings, in the order you work. Find brands keeps every filter in one column beside the brands, and each brand now shows its Meta ads, its Top 100 videos, how often MVP members get approved, and how often it answers. Under every brand, How MVP knows shows the facts behind Pays creators and Spends on ads, with where each came from and when. Brands that offer retainers wear a gold badge, and Offers retainers is a quick list.',
+    href: '/trybe?tab=find',
+  },
   // Every Pro tool in a legacy plan's menu, locked (Seb, 2026-11-08: "If they
   // click on something ... then they get asked to upgrade to the full
   // membership that exists now").

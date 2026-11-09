@@ -18,7 +18,7 @@ const fails: string[] = []
 const check = (name: string, ok: boolean | undefined) => { if (!ok) fails.push(name) }
 const read = (f: string) => readFileSync(f, 'utf8')
 
-check('admin only until Seb opens it', canUsePreview('trybe_layout', 'admin') && !canUsePreview('trybe_layout', 'pro'))
+check('open to every Pro account (Seb, 2026-11-09: "push it live"), and to no plan without TRYBE', canUsePreview('trybe_layout', 'admin') && canUsePreview('trybe_layout', 'pro') && !canUsePreview('trybe_layout', 'creator') && !canUsePreview('trybe_layout', 'trial'))
 
 // ── THE MENU ──
 const shape = GROUPS_V3.map((g) => `${g.label}: ${g.items.map((it) => `${it.label}[${it.tabs.join(',')}]`).join(' ')}`)
