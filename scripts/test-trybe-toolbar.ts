@@ -24,8 +24,9 @@ const toggles = C.slice(C.indexOf('export const TOGGLE_WORDS'), C.indexOf('expor
 const numbers = C.slice(C.indexOf('export const NUMBER_WORDS'), C.indexOf('export const panelFiltersOn'))
 // 15 since 2026-10-17: On TikTok Shop and Payout tier went up. 16 since
 // 2026-10-21: TRYBE score or more (Star brands). 18 since 2026-11-08:
-// Approves most videos and Room and pays well (the new TRYBE layout).
-check('the finder still has all its filters', keys.length === 18, keys)
+// Approves most videos and Room and pays well (the new TRYBE layout). 19
+// since 2026-11-09: Offers retainers.
+check('the finder still has all its filters', keys.length === 19, keys)
 const missing = keys.filter((k) => k !== 'sells' && !new RegExp(`\\b${k}:`).test(toggles) && !new RegExp(`\\b${k}:`).test(numbers))
 check('every filter has words for its chip', missing.length === 0, missing)
 const noControl = keys.filter((k) => k !== 'sells' && !new RegExp(`(toggle|numberBox)\\('${k}'`).test(C))

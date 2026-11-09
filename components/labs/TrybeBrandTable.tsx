@@ -10,14 +10,15 @@
 
 import { useMemo, useState, type CSSProperties } from 'react'
 import { ArrowDown, ArrowUp, ArrowUpRight, Trophy } from 'lucide-react'
-import { BrandMark } from '@/components/labs/TrybeFinderControls'
+import { BrandMark, proofTitle } from '@/components/labs/TrybeFinderControls'
+import { retainerSource } from '@/lib/trybe-evidence'
 import { BrandName, useBrandOpen } from '@/components/labs/trybe-dossier-context'
 import { GRADE, APP, AppChip } from '@/components/labs/trybe-ui'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Row = Record<string, any>
 
-type Col = 'pick' | 'brand' | 'pay' | 'month' | 'paidOut' | 'meta' | 'top100' | 'rating' | 'samples' | 'tiktok' | 'room' | 'decides' | 'approves' | 'answers'
+type Col = 'pick' | 'brand' | 'pay' | 'retainer' | 'month' | 'paidOut' | 'meta' | 'top100' | 'rating' | 'samples' | 'tiktok' | 'room' | 'decides' | 'approves' | 'answers'
 const TIERS = ['$1K+', '$5K+', '$10K+', '$25K+', '$50K+', '$100K+', '$200K+', '$500K+', '$1M+']
 const tierRank = (b: string | null | undefined) => { if (!b) return -1; const i = TIERS.indexOf(b.trim()); if (i >= 0) return i; const n = parseFloat(String(b).replace(/[^0-9.]/g, '')); return Number.isFinite(n) ? n / 1000 : -1 }
 const metaOf = (b: Row): number | null => (typeof b.meta_ads === 'number' && b.meta_fresh && (b.meta_trust === 'own' || b.meta_trust === 'unchecked') ? b.meta_ads : null)
@@ -38,6 +39,8 @@ function key(b: Row, c: Col): number | string | null {
     case 'room': return b.room_pay?.rank ? 10 + b.room_pay.rank : roomRank(b.crowd?.level) || null
     case 'decides': return typeof b.review?.reviewDays === 'number' ? -b.review.reviewDays : null
     case 'month': return typeof b.spend?.dollars === 'number' ? b.spend.dollars : null
+    // A retainer with an amount by its amount; one only mentioned after those.
+    case 'retainer': return b.retainer ? (typeof b.retainer.amount === 'number' ? b.retainer.amount : 0.5) : null
     // Not on TikTok Shop is the better side (less competition), so it sorts first.
     case 'tiktok': return b.tiktok_shop === false ? 1 : b.tiktok_shop === true ? 0 : null
     case 'approves': return typeof b.approval === 'number' ? b.approval : null
@@ -49,6 +52,7 @@ const COLS: Array<{ id: Col; label: string; title: string; align?: 'right' }> = 
   { id: 'brand', label: 'Brand', title: 'A to Z' },
   { id: 'pick', label: 'MVP pick', title: 'Best bets score: less competition, real ad spend, pay, samples', align: 'right' },
   { id: 'pay', label: 'A video pays', title: 'What one approved video pays, from your results, members’ results, or its terms', align: 'right' },
+  { id: 'retainer', label: 'Retainer', title: 'Offers creators a retainer: in its TRYBE pay terms, or its own words. Hover one to read where' },
   { id: 'month', label: 'Pays a month', title: 'What it pays TRYBE creators a month, estimated: its videos approved in the last 30 days times its pay per video', align: 'right' },
   { id: 'paidOut', label: 'Paid out', title: 'TRYBE’s payout range for the brand, all time' },
   { id: 'meta', label: 'Meta ads', title: 'Its own Meta ads running, counted in the last four weeks', align: 'right' },
@@ -98,10 +102,10 @@ export default function TrybeBrandTable({ brands, picked, onPick, taken, preview
   // table says it (blank where MVP has not read it, never a zero).
   function download() {
     const cell = (v: unknown) => { const s = v == null ? '' : String(v); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s }
-    const head = ['Brand', 'Website', 'Categories', 'MVP pick', 'A video pays ($)', 'Pay on TRYBE', 'Pays a month ($)', 'Paid out', 'Meta ads', 'Top 100 videos', 'Rating', 'Reviews', 'Samples', 'TikTok Shop', 'Room', 'Room and pay', 'Days to decide', 'Approves (%)', 'Answers (%)', 'On your list']
+    const head = ['Brand', 'Website', 'Categories', 'MVP pick', 'A video pays ($)', 'Pay on TRYBE', 'Retainer', 'Pays a month ($)', 'Paid out', 'Meta ads', 'Top 100 videos', 'Rating', 'Reviews', 'Samples', 'TikTok Shop', 'Room', 'Room and pay', 'Days to decide', 'Approves (%)', 'Answers (%)', 'On your list']
     const lines = rows.map((b) => [
       b.name, b.website, (b.categories || []).join('; '), typeof b.pick === 'number' ? Math.round(b.pick) : '',
-      b.pay_est?.dollars != null ? Math.round(b.pay_est.dollars) : '', b.pay_text || '', typeof b.spend?.dollars === 'number' ? Math.round(b.spend.dollars) : '', b.earnings_bucket || '', metaOf(b) ?? '',
+      b.pay_est?.dollars != null ? Math.round(b.pay_est.dollars) : '', b.pay_text || '', b.retainer ? retainerSource(b.retainer) : '', typeof b.spend?.dollars === 'number' ? Math.round(b.spend.dollars) : '', b.earnings_bucket || '', metaOf(b) ?? '',
       typeof b.top100_hits === 'number' ? b.top100_hits : '', typeof b.review_rating === 'number' ? b.review_rating : '', typeof b.review_count === 'number' ? b.review_count : '',
       b.proof?.app ? 'App, none needed' : b.stats?.samples === true ? 'Yes' : b.stats?.samples === false ? 'No' : '', b.tiktok_shop === true ? 'Yes' : b.tiktok_shop === false ? 'No' : '', b.crowd?.level || '', b.room_pay?.words || '', typeof b.review?.reviewDays === 'number' ? b.review.reviewDays : '',
       typeof b.approval === 'number' ? Math.round(b.approval * 100) : '', typeof b.replies?.rate === 'number' ? Math.round(b.replies.rate * 100) : '', whereOf(b) || '',
@@ -122,7 +126,7 @@ export default function TrybeBrandTable({ brands, picked, onPick, taken, preview
       </button>
     </div>
     <div className="rounded-2xl overflow-x-auto" style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
-      <table className="w-full text-[13px] min-w-[1380px]" style={{ fontVariantNumeric: 'tabular-nums' }}>
+      <table className="w-full text-[13px] min-w-[1500px]" style={{ fontVariantNumeric: 'tabular-nums' }}>
         <thead>
           <tr className="text-left" style={{ borderBottom: '1px solid var(--border)' }}>
             {!preview && <th className="pl-4 pr-1 py-2.5 sticky left-0 z-[2]" style={{ background: 'var(--surface)', width: 40, minWidth: 40, maxWidth: 40, boxSizing: 'border-box' }}><span className="sr-only">Pick</span></th>}
@@ -181,13 +185,16 @@ export default function TrybeBrandTable({ brands, picked, onPick, taken, preview
                   {b.pay_est?.dollars != null ? <span className="font-bold" style={{ color: 'var(--text)' }}>${Math.round(b.pay_est.dollars)}</span>
                     : b.pay_est?.short || b.pay_text ? <span className="text-[12px]" style={{ color: 'var(--text-2)' }}>{String(b.pay_est?.short || b.pay_text).slice(0, 26)}</span> : <Unknown>Not shown</Unknown>}
                 </td>
+                <td className="px-2.5 py-2.5 align-middle whitespace-nowrap" title={b.retainer ? retainerSource(b.retainer) : undefined}>
+                  {b.retainer ? <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[11.5px] font-extrabold" style={{ background: '#F59E0B', color: '#1F1300' }}>{retainerCell(b.retainer)}</span> : <Unknown>Not listed</Unknown>}
+                </td>
                 <td className="px-2.5 py-2.5 text-right align-middle whitespace-nowrap" title={b.spend?.why || undefined}>
                   {typeof b.spend?.dollars === 'number' ? <span className="font-semibold" style={{ color: b.spend.dollars > 0 ? 'var(--text)' : 'var(--text-3)' }}>${Math.round(b.spend.dollars).toLocaleString()}</span> : <Unknown>Not known</Unknown>}
                 </td>
-                <td className="px-2.5 py-2.5 align-middle whitespace-nowrap">
+                <td className="px-2.5 py-2.5 align-middle whitespace-nowrap" title={proofTitle(b.evidence?.pays)}>
                   {b.earnings_bucket ? <span className="font-semibold" style={{ color: 'var(--text)' }}>{b.earnings_bucket}{b.tier_up && <ArrowUpRight size={12} className="inline -mt-0.5 ml-0.5" style={{ color: GRADE.strong.color }} aria-label="Went up lately" />}</span> : <Unknown>Not shown</Unknown>}
                 </td>
-                <td className="px-2.5 py-2.5 text-right align-middle whitespace-nowrap">
+                <td className="px-2.5 py-2.5 text-right align-middle whitespace-nowrap" title={proofTitle(b.evidence?.ads)}>
                   {meta != null ? <span className="font-bold" style={{ color: meta > 0 ? 'var(--text)' : 'var(--text-3)' }}>{meta}</span>
                     : typeof b.meta_ads === 'number' && b.meta_fresh ? <Unknown>Unclear</Unknown> : <Unknown>Not counted</Unknown>}
                 </td>
@@ -226,6 +233,12 @@ export default function TrybeBrandTable({ brands, picked, onPick, taken, preview
     </div>
     </div>
   )
+}
+
+/** A retainer in a table cell: its amount and videos, or that it is offered. */
+function retainerCell(r: { amount: number | null; videos: number | null }): string {
+  if (typeof r.amount !== 'number') return 'Offered'
+  return '$' + Math.round(r.amount).toLocaleString() + (r.videos ? ' for ' + r.videos : '')
 }
 
 function Dot({ c, children }: { c: 'strong' | 'fair' | 'weak'; children: string }) {

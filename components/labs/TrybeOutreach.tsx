@@ -53,6 +53,7 @@ import { type PeekActions } from '@/components/labs/TrybeBrandPeek'
 import TrybeDossier from '@/components/labs/TrybeDossier'
 import TrybeHome from '@/components/labs/TrybeHome'
 import TrybeNav, { pageLabelV3 } from '@/components/labs/TrybeNav'
+import type { ClaimProof, RetainerRead } from '@/lib/trybe-evidence'
 import TrybeBrandTable from '@/components/labs/TrybeBrandTable'
 import { morningWords, autoRunWords, type AutoRunRecord } from '@/lib/trybe-morning'
 import { APP, AppChip } from '@/components/labs/trybe-ui'
@@ -66,7 +67,7 @@ import TrybeRetainers from '@/components/labs/TrybeRetainers'
 import TrybeIntroVideo from '@/components/labs/TrybeIntroVideo'
 import TrybeSampleGuard from '@/components/labs/TrybeSampleGuard'
 import { readScript, readBrandStats } from '@/lib/trybe-mybrands'
-import { FinderToolbar, FinderSidebar, panelFiltersOn, AdsChip, ApprovalChip, RepliesChip, FinderFilterNote, FinderPriorities, FinderPresets, PopularityChips, RatingChip, BrandExtras, StarButton, PassButton, AmazonLine, PayChip, RoomPayChip, SpendChip, SpendNote, NewChip, StaticsChip, SellsChip, VerdictChip, ReviewChip, PaidOutChip, TikTokShopChip, CompareButton, BrandMark, NO_FILTERS, filtersOn, type LiveAmazon, type LivePayEst } from '@/components/labs/TrybeFinderControls'
+import { FinderToolbar, FinderSidebar, panelFiltersOn, AdsChip, ApprovalChip, RepliesChip, RetainerBadge, BrandProof, FinderFilterNote, FinderPriorities, FinderPresets, PopularityChips, RatingChip, BrandExtras, StarButton, PassButton, AmazonLine, PayChip, RoomPayChip, SpendChip, SpendNote, NewChip, StaticsChip, SellsChip, VerdictChip, ReviewChip, PaidOutChip, TikTokShopChip, CompareButton, BrandMark, NO_FILTERS, filtersOn, type LiveAmazon, type LivePayEst } from '@/components/labs/TrybeFinderControls'
 import TrybeCompare from '@/components/labs/TrybeCompare'
 import { COMPARE_MAX } from '@/lib/trybe-compare'
 import { useTrybeAmazon } from '@/components/labs/useTrybeAmazon'
@@ -158,6 +159,9 @@ interface LiveBrand {
   sells?: SellsRead | null
   /** How fast it decides videos, from MVP members' results. */
   review?: { reviewDays: number | null; slowShare: number | null } | null
+  /** Its retainer, and the proof behind "pays creators" and "spends on ads" (lib/trybe-evidence). */
+  retainer?: RetainerRead | null
+  evidence?: { pays: ClaimProof; ads: ClaimProof } | null
   /** MVP members' approval rate (0 to 1), and how often it answers their requests. */
   approval?: number | null
   replies?: { rate: number | null; days: number | null } | null
@@ -2960,6 +2964,7 @@ export default function TrybeOutreach({ preview = false, v2 = false, layout = fa
                     <span className="flex-1 min-w-0">
                       <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
                         <BrandName id={b.brand_id} name={b.name} className="text-[15px] font-semibold" />
+                        <RetainerBadge retainer={b.retainer} />
                         {b.proof?.app && <AppChip />}
                         <StarButton on={!!b.starred} onClick={() => void star(b)} />
                         <CompareButton on={compare.some(x => x.brand_id === b.brand_id)} full={compare.length >= COMPARE_MAX} onClick={() => flipCompare(b)} />
@@ -3000,6 +3005,7 @@ export default function TrybeOutreach({ preview = false, v2 = false, layout = fa
                         {sortBy === 'newest' && b.first_seen_at && <span className="text-[11px] rounded-md px-2 py-0.5" style={{ background: 'var(--surface-2, rgba(0,0,0,0.05))', color: 'var(--text-soft)' }}>First seen {new Date(b.first_seen_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</span>}
                       </span>
                       <BrandExtras amazon={b.amazon} stats={b.stats} />
+                      <BrandProof evidence={b.evidence} retainer={b.retainer} />
                       {sortBy === 'picks' && (
                         <span className="flex flex-wrap items-center gap-1.5 mt-1.5">
                           <VerdictChip score={b.pick ?? 0} read={b.pick_read} />

@@ -63,6 +63,7 @@ const brandKeyOf = (n: string | null | undefined) => brandKey(n)
 import { researchBrandSite } from '@/lib/trybe-research'
 import { mergeDirectory, directorySearchText, nicheScore, readCategories, siteSearchText, programOf } from '@/lib/trybe-directory'
 import { samplePool, replyPool, metaSeries, timelineOf, dossierProducts } from '@/lib/trybe-dossier'
+import { evidenceOf, retainerOf } from '@/lib/trybe-evidence'
 import { dailySeries, windowTotals, adsMovers, payMoves, payIndex, type ChangeRow } from '@/lib/trybe-home'
 import { TOP100, adSpendProof, samplesProof, sampleSignsByBrand, activityCounts, activityDigest, cleanProfile, pushesOf, readTop100Ask, readCatalogSamples, CATALOG_KEEP_DAYS, CATALOG_READS_MAX, CATALOG_REFRESH_CHUNK, type Activity, type CatalogSamples } from '@/lib/trybe-top100'
 import {
@@ -1991,6 +1992,11 @@ Weigh posts pushed to social, and TRYBE brands they earned with or submitted to,
     const results = await payResults(admin, ownerId, rows.map(r => r.brand_id as string))
     const linesBy = new Map(rows.map(r => [r.brand_id as string, payLines(r.raw, r.pay_text)]))
     const payBy = new Map(rows.map(r => [r.brand_id as string, payReadOf(linesBy.get(r.brand_id) || [])]))
+    // RETAINERS (Seb, 2026-11-09: "show users very visibly if a brand is also
+    // offering retainers"): its TRYBE pay terms, else its own words next to
+    // creators or monthly pay (lib/trybe-evidence), for every brand matched so
+    // the filter can use it.
+    const retainerBy = new Map(rows.map(r => [r.brand_id as string, retainerOf({ payLines: linesBy.get(r.brand_id) || [], about: r.about ?? null, siteText: r.site_text ?? null })]))
     const estBy = new Map(rows.map(r => [r.brand_id as string, estimatePay({ lines: linesBy.get(r.brand_id) || [], yours: results.yours.get(r.brand_id) ?? null, members: results.members.get(r.brand_id) ?? null })]))
     // HOW CROWDED: today against MVP's snapshot of about a month ago.
     const base = await crowdBaseline(admin, now)
@@ -2107,7 +2113,7 @@ Weigh posts pushed to social, and TRYBE brands they earned with or submitted to,
       const c = filterCheck({ perVideo: estBy.get(x.r.brand_id)?.dollars ?? null, creators: typeof x.r.total_creators === 'number' ? x.r.total_creators : null, stats: statsWith(x.r.brand_id), earningsBucket: x.r.earnings_bucket ?? null, amazon: amazonBy.get(x.r.brand_id) ?? null, amazonUnknown: amazonNotes.length > 0, starred: starredIds.has(x.r.brand_id), crowd: crowdBy.get(x.r.brand_id)?.level ?? null,
         spending: spendingOf(x.r), isNew: newBy.get(x.r.brand_id), reviewDays: results.review.get(x.r.brand_id)?.reviewDays ?? null, sells: sellsBy.get(x.r.brand_id) ?? null, spend: spendBy.get(x.r.brand_id)?.dollars ?? null,
         tiktokShop: tiktokShopOf(x.r), tierUp: tierLog ? !!tierLog.get(x.r.brand_id)?.up : null,
-        approval: results.approval.get(x.r.brand_id) ?? null, roomPay: roomPayBy.get(x.r.brand_id) ?? null,
+        approval: results.approval.get(x.r.brand_id) ?? null, roomPay: roomPayBy.get(x.r.brand_id) ?? null, retainer: !!retainerBy.get(x.r.brand_id),
         // A rating counts with STAR_MIN_REVIEWS reviews or more (Seb, 2026-10-24).
         rating: (ratingOf(x.r)?.reviews ?? 0) >= STAR_MIN_REVIEWS ? ratingOf(x.r)?.stars ?? null : null }, filters)
       for (const f of c.failed) hiddenBy[f] = (hiddenBy[f] ?? 0) + 1
@@ -2416,6 +2422,21 @@ Weigh posts pushed to social, and TRYBE brands they earned with or submitted to,
           // Members' approval rate (0 to 1) and how often it answers requests.
           approval: results.approval.get(r.brand_id) ?? null,
           replies: repliesBy.get(r.brand_id) ?? null,
+          // HOW MVP KNOWS (Seb, 2026-11-09: "How do we know for sure? What is
+          // the data backing it up from tribe?"): each claim with its facts,
+          // where each came from and when; and its retainer, with the words read.
+          retainer: retainerBy.get(r.brand_id) ?? null,
+          evidence: (() => {
+            const st = statsBy.get(r.brand_id), tl = tierLog?.get(r.brand_id)
+            const ev = evidenceOf({
+              paidOut: st?.paidOut ?? null, earningsBucket: r.earnings_bucket ?? null, videosApproved: st?.videosApproved ?? null, videos30d: st?.videos30d ?? null,
+              payLines: linesBy.get(r.brand_id) || [], membersPerVideo: results.members.get(r.brand_id) ?? null, tierUpFrom: tl?.up ? tl.before ?? null : null, listAt: r.last_seen_at ?? null,
+              metaAds: typeof r.meta_ads === 'number' ? r.meta_ads : null, metaCheckedAt: r.meta_ads_checked_at ?? null, metaTrust: trustOf(r), metaFresh: !!metaFresh(r),
+              top100Hits: typeof r.top100_hits === 'number' ? r.top100_hits : null, top100BestRank: r.top100_best_rank ?? null, top100At: r.top100_checked_at ?? null,
+              about: r.about ?? null, siteText: r.site_text ?? null,
+            })
+            return { pays: ev.pays, ads: ev.ads }
+          })(),
           statics: staticsOf(r.raw, r.about),
           sells: sellsBy.get(r.brand_id) ?? null,
           first_seen_at: r.first_seen_at ?? null,

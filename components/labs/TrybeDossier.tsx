@@ -23,6 +23,7 @@ import { adLibraryUrl } from '@/lib/trybe-pick'
 import { CHANGE_WORDS } from '@/lib/trybe-changes'
 import { GRADE, ui, Section, Tag, Meter, ScoreRing, Figure, AreaChart, Btn } from '@/components/labs/trybe-ui'
 import TrybeLink from '@/components/labs/TrybeLink'
+import { BrandProof, RetainerBadge } from '@/components/labs/TrybeFinderControls'
 import { BrandName } from '@/components/labs/trybe-dossier-context'
 import type { PeekActions } from '@/components/labs/TrybeBrandPeek'
 
@@ -165,6 +166,7 @@ export default function TrybeDossier({ brandId, name, onClose, actions, scout = 
                 <h2 className="text-[22px] sm:text-[24px] font-bold leading-tight truncate" style={{ ...ui.num, ...ui.text }}>{title}</h2>
                 {listing?.starred && <Star size={16} fill="#F59E0B" stroke="#F59E0B" aria-label="Starred" />}
                 {listing?.is_new && <Tag tone="accent">New on TRYBE</Tag>}
+                <RetainerBadge retainer={listing?.retainer} />
                 {(d?.brand?.left || listing?.not_listed) && <Tag tone="bad">Not on TRYBE&rsquo;s list now</Tag>}
               </div>
               <div className="flex items-center gap-x-3 gap-y-1 flex-wrap mt-1 text-[12.5px]" style={ui.soft}>
@@ -237,6 +239,15 @@ export default function TrybeDossier({ brandId, name, onClose, actions, scout = 
                 </div>
               ))}
             </div>
+          )}
+
+          {/* ── HOW MVP KNOWS (Seb, 2026-11-09: "How do we know for sure? What is
+              the data backing it up from tribe?"): the same proof as its card,
+              each fact with where it came from and when. ── */}
+          {listing?.evidence && (
+            <Section title="How MVP knows" aside="Each fact says where it came from and when it was read">
+              <BrandProof evidence={listing.evidence} retainer={listing.retainer} />
+            </Section>
           )}
 
           {/* ── LIVE FROM TRYBE ──────────────────────────────────────────── */}

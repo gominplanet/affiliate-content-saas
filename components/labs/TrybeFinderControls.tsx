@@ -11,6 +11,7 @@ import { useState } from 'react'
 import { Star, Search, X, ExternalLink, Copy, Check, SlidersHorizontal, PlayCircle, ShoppingBag, Ban, RotateCcw, DollarSign, Users, Sparkles, Clock, ChevronDown, TrendingUp, ArrowLeftRight, Globe, Megaphone, Image as ImageIcon } from 'lucide-react'
 import { GRID_FACTORS, FORMATS, DEFAULT_PRIORITIES, verdictOf, VERDICT_WORDS, metaTrustWords, type Factor, type Priorities, type Weight, type MetaTrust } from '@/lib/trybe-pick'
 import { reviewWords } from '@/lib/trybe-mybrands'
+import { retainerShort, retainerSource, type ClaimProof, type RetainerRead } from '@/lib/trybe-evidence'
 import { FILTER_WORDS, CROWD_WORDS, type FilterId, type FinderFilters, type DirStats, type CrowdRead, type SpendRead, type RoomPayRead } from '@/lib/trybe-finder'
 import type { PayBasis } from '@/lib/trybe-pay'
 import { SELLS, SELLS_WORDS, type SellsRead } from '@/lib/trybe-sells'
@@ -32,8 +33,8 @@ export interface LiveAmazon {
 }
 export interface FilmedLive { asin: string; title: string | null; url: string; videos: string[] }
 
-export const NO_FILTERS: FinderFilters = { minPerVideo: null, maxCreators: null, maxVideos: null, paidCreators: false, samples: false, onAmazon: false, starred: false, openOnly: false, spending: false, newOnly: false, fastReview: false, sells: null, minSpend: null, tiktokShop: false, tierUp: false, minRating: null, approves: false, roomAndPay: false }
-export const filtersOn = (f: FinderFilters) => !!(f.minPerVideo || f.maxCreators || f.maxVideos || f.paidCreators || f.samples || f.onAmazon || f.starred || f.openOnly || f.spending || f.newOnly || f.fastReview || f.sells || f.minSpend || f.tiktokShop || f.tierUp || f.minRating || f.approves || f.roomAndPay)
+export const NO_FILTERS: FinderFilters = { minPerVideo: null, maxCreators: null, maxVideos: null, paidCreators: false, samples: false, onAmazon: false, starred: false, openOnly: false, spending: false, newOnly: false, fastReview: false, sells: null, minSpend: null, tiktokShop: false, tierUp: false, minRating: null, approves: false, roomAndPay: false, retainer: false }
+export const filtersOn = (f: FinderFilters) => !!(f.minPerVideo || f.maxCreators || f.maxVideos || f.paidCreators || f.samples || f.onAmazon || f.starred || f.openOnly || f.spending || f.newOnly || f.fastReview || f.sells || f.minSpend || f.tiktokShop || f.tierUp || f.minRating || f.approves || f.roomAndPay || f.retainer)
 
 const WEIGHTS: Array<{ w: Weight; label: string }> = [{ w: 0, label: 'Skip' }, { w: 1, label: 'Normal' }, { w: 2, label: 'A lot' }]
 
@@ -54,13 +55,13 @@ function Picker({ label, value, options, onChange, changed }: { label: string; v
   )
 }
 
-type ToggleKey = 'paidCreators' | 'samples' | 'onAmazon' | 'starred' | 'openOnly' | 'spending' | 'newOnly' | 'fastReview' | 'tiktokShop' | 'tierUp' | 'approves' | 'roomAndPay'
+type ToggleKey = 'paidCreators' | 'samples' | 'onAmazon' | 'starred' | 'openOnly' | 'spending' | 'newOnly' | 'fastReview' | 'tiktokShop' | 'tierUp' | 'approves' | 'roomAndPay' | 'retainer'
 type NumberKey = 'minPerVideo' | 'maxCreators' | 'maxVideos' | 'minSpend' | 'minRating'
 export const TOGGLE_WORDS: Record<ToggleKey, string> = {
   starred: 'Starred', onAmazon: 'On Amazon', openOnly: 'Open only', newOnly: 'New', spending: 'Spending on ads',
   fastReview: 'Decides fast', paidCreators: 'Has paid creators', samples: 'Sends samples',
   tiktokShop: 'On TikTok Shop', tierUp: 'Payout tier went up',
-  approves: 'Approves most videos', roomAndPay: 'Room and pays well',
+  approves: 'Approves most videos', roomAndPay: 'Room and pays well', retainer: 'Offers retainers',
 }
 export const NUMBER_WORDS: Record<NumberKey, (n: number) => string> = {
   minPerVideo: (n) => `At least $${n.toLocaleString()} a video`,
@@ -171,6 +172,7 @@ export function FinderToolbar({ filters, onFilters, name, onName, sort, sorts, o
             {group('Pay', <>
               {numberBox('minPerVideo', 'At least $', 'a video', 'Pays at least this much per approved video: from your results with it, members\u2019 results, or its flat fee and retainer. A brand with no dollar figure (a % of sales alone, or no pay on TRYBE) is left out.')}
               {numberBox('minSpend', 'Pays creators $', 'a month+', 'Pays TRYBE creators at least this much a month, estimated: its videos approved in the last 30 days times what it pays per approved video. No platform shows a brand\u2019s real ad budget, so this is the honest figure MVP can work out. A brand MVP cannot estimate is left out.')}
+              {toggle('retainer', undefined, 'Offers a retainer, in its TRYBE pay terms or its own words to creators.')}
               {toggle('paidCreators', undefined, 'TRYBE says it has paid creators.')}
               {toggle('tierUp', <TrendingUp size={12} />, 'TRYBE\u2019s payout tier for it went up in the last 30 days, in MVP\u2019s daily log of TRYBE: it is paying creators more.')}
             </>)}
@@ -237,6 +239,7 @@ export function FinderFilterNote({ hiddenBy, blankBy, unknownBy }: { hiddenBy?: 
       const low = n - blank
       return [low > 0 ? `${low.toLocaleString()} rated lower` : null, `${blank.toLocaleString()} with fewer than 3 creator reviews on TRYBE`].filter(Boolean).join(' and ')
     }
+    if (f === 'retainer') return `${n.toLocaleString()} that say nothing of a retainer in their TRYBE terms or their own words (one may still offer it in chat)`
     if (f === 'sells' && blank > 0) {
       const other = n - blank
       return [other > 0 ? `${other.toLocaleString()} selling something else` : null, `${blank.toLocaleString()} where MVP cannot yet tell what they sell (website not read, or too little on it)`].filter(Boolean).join(' and ')
@@ -690,13 +693,14 @@ export function StaticsChip({ on }: { on: boolean | null | undefined }) {
 // ── HUNTR'S IDEAS (Seb, 2026-10-14: "do 1,2,3,4,5") ─────────────────────────
 
 /** One tap lists: each sets the filters and the sort in one go. */
-export type PresetId = 'untapped' | 'new' | 'spenders' | 'fast' | 'pays' | 'budgets'
+export type PresetId = 'untapped' | 'new' | 'spenders' | 'fast' | 'pays' | 'budgets' | 'retainers'
 export const PRESETS: Array<{ id: PresetId; label: string; says: string; filters: FinderFilters; sort: 'picks' | 'pay' | 'spend' }> = [
   { id: 'untapped', label: 'Untapped', says: 'Spending on ads (Meta ads or TRYBE’s Top 100) with 30 creators or fewer: the budget is there and few creators share it.', filters: { ...NO_FILTERS, spending: true, maxCreators: 30 }, sort: 'picks' },
   { id: 'new', label: 'New on TRYBE', says: 'Joined TRYBE in the last 30 days, or new to MVP in the last 14, best bets first. Get in early and become one of their top creators.', filters: { ...NO_FILTERS, newOnly: true }, sort: 'picks' },
   { id: 'spenders', label: 'Big spenders', says: 'Every brand spending on ads now, best bets first.', filters: { ...NO_FILTERS, spending: true }, sort: 'picks' },
   { id: 'fast', label: 'Fast deciders', says: 'Brands that decide videos in 5 days or less, from MVP members’ results.', filters: { ...NO_FILTERS, fastReview: true }, sort: 'picks' },
   { id: 'pays', label: 'Pays $25+ a video', says: 'At least $25 per approved video, from your results, members’ results or its fee. A brand with no pay figure is left out. Highest first.', filters: { ...NO_FILTERS, minPerVideo: 25 }, sort: 'pay' },
+  { id: 'retainers', label: 'Offers retainers', says: 'Brands that offer creators a retainer, in their TRYBE pay terms or their own words, highest pay first. Each says where MVP read it.', filters: { ...NO_FILTERS, retainer: true }, sort: 'pay' },
   { id: 'budgets', label: 'Big creator budgets', says: 'Pays TRYBE creators about $1,000 a month or more, estimated from its videos approved in the last 30 days and its pay per video. Biggest first. A brand MVP cannot estimate is left out.', filters: { ...NO_FILTERS, minSpend: 1000 }, sort: 'spend' },
 ]
 const sameFilters = (a: FinderFilters, b: FinderFilters) => (Object.keys({ ...a, ...b }) as Array<keyof FinderFilters>).every((k) => (a[k] || null) === (b[k] || null))
@@ -809,7 +813,7 @@ export function FinderSidebar({ filters, onFilters, pay, pays, onPay, sort, onPr
   const nicheList = [...nicheOptions.filter(isOn), ...nicheOptions.filter((n) => !isOn(n))]
   const NICHES_FIRST = 8
   const shownNiches = allNiches ? nicheList : nicheList.slice(0, Math.max(NICHES_FIRST, niches.length))
-  const payCount = (pay !== pays[0]?.id ? 1 : 0) + [filters.minPerVideo, filters.minSpend, filters.paidCreators, filters.tierUp].filter(Boolean).length
+  const payCount = (pay !== pays[0]?.id ? 1 : 0) + [filters.retainer, filters.minPerVideo, filters.minSpend, filters.paidCreators, filters.tierUp].filter(Boolean).length
   const roomCount = [filters.openOnly, filters.newOnly, filters.roomAndPay, filters.maxCreators, filters.maxVideos].filter(Boolean).length
   const brandCount = [filters.minRating, filters.spending, filters.fastReview, filters.approves, filters.samples, filters.onAmazon, filters.tiktokShop, filters.starred].filter(Boolean).length
   const anyOn = payCount + roomCount + brandCount + (filters.sells ? 1 : 0) > 0
@@ -844,6 +848,7 @@ export function FinderSidebar({ filters, onFilters, pay, pays, onPay, sort, onPr
       {section('Pay', payCount, (<>
         {radio('How it pays', pay, pays, onPay)}
         <div className="mt-1.5">
+          {tick('retainer', 'Brands that offer a retainer: in their pay terms on TRYBE, or in their own words to creators on TRYBE or their website. A brand that says nothing of one may still offer it in chat.')}
           {num('minPerVideo', 'At least $', 'a video', 'Pays at least this much per approved video: from your results with it, members’ results, or its flat fee and retainer. A brand with no dollar figure (a % of sales alone, or no pay on TRYBE) is left out.')}
           {num('minSpend', 'Pays creators $', 'a month+', 'Pays TRYBE creators at least this much a month, estimated: its videos approved in the last 30 days times what it pays per approved video. A brand MVP cannot estimate is left out.')}
           {tick('paidCreators', 'TRYBE says it has paid creators.')}
@@ -921,4 +926,59 @@ export function RepliesChip({ replies }: { replies: { rate: number | null; days:
   const style = replies.rate >= 0.5 ? { background: 'rgba(22,163,74,0.12)', color: GREEN } : replies.rate < 0.2 ? { background: 'rgba(180,83,9,0.12)', color: AMBER } : { background: 'var(--surface-2)', color: 'var(--text-2)' }
   const wait = replies.days != null ? `, about ${Math.max(1, Math.round(replies.days))} day${Math.round(replies.days) === 1 ? '' : 's'}` : ''
   return <span className="text-[11px] font-semibold rounded-md px-2 py-0.5 inline-flex items-center gap-1 cursor-help" style={style} title={`Of MVP members’ requests to this brand, it answered ${pct}%${replies.days != null ? `, in about ${Math.round(replies.days)} days (the middle wait)` : ''}. Shown once 5 members have messaged it.`}><Clock size={11} />Answers {pct}%{wait}</span>
+}
+
+/** A RETAINER, VERY VISIBLY (Seb, 2026-11-09: "we should actually show users
+ *  very visibly if a brand is also offering retainers at times"). Gold, so
+ *  it is not mistaken for a teal button or a grey fact; the words MVP read it
+ *  from in the hover, and in the proof box under it. */
+export function RetainerBadge({ retainer }: { retainer: RetainerRead | null | undefined }) {
+  if (!retainer) return null
+  return (
+    <span className="text-[11.5px] font-extrabold rounded-full px-2.5 py-0.5 inline-flex items-center gap-1 cursor-help whitespace-nowrap" style={{ background: '#F59E0B', color: '#1F1300' }} title={retainerSource(retainer)}>
+      <DollarSign size={12} />{retainerShort(retainer)}
+    </span>
+  )
+}
+
+const day = (at: string | null) => { const t = at ? Date.parse(at) : NaN; return Number.isFinite(t) ? new Date(t).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : null }
+/** One fact with where it came from and when: "(TRYBE, Nov 7)". */
+const sourced = (l: ClaimProof['lines'][number]) => `${l.text} (${l.source}${day(l.at) ? `, ${day(l.at)}` : ''})`
+/** A claim's facts as one hover text. */
+export const proofTitle = (p: ClaimProof | null | undefined) => (!p ? undefined : [...p.lines.map(sourced), ...(p.missing ? [p.missing] : [])].join('\n') || undefined)
+
+/** HOW MVP KNOWS (Seb, 2026-11-09: "How do we know for sure? What is the data
+ *  backing it up from tribe?"). Under every brand: "Pays creators" and "Spends
+ *  on ads", each with the facts behind it, where each came from and when it
+ *  was read; green when something proves it, amber with why when nothing
+ *  does yet. A retainer read from the brand's own words shows its sentence. */
+export function BrandProof({ evidence, retainer }: { evidence: { pays: ClaimProof; ads: ClaimProof } | null | undefined; retainer?: RetainerRead | null }) {
+  if (!evidence) return null
+  const row = (label: string, p: ClaimProof) => (
+    <div className="flex gap-2 items-start">
+      <span className="shrink-0 mt-[1px] inline-flex items-center gap-1 text-[11px] font-bold rounded-md px-1.5 py-0.5 whitespace-nowrap"
+        style={p.confirmed ? { background: 'rgba(22,163,74,0.12)', color: GREEN } : { background: 'rgba(180,83,9,0.12)', color: AMBER }}>
+        {p.confirmed ? <Check size={11} /> : <Clock size={11} />}{label}
+      </span>
+      <span className="text-[12px] leading-snug min-w-0" style={{ color: 'var(--text-2)' }}>
+        {p.lines.map((l, i) => (
+          <span key={i}>{i > 0 && <span aria-hidden="true" style={soft}>{' \u00b7 '}</span>}{l.text} <span className="whitespace-nowrap" style={soft}>({l.source}{day(l.at) ? `, ${day(l.at)}` : ''})</span></span>
+        ))}
+        {p.missing && <span className="block" style={{ color: AMBER }}>{p.missing}</span>}
+      </span>
+    </div>
+  )
+  return (
+    <div className="mt-2 rounded-lg border px-2.5 py-2 space-y-1.5" style={{ borderColor: 'var(--border)' }} role="group" aria-label="How MVP knows">
+      <p className="text-[10.5px] font-bold uppercase" style={{ ...soft, letterSpacing: '0.08em' }}>How MVP knows</p>
+      {row('Pays creators', evidence.pays)}
+      {row('Spends on ads', evidence.ads)}
+      {retainer && (
+        <div className="flex gap-2 items-start">
+          <span className="shrink-0 mt-[1px] inline-flex items-center gap-1 text-[11px] font-bold rounded-md px-1.5 py-0.5 whitespace-nowrap" style={{ background: 'rgba(245,158,11,0.18)', color: AMBER }}><DollarSign size={11} />Retainer</span>
+          <span className="text-[12px] leading-snug min-w-0" style={{ color: 'var(--text-2)' }}>{retainerSource(retainer)}</span>
+        </div>
+      )}
+    </div>
+  )
 }
