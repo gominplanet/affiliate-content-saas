@@ -15,7 +15,7 @@
 
 import { rankScoutCopies, type ScoutCopy } from '@/lib/scout-copies'
 import { trybeTabError, TRYBE_NOT_OPEN, trybeDropped, trybeDroppedWords, TRYBE_DROP_WAITS_MS, type TrybeTabState } from '@/lib/trybe-tab'
-import { scoutAtLeast, SCOUT_FB_GROUP_MIN_VERSION, SCOUT_FB_GROUP_MEDIA_MIN_VERSION, SCOUT_FB_GROUP_WATCH_MIN_VERSION, SCOUT_FB_ACCESS_MIN_VERSION, SCOUT_FB_GROUP_CLIP_MIN_VERSION, SCOUT_TRYBE_MIN_VERSION, SCOUT_TRYBE_TAB_OPEN_MIN_VERSION, SCOUT_HASHTAG_TRENDS_MIN_VERSION, SCOUT_FB_REEL_JOB_MIN_VERSION, SCOUT_FB_GROUP_SEARCH_MIN_VERSION, SCOUT_TIKTOK_LIBRARY_MIN_VERSION, SCOUT_TIKTOK_DOWNLOAD_MIN_VERSION } from '@/lib/scout-version'
+import { scoutAtLeast, SCOUT_FB_GROUP_MIN_VERSION, SCOUT_FB_GROUP_MEDIA_MIN_VERSION, SCOUT_FB_GROUP_WATCH_MIN_VERSION, SCOUT_FB_ACCESS_MIN_VERSION, SCOUT_FB_GROUP_CLIP_MIN_VERSION, SCOUT_TRYBE_MIN_VERSION, SCOUT_TRYBE_TAB_OPEN_MIN_VERSION, SCOUT_HASHTAG_TRENDS_MIN_VERSION, SCOUT_FB_REEL_JOB_MIN_VERSION, SCOUT_FB_GROUP_SEARCH_MIN_VERSION, SCOUT_TIKTOK_LIBRARY_MIN_VERSION, SCOUT_TIKTOK_DOWNLOAD_MIN_VERSION, SCOUT_TIKTOK_DL_PROGRESS_MIN_VERSION } from '@/lib/scout-version'
 
 export const SCOUT_EXTENSION_ID = process.env.NEXT_PUBLIC_SCOUT_EXTENSION_ID || ''
 
@@ -1255,15 +1255,51 @@ export async function requestTikTokLibraryStop(): Promise<void> {
   await sendToExtension({ type: 'MVP_TIKTOK_STOP' }, 5_000)
 }
 
-export interface TikTokDownloadResult { ok: boolean; error?: string; way?: string; from?: string; bytes?: number | null; file?: string; tried?: Array<{ from: string; way: string; result: string }> }
+export interface TikTokDownloadResult {
+  ok: boolean; error?: string; way?: string; from?: string; bytes?: number | null; file?: string
+  tried?: Array<{ from: string; way: string; result: string }>
+  /** SCOUT 1.60.2: the step it reached and how much had come in, also when it ran out of time. */
+  step?: string; total?: number
+}
+/** How far a download is, as SCOUT 1.60.2 says (MVP_TIKTOK_DL_STATUS). */
+export interface TikTokDownloadProgress {
+  /** Another video's download is running first. */
+  waiting: boolean
+  step: string
+  bytes: number
+  total: number
+  /** Chrome is asking where to save the file. */
+  asking: boolean
+}
 /** SCOUT 1.60.0+: save one of the creator's own TikTok videos to their
- *  Downloads folder. 'old': this SCOUT cannot yet. */
-export async function requestTikTokDownload(handle: string, videoId: string, filename: string): Promise<TikTokDownloadResult & { state?: 'old' | 'no-scout' }> {
+ *  Downloads folder. 'old': this SCOUT cannot yet. SCOUT 1.60.2 also says how
+ *  far it is while it runs (onProgress), and follows a slow download to the
+ *  end, so MVP waits for its answer rather than giving up at a fixed time. */
+export async function requestTikTokDownload(handle: string, videoId: string, filename: string, onProgress?: (p: TikTokDownloadProgress) => void): Promise<TikTokDownloadResult & { state?: 'old' | 'no-scout' }> {
   const status = await getScoutStatus()
   if (!status.installed) return { ok: false, error: 'SCOUT is not installed in this Chrome.', state: 'no-scout' }
   if (!scoutAtLeast(status.version, SCOUT_TIKTOK_DOWNLOAD_MIN_VERSION)) return { ok: false, error: `Downloading needs SCOUT ${SCOUT_TIKTOK_DOWNLOAD_MIN_VERSION}.`, state: 'old' }
-  const res = await sendToExtension<TikTokDownloadResult>({ type: 'MVP_TIKTOK_DOWNLOAD', handle, videoId, filename }, 150_000)
-  return res || { ok: false, error: 'SCOUT did not answer.' }
+  const tells = scoutAtLeast(status.version, SCOUT_TIKTOK_DL_PROGRESS_MIN_VERSION)
+  let poll: ReturnType<typeof setInterval> | null = null
+  if (tells && onProgress) {
+    poll = setInterval(() => {
+      void sendToExtension<{ ok?: boolean; waiting?: number; now?: { videoId: string; step: string; bytes: number; total: number; asking: boolean; done: boolean } | null }>({ type: 'MVP_TIKTOK_DL_STATUS' }, 3_000).then((r) => {
+        if (!r?.ok || !poll) return
+        const n = r.now
+        if (!n || n.videoId !== videoId || n.done) { if ((r.waiting ?? 0) > 0) onProgress({ waiting: true, step: 'waiting', bytes: 0, total: 0, asking: false }); return }
+        onProgress({ waiting: false, step: n.step, bytes: n.bytes || 0, total: n.total || 0, asking: !!n.asking })
+      })
+    }, 1_500)
+  }
+  try {
+    // 1.60.2 always answers (its own limit is under five minutes, more while
+    // Chrome waits for a folder, after any download queued before it).
+    const res = await sendToExtension<TikTokDownloadResult>({ type: 'MVP_TIKTOK_DOWNLOAD', handle, videoId, filename }, tells ? 20 * 60_000 : 150_000)
+    return res || { ok: false, error: 'SCOUT did not answer.' }
+  } finally {
+    if (poll) clearInterval(poll)
+    poll = null
+  }
 }
 
 export interface TikTokScoutState { on?: boolean; handle?: string; scanId?: string; read?: number; phase?: string; error?: string | null; ended?: string | null; endedAt?: number | null; reachedEnd?: boolean }

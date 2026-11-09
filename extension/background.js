@@ -12603,12 +12603,23 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
   }
   if (msg.type === 'MVP_TIKTOK_DOWNLOAD') {
     // 1.60.0: save one of the creator's own TikTok videos to their Downloads,
-    // so they can upload it to TRYBE. One at a time.
-    const timeout = setTimeout(() => sendResponse({ ok: false, error: 'timeout' }), TT_DL_MAX_MS + 30000)
-    const job = ttDlBusy.then(() => ttDownload({ handle: msg.handle, videoId: msg.videoId, filename: msg.filename }))
+    // so they can upload it to TRYBE. One at a time; since 1.60.2 each one's
+    // time limit starts when it starts, and it is always answered with how
+    // far it got (ttDownloadBounded), so one that will not end never holds
+    // up the next.
+    const args = { handle: msg.handle, videoId: msg.videoId, filename: msg.filename }
+    ttDlWaiting++
+    const job = ttDlBusy.then(() => { ttDlWaiting = Math.max(0, ttDlWaiting - 1); return ttDownloadBounded(args) })
     ttDlBusy = job.catch(() => null)
-    job.then((res) => { clearTimeout(timeout); sendResponse(res) }).catch((e) => { clearTimeout(timeout); sendResponse({ ok: false, error: e && e.message ? e.message : 'error' }) })
+    job.then((res) => sendResponse(res)).catch((e) => sendResponse({ ok: false, error: e && e.message ? e.message : 'error' }))
     return true // async
+  }
+  if (msg.type === 'MVP_TIKTOK_DL_STATUS') {
+    // 1.60.2: how far the download running now is, so MVP shows megabytes
+    // (and "choose a folder" while Chrome asks where to save) instead of a spinner.
+    const n = ttDlNow
+    sendResponse({ ok: true, waiting: ttDlWaiting, now: n ? { videoId: n.videoId, step: n.step, bytes: n.bytes || 0, total: n.total || 0, asking: !!n.asking, done: !!n.done, startedAt: n.startedAt } : null })
+    return false
   }
   if (msg.type === 'MVP_TIKTOK_STATUS') {
     ttState().then((st) => sendResponse({ ok: true, running: !!ttRun, state: st })).catch(() => sendResponse({ ok: false }))
@@ -16705,27 +16716,49 @@ async function ttDailyTick() {
   await ttScan({ handle: d.handle, scanId: s.data.scanId, origin: d.origin, daily: true })
 }
 try { chrome.alarms.onAlarm.addListener((a) => { if (a && a.name === TT_DAILY_ALARM) void ttDailyTick() }) } catch (e) {}
-// ── MATCH MY TIKTOK: DOWNLOAD A VIDEO (1.60.0, 1.60.1) ───────────────────────
+// ── MATCH MY TIKTOK: DOWNLOAD A VIDEO (1.60.0 to 1.60.2) ─────────────────────
 // Seb, 2026-11-09: "can we also add a download button for each video matched
 // so users can then re-upload those to trybe". The creator's own video, from
 // its own page on TikTok, opened in SCOUT's minimized window: SCOUT reads the
 // address TikTok's page plays the video from, and saves the file to the
 // creator's Downloads folder, the way their browser would. Two ways, in turn:
 //
-//   chrome  Chrome's downloads, from the address TikTok's page plays it
-//           from: never asks where to save, followed by its id (first since
-//           1.60.1: Seb's first try timed out, and a page save waits on
-//           Chrome's "ask where to save" window in SCOUT's hidden window)
-//   page    the TikTok page fetches its own video file and saves it, with
-//           the page's own sign-in and address (no extra permission)
+//   chrome  Chrome's downloads, from the address TikTok's page plays it from,
+//           followed by its id
+//   page    the TikTok page fetches its own video file, with the page's own
+//           sign-in and address, and saves it once it is whole
 //
-// All within TT_DL_MAX_MS, each try with its own short limit and a stalled
-// download cancelled, so MVP always hears how it went and what was tried.
+// 1.60.2 (Seb's try on 1.60.1 also ended in "took too long", with nothing
+// said): every step has its own limit, so no step can wait forever; a download
+// that is still moving is followed to the end, and only one that stops moving
+// is cancelled; when Chrome is set to ask where to save each file, SCOUT waits
+// for the creator's answer (showing the window if it opened behind) and says
+// so; and MVP can ask how far it is (MVP_TIKTOK_DL_STATUS), so a slow download
+// shows its megabytes instead of a spinner. Whatever happens, MVP hears the
+// step it reached, how much had come in, and what was tried.
 //
 // It says which worked, the file name and its size; a puzzle, a private or
 // removed video, or a file TikTok would not give is said as such, never a
 // download that did not happen. Nothing is posted, liked or changed.
-const TT_DL_MAX_MS = 95000
+const TT_DL_MAX_MS = 270000   // one whole download (under the five minutes Chrome gives one message)
+const TT_DL_STALL_MS = 20000  // no new bytes for this long: that try is over
+const TT_DL_ASK_MS = 120000   // time to answer Chrome's "where to save" window
+
+// The download running now, for MVP_TIKTOK_DL_STATUS, and for an answer that
+// ran out of time to say where it was.
+let ttDlNow = null
+let ttDlWaiting = 0
+// Each step updates its own download's record (never a newer one's).
+function ttDlSet(job, patch) { if (job) Object.assign(job, patch, { at: Date.now() }) }
+
+// A step that might never answer gets a limit, and says which step it was.
+function ttLimit(p, ms, code) {
+  let t = null
+  return Promise.race([
+    Promise.resolve(p).finally(() => clearTimeout(t)),
+    new Promise((_, rej) => { t = setTimeout(() => rej(new Error(code)), ms) }),
+  ])
+}
 
 // In page, on the video's own page: the addresses TikTok plays it from,
 // best first. EVERYTHING IT USES IS INSIDE IT.
@@ -16759,120 +16792,243 @@ function ttVideoUrlsInPage() {
   }
 }
 
-// In page: fetch one address with the page's own sign-in, and save it under
-// the name given. Says the size, or why not.
-async function ttSaveInPage(url, filename) {
-  try {
-    const stop = new AbortController()
-    const timer = setTimeout(() => stop.abort(), 20000)
-    const r = await fetch(url, { credentials: 'include', signal: stop.signal }).finally(() => clearTimeout(timer))
-    if (!r.ok) return { ok: false, error: 'page-http-' + r.status }
-    const type = r.headers.get('content-type') || ''
-    const blob = await r.blob()
-    if (blob.size < 50000 || (type && !/video|octet-stream/i.test(type))) return { ok: false, error: 'page-not-a-video', bytes: blob.size, type }
-    const href = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = href; a.download = filename; a.style.display = 'none'
-    document.body.appendChild(a); a.click(); a.remove()
-    setTimeout(() => { try { URL.revokeObjectURL(href) } catch (e) {} }, 120000)
-    return { ok: true, bytes: blob.size }
-  } catch (e) {
-    const m = e && e.name === 'AbortError' ? 'page-fetch-timeout' : 'page-fetch-blocked'
-    return { ok: false, error: m, detail: e && e.message ? e.message : String(e) }
-  }
+// In page: start fetching one address (with the page's own sign-in, or
+// without it), and save it under the name given once it is whole. It returns
+// at once; how far it is stays in __mvpTtSave for ttPageSaveStateInPage, and
+// ttPageSaveStopInPage stops it. EVERYTHING IT USES IS INSIDE IT.
+function ttPageSaveStartInPage(url, filename, withSignIn) {
+  try { const old = window.__mvpTtSave; if (old && old.stop) old.stop() } catch (e) {}
+  const st = { bytes: 0, total: 0, done: false, ok: false, error: null, detail: '', since: Date.now(), stop: null }
+  window.__mvpTtSave = st
+  const ctl = new AbortController()
+  st.stop = () => { try { ctl.abort() } catch (e) {} }
+  ;(async () => {
+    try {
+      const r = await fetch(url, { credentials: withSignIn ? 'include' : 'omit', signal: ctl.signal })
+      st.since = Date.now()
+      if (!r.ok) { st.error = 'page-http-' + r.status; return }
+      const type = r.headers.get('content-type') || ''
+      st.total = Number(r.headers.get('content-length')) || 0
+      if (type && !/video|octet-stream/i.test(type)) { st.error = 'page-not-a-video'; st.detail = type.slice(0, 60); return }
+      const parts = []
+      if (r.body && r.body.getReader) {
+        const reader = r.body.getReader()
+        for (;;) {
+          const { done, value } = await reader.read()
+          if (done) break
+          parts.push(value); st.bytes += value.length; st.since = Date.now()
+        }
+      } else { const b = await r.blob(); parts.push(b); st.bytes = b.size }
+      const blob = new Blob(parts, { type: type || 'video/mp4' })
+      if (blob.size < 50000) { st.error = 'page-not-a-video'; st.detail = blob.size + ' bytes'; return }
+      const href = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = href; a.download = filename; a.style.display = 'none'
+      document.body.appendChild(a); a.click(); a.remove()
+      setTimeout(() => { try { URL.revokeObjectURL(href) } catch (e) {} }, 600000)
+      st.ok = true
+    } catch (e) {
+      st.error = e && e.name === 'AbortError' ? 'page-stopped' : 'page-fetch-blocked'
+      st.detail = e && e.message ? String(e.message).slice(0, 120) : ''
+    } finally { st.done = true }
+  })()
+  return true
 }
+function ttPageSaveStateInPage() {
+  const s = window.__mvpTtSave
+  return s ? { bytes: s.bytes, total: s.total, done: s.done, ok: s.ok, error: s.error, detail: s.detail, still: Date.now() - s.since } : null
+}
+function ttPageSaveStopInPage() { try { const s = window.__mvpTtSave; if (s && s.stop) s.stop() } catch (e) {} return true }
 
-// A download Chrome is making, followed until it ends, stops moving, or the
-// time is up (1.60.1). One that stalls or runs out of time is cancelled and
-// taken off Chrome's list, so a failed try leaves nothing half saved.
+// A download Chrome is making, followed until it ends. One still moving is
+// followed to the end (up to the deadline); one that stops moving for
+// TT_DL_STALL_MS is cancelled and taken off Chrome's list, so a failed try
+// leaves nothing half saved. When Chrome is set to ask where to save each
+// file, the download has bytes but no file name yet: SCOUT then waits for the
+// creator's answer (TT_DL_ASK_MS), calls onAsk once (to show the window it
+// may have opened behind), and does not call it stalled.
 function ttDropDownload(id) {
   try { chrome.downloads.cancel(id, () => { void chrome.runtime.lastError; try { chrome.downloads.erase({ id }) } catch (e) {} }) } catch (e) {}
 }
-async function ttFollowDownload(id, deadline) {
+async function ttFollowDownload(job, id, deadline, onAsk) {
   let last = -1
   let lastMove = Date.now()
+  let askSince = 0
+  const began = Date.now()
   while (Date.now() < deadline) {
-    const items = await new Promise((res) => { try { chrome.downloads.search({ id }, res) } catch (e) { res([]) } })
+    if (job.stop) { ttDropDownload(id); return { ok: false, error: 'chrome-stopped' } }
+    let items = []
+    try { items = await ttLimit(new Promise((res) => chrome.downloads.search({ id }, res)), 5000, 'search') } catch (e) { items = [] }
     const d = items && items[0]
     if (!d) return { ok: false, error: 'chrome-gone' }
     if (d.state === 'complete') return { ok: true, bytes: d.fileSize || d.bytesReceived || null, file: d.filename }
     if (d.state === 'interrupted') return { ok: false, error: 'chrome-' + (d.error || 'interrupted') }
+    ttDlSet(job, { bytes: d.bytesReceived || 0, total: d.totalBytes > 0 ? d.totalBytes : 0 })
     if (d.bytesReceived !== last) { last = d.bytesReceived; lastMove = Date.now() }
-    else if (Date.now() - lastMove > 15000) { ttDropDownload(id); return { ok: false, error: last > 0 ? 'chrome-stalled' : 'chrome-no-answer' } }
-    await _sleep(600)
+    // Bytes coming in but still no file name: Chrome is asking where to save.
+    if (!d.filename && d.bytesReceived > 0 && Date.now() - began > 4000) {
+      if (!askSince) {
+        askSince = Date.now()
+        deadline = Math.max(deadline, askSince + TT_DL_ASK_MS)
+        ttDlSet(job, { asking: true })
+        if (onAsk) { try { await onAsk() } catch (e) {} }
+      }
+      if (Date.now() - askSince > TT_DL_ASK_MS) { ttDropDownload(id); return { ok: false, error: 'chrome-asked-where' } }
+    } else if (Date.now() - lastMove > TT_DL_STALL_MS) {
+      ttDropDownload(id)
+      return { ok: false, error: last > 0 ? 'chrome-stalled' : 'chrome-no-answer' }
+    }
+    await _sleep(700)
   }
   ttDropDownload(id)
-  return { ok: false, error: 'chrome-too-slow' }
+  return { ok: false, error: askSince ? 'chrome-asked-where' : 'chrome-too-slow' }
 }
 
-// The first new download that started from TikTok's page (a blob address of
-// www.tiktok.com), within ms, or null.
-function ttCatchPageDownload(ms) {
-  return new Promise((resolve) => {
-    let done = false
-    const finish = (v) => { if (done) return; done = true; try { chrome.downloads.onCreated.removeListener(on) } catch (e) {} resolve(v) }
-    const on = (item) => { const u = String((item && (item.finalUrl || item.url)) || ''); if (/^blob:https:\/\/www\.tiktok\.com\//.test(u)) finish(item.id) }
-    try { chrome.downloads.onCreated.addListener(on) } catch (e) { finish(null); return }
-    setTimeout(() => finish(null), ms)
+// The first new download that starts from TikTok's page (a blob address of
+// www.tiktok.com), from now until wait's limit or cancel.
+function ttCatchPageDownload() {
+  let done = false
+  let resolveFn = null
+  let on = null
+  function finish(v) { if (done) return; done = true; try { chrome.downloads.onCreated.removeListener(on) } catch (e) {} if (resolveFn) resolveFn(v) }
+  const p = new Promise((resolve) => {
+    resolveFn = resolve
+    on = (item) => { const u = String((item && (item.finalUrl || item.url)) || ''); if (/^blob:https:\/\/www\.tiktok\.com\//.test(u)) finish(item.id) }
+    try { chrome.downloads.onCreated.addListener(on) } catch (e) { finish(null) }
   })
+  return { wait: (ms) => { setTimeout(() => finish(null), ms); return p }, cancel: () => finish(null) }
 }
 
-async function ttDownload({ handle, videoId, filename }) {
-  if (!(await hasOrigins(TT_ORIGINS))) return { ok: false, error: 'no-access' }
+// The window SCOUT's tab is in, brought up so Chrome's "where to save" window
+// attached to it can be seen; and put back down after.
+async function ttShowTabWindow(tabId) {
+  try { const t = await chrome.tabs.get(tabId); await chrome.windows.update(t.windowId, { state: 'normal', focused: true }); return t.windowId } catch (e) { return null }
+}
+
+// The page way, for one address: start it, follow its bytes while they move,
+// then follow the download Chrome makes of the finished file.
+async function ttPageSave(job, tabId, c, name, withSignIn) {
+  const tag = withSignIn ? '' : '+nosignin'
+  const caught = ttCatchPageDownload()
+  let shown = null
+  try {
+    try { await ttLimit(trybeRun(ttPageSaveStartInPage, [c.url, name, !!withSignIn], tabId), 10000, 'page-busy') } catch (e) { caught.cancel(); return { result: 'page-busy' + tag } }
+    let st = null
+    let quiet = 0
+    for (;;) {
+      if (job.stop) { void trybeRun(ttPageSaveStopInPage, [], tabId).catch(() => null); caught.cancel(); return { result: 'page-stopped' + tag } }
+      await _sleep(800)
+      let s = null
+      try { s = await ttLimit(trybeRun(ttPageSaveStateInPage, [], tabId), 8000, 'page-busy') } catch (e) { s = null }
+      if (!s) { if (++quiet >= 6) { caught.cancel(); return { result: 'page-busy' + tag } } continue }
+      quiet = 0
+      st = s
+      ttDlSet(job, { bytes: st.bytes || 0, total: st.total || 0 })
+      if (st.done) break
+      if (st.still > TT_DL_STALL_MS) {
+        void trybeRun(ttPageSaveStopInPage, [], tabId).catch(() => null)
+        caught.cancel()
+        return { result: (st.bytes > 0 ? 'page-stalled' : 'page-no-answer') + tag }
+      }
+    }
+    if (!st.ok) { caught.cancel(); return { result: (st.error || 'page-error') + tag, detail: st.detail || '' } }
+    const dlId = await caught.wait(10000)
+    if (dlId == null) return { result: 'page-no-download' + tag }
+    const d = await ttFollowDownload(job, dlId, Date.now() + 60000, async () => { shown = await ttShowTabWindow(tabId) })
+    if (d.ok) return { result: 'ok', ok: true, bytes: d.bytes || st.bytes, file: d.file }
+    return { result: d.error }
+  } finally {
+    if (shown != null) { try { await chrome.windows.update(shown, { state: 'minimized' }) } catch (e) {} }
+  }
+}
+
+async function ttDownload(now, { handle, videoId, filename }) {
+  const tried = now.tried
+  const step = (s) => ttDlSet(now, { step: s })
+  const say = (r) => Object.assign(r, { step: now.step, bytes: r.bytes != null ? r.bytes : now.bytes, total: now.total, tried: tried.slice() })
+  if (!(await hasOrigins(TT_ORIGINS))) return say({ ok: false, error: 'no-access' })
   const h = String(handle || '').trim().replace(/^@+/, '').toLowerCase()
   const id = String(videoId || '')
-  if (!/^[a-z0-9_.]{2,24}$/.test(h) || !/^\d{6,30}$/.test(id)) return { ok: false, error: 'bad-request' }
+  if (!/^[a-z0-9_.]{2,24}$/.test(h) || !/^\d{6,30}$/.test(id)) return say({ ok: false, error: 'bad-request' })
   const name = (String(filename || '').replace(/[^\w.\- ]+/g, '').replace(/\s+/g, '-').slice(0, 80) || ('tiktok-' + id)).replace(/\.mp4$/i, '') + '.mp4'
-  // Everything within this, so MVP always hears how it went, with what was tried.
-  const deadline = Date.now() + TT_DL_MAX_MS
-  const left = () => deadline - Date.now()
   const ka = startKeepAlive()
   let tabId = null
-  const tried = []
   try {
-    const tab = await openWorkTab(`https://www.tiktok.com/@${encodeURIComponent(h)}/video/${encodeURIComponent(id)}`)
+    step('opening')
+    const tab = await ttLimit(openWorkTab(`https://www.tiktok.com/@${encodeURIComponent(h)}/video/${encodeURIComponent(id)}`), 20000, 'open-tab-slow')
     tabId = tab.id
     quietTabIds.add(tabId)
     void quietShim(tabId)
     await waitForTabLoad(tabId, 30000)
+    step('finding')
     let found = null
-    for (let i = 0; i < 12 && left() > 20000; i++) {
+    for (let i = 0; i < 12 && !now.stop; i++) {
       await _sleep(1000)
-      found = await trybeRun(ttVideoUrlsInPage, [], tabId)
+      try { found = await ttLimit(trybeRun(ttVideoUrlsInPage, [], tabId), 10000, 'page-busy') } catch (e) { found = null }
       if (found && (found.puzzle || found.gone || found.urls.length)) break
     }
-    if (!found) return { ok: false, error: 'no-answer-from-page' }
-    if (found.puzzle) return { ok: false, error: 'puzzle' }
-    if (found.gone) return { ok: false, error: 'gone' }
-    if (!found.urls.length) return { ok: false, error: 'no-video-address' }
-    // 1. Chrome's own downloads: never asks where to save, followed by its id.
+    if (!found) return say({ ok: false, error: 'no-answer-from-page' })
+    if (found.puzzle) return say({ ok: false, error: 'puzzle' })
+    if (found.gone) return say({ ok: false, error: 'gone' })
+    if (!found.urls.length) return say({ ok: false, error: 'no-video-address' })
+    // 1. Chrome's own downloads, followed by their id while they move.
+    step('chrome')
     for (const c of found.urls.slice(0, 3)) {
-      if (left() < 15000) break
+      if (now.stop) break
       let dlId = null
-      try { dlId = await chrome.downloads.download({ url: c.url, filename: name, conflictAction: 'uniquify', saveAs: false }) } catch (e) { tried.push({ from: c.from, way: 'chrome', result: 'chrome-start: ' + (e && e.message ? e.message : 'error') }); continue }
-      const d = await ttFollowDownload(dlId, Date.now() + Math.min(40000, left() - 5000))
+      try { dlId = await ttLimit(chrome.downloads.download({ url: c.url, filename: name, conflictAction: 'uniquify', saveAs: false }), 15000, 'chrome-start-slow') } catch (e) { tried.push({ from: c.from, way: 'chrome', result: 'chrome-start: ' + (e && e.message ? e.message : 'error') }); continue }
+      ttDlSet(now, { bytes: 0, total: 0 })
+      const d = await ttFollowDownload(now, dlId, Date.now() + TT_DL_MAX_MS)
       if (d.ok && d.bytes != null && d.bytes < 50000) { tried.push({ from: c.from, way: 'chrome', result: 'chrome-too-small' }); try { chrome.downloads.removeFile(dlId, () => { void chrome.runtime.lastError; try { chrome.downloads.erase({ id: dlId }) } catch (e) {} }) } catch (e) {} continue }
       tried.push({ from: c.from, way: 'chrome', result: d.ok ? 'ok' : d.error })
-      if (d.ok) return { ok: true, way: 'chrome', from: c.from, bytes: d.bytes, file: d.file, tried }
+      if (d.ok) return say({ ok: true, way: 'chrome', from: c.from, bytes: d.bytes, file: d.file })
+      // Chrome asked where to save and no folder was chosen: asking again would not help.
+      if (d.error === 'chrome-asked-where') return say({ ok: false, error: 'asked-where' })
     }
-    // 2. TikTok's page fetches its own file and saves it.
+    // 2. TikTok's page fetches its own file and saves it: with its sign-in,
+    //    then without (an address that refuses a signed-in read from the page).
+    step('page')
     for (const c of found.urls.slice(0, 2)) {
-      if (left() < 15000) break
-      const caught = ttCatchPageDownload(Math.min(25000, left() - 5000))
-      const r = await trybeRun(ttSaveInPage, [c.url, name], tabId)
-      if (!r || !r.ok) { tried.push({ from: c.from, way: 'page', result: r ? r.error : 'no-answer' }); continue }
-      const dlId = await caught
-      if (dlId == null) { tried.push({ from: c.from, way: 'page', result: 'page-no-download' }); continue }
-      const d = await ttFollowDownload(dlId, Date.now() + Math.min(20000, left() - 2000))
-      tried.push({ from: c.from, way: 'page', result: d.ok ? 'ok' : d.error })
-      if (d.ok) return { ok: true, way: 'page', from: c.from, bytes: d.bytes || r.bytes, file: d.file, tried }
+      for (const withSignIn of [true, false]) {
+        if (now.stop) break
+        ttDlSet(now, { bytes: 0, total: 0, asking: false })
+        const r = await ttPageSave(now, tabId, c, name, withSignIn)
+        tried.push({ from: c.from, way: 'page', result: r.result })
+        if (r.ok) return say({ ok: true, way: 'page', from: c.from, bytes: r.bytes, file: r.file })
+        if (r.result === 'chrome-asked-where') return say({ ok: false, error: 'asked-where' })
+        // Only a page that could not read the file at all is tried without sign-in.
+        if (r.result !== 'page-fetch-blocked') break
+      }
     }
-    return { ok: false, error: 'not-saved', tried }
+    return say({ ok: false, error: now.stop ? 'too-slow' : 'not-saved' })
   } catch (e) {
-    return { ok: false, error: e && e.message ? e.message : 'exception', tried }
+    return say({ ok: false, error: e && e.message ? e.message : 'exception' })
   } finally {
-    if (tabId != null) { try { await chrome.tabs.remove(tabId) } catch (e) {} }
+    if (tabId != null) { try { quietTabIds.delete(tabId); await ttLimit(chrome.tabs.remove(tabId), 5000, 'close') } catch (e) {} }
     stopKeepAlive(ka)
   }
 }
+
+// One download, always answered: by its own result, or at its time limit
+// (longer while Chrome waits for a folder) with the step it reached, how much
+// had come in and what was tried. The next download never waits on one that
+// will not end.
+function ttDownloadBounded(args) {
+  ttDlNow = { videoId: String(args.videoId || ''), step: 'starting', bytes: 0, total: 0, asking: false, stop: false, done: false, tried: [], startedAt: Date.now(), at: Date.now() }
+  const now = ttDlNow
+  return new Promise((resolve) => {
+    let over = false
+    let tick = null
+    const finish = (r) => { if (over) return; over = true; clearInterval(tick); now.done = true; resolve(r) }
+    tick = setInterval(() => {
+      const limit = now.startedAt + TT_DL_MAX_MS + (now.asking ? TT_DL_ASK_MS : 0)
+      if (Date.now() > limit) {
+        now.stop = true
+        finish({ ok: false, error: 'too-slow', step: now.step, bytes: now.bytes, total: now.total, tried: now.tried.slice() })
+      }
+    }, 1000)
+    ttDownload(now, args).then(finish, (e) => finish({ ok: false, error: e && e.message ? e.message : 'exception', step: now.step, bytes: now.bytes, total: now.total, tried: now.tried.slice() }))
+  })
+}
+
 let ttDlBusy = Promise.resolve()

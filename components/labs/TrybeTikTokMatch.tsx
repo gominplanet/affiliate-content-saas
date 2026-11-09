@@ -24,7 +24,7 @@ import { toast } from 'sonner'
 import { Loader2, ScanSearch, Square, ExternalLink, Check, RefreshCw, Cloud, Eye, ShoppingBag, AtSign, Hash, Type, Package, Send, Clapperboard, Download } from 'lucide-react'
 import { cleanHandle } from '@/lib/tiktok-videos'
 import { isMatch, SURENESS_WORDS, type MatchKind, type Sureness } from '@/lib/tiktok-match-words'
-import { requestTikTokLibraryAccess, requestTikTokLibraryScan, requestTikTokLibraryStop, requestTikTokLibraryDaily, requestTikTokDownload } from '@/lib/extension-frame'
+import { requestTikTokLibraryAccess, requestTikTokLibraryScan, requestTikTokLibraryStop, requestTikTokLibraryDaily, requestTikTokDownload, type TikTokDownloadProgress } from '@/lib/extension-frame'
 import { SCOUT_STORE_LISTING_URL, SCOUT_TIKTOK_LIBRARY_MIN_VERSION } from '@/lib/scout-version'
 import { BrandMark } from '@/components/labs/TrybeFinderControls'
 import { BrandName } from '@/components/labs/trybe-dossier-context'
@@ -386,14 +386,41 @@ const DL_WORDS: Record<string, string> = {
   'not-saved': 'TikTok would not hand over the video file, so nothing was saved.',
   'no-access': 'SCOUT is not allowed to read tiktok.com in this Chrome. Press Scan again and choose Allow.',
   'no-answer-from-page': 'TikTok\u2019s page did not load in time, so nothing was saved. Try again.',
-  timeout: 'The download took too long, so SCOUT stopped. Check your Downloads folder. SCOUT 1.60.1 makes downloads steadier and says what went wrong; Chrome updates SCOUT by itself.',
+  // From SCOUT 1.60.1 and older, which stopped without saying where.
+  timeout: 'The download took too long, and this SCOUT stopped without saying where. Check your Downloads folder. SCOUT 1.60.2 follows a slow download to the end and says how far it got; Chrome updates SCOUT by itself.',
+  'asked-where': 'Chrome asked where to save the video, and no folder was chosen. If you saw no Save window, open Chrome\u2019s Settings, then Downloads, and turn off \u201CAsk where to save each file before downloading\u201D. Then press Download again.',
+  'open-tab-slow': 'SCOUT could not open TikTok in its window in time, so nothing was saved. Try again.',
+}
+/** The step a download reached, for one that ran out of time (SCOUT 1.60.2). */
+const STEP_WORDS: Record<string, string> = {
+  starting: 'starting',
+  opening: 'opening your video on TikTok',
+  finding: 'looking for the video file on TikTok\u2019s page',
+  chrome: 'saving it through Chrome',
+  page: 'saving it from TikTok\u2019s page',
+}
+const mb = (n: number) => (n / 1_048_576).toFixed(1)
+/** How far a download is, in a few words for the small button under a video. */
+function progressWords(p: TikTokDownloadProgress): string {
+  if (p.waiting) return 'Waiting'
+  if (p.asking) return 'Choose a folder'
+  if (p.bytes > 0) return p.total > 0 ? `${mb(p.bytes)} of ${mb(p.total)} MB` : `${mb(p.bytes)} MB`
+  return p.step === 'finding' ? 'Finding it' : p.step === 'chrome' || p.step === 'page' ? 'Saving' : 'Opening'
 }
 /** What each try SCOUT made means (SCOUT 1.60.1 says what it tried). */
-function tryWords(code: string): string {
+function tryWords(raw: string): string {
+  // '+nosignin': the page's second try, without its sign-in (the code keeps it).
+  const code = raw.replace(/\+nosignin$/, '')
+  if (code === 'chrome-asked-where') return 'Chrome asked where to save it, and no folder was chosen'
+  if (code === 'chrome-stopped' || code === 'page-stopped') return 'SCOUT stopped it at its time limit'
+  if (code === 'chrome-stalled' || code === 'page-stalled') return 'TikTok stopped sending the file part way'
+  if (code === 'chrome-no-answer' || code === 'page-no-answer') return 'TikTok did not start sending the file'
+  if (code === 'chrome-too-slow') return 'it was still coming in at SCOUT\u2019s time limit'
+  if (code === 'chrome-gone') return 'the download disappeared from Chrome\u2019s list'
+  if (code === 'page-busy') return 'TikTok\u2019s page stopped answering SCOUT'
   if (/^chrome-SERVER_(FORBIDDEN|UNAUTHORIZED)/.test(code)) return 'TikTok refused to send the file (Forbidden)'
   if (/^chrome-SERVER_/.test(code)) return 'TikTok answered with an error'
   if (/^chrome-NETWORK_/.test(code)) return 'the connection to TikTok failed'
-  if (/^chrome-(stalled|no-answer|too-slow)$/.test(code)) return 'TikTok did not send the file'
   if (code === 'chrome-too-small' || code === 'page-not-a-video') return 'TikTok sent a page instead of the video'
   if (/^chrome-start/.test(code)) return 'Chrome would not start the download'
   if (code === 'page-fetch-blocked') return 'TikTok\u2019s page could not read its own file'
@@ -415,19 +442,31 @@ function triedWords(tried: Array<{ way: string; result: string }> | undefined): 
 const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40) || 'brand'
 const fileFor = (brand: string, v: { id: string; postedAt: string | null }) => `${slug(brand)}-${v.postedAt ? v.postedAt.slice(0, 10) : 'tiktok'}-${v.id}`
 
-/** Save one video to the creator's Downloads through SCOUT; says what happened. */
-async function downloadVideo(handle: string, brand: string, v: { id: string; postedAt: string | null }, openUpload?: () => void): Promise<boolean> {
-  const r = await requestTikTokDownload(handle, v.id, fileFor(brand, v))
+/** Save one video to the creator's Downloads through SCOUT; says what happened.
+ *  SCOUT 1.60.2 also says how far it is (onProgress), and when Chrome asks
+ *  where to save, the creator is told to choose a folder. */
+async function downloadVideo(handle: string, brand: string, v: { id: string; postedAt: string | null }, openUpload?: () => void, onProgress?: (words: string) => void): Promise<boolean> {
+  let told = false
+  const r = await requestTikTokDownload(handle, v.id, fileFor(brand, v), (p) => {
+    onProgress?.(progressWords(p))
+    if (p.asking && !told) {
+      told = true
+      toast.info('Chrome is asking where to save the video: choose a folder in Chrome\u2019s Save window. Chrome asks because \u201CAsk where to save each file before downloading\u201D is on in its Downloads settings.', { duration: 15000 })
+    }
+  })
   if (r.ok) {
     const mb = r.bytes ? ` (${(r.bytes / 1_048_576).toFixed(1)} MB)` : ''
     const file = (r.file || `${fileFor(brand, v)}.mp4`).split(/[\\/]/).pop()
     toast.success(`Saved to your Downloads: ${file}${mb}`, openUpload ? { duration: 10000, action: { label: 'Upload to TRYBE', onClick: openUpload } } : undefined)
     return true
   }
-  const tried = triedWords(r.tried)
-  const why = r.state === 'old' ? `${r.error} Chrome updates SCOUT by itself within a day.`
-    : r.error === 'not-saved' && tried ? `Not saved. ${tried}`
-      : (r.error && DL_WORDS[r.error]) || `Not saved: ${r.error || 'SCOUT did not say why'}.`
+  const tried = r.state === 'old' ? null : triedWords(r.tried)
+  const came = r.bytes ? ` ${mb(r.bytes)} MB${r.total ? ` of ${mb(r.total)} MB` : ''} had come in.` : ''
+  const base = r.state === 'old' ? `${r.error} Chrome updates SCOUT by itself within a day.`
+    : r.error === 'too-slow' ? `Not saved: SCOUT ran out of time while ${STEP_WORDS[r.step || ''] || 'saving it'}.${came}`
+      : r.error === 'not-saved' && tried ? 'Not saved.'
+        : (r.error && DL_WORDS[r.error]) || `Not saved: ${r.error || 'SCOUT did not say why'}.`
+  const why = tried ? `${base} ${tried}` : base
   toast.error(why, { duration: 12000 })
   return false
 }
@@ -444,20 +483,22 @@ function MatchCard({ m, videos, brand, picked, onPick, scoutOpens, actions }: { 
   const [busy, setBusy] = useState<'request' | 'send' | null>(null)
   // Each video's download: running, saved, or failed.
   const [dl, setDl] = useState<Record<string, 'busy' | 'done' | 'failed'>>({})
-  const [dlAll, setDlAll] = useState<{ done: number; of: number } | null>(null)
+  const [dlAll, setDlAll] = useState<{ done: number; of: number; id: string } | null>(null)
+  // How far each running download is, in words (SCOUT 1.60.2 says).
+  const [dlNow, setDlNow] = useState<Record<string, string>>({})
   const saveOne = async (v: { id: string; postedAt: string | null }) => {
     setDl((d) => ({ ...d, [v.id]: 'busy' }))
-    const ok = await downloadVideo(actions.handle, m.name, v, actions.openUpload)
+    const ok = await downloadVideo(actions.handle, m.name, v, actions.openUpload, (w) => setDlNow((n) => (n[v.id] === w ? n : { ...n, [v.id]: w })))
     setDl((d) => ({ ...d, [v.id]: ok ? 'done' : 'failed' }))
+    setDlNow((n) => { const { [v.id]: _gone, ...rest } = n; void _gone; return rest })
     return ok
   }
   const saveAll = async () => {
     const all = m.videoIds.map((id) => videos[id] ?? { id, postedAt: null })
-    setDlAll({ done: 0, of: all.length })
     for (let i = 0; i < all.length; i++) {
+      setDlAll({ done: i, of: all.length, id: all[i].id })
       // One failed download stops the rest: the reason is said once, not for every video.
       if (!(await saveOne(all[i]))) break
-      setDlAll({ done: i + 1, of: all.length })
     }
     setDlAll(null)
   }
@@ -509,7 +550,7 @@ function MatchCard({ m, videos, brand, picked, onPick, scoutOpens, actions }: { 
                   className="w-full px-1.5 pb-1.5 pt-0.5 text-left text-[10.5px] font-semibold inline-flex items-center gap-1 disabled:opacity-60 hover:underline"
                   style={{ color: dl[v.id] === 'failed' ? AMBER : 'var(--text)' }} title="Save this video to your Downloads folder, to upload it to TRYBE">
                   {dl[v.id] === 'busy' ? <Loader2 size={11} className="animate-spin" /> : dl[v.id] === 'done' ? <Check size={11} /> : <Download size={11} />}
-                  {dl[v.id] === 'busy' ? 'Saving' : dl[v.id] === 'done' ? 'Saved' : dl[v.id] === 'failed' ? 'Try again' : 'Download'}
+                  {dl[v.id] === 'busy' ? (dlNow[v.id] || 'Saving') : dl[v.id] === 'done' ? 'Saved' : dl[v.id] === 'failed' ? 'Try again' : 'Download'}
                 </button>
               </div>
             ))}
@@ -537,7 +578,7 @@ function MatchCard({ m, videos, brand, picked, onPick, scoutOpens, actions }: { 
           {actions.handle && (
             <button type="button" onClick={() => void saveAll()} disabled={!!dlAll} className={`${btn} border`} style={{ borderColor: 'var(--border-2)', color: 'var(--text)' }}
               title="Save every video of this brand to your Downloads folder, one after another, to upload them to TRYBE">
-              {dlAll ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />} {dlAll ? `Saving ${dlAll.done + 1} of ${dlAll.of}` : m.videoIds.length > 1 ? `Download all ${m.videoIds.length} videos` : 'Download the video'}
+              {dlAll ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />} {dlAll ? `Saving ${dlAll.done + 1} of ${dlAll.of}${dlNow[dlAll.id] ? `: ${dlNow[dlAll.id]}` : ''}` : m.videoIds.length > 1 ? `Download all ${m.videoIds.length} videos` : 'Download the video'}
             </button>
           )}
           {actions.scripts && (
