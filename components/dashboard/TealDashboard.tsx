@@ -28,6 +28,8 @@ import { featureLine } from '@/lib/feature-lines'
 import { useShellNav, type ShellNavItem } from '@/components/layout/shell-nav-context'
 import { useNavFavorites, MAX_NAV_FAVORITES } from '@/lib/nav-favorites'
 import { pickBuckets, type UsageBucket } from '@/lib/usage-highlights'
+import { useEffectiveTier } from '@/lib/useEffectiveTier'
+import { canUsePreview } from '@/lib/labs-preview'
 
 type Usage = { buckets: UsageBucket[]; resetLabel: string | null; introNote?: string | null }
 
@@ -93,6 +95,9 @@ export default function TealDashboard({ firstName, today, meta, primary, seconda
   }, [])
 
   const groups = useShellNav()
+  // The redrawn menu's Dashboard order (labs-preview menu_v2): Needs you first.
+  const viewTier = useEffectiveTier()
+  const menuV2 = viewTier ? canUsePreview('menu_v2', viewTier) : false
   // ── PINNED (Seb, 2026-11-07: "on the cards, have a little box that says
   // pin it to the top. And if I pin that card to the top, it becomes a
   // pinned card to the top of the dashboard"). Saved to the account so it
@@ -132,58 +137,8 @@ export default function TealDashboard({ firstName, today, meta, primary, seconda
   const tiles = items ? (allTiles ? items : items.slice(0, FIRST_TILES)) : []
   const buckets = usage ? pickBuckets(usage.buckets) : []
 
-  return (
-    <div className="flex flex-col gap-7">
-      {/* ── 1. Welcome ── */}
-      <section
-        aria-label="Today"
-        className="relative overflow-hidden rounded-[22px] border p-6 sm:p-9 flex flex-wrap items-center gap-6"
-        style={{ background: 'var(--hero-bg)', borderColor: 'var(--hero-border)', color: '#fff' }}
-      >
-        <div className="relative flex-[1_1_360px] min-w-0 flex flex-col gap-3.5">
-          <p className="text-[13px] font-bold uppercase tracking-[0.08em]" style={{ color: '#5EEAD4' }}>{today}</p>
-          <h1 className="text-[30px] sm:text-[40px] xl:text-[46px] font-extrabold leading-[1.06]" style={{ color: '#fff' }}>
-            Welcome back, {firstName}.<br />
-            <span style={{ color: loadingToday ? '#B7CBCC' : '#fff' }}>{headline}</span>
-          </h1>
-          {meta.length > 0 && <p className="text-[15px]" style={{ color: '#B7CBCC' }}>{meta.join(' · ')}</p>}
-          {todayError && (
-            <p className="text-[13.5px]" style={{ color: '#FDBA74' }}>
-              {todayError}.{' '}
-              <button type="button" onClick={loadToday} className="font-bold underline">Try again</button>
-            </p>
-          )}
-          {!todayError && unread.length > 0 && (
-            <p className="text-[13.5px]" style={{ color: '#FDBA74' }}>Could not check {unread.join(', ')}. Anything waiting there is not counted.</p>
-          )}
-          <div className="mt-1.5 flex flex-wrap gap-2.5">
-            <Link
-              href={primary.href}
-              className="inline-flex items-center gap-2 rounded-full px-5 py-3 text-[15px] font-extrabold transition-colors bg-[#14B8A6] hover:bg-[#2DD4BF] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#5EEAD4]"
-              style={{ color: '#04201D' }}
-            >
-              {primary.label} <ArrowRight size={16} strokeWidth={2.6} />
-            </Link>
-            {secondary && (
-              <Link
-                href={secondary.href}
-                className="inline-flex items-center rounded-full border-[1.5px] px-5 py-3 text-[15px] font-bold transition-colors border-[#3D5B5D] hover:bg-white/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#5EEAD4]"
-                style={{ color: '#fff' }}
-              >
-                {secondary.label}
-              </Link>
-            )}
-          </div>
-        </div>
-        {/* The Dashboard's picture (lib/banner-art), drawn for this dark card. */}
-        <div aria-hidden="true" className="relative hidden md:block flex-[1_1_260px] max-w-[460px] min-h-[220px] self-stretch">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={bannerFor('Dashboard') ?? ''} alt="" decoding="async" className="absolute inset-0 m-auto w-full h-full object-contain" />
-        </div>
-      </section>
-
-      {alerts}
-
+  const pinnedBlock = (
+    <>
       {/* ── PINNED: the tools this member pinned, first. ── */}
       {groups && groups.length > 0 && (
         <section aria-labelledby="pinned-h" className="flex flex-col gap-3">
@@ -225,6 +180,10 @@ export default function TealDashboard({ firstName, today, meta, primary, seconda
         </section>
       )}
 
+    </>
+  )
+  const monthBlock = (
+    <>
       {/* ── 2. This month ── */}
       {(buckets.length > 0 || usageFailed || usage === null) && (
         <section aria-labelledby="month-h" className="flex flex-col gap-3">
@@ -265,6 +224,10 @@ export default function TealDashboard({ firstName, today, meta, primary, seconda
         </section>
       )}
 
+    </>
+  )
+  const needsBlock = (
+    <>
       {/* ── 3. Needs you ── */}
       {!todayShut && (
         <section aria-labelledby="needs-h" className="flex flex-col gap-3">
@@ -345,6 +308,65 @@ export default function TealDashboard({ firstName, today, meta, primary, seconda
           )}
         </section>
       )}
+
+    </>
+  )
+  return (
+    <div className="flex flex-col gap-7">
+      {/* ── 1. Welcome ── */}
+      <section
+        aria-label="Today"
+        className="relative overflow-hidden rounded-[22px] border p-6 sm:p-9 flex flex-wrap items-center gap-6"
+        style={{ background: 'var(--hero-bg)', borderColor: 'var(--hero-border)', color: '#fff' }}
+      >
+        <div className="relative flex-[1_1_360px] min-w-0 flex flex-col gap-3.5">
+          <p className="text-[13px] font-bold uppercase tracking-[0.08em]" style={{ color: '#5EEAD4' }}>{today}</p>
+          <h1 className="text-[30px] sm:text-[40px] xl:text-[46px] font-extrabold leading-[1.06]" style={{ color: '#fff' }}>
+            Welcome back, {firstName}.<br />
+            <span style={{ color: loadingToday ? '#B7CBCC' : '#fff' }}>{headline}</span>
+          </h1>
+          {meta.length > 0 && <p className="text-[15px]" style={{ color: '#B7CBCC' }}>{meta.join(' · ')}</p>}
+          {todayError && (
+            <p className="text-[13.5px]" style={{ color: '#FDBA74' }}>
+              {todayError}.{' '}
+              <button type="button" onClick={loadToday} className="font-bold underline">Try again</button>
+            </p>
+          )}
+          {!todayError && unread.length > 0 && (
+            <p className="text-[13.5px]" style={{ color: '#FDBA74' }}>Could not check {unread.join(', ')}. Anything waiting there is not counted.</p>
+          )}
+          <div className="mt-1.5 flex flex-wrap gap-2.5">
+            <Link
+              href={primary.href}
+              className="inline-flex items-center gap-2 rounded-full px-5 py-3 text-[15px] font-extrabold transition-colors bg-[#14B8A6] hover:bg-[#2DD4BF] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#5EEAD4]"
+              style={{ color: '#04201D' }}
+            >
+              {primary.label} <ArrowRight size={16} strokeWidth={2.6} />
+            </Link>
+            {secondary && (
+              <Link
+                href={secondary.href}
+                className="inline-flex items-center rounded-full border-[1.5px] px-5 py-3 text-[15px] font-bold transition-colors border-[#3D5B5D] hover:bg-white/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#5EEAD4]"
+                style={{ color: '#fff' }}
+              >
+                {secondary.label}
+              </Link>
+            )}
+          </div>
+        </div>
+        {/* The Dashboard's picture (lib/banner-art), drawn for this dark card. */}
+        <div aria-hidden="true" className="relative hidden md:block flex-[1_1_260px] max-w-[460px] min-h-[220px] self-stretch">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={bannerFor('Dashboard') ?? ''} alt="" decoding="async" className="absolute inset-0 m-auto w-full h-full object-contain" />
+        </div>
+      </section>
+
+      {alerts}
+
+      {/* THE ORDER (labs-preview menu_v2): what needs you first, right under
+          the welcome, then your pins, then the month. Before: pins, the
+          month, then Needs you. */}
+      {menuV2 ? <>{needsBlock}{pinnedBlock}{monthBlock}</> : <>{pinnedBlock}{monthBlock}{needsBlock}</>}
 
       {/* ── 4. Everything MVP does ── */}
       {groups && groups.length > 0 && (

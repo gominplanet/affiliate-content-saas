@@ -49,7 +49,7 @@ const val = (n: number | null, unit: '$' | '%') => (n == null ? '' : unit === '$
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type ForYou = Record<string, any>
 
-export default function TrybeHome({ go, unread, queue, repliedWeek, inboxRead, forYou = [], forYouWhy = '', canMoney = false, yours = [] }: {
+export default function TrybeHome({ go, unread, queue, repliedWeek, inboxRead, forYou = [], forYouWhy = '', canMoney = false, yours = [], view = 'all' }: {
   /** Open a TRYBE tab. */
   go: (tab: 'find' | 'queue' | 'inbox' | 'week' | 'changes' | 'stars' | 'sent' | 'analytics') => void
   unread: number
@@ -65,7 +65,18 @@ export default function TrybeHome({ go, unread, queue, repliedWeek, inboxRead, f
   canMoney?: boolean
   /** What changed this week on brands already on the creator's list (What changed's read). */
   yours?: Array<{ brand_id: string; kind: ChangeKind; before: string | null; after: string | null; at: string; name: string | null; categories: string[] }>
+  /** TODAY AND WHAT CHANGED, APART (the new TRYBE menu, labs-preview
+   *  trybe_layout; Seb, 2026-11-09: "do everything that you're supposed
+   *  to", after both pages were found listing the same market news). 'today'
+   *  is the creator's own: what needs them, their money, best bets, their
+   *  brands, and the week's numbers in one row that opens What changed.
+   *  'market' is the week on TRYBE for What changed: who pours money into
+   *  Meta, pay moves, tiers, the Top 100, what brands pay. 'all' is both, as
+   *  the page was before the new menu. */
+  view?: 'all' | 'today' | 'market'
 }) {
+  const mine = view !== 'market'
+  const market = view !== 'today'
   // YOUR TRYBE, LAST 30 DAYS: the same read as Earnings, shared, so opening
   // Earnings after this reads nothing twice.
   const ads = useTrybeAds(canMoney, '30d')
@@ -99,6 +110,12 @@ export default function TrybeHome({ go, unread, queue, repliedWeek, inboxRead, f
   }, [])
 
   const t = d?.totals || {}
+  // Today's headline is what waits for the creator; the market's is the week.
+  const todo = [
+    inboxRead && unread > 0 ? `${unread} brand chat${unread === 1 ? '' : 's'} waiting` : null,
+    queue > 0 ? `${queue} message${queue === 1 ? '' : 's'} ready to send` : null,
+    samples && samples.here > 0 ? `${samples.here} sample${samples.here === 1 ? '' : 's'} to film` : null,
+  ].filter(Boolean)
   const headline = d ? [
     t.new?.now ? `${t.new.now.toLocaleString()} new brand${t.new.now === 1 ? '' : 's'}` : null,
     t.pay?.now ? `${t.pay.now} pay change${t.pay.now === 1 ? '' : 's'}` : null,
@@ -112,10 +129,18 @@ export default function TrybeHome({ go, unread, queue, repliedWeek, inboxRead, f
       <div className="rounded-[22px] p-6 sm:p-7 relative overflow-hidden" style={{ background: 'linear-gradient(135deg, rgb(var(--brand-rgb) / 0.10), rgb(var(--brand-rgb) / 0.02) 60%), var(--surface)', border: '1px solid var(--border)' }}>
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div className="min-w-0 max-w-[720px]">
-            <p className="text-[11px] font-bold uppercase" style={{ ...ui.soft, letterSpacing: '0.1em' }}>This week on TRYBE</p>
+            <p className="text-[11px] font-bold uppercase" style={{ ...ui.soft, letterSpacing: '0.1em' }}>{view === 'today' ? 'Today' : 'This week on TRYBE'}</p>
             <h2 className="text-[26px] sm:text-[30px] font-bold leading-[1.15] mt-1.5" style={{ ...ui.num, ...ui.text, textWrap: 'balance' as never }}>
-              {d ? (headline.length ? `${headline.join(', ')}.` : 'A quiet week on TRYBE so far.') : loading ? 'Reading what moved on TRYBE…' : 'What moved on TRYBE'}
+              {view === 'today'
+                ? (todo.length ? `${todo.join(', ')}.` : inboxRead ? 'You are all caught up.' : 'Here is what waits for you on TRYBE.')
+                : d ? (headline.length ? `${headline.join(', ')}.` : 'A quiet week on TRYBE so far.') : loading ? 'Reading what moved on TRYBE…' : 'What moved on TRYBE'}
             </h2>
+            {view === 'today' && d && (
+              <p className="text-[13px] mt-1.5" style={ui.mid}>
+                This week on TRYBE: {headline.length ? headline.join(', ') : 'a quiet week so far'}.{' '}
+                <button type="button" onClick={() => go('changes')} className="font-semibold underline" style={{ color: 'var(--accent-text, var(--accent))' }}>See what changed</button>
+              </p>
+            )}
             <p className="text-[13px] mt-2" style={ui.mid}>
               {d ? <>MVP keeps its own copy of TRYBE&rsquo;s brand list: {fmt(d.listed)} brands listed now, checked {ago(d.collectedAt)}.{d.joinedSinceFirst != null && d.firstCountAt ? <> {d.joinedSinceFirst.toLocaleString()} joined since {day(d.firstCountAt)}.</> : null}</> : 'Counted from MVP’s daily copy of TRYBE.'}
             </p>
@@ -129,17 +154,17 @@ export default function TrybeHome({ go, unread, queue, repliedWeek, inboxRead, f
       </div>
 
       {/* ── WHAT NEEDS YOU ────────────────────────────────────────────────── */}
-      <Section title="What needs you today">
+      {mine && <Section title="What needs you today">
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
           <Desk icon={Inbox} label="Brand chats waiting" value={inboxRead ? String(unread) : 'Not read'} line={inboxRead ? (unread ? 'Answer while they are interested' : `All answered. ${repliedWeek} replied this week`) : 'SCOUT reads your TRYBE inbox'} hot={inboxRead && unread > 0} onClick={() => go('inbox')} cta="Open the inbox" />
           <Desk icon={Send} label="Messages ready to send" value={String(queue)} line={queue ? 'Written in your words, waiting for SCOUT' : 'Nothing written yet'} hot={queue > 0} onClick={() => go(queue ? 'queue' : 'find')} cta={queue ? 'Send them' : 'Find brands'} />
           <Desk icon={Package} label="Samples here, not filmed" value={samples ? String(samples.here) : 'Not read'} line={samples ? (samples.late ? `${samples.coming} on the way, ${samples.late} late by 3+ weeks` : `${samples.coming} on the way`) : 'From your samples list'} hot={!!samples?.here} onClick={() => go('week')} cta="Plan them" />
           <Desk icon={Search} label="New brands this week" value={d ? d.newWeek.toLocaleString() : '…'} line="Rank them for your channel" onClick={() => go('find')} cta="Find brands" />
         </div>
-      </Section>
+      </Section>}
 
       {/* ── YOUR TRYBE, LAST 30 DAYS ──────────────────────────────────────── */}
-      {canMoney && (
+      {mine && canMoney && (
         <Section title="Your TRYBE, last 30 days" aside={<button type="button" onClick={() => go('analytics')} className="font-semibold hover:underline" style={{ color: 'var(--accent-text, var(--accent))' }}>Open Earnings</button>}>
           {ads.month ? (
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
@@ -156,7 +181,7 @@ export default function TrybeHome({ go, unread, queue, repliedWeek, inboxRead, f
       )}
 
       {/* ── BEST BETS FOR YOU ─────────────────────────────────────────────── */}
-      {forYou.length > 0 && (
+      {mine && forYou.length > 0 && (
         <Section title="Best bets for you" aside={forYouWhy ? `For ${forYouWhy}, not on your list yet` : 'Not on your list yet'}>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
             {forYou.map((b) => (
@@ -185,7 +210,7 @@ export default function TrybeHome({ go, unread, queue, repliedWeek, inboxRead, f
       )}
 
       {/* ── YOUR BRANDS THIS WEEK ─────────────────────────────────────────── */}
-      {yours.length > 0 && (
+      {mine && yours.length > 0 && (
         <Section title="Your brands this week" aside={<button type="button" onClick={() => go('changes')} className="font-semibold hover:underline" style={{ color: 'var(--accent-text, var(--accent))' }}>Every change</button>}>
           <div className="rounded-2xl overflow-hidden" style={ui.card}>
             {yours.slice(0, 8).map((c, i) => (
@@ -204,7 +229,7 @@ export default function TrybeHome({ go, unread, queue, repliedWeek, inboxRead, f
 
       {/* ── THE MARKET, IN NUMBERS ────────────────────────────────────────── */}
       {d && (
-        <Section title="TRYBE this week, in numbers" aside="Last 7 days next to the 7 before. The line is 30 days.">
+        <Section title="TRYBE this week, in numbers" aside={view === 'today' ? <button type="button" onClick={() => go('changes')} className="font-semibold hover:underline" style={{ color: 'var(--accent-text, var(--accent))' }}>Every change, in What changed</button> : 'Last 7 days next to the 7 before. The line is 30 days.'}>
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
             <Pulse label="New brands" k="new" d={d} good="up" />
             <Pulse label="Left TRYBE" k="left" d={d} good="down" />
@@ -217,7 +242,7 @@ export default function TrybeHome({ go, unread, queue, repliedWeek, inboxRead, f
       )}
 
       {/* ── POURING MONEY INTO META ───────────────────────────────────────── */}
-      {d && (
+      {market && d && (
         <Section title="Pouring money into Meta ads" aside="Most new Meta ads in the last 14 days, counted in Meta’s Ad Library">
           {d.movers.length ? (
             <div className="rounded-2xl overflow-hidden" style={ui.card}>
@@ -250,7 +275,7 @@ export default function TrybeHome({ go, unread, queue, repliedWeek, inboxRead, f
       )}
 
       {/* ── PAY ───────────────────────────────────────────────────────────── */}
-      {d && (
+      {market && d && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <Section title="Pay raised" aside="Last 14 days">
             <MoveList rows={d.pays.filter((p) => p.dir === 'up').slice(0, 8)} empty="No pay raises in the last 14 days." icon="up" />
@@ -262,7 +287,7 @@ export default function TrybeHome({ go, unread, queue, repliedWeek, inboxRead, f
       )}
 
       {/* ── TIERS AND TOP 100 ─────────────────────────────────────────────── */}
-      {d && (
+      {market && d && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <Section title="Climbed a payout tier" aside="What TRYBE shows it has paid creators">
             {d.tiers.length ? (
@@ -286,7 +311,7 @@ export default function TrybeHome({ go, unread, queue, repliedWeek, inboxRead, f
       )}
 
       {/* ── NEW, ALREADY ADVERTISING ──────────────────────────────────────── */}
-      {d && d.fresh.length > 0 && (
+      {view === 'all' && d && d.fresh.length > 0 && (
         <Section title="New on TRYBE this week" aside="The ones already running Meta ads first">
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
             {d.fresh.slice(0, 9).map((c) => (
@@ -310,7 +335,7 @@ export default function TrybeHome({ go, unread, queue, repliedWeek, inboxRead, f
       )}
 
       {/* ── WHAT TRYBE BRANDS PAY ─────────────────────────────────────────── */}
-      {d?.payIndex && d.payIndex.rows.length > 0 && (
+      {market && d?.payIndex && d.payIndex.rows.length > 0 && (
         <Section title="What TRYBE brands pay" aside={`From the pay of ${d.payIndex.read.toLocaleString()} of ${d.payIndex.brands.toLocaleString()} listed brands MVP could read`}>
           <div className="grid grid-cols-1 lg:grid-cols-[1.4fr_1fr] gap-3">
             <div className="rounded-2xl overflow-x-auto" style={ui.card}>
@@ -355,7 +380,7 @@ export default function TrybeHome({ go, unread, queue, repliedWeek, inboxRead, f
         </Section>
       )}
 
-      {d && (
+      {view === 'all' && d && (
         <div className="flex flex-wrap gap-2">
           <button type="button" onClick={() => go('changes')} className="text-[13px] font-semibold rounded-xl px-3.5 py-2" style={{ background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text)' }}>Every change, day by day</button>
           <button type="button" onClick={() => go('stars')} className="text-[13px] font-semibold rounded-xl px-3.5 py-2" style={{ background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text)' }}>Star brands</button>

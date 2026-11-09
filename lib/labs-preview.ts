@@ -9,7 +9,7 @@
 import { normalizeTier } from '@/lib/tier'
 import { canSeeNav } from '@/lib/feature-access'
 
-export type PreviewFeature = 'on_sale' | 'amazon_live' | 'comparison' | 'shorts_mode' | 'first_comment' | 'brand_recap' | 'deal_aftercare' | 'post_refresh' | 'facebook_reels' | 'whole_video' | 'sold_campaigns' | 'liftoff_split' | 'earnings' | 'live_followup' | 'video_plan' | 'studio_upload' | 'facebook_setup' | 'group_queue' | 'trybe_outreach' | 'hashtag_trends' | 'drop' | 'video_qr' | 'deals_import' | 'product_scripts' | 'review_edit' | 'creator_look' | 'new_look' | 'trybe_v2' | 'section_nav' | 'trybe_layout'
+export type PreviewFeature = 'on_sale' | 'amazon_live' | 'comparison' | 'shorts_mode' | 'first_comment' | 'brand_recap' | 'deal_aftercare' | 'post_refresh' | 'facebook_reels' | 'whole_video' | 'sold_campaigns' | 'liftoff_split' | 'earnings' | 'live_followup' | 'video_plan' | 'studio_upload' | 'facebook_setup' | 'group_queue' | 'trybe_outreach' | 'hashtag_trends' | 'drop' | 'video_qr' | 'deals_import' | 'product_scripts' | 'review_edit' | 'creator_look' | 'new_look' | 'trybe_v2' | 'section_nav' | 'trybe_layout' | 'menu_v2'
 
 /** Who may use each preview feature: 'admin' while testing, 'labs' once open to Pro. */
 const OPEN_TO: Record<PreviewFeature, 'admin' | 'labs'> = {
@@ -97,6 +97,11 @@ const OPEN_TO: Record<PreviewFeature, 'admin' | 'labs'> = {
   // Find brands with its filters in one column. Admin while Seb tried it;
   // opened to Pro 2026-11-09 (Seb: "push it live").
   trybe_layout: 'labs',
+  // THE LEFT MENU REDRAWN (lib/menu-areas; Seb, 2026-11-08: "still not
+  // organized the way I want it to be organized. It's a little bit all over
+  // the place"): one job per area, TRYBE right under the Dashboard, and the
+  // Dashboard with Needs you first. Admin while Seb tries it.
+  menu_v2: 'admin',
   // SCOUT reading TikTok Creative Center and Instagram's tag counts for the
   // hashtag engine (Seb, 2026-10-16). Admin while it is tested on real pages.
   hashtag_trends: 'admin',

@@ -78,6 +78,7 @@ import { HelpDeskButton } from '@/components/HelpDeskSidebar'
 import AmazonUpgradeGate from '@/components/upgrade/AmazonUpgradeGate'
 import ProUpgradePanel from '@/components/upgrade/ProUpgradePanel'
 import { lockProRows, lockedPageAt, seesProLocked, proLockedBody } from '@/lib/pro-locked-nav'
+import { regroupMenu } from '@/lib/menu-areas'
 import PermalinkAutoHeal from '@/components/PermalinkAutoHeal'
 import AnnouncementModal from '@/components/dashboard/AnnouncementModal'
 import MvpNews from '@/components/dashboard/MvpNews'
@@ -158,6 +159,10 @@ const SECTION_ACCENTS: Record<string, { dark: string; light: string }> = {
   'Work with brands':  { dark: '#F472B6', light: '#BE185D' }, // pink      — deals / people
   'Your setup':        { dark: '#94A3B8', light: '#475569' }, // slate     — connections & account
   'Help':              { dark: '#5EEAD4', light: '#0D9488' }, // turquoise — support
+  // The redrawn menu's areas (lib/menu-areas, labs-preview menu_v2).
+  'Post videos':       { dark: '#F87171', light: '#B91C1C' }, // red       — out to YouTube and Amazon
+  'Social':            { dark: '#FB923C', light: '#C2410C' }, // orange    — was Share
+  'Brand deals':       { dark: '#F472B6', light: '#BE185D' }, // pink      — was Work with brands
   'More with Pro':     { dark: '#C084FC', light: '#7E22CE' }, // purple    — Amazon plan's upgrade shelf
   'Set up':            { dark: '#60A5FA', light: '#1D4ED8' }, // blue      — foundational
   'Create':            { dark: '#FACC15', light: '#A16207' }, // yellow    — creative core
@@ -183,6 +188,9 @@ const SECTION_ICONS: Record<string, React.ReactNode> = {
   'Work with brands': <Handshake size={12} />,
   'Your setup': <Settings size={12} />,
   'Help': <LifeBuoy size={12} />,
+  'Post videos': <Rocket size={12} />,
+  'Social': <Share2 size={12} />,
+  'Brand deals': <Inbox size={12} />,
   'More with Pro': <Sparkles size={12} />,
   'Set up': <Plug size={12} />,
   'Create': <Sparkles size={12} />,
@@ -339,7 +347,7 @@ const TEAL_DARK_VARS: React.CSSProperties = {
 
 // The menu sections the Dashboard lists under "Everything MVP does": the jobs,
 // not setup, help, Labs or admin.
-const JOB_SECTIONS = ['Find products', 'Make videos', 'Blog', 'Share', 'Work with brands']
+const JOB_SECTIONS = ['Find products', 'Make videos', 'Blog', 'Share', 'Work with brands', 'Post videos', 'Social', 'Brand deals']
 
 interface DashboardShellV2Props {
   email?: string
@@ -876,7 +884,11 @@ export default function DashboardShellV2({
   // a lock, and open the Pro upgrade panel (proLocked below). Labs and Admin
   // are staff rows, never offered.
   const legacyView = seesProLocked(effectiveTier)
-  const NAV_GROUPS: NavGroupDef[] = legacyView ? lockProRows<NavItemDef, NavGroupDef>(navFor(effectiveTier), navFor('pro')) : navFor(effectiveTier)
+  // THE MENU REDRAWN (lib/menu-areas, labs-preview menu_v2): the same rows,
+  // gates and tabs, one job per area.
+  const menuV2 = canUsePreview('menu_v2', effectiveTier)
+  const builtNav: NavGroupDef[] = legacyView ? lockProRows<NavItemDef, NavGroupDef>(navFor(effectiveTier), navFor('pro')) : navFor(effectiveTier)
+  const NAV_GROUPS: NavGroupDef[] = menuV2 ? regroupMenu<NavItemDef, NavGroupDef>(builtNav) : builtNav
   const proLocked = legacyView ? lockedPageAt(NAV_GROUPS, pathname) : undefined
 
   // Walled garden (2026-08-13): an Amazon Influencer opening anything outside
@@ -1046,6 +1058,13 @@ export default function DashboardShellV2({
       // Pins are on the Dashboard, not in an area of their own.
       if (rest.length) out.push({ label: g.label, slug: slugOf(g.label), href: `/area/${slugOf(g.label)}`, color, tint, icon, direct: false, items: rest.map(toItem), rows: rest })
       if (trybe) out.push({ label: 'TRYBE', slug: 'trybe', href: '/trybe', color, tint, icon: trybe.icon, direct: true, items: [toItem(trybe)], rows: [trybe] })
+    }
+    // The redrawn menu puts TRYBE right under the Dashboard: the page members
+    // use most (Seb, 2026-11-08: "Tribe is the one place where people are
+    // going to be using MVP the most").
+    if (menuV2) {
+      const at = out.findIndex((s2) => s2.slug === 'trybe')
+      if (at > 0) { const [t] = out.splice(at, 1); const dash = out.findIndex((s2) => s2.direct && s2.href === '/dashboard'); out.splice(dash + 1, 0, t) }
     }
     return out
   })()

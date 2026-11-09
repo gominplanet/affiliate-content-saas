@@ -19,7 +19,8 @@ const S = readFileSync('components/layout/DashboardShellV2.tsx', 'utf8')
 
 check('every tool card under Everything MVP does has a pin, beside the link, not inside it', /\{\/\* PIN IT TO THE TOP: the one place pins live[\s\S]{0,160}?\*\/\}\s*\{!f\.locked && <button type="button" onClick=\{\(\) => pin\(f\)\} aria-pressed=\{on\}/.test(D) && /<\/Link>\s*\{\/\* PIN IT TO THE TOP/.test(D))
 check('the pins are one list, saved to the account', /const \{ favorites, toggle: togglePin, savedTo \} = useNavFavorites\(\)/.test(D) && /from\('user_nav_favorites'\)/.test(F))
-check('a pinned card shows first, under the banner, before This month', D.indexOf('PINNED: the tools this member pinned') > D.indexOf('{alerts}') && D.indexOf('PINNED: the tools this member pinned') < D.indexOf('── 2. This month ──'))
+// The blocks are drawn in one line (labs-preview menu_v2 puts Needs you first).
+check('a pinned card shows under the banner, before This month', D.indexOf('{alerts}') < D.indexOf('{menuV2 ? <>{needsBlock}{pinnedBlock}{monthBlock}</> : <>{pinnedBlock}{monthBlock}{needsBlock}</>}') && D.indexOf('PINNED: the tools this member pinned') < D.indexOf('── 2. This month ──'))
 check('pinned in the order pinned, only tools this plan opens (from the menu itself)', /for \(const h of favorites\) \{\s*for \(const g of groups\) \{/.test(D) && /it\.href === h \|\| \(it\.aliases \|\| \[\]\)\.includes\(h\)/.test(D))
 check('a pinned card can be unpinned from where it sits', /aria-label=\{`Unpin \$\{f\.label\}`\}/.test(D) && /<PinOff size=\{15\} \/>/.test(D))
 check('with nothing pinned, the Dashboard says how to pin', /Put the tools you use most right here\. Press/.test(D))

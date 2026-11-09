@@ -2455,11 +2455,14 @@ export default function TrybeOutreach({ preview = false, v2 = false, layout = fa
         )
       })()}
 
+      {/* WHAT CHANGED HOLDS THE MARKET (the new menu): the week on TRYBE first,
+          then every change, day by day. Today keeps the creator's own. */}
+      {tab === 'changes' && layout && <TrybeHome view="market" go={go} unread={unread} queue={queue.length} repliedWeek={repliedWeek} inboxRead={!!inbox} />}
       {tab === 'changes' && (changesError && !changes
         ? <TrybeChanges scoutOpens={scoutOpens} onRead={(c) => { setChanges(c); setChangesError(null) }} onSeeNew={seeNew} actions={peekActions} />
         : changes ? <TrybeChanges scoutOpens={scoutOpens} initial={changes} onRead={setChanges} onSeeNew={seeNew} actions={peekActions} /> : <p className="text-[13px] inline-flex items-center gap-1.5" style={soft}><Loader2 size={13} className="animate-spin" /> Reading what changed on TRYBE...</p>)}
 
-      {tab === 'home' && v2 && <TrybeHome go={go} unread={unread} queue={queue.length} repliedWeek={repliedWeek} inboxRead={!!inbox}
+      {tab === 'home' && v2 && <TrybeHome view={layout ? 'today' : 'all'} go={go} unread={unread} queue={queue.length} repliedWeek={repliedWeek} inboxRead={!!inbox}
         forYou={(live?.brands || []).filter(b => !b.status || b.status === 'new').slice().sort((a, b) => (b.pick ?? -1) - (a.pick ?? -1)).slice(0, 6)}
         forYouWhy={[...cats, ...kws].slice(0, 4).join(', ')} canMoney={canMyBrands}
         yours={(changes?.changes || []).filter(c => c.yours).slice().sort((a, b) => Date.parse(b.at) - Date.parse(a.at))} />}
