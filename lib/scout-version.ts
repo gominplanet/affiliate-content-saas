@@ -8,12 +8,12 @@
  *     store installs to "update" — isScoutOutdated survives only as a
  *     low-level helper, not a user-facing gate.
  */
-export const SCOUT_LATEST_VERSION = '1.59.0'
+export const SCOUT_LATEST_VERSION = '1.60.0'
 
 /** One-line "what's new". No longer shown in a nag (store installs auto-update);
  *  kept as a changelog note for whoever bumps the version. */
 export const SCOUT_WHATS_NEW =
-  'Match my TikTok: SCOUT reads your public TikTok videos out of sight so MVP can find the TRYBE brands you already filmed. Read only; it asks once to read tiktok.com.'
+  'Match my TikTok: download your matched TikTok videos to upload them to TRYBE. SCOUT saves each one to your Downloads folder.'
 
 /** Canonical download for the latest SCOUT build (public/, rebuilt from
  *  extension/ on every version bump). Used by the EPC banner + the top-bar
@@ -202,3 +202,9 @@ export function scoutAtLeast(installed: string | null | undefined, min: string):
  *  its own minimized window, and hands them to MVP itself (MVP_TIKTOK_SCAN;
  *  Seb, 2026-11-09: "we're going to use Scout to start"). */
 export const SCOUT_TIKTOK_LIBRARY_MIN_VERSION = '1.59.0'
+
+/** SCOUT saves one of the creator's own TikTok videos to their Downloads, from
+ *  the video's page in its own window (MVP_TIKTOK_DOWNLOAD; Seb, 2026-11-09:
+ *  "a download button for each video matched so users can then re-upload
+ *  those to trybe"). */
+export const SCOUT_TIKTOK_DOWNLOAD_MIN_VERSION = '1.60.0'

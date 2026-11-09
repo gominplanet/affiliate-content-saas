@@ -2479,7 +2479,7 @@ export default function TrybeOutreach({ preview = false, v2 = false, layout = fa
       {tab === 'filmed' && !lockedTab && (
         <TrybeTikTokMatch hasCore={!!core.trim()} onWrite={(ids) => draftPicked(ids)} scoutOpens={scoutOpens}
           onSend={peekActions ? (id) => peekActions.send(id) : undefined} sendBlocked={sendBlocked && !/Nothing drafted/.test(sendBlocked) ? sendBlocked : null}
-          onScripts={(id, name, product) => { setScriptsFor({ id, name, product }); go('create') }} onOpenQueue={() => go('queue')} />
+          onScripts={(id, name, product) => { setScriptsFor({ id, name, product }); go('create') }} onOpenQueue={() => go('queue')} onOpenUpload={() => go('upload')} />
       )}
 
       {tab === 'stars' && !lockedTab && (

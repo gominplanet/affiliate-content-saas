@@ -12601,6 +12601,15 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
     sendResponse({ ok: true, started: true })
     return false
   }
+  if (msg.type === 'MVP_TIKTOK_DOWNLOAD') {
+    // 1.60.0: save one of the creator's own TikTok videos to their Downloads,
+    // so they can upload it to TRYBE. One at a time.
+    const timeout = setTimeout(() => sendResponse({ ok: false, error: 'timeout' }), TT_DL_MAX_MS + 30000)
+    const job = ttDlBusy.then(() => ttDownload({ handle: msg.handle, videoId: msg.videoId, filename: msg.filename }))
+    ttDlBusy = job.catch(() => null)
+    job.then((res) => { clearTimeout(timeout); sendResponse(res) }).catch((e) => { clearTimeout(timeout); sendResponse({ ok: false, error: e && e.message ? e.message : 'error' }) })
+    return true // async
+  }
   if (msg.type === 'MVP_TIKTOK_STATUS') {
     ttState().then((st) => sendResponse({ ok: true, running: !!ttRun, state: st })).catch(() => sendResponse({ ok: false }))
     return true // async
@@ -16696,4 +16705,140 @@ async function ttDailyTick() {
   await ttScan({ handle: d.handle, scanId: s.data.scanId, origin: d.origin, daily: true })
 }
 try { chrome.alarms.onAlarm.addListener((a) => { if (a && a.name === TT_DAILY_ALARM) void ttDailyTick() }) } catch (e) {}
+// ── MATCH MY TIKTOK: DOWNLOAD A VIDEO (1.60.0) ──────────────────────────────
+// Seb, 2026-11-09: "can we also add a download button for each video matched
+// so users can then re-upload those to trybe". The creator's own video, from
+// its own page on TikTok, opened in SCOUT's minimized window: SCOUT reads the
+// address TikTok's page plays the video from, and saves the file to the
+// creator's Downloads folder, the way their browser would. Two ways, in turn:
+//
+//   page    the TikTok page fetches its own video file and saves it, with
+//           the page's own sign-in and address (no extra permission)
+//   chrome  Chrome's downloads, from the same address
+//
+// It says which worked, the file name and its size; a puzzle, a private or
+// removed video, or a file TikTok would not give is said as such, never a
+// download that did not happen. Nothing is posted, liked or changed.
+const TT_DL_MAX_MS = 90000
 
+// In page, on the video's own page: the addresses TikTok plays it from,
+// best first. EVERYTHING IT USES IS INSIDE IT.
+function ttVideoUrlsInPage() {
+  const out = []
+  const add = (u, from) => { if (typeof u === 'string' && /^https:\/\//.test(u) && !out.some((x) => x.url === u)) out.push({ url: u, from }) }
+  let item = null
+  try {
+    const el = document.getElementById('__UNIVERSAL_DATA_FOR_REHYDRATION__')
+    const j = el ? JSON.parse(el.textContent || '{}') : null
+    const d = j && j.__DEFAULT_SCOPE__ && j.__DEFAULT_SCOPE__['webapp.video-detail']
+    item = d && d.itemInfo && d.itemInfo.itemStruct
+  } catch (e) {}
+  try { if (!item && window.SIGI_STATE && window.SIGI_STATE.ItemModule) item = Object.values(window.SIGI_STATE.ItemModule)[0] } catch (e) {}
+  const v = item && item.video
+  if (v) {
+    // The highest quality first, from TikTok's own list of versions.
+    const rates = Array.isArray(v.bitrateInfo) ? v.bitrateInfo.slice().sort((a, b) => (b.Bitrate || 0) - (a.Bitrate || 0)) : []
+    for (const r of rates) for (const u of ((r.PlayAddr && r.PlayAddr.UrlList) || [])) add(u, 'bitrate')
+    add(v.playAddr, 'play')
+    add(v.downloadAddr, 'download')
+  }
+  const vid = document.querySelector('video')
+  if (vid) { add(vid.currentSrc, 'player'); for (const s of Array.from(vid.querySelectorAll('source'))) add(s.src, 'player') }
+  const text = String((document.body && document.body.innerText) || '').slice(0, 4000)
+  return {
+    urls: out.slice(0, 8),
+    found: !!item,
+    puzzle: /drag the (puzzle|slider)|verify to continue|select 2 objects that are the same/i.test(text),
+    gone: /video (is )?(currently )?unavailable|couldn.?t find this (video|post)|this post is private|this video is private/i.test(text),
+  }
+}
+
+// In page: fetch one address with the page's own sign-in, and save it under
+// the name given. Says the size, or why not.
+async function ttSaveInPage(url, filename) {
+  try {
+    const r = await fetch(url, { credentials: 'include' })
+    if (!r.ok) return { ok: false, error: 'http-' + r.status }
+    const type = r.headers.get('content-type') || ''
+    const blob = await r.blob()
+    if (blob.size < 50000 || (type && !/video|octet-stream/i.test(type))) return { ok: false, error: 'not-a-video', bytes: blob.size, type }
+    const href = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = href; a.download = filename; a.style.display = 'none'
+    document.body.appendChild(a); a.click(); a.remove()
+    setTimeout(() => { try { URL.revokeObjectURL(href) } catch (e) {} }, 120000)
+    return { ok: true, bytes: blob.size }
+  } catch (e) {
+    return { ok: false, error: 'page-fetch: ' + (e && e.message ? e.message : String(e)) }
+  }
+}
+
+// The download Chrome made for this file name, once it ends (or the wait does).
+async function ttWaitForDownload(filename, since, ms) {
+  const base = filename.replace(/\.mp4$/i, '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const end = Date.now() + ms
+  while (Date.now() < end) {
+    const items = await new Promise((res) => { try { chrome.downloads.search({ filenameRegex: base, startedAfter: new Date(since).toISOString(), orderBy: ['-startTime'], limit: 1 }, res) } catch (e) { res([]) } })
+    const d = items && items[0]
+    if (d && d.state === 'complete') return { ok: true, bytes: d.fileSize || d.bytesReceived || null, file: d.filename }
+    if (d && d.state === 'interrupted') return { ok: false, error: 'interrupted: ' + (d.error || 'unknown') }
+    await _sleep(700)
+  }
+  return { ok: false, error: 'no-download-seen' }
+}
+
+async function ttDownload({ handle, videoId, filename }) {
+  if (!(await hasOrigins(TT_ORIGINS))) return { ok: false, error: 'no-access' }
+  const h = String(handle || '').trim().replace(/^@+/, '').toLowerCase()
+  const id = String(videoId || '')
+  if (!/^[a-z0-9_.]{2,24}$/.test(h) || !/^\d{6,30}$/.test(id)) return { ok: false, error: 'bad-request' }
+  const name = (String(filename || '').replace(/[^\w.\- ]+/g, '').replace(/\s+/g, '-').slice(0, 80) || ('tiktok-' + id)).replace(/\.mp4$/i, '') + '.mp4'
+  const ka = startKeepAlive()
+  let tabId = null
+  const tried = []
+  try {
+    const tab = await openWorkTab(`https://www.tiktok.com/@${encodeURIComponent(h)}/video/${encodeURIComponent(id)}`)
+    tabId = tab.id
+    quietTabIds.add(tabId)
+    void quietShim(tabId)
+    await waitForTabLoad(tabId, 45000)
+    let found = null
+    for (let i = 0; i < 16; i++) {
+      await _sleep(1000)
+      found = await trybeRun(ttVideoUrlsInPage, [], tabId)
+      if (found && (found.puzzle || found.gone || found.urls.length)) break
+    }
+    if (!found) return { ok: false, error: 'no-answer-from-page' }
+    if (found.puzzle) return { ok: false, error: 'puzzle' }
+    if (found.gone) return { ok: false, error: 'gone' }
+    if (!found.urls.length) return { ok: false, error: 'no-video-address' }
+    // 1. The page fetches and saves its own video.
+    for (const c of found.urls.slice(0, 4)) {
+      const since = Date.now() - 1000
+      const r = await trybeRun(ttSaveInPage, [c.url, name], tabId)
+      tried.push({ from: c.from, way: 'page', result: r && (r.ok ? 'ok' : r.error) })
+      if (r && r.ok) {
+        const d = await ttWaitForDownload(name, since, 30000)
+        if (d.ok) return { ok: true, way: 'page', from: c.from, bytes: d.bytes || r.bytes, file: d.file, tried }
+        tried.push({ from: c.from, way: 'page-save', result: d.error })
+      }
+    }
+    // 2. Chrome's own downloads, from the same addresses.
+    for (const c of found.urls.slice(0, 4)) {
+      const since = Date.now() - 1000
+      let dlId = null
+      try { dlId = await chrome.downloads.download({ url: c.url, filename: name, conflictAction: 'uniquify', saveAs: false }) } catch (e) { tried.push({ from: c.from, way: 'chrome', result: 'start: ' + (e && e.message ? e.message : 'error') }); continue }
+      const d = await ttWaitForDownload(name, since, 60000)
+      tried.push({ from: c.from, way: 'chrome', result: d.ok ? 'ok' : d.error })
+      if (d.ok && d.bytes != null && d.bytes < 50000) { try { chrome.downloads.removeFile(dlId, () => { void chrome.runtime.lastError }) } catch (e) {} continue }
+      if (d.ok) return { ok: true, way: 'chrome', from: c.from, bytes: d.bytes, file: d.file, tried }
+    }
+    return { ok: false, error: 'not-saved', tried }
+  } catch (e) {
+    return { ok: false, error: e && e.message ? e.message : 'exception', tried }
+  } finally {
+    if (tabId != null) { try { await chrome.tabs.remove(tabId) } catch (e) {} }
+    stopKeepAlive(ka)
+  }
+}
+let ttDlBusy = Promise.resolve()

@@ -15,7 +15,7 @@
 
 import { rankScoutCopies, type ScoutCopy } from '@/lib/scout-copies'
 import { trybeTabError, TRYBE_NOT_OPEN, trybeDropped, trybeDroppedWords, TRYBE_DROP_WAITS_MS, type TrybeTabState } from '@/lib/trybe-tab'
-import { scoutAtLeast, SCOUT_FB_GROUP_MIN_VERSION, SCOUT_FB_GROUP_MEDIA_MIN_VERSION, SCOUT_FB_GROUP_WATCH_MIN_VERSION, SCOUT_FB_ACCESS_MIN_VERSION, SCOUT_FB_GROUP_CLIP_MIN_VERSION, SCOUT_TRYBE_MIN_VERSION, SCOUT_TRYBE_TAB_OPEN_MIN_VERSION, SCOUT_HASHTAG_TRENDS_MIN_VERSION, SCOUT_FB_REEL_JOB_MIN_VERSION, SCOUT_FB_GROUP_SEARCH_MIN_VERSION, SCOUT_TIKTOK_LIBRARY_MIN_VERSION } from '@/lib/scout-version'
+import { scoutAtLeast, SCOUT_FB_GROUP_MIN_VERSION, SCOUT_FB_GROUP_MEDIA_MIN_VERSION, SCOUT_FB_GROUP_WATCH_MIN_VERSION, SCOUT_FB_ACCESS_MIN_VERSION, SCOUT_FB_GROUP_CLIP_MIN_VERSION, SCOUT_TRYBE_MIN_VERSION, SCOUT_TRYBE_TAB_OPEN_MIN_VERSION, SCOUT_HASHTAG_TRENDS_MIN_VERSION, SCOUT_FB_REEL_JOB_MIN_VERSION, SCOUT_FB_GROUP_SEARCH_MIN_VERSION, SCOUT_TIKTOK_LIBRARY_MIN_VERSION, SCOUT_TIKTOK_DOWNLOAD_MIN_VERSION } from '@/lib/scout-version'
 
 export const SCOUT_EXTENSION_ID = process.env.NEXT_PUBLIC_SCOUT_EXTENSION_ID || ''
 
@@ -1253,6 +1253,17 @@ export async function requestTikTokLibraryScan(handle: string, scanId: string): 
 /** SCOUT 1.59.0+: stop the scan SCOUT is running. */
 export async function requestTikTokLibraryStop(): Promise<void> {
   await sendToExtension({ type: 'MVP_TIKTOK_STOP' }, 5_000)
+}
+
+export interface TikTokDownloadResult { ok: boolean; error?: string; way?: string; from?: string; bytes?: number | null; file?: string; tried?: Array<{ from: string; way: string; result: string }> }
+/** SCOUT 1.60.0+: save one of the creator's own TikTok videos to their
+ *  Downloads folder. 'old': this SCOUT cannot yet. */
+export async function requestTikTokDownload(handle: string, videoId: string, filename: string): Promise<TikTokDownloadResult & { state?: 'old' | 'no-scout' }> {
+  const status = await getScoutStatus()
+  if (!status.installed) return { ok: false, error: 'SCOUT is not installed in this Chrome.', state: 'no-scout' }
+  if (!scoutAtLeast(status.version, SCOUT_TIKTOK_DOWNLOAD_MIN_VERSION)) return { ok: false, error: `Downloading needs SCOUT ${SCOUT_TIKTOK_DOWNLOAD_MIN_VERSION}.`, state: 'old' }
+  const res = await sendToExtension<TikTokDownloadResult>({ type: 'MVP_TIKTOK_DOWNLOAD', handle, videoId, filename }, 150_000)
+  return res || { ok: false, error: 'SCOUT did not answer.' }
 }
 
 export interface TikTokScoutState { on?: boolean; handle?: string; scanId?: string; read?: number; phase?: string; error?: string | null; ended?: string | null; endedAt?: number | null; reachedEnd?: boolean }

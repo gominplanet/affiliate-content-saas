@@ -21,10 +21,10 @@
 
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { toast } from 'sonner'
-import { Loader2, ScanSearch, Square, ExternalLink, Check, RefreshCw, Cloud, Eye, ShoppingBag, AtSign, Hash, Type, Package, Send, Clapperboard } from 'lucide-react'
+import { Loader2, ScanSearch, Square, ExternalLink, Check, RefreshCw, Cloud, Eye, ShoppingBag, AtSign, Hash, Type, Package, Send, Clapperboard, Download } from 'lucide-react'
 import { cleanHandle } from '@/lib/tiktok-videos'
 import { isMatch, SURENESS_WORDS, type MatchKind, type Sureness } from '@/lib/tiktok-match-words'
-import { requestTikTokLibraryAccess, requestTikTokLibraryScan, requestTikTokLibraryStop, requestTikTokLibraryDaily } from '@/lib/extension-frame'
+import { requestTikTokLibraryAccess, requestTikTokLibraryScan, requestTikTokLibraryStop, requestTikTokLibraryDaily, requestTikTokDownload } from '@/lib/extension-frame'
 import { SCOUT_STORE_LISTING_URL, SCOUT_TIKTOK_LIBRARY_MIN_VERSION } from '@/lib/scout-version'
 import { BrandMark } from '@/components/labs/TrybeFinderControls'
 import { BrandName } from '@/components/labs/trybe-dossier-context'
@@ -78,12 +78,16 @@ export interface MatchActions {
   /** Open Brand scripts for the brand, with the product the videos show. */
   scripts?: (id: string, name: string, product: string | null) => void
   openQueue?: () => void
+  /** TRYBE's Upload page, where a downloaded video goes to its brand. */
+  openUpload?: () => void
+  /** The TikTok handle the videos are from. */
+  handle: string
 }
 
-export default function TrybeTikTokMatch({ hasCore, onWrite, scoutOpens = false, onSend, sendBlocked = null, onScripts, onOpenQueue }: {
+export default function TrybeTikTokMatch({ hasCore, onWrite, scoutOpens = false, onSend, sendBlocked = null, onScripts, onOpenQueue, onOpenUpload }: {
   hasCore: boolean; onWrite: (ids: string[]) => Promise<string[] | void>; scoutOpens?: boolean
   onSend?: (id: string) => Promise<void>; sendBlocked?: string | null
-  onScripts?: (id: string, name: string, product: string | null) => void; onOpenQueue?: () => void
+  onScripts?: (id: string, name: string, product: string | null) => void; onOpenQueue?: () => void; onOpenUpload?: () => void
 }) {
   const [data, setData] = useState<Data | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -182,7 +186,7 @@ export default function TrybeTikTokMatch({ hasCore, onWrite, scoutOpens = false,
   const actions: MatchActions = {
     request: async (id) => { if (!hasCore) { toast.error('Write your core message in Find brands first: requests are written from it.'); return } await onWrite([id]); await load() },
     send: onSend ? async (id) => { await onSend(id); await load() } : undefined,
-    sendBlocked, scripts: onScripts, openQueue: onOpenQueue,
+    sendBlocked, scripts: onScripts, openQueue: onOpenQueue, openUpload: onOpenUpload, handle: lib?.handle ?? '',
   }
   const pickable = shown.filter((m) => askable(m.brandId))
 
@@ -374,6 +378,33 @@ function ScanEnd({ scan, total, kept, matched }: { scan: Scan; total: number | n
   return <div>{line}{chips}</div>
 }
 
+/** What a download that did not happen means, in words. */
+const DL_WORDS: Record<string, string> = {
+  puzzle: 'TikTok asked to confirm you are a person, so SCOUT stopped. Open tiktok.com in Chrome, do it once, then press Download again.',
+  gone: 'TikTok says this video is private or no longer there, so there is nothing to save.',
+  'no-video-address': 'TikTok\u2019s page did not show where it plays the video from, so nothing was saved.',
+  'not-saved': 'TikTok would not hand over the video file, so nothing was saved.',
+  'no-access': 'SCOUT is not allowed to read tiktok.com in this Chrome. Press Scan again and choose Allow.',
+  'no-answer-from-page': 'TikTok\u2019s page did not load in time, so nothing was saved. Try again.',
+  timeout: 'The download took too long, so SCOUT stopped. Check your Downloads folder, then try again.',
+}
+const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40) || 'brand'
+const fileFor = (brand: string, v: { id: string; postedAt: string | null }) => `${slug(brand)}-${v.postedAt ? v.postedAt.slice(0, 10) : 'tiktok'}-${v.id}`
+
+/** Save one video to the creator's Downloads through SCOUT; says what happened. */
+async function downloadVideo(handle: string, brand: string, v: { id: string; postedAt: string | null }, openUpload?: () => void): Promise<boolean> {
+  const r = await requestTikTokDownload(handle, v.id, fileFor(brand, v))
+  if (r.ok) {
+    const mb = r.bytes ? ` (${(r.bytes / 1_048_576).toFixed(1)} MB)` : ''
+    const file = (r.file || `${fileFor(brand, v)}.mp4`).split(/[\\/]/).pop()
+    toast.success(`Saved to your Downloads: ${file}${mb}`, openUpload ? { duration: 10000, action: { label: 'Upload to TRYBE', onClick: openUpload } } : undefined)
+    return true
+  }
+  const why = r.state === 'old' ? `${r.error} Chrome updates SCOUT by itself within a day.` : (r.error && DL_WORDS[r.error]) || `Not saved: ${r.error || 'SCOUT did not say why'}.`
+  toast.error(why, { duration: 12000 })
+  return false
+}
+
 /** The product these videos show, for scripts: a TikTok Shop tag's title, else
  *  the product the caption named, else null (Brand scripts uses the brief). */
 function productOf(m: Match, videos: Record<string, Video>): string | null {
@@ -384,6 +415,25 @@ function productOf(m: Match, videos: Record<string, Video>): string | null {
 
 function MatchCard({ m, videos, brand, picked, onPick, scoutOpens, actions }: { m: Match; videos: Record<string, Video>; brand?: { website: string | null; requested: string | null }; picked: boolean; onPick: (on: boolean) => void; scoutOpens: boolean; actions: MatchActions }) {
   const [busy, setBusy] = useState<'request' | 'send' | null>(null)
+  // Each video's download: running, saved, or failed.
+  const [dl, setDl] = useState<Record<string, 'busy' | 'done' | 'failed'>>({})
+  const [dlAll, setDlAll] = useState<{ done: number; of: number } | null>(null)
+  const saveOne = async (v: { id: string; postedAt: string | null }) => {
+    setDl((d) => ({ ...d, [v.id]: 'busy' }))
+    const ok = await downloadVideo(actions.handle, m.name, v, actions.openUpload)
+    setDl((d) => ({ ...d, [v.id]: ok ? 'done' : 'failed' }))
+    return ok
+  }
+  const saveAll = async () => {
+    const all = m.videoIds.map((id) => videos[id] ?? { id, postedAt: null })
+    setDlAll({ done: 0, of: all.length })
+    for (let i = 0; i < all.length; i++) {
+      // One failed download stops the rest: the reason is said once, not for every video.
+      if (!(await saveOne(all[i]))) break
+      setDlAll({ done: i + 1, of: all.length })
+    }
+    setDlAll(null)
+  }
   const status = brand?.requested ?? null
   const asked = status ? ASKED[status] || 'On your TRYBE list' : null
   const gone = !!status && GONE.has(status)
@@ -414,19 +464,27 @@ function MatchCard({ m, videos, brand, picked, onPick, scoutOpens, actions }: { 
         {vids.length > 0 && (
           <div className="mt-2.5 flex gap-2 overflow-x-auto pb-1">
             {vids.map((v) => (
-              <a key={v.id} href={v.url} target="_blank" rel="noopener noreferrer" className="shrink-0 w-[104px] rounded-lg overflow-hidden border group" style={{ borderColor: 'var(--border)' }} title={v.caption || 'Watch on TikTok'}>
-                <span className="block w-full aspect-[9/16] relative" style={{ background: 'var(--surface-2)' }}>
-                  {v.cover && (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={v.cover} alt="" loading="lazy" className="absolute inset-0 w-full h-full object-cover" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }} />
-                  )}
-                  {v.views != null && <span className="absolute left-1 bottom-1 text-[10.5px] font-bold rounded px-1 inline-flex items-center gap-0.5" style={{ background: 'rgba(0,0,0,0.6)', color: '#fff' }}><Eye size={10} />{compact(v.views)}</span>}
-                </span>
-                <span className="block px-1.5 py-1 text-[10.5px] leading-tight">
-                  <span className="font-semibold inline-flex items-center gap-0.5 whitespace-nowrap text-[10px] group-hover:underline" style={{ color: ACCENT }}>Watch on TikTok <ExternalLink size={9} /></span>
-                  {v.postedAt && <span className="block" style={soft}>{day(v.postedAt)}</span>}
-                </span>
-              </a>
+              <div key={v.id} className="shrink-0 w-[104px] rounded-lg overflow-hidden border" style={{ borderColor: 'var(--border)' }}>
+                <a href={v.url} target="_blank" rel="noopener noreferrer" className="block group" title={v.caption || 'Watch on TikTok'}>
+                  <span className="block w-full aspect-[9/16] relative" style={{ background: 'var(--surface-2)' }}>
+                    {v.cover && (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={v.cover} alt="" loading="lazy" className="absolute inset-0 w-full h-full object-cover" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }} />
+                    )}
+                    {v.views != null && <span className="absolute left-1 bottom-1 text-[10.5px] font-bold rounded px-1 inline-flex items-center gap-0.5" style={{ background: 'rgba(0,0,0,0.6)', color: '#fff' }}><Eye size={10} />{compact(v.views)}</span>}
+                  </span>
+                  <span className="block px-1.5 pt-1 text-[10.5px] leading-tight">
+                    <span className="font-semibold inline-flex items-center gap-0.5 whitespace-nowrap text-[10px] group-hover:underline" style={{ color: ACCENT }}>Watch on TikTok <ExternalLink size={9} /></span>
+                    {v.postedAt && <span className="block" style={soft}>{day(v.postedAt)}</span>}
+                  </span>
+                </a>
+                <button type="button" onClick={() => void saveOne(v)} disabled={dl[v.id] === 'busy' || !!dlAll}
+                  className="w-full px-1.5 pb-1.5 pt-0.5 text-left text-[10.5px] font-semibold inline-flex items-center gap-1 disabled:opacity-60 hover:underline"
+                  style={{ color: dl[v.id] === 'failed' ? AMBER : 'var(--text)' }} title="Save this video to your Downloads folder, to upload it to TRYBE">
+                  {dl[v.id] === 'busy' ? <Loader2 size={11} className="animate-spin" /> : dl[v.id] === 'done' ? <Check size={11} /> : <Download size={11} />}
+                  {dl[v.id] === 'busy' ? 'Saving' : dl[v.id] === 'done' ? 'Saved' : dl[v.id] === 'failed' ? 'Try again' : 'Download'}
+                </button>
+              </div>
             ))}
             {m.videoIds.length > vids.length && <span className="self-center text-[12px] shrink-0" style={soft}>and {m.videoIds.length - vids.length} more</span>}
           </div>
@@ -448,6 +506,12 @@ function MatchCard({ m, videos, brand, picked, onPick, scoutOpens, actions }: { 
           )}
           {drafted && actions.openQueue && (
             <button type="button" onClick={actions.openQueue} className="text-[12.5px] font-semibold underline" style={{ color: ACCENT }}>Read it first in Ready to send</button>
+          )}
+          {actions.handle && (
+            <button type="button" onClick={() => void saveAll()} disabled={!!dlAll} className={`${btn} border`} style={{ borderColor: 'var(--border-2)', color: 'var(--text)' }}
+              title="Save every video of this brand to your Downloads folder, one after another, to upload them to TRYBE">
+              {dlAll ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />} {dlAll ? `Saving ${dlAll.done + 1} of ${dlAll.of}` : m.videoIds.length > 1 ? `Download all ${m.videoIds.length} videos` : 'Download the video'}
+            </button>
           )}
           {actions.scripts && (
             <button type="button" onClick={() => actions.scripts!(m.brandId, m.name, productOf(m, videos))} className={`${btn} border`} style={{ borderColor: 'var(--border-2)', color: 'var(--text)' }}
