@@ -119,7 +119,11 @@ since members may still use it):
   only a possible match. Find brands then shows a "Filmed on TikTok" chip and
   has a "You filmed on TikTok" quick list. An optional daily check reads new
   videos once a day. Reading only: SCOUT never posts, likes or follows, and if
-  TikTok shows a puzzle SCOUT stops and says so.
+  TikTok shows a puzzle SCOUT stops and says so. Each match has Request
+  partnership, Write scripts and a Download button per video (SCOUT 1.60.0 or
+  newer) that saves the video to the computer's Downloads folder, ready to
+  upload to TRYBE. SCOUT saves through Chrome's own downloads first, and a
+  failed download says which way failed and why.
 - Find products: Product research (tabs: Catalog search, Amazon research),
   Deal Radar, Brand campaigns (tabs: All campaigns, Joined, Saved, Best
   paying), Partner programs (tabs: Levanta, PartnerBoost and Walmart,
