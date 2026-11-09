@@ -200,17 +200,21 @@ check('SCOUT reads in its own minimized window, told it is on screen', /const ta
 check('a puzzle stops the scan and is said, never solved', /if \(read\.puzzle\) \{ error = TT_SAY\.puzzle; break \}/.test(B) && /it never answers those/.test(B))
 check('SCOUT hands each batch to MVP itself, so the scan goes on with MVP’s tab closed', /\/api\/labs\/tiktok-library/.test(B) && /void ttScan\(\{ handle, scanId: String\(msg\.scanId\), origin \}\)/.test(B))
 check('the end of every scan is handed over, with how it ended', /try \{ await hand\(\[\], null, true\) \} catch/.test(B) && /body\.reachedEnd = reachedEnd; if \(error\) body\.error = error/.test(B))
-check('SCOUT and MVP agree on the version', MF.version === '1.60.0' && /SCOUT_LATEST_VERSION = '1\.60\.0'/.test(read('lib/scout-version.ts')) && /SCOUT_TIKTOK_LIBRARY_MIN_VERSION = '1\.59\.0'/.test(read('lib/scout-version.ts')) && /SCOUT_TIKTOK_DOWNLOAD_MIN_VERSION = '1\.60\.0'/.test(read('lib/scout-version.ts')))
+check('SCOUT and MVP agree on the version', MF.version === '1.60.1' && /SCOUT_LATEST_VERSION = '1\.60\.1'/.test(read('lib/scout-version.ts')) && /SCOUT_TIKTOK_LIBRARY_MIN_VERSION = '1\.59\.0'/.test(read('lib/scout-version.ts')) && /SCOUT_TIKTOK_DOWNLOAD_MIN_VERSION = '1\.60\.0'/.test(read('lib/scout-version.ts')))
 
 // ── DOWNLOADS (Seb, 2026-11-09: "a download button for each video matched so
 // users can then re-upload those to trybe") ──
 {
   check('SCOUT saves a video from its own TikTok page in its own window, the page first, then Chrome’s downloads', /const tab = await openWorkTab\(`https:\/\/www\.tiktok\.com\/@\$\{encodeURIComponent\(h\)\}\/video\/\$\{encodeURIComponent\(id\)\}`\)/.test(B) && /const r = await trybeRun\(ttSaveInPage, \[c\.url, name\], tabId\)/.test(B) && /dlId = await chrome\.downloads\.download\(\{ url: c\.url, filename: name/.test(B))
-  check('a download is reported done only when Chrome has the whole file', /if \(d && d\.state === 'complete'\) return \{ ok: true/.test(B) && /if \(d\.ok\) return \{ ok: true, way: 'page'/.test(B))
-  check('a file too small to be a video is not kept as one', /blob\.size < 50000/.test(B) && /d\.bytes < 50000\) \{ try \{ chrome\.downloads\.removeFile/.test(B))
+  check('a download is reported done only when Chrome has the whole file', /if \(d\.state === 'complete'\) return \{ ok: true/.test(B) && /if \(d\.ok\) return \{ ok: true, way: 'page'/.test(B))
+  check('a file too small to be a video is not kept as one', /blob\.size < 50000/.test(B) && /d\.bytes < 50000\) \{ tried\.push\(\{ from: c\.from, way: 'chrome', result: 'chrome-too-small' \}\); try \{ chrome\.downloads\.removeFile/.test(B))
   check('a puzzle or a private video is said, never a silent failure', /if \(found\.puzzle\) return \{ ok: false, error: 'puzzle' \}/.test(B) && /if \(found\.gone\) return \{ ok: false, error: 'gone' \}/.test(B))
   check('only the creator’s own handle and a video id are accepted', /if \(!\/\^\[a-z0-9_\.\]\{2,24\}\$\/\.test\(h\) \|\| !\/\^\\d\{6,30\}\$\/\.test\(id\)\) return \{ ok: false, error: 'bad-request' \}/.test(B))
   check('no new Chrome permission: downloads was already there', MF.permissions.includes('downloads'))
+  // Seb's first try (2026-11-09) timed out with no reason given.
+  check('Chrome’s own downloads go first: they never ask where to save, and are followed by their id', B.indexOf("way: 'chrome', result: d.ok ? 'ok' : d.error") < B.indexOf("way: 'page', result: d.ok ? 'ok' : d.error") && /saveAs: false/.test(B) && /async function ttFollowDownload\(id, deadline\)/.test(B))
+  check('a stalled download is cancelled and every try has its own limit inside one deadline', /ttDropDownload\(id\); return \{ ok: false, error: last > 0 \? 'chrome-stalled' : 'chrome-no-answer' \}/.test(B) && /const deadline = Date\.now\(\) \+ TT_DL_MAX_MS/.test(B) && /setTimeout\(\(\) => stop\.abort\(\), 20000\)/.test(B))
+  check('a failed download says which way failed and why, with its codes', /r\.error === 'not-saved' && tried \? `Not saved\. \$\{tried\}`/.test(read('components/labs/TrybeTikTokMatch.tsx')) && /TikTok refused to send the file \(Forbidden\)/.test(read('components/labs/TrybeTikTokMatch.tsx')))
   const P3 = read('components/labs/TrybeTikTokMatch.tsx')
   check('every video has Download, every brand Download all, and a saved file leads to TRYBE’s Upload', /'Download'\}/.test(P3) && /Download all \$\{m\.videoIds\.length\} videos/.test(P3) && /label: 'Upload to TRYBE', onClick: openUpload/.test(P3) && /onOpenUpload=\{\(\) => go\('upload'\)\}/.test(read('components/labs/TrybeOutreach.tsx')))
   check('a download that did not happen is said with why', /Saved to your Downloads: /.test(P3) && /DL_WORDS\[r\.error\]/.test(P3) && /Chrome updates SCOUT by itself within a day/.test(P3))

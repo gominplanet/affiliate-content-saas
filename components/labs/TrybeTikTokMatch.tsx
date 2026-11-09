@@ -386,8 +386,32 @@ const DL_WORDS: Record<string, string> = {
   'not-saved': 'TikTok would not hand over the video file, so nothing was saved.',
   'no-access': 'SCOUT is not allowed to read tiktok.com in this Chrome. Press Scan again and choose Allow.',
   'no-answer-from-page': 'TikTok\u2019s page did not load in time, so nothing was saved. Try again.',
-  timeout: 'The download took too long, so SCOUT stopped. Check your Downloads folder, then try again.',
+  timeout: 'The download took too long, so SCOUT stopped. Check your Downloads folder. SCOUT 1.60.1 makes downloads steadier and says what went wrong; Chrome updates SCOUT by itself.',
 }
+/** What each try SCOUT made means (SCOUT 1.60.1 says what it tried). */
+function tryWords(code: string): string {
+  if (/^chrome-SERVER_(FORBIDDEN|UNAUTHORIZED)/.test(code)) return 'TikTok refused to send the file (Forbidden)'
+  if (/^chrome-SERVER_/.test(code)) return 'TikTok answered with an error'
+  if (/^chrome-NETWORK_/.test(code)) return 'the connection to TikTok failed'
+  if (/^chrome-(stalled|no-answer|too-slow)$/.test(code)) return 'TikTok did not send the file'
+  if (code === 'chrome-too-small' || code === 'page-not-a-video') return 'TikTok sent a page instead of the video'
+  if (/^chrome-start/.test(code)) return 'Chrome would not start the download'
+  if (code === 'page-fetch-blocked') return 'TikTok\u2019s page could not read its own file'
+  if (/^page-http-40[13]$/.test(code)) return 'TikTok refused the file to its own page'
+  if (code === 'page-no-download') return 'Chrome did not save it (if Chrome is set to ask where to save each file, that window opens out of sight)'
+  if (code === 'page-fetch-timeout') return 'TikTok took too long to send it'
+  return code
+}
+/** Every way SCOUT tried, in words, with its codes for the team. */
+function triedWords(tried: Array<{ way: string; result: string }> | undefined): string | null {
+  if (!tried?.length) return null
+  const by = new Map<string, string>()
+  for (const t of tried) if (t.result !== 'ok' && !by.has(t.way)) by.set(t.way, tryWords(t.result))
+  const parts = Array.from(by.entries()).map(([way, w]) => `${way === 'chrome' ? 'Through Chrome' : 'From TikTok\u2019s page'}: ${w}.`)
+  const codes = Array.from(new Set(tried.map((t) => t.result))).join(', ')
+  return `${parts.join(' ')} (${codes})`
+}
+
 const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40) || 'brand'
 const fileFor = (brand: string, v: { id: string; postedAt: string | null }) => `${slug(brand)}-${v.postedAt ? v.postedAt.slice(0, 10) : 'tiktok'}-${v.id}`
 
@@ -400,7 +424,10 @@ async function downloadVideo(handle: string, brand: string, v: { id: string; pos
     toast.success(`Saved to your Downloads: ${file}${mb}`, openUpload ? { duration: 10000, action: { label: 'Upload to TRYBE', onClick: openUpload } } : undefined)
     return true
   }
-  const why = r.state === 'old' ? `${r.error} Chrome updates SCOUT by itself within a day.` : (r.error && DL_WORDS[r.error]) || `Not saved: ${r.error || 'SCOUT did not say why'}.`
+  const tried = triedWords(r.tried)
+  const why = r.state === 'old' ? `${r.error} Chrome updates SCOUT by itself within a day.`
+    : r.error === 'not-saved' && tried ? `Not saved. ${tried}`
+      : (r.error && DL_WORDS[r.error]) || `Not saved: ${r.error || 'SCOUT did not say why'}.`
   toast.error(why, { duration: 12000 })
   return false
 }
