@@ -123,7 +123,12 @@ since members may still use it):
   partnership, Write scripts and a Download button per video (SCOUT 1.60.0 or
   newer) that saves the video to the computer's Downloads folder, ready to
   upload to TRYBE. SCOUT saves through Chrome's own downloads first, and a
-  failed download says which way failed and why.
+  failed download says which way failed and why. In Messages, when a brand's
+  messages hold links (Google Docs, Slides, Sheets, Drive files, Canva decks,
+  pages), Read them for me reads what it can and writes a short TLDR (in
+  short, say or show, avoid), and Brand scripts for that brand follow it. A
+  Canva deck gives MVP only its title, so the creator can download it from
+  Canva as a PDF and add it there. Booking pages and invites are not read.
 - Find products: Product research (tabs: Catalog search, Amazon research),
   Deal Radar, Brand campaigns (tabs: All campaigns, Joined, Saved, Best
   paying), Partner programs (tabs: Levanta, PartnerBoost and Walmart,

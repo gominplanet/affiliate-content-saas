@@ -21,6 +21,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Loader2, RefreshCw, Send, AlertTriangle, MessageCircle, Sparkles, Undo2 } from 'lucide-react'
 import { requestTrybeApi } from '@/lib/extension-frame'
 import TrybeBrandCard from '@/components/labs/TrybeBrandCard'
+import TrybeBrandLinks from '@/components/labs/TrybeBrandLinks'
+import { brandIdFromChat, matchBrand } from '@/lib/trybe-brand-page'
 import { replyBlanks, REPLY_STEPS, type ReplySteps } from '@/lib/trybe-outreach'
 import { useTrybeVoice, readVoice, rememberMvpText } from '@/components/labs/useTrybeVoice'
 import { SCOUT_TRYBE_INBOX_MIN_VERSION, SCOUT_TRYBE_PLAYBOOK_MIN_VERSION, SCOUT_TRYBE_MYBRANDS_MIN_VERSION, scoutAtLeast } from '@/lib/scout-version'
@@ -468,6 +470,8 @@ export default function TrybeInbox({ scoutVersion, allowed, openRequest, onOpene
               <TrybeBrandCard key={openConvo.id} chatName={openConvo.name} chatRaw={openConvo.raw} directory={directory}
                 canStats={scoutAtLeast(scoutVersion, SCOUT_TRYBE_MYBRANDS_MIN_VERSION)} canDetails={scoutAtLeast(scoutVersion, SCOUT_TRYBE_PLAYBOOK_MIN_VERSION)} />
             </div>
+            {/* WHAT THE BRAND SENT, IN SHORT: its links read, a TLDR, and Brand scripts follow them. */}
+            <TrybeBrandLinks key={`links-${openConvo.id}`} brandId={brandIdFromChat(openConvo.raw) || matchBrand(openConvo.name, [], directory)?.id || null} brandName={openConvo.name} messages={msgs} />
             <div ref={threadRef} className="flex-1 overflow-y-auto max-h-[28rem] px-4 py-3 space-y-2">
               {loadingMsgs && <p className="text-[12px] inline-flex items-center gap-1.5" style={soft}><Loader2 size={12} className="animate-spin" /> Reading the conversation...</p>}
               {msgNote && <p className="text-[12px]" style={{ color: AMBER }}>{msgNote}</p>}

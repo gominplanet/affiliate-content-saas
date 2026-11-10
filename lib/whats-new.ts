@@ -29,6 +29,17 @@ export interface WhatsNewItem {
 }
 
 export const WHATS_NEW: WhatsNewItem[] = [
+  // The links a brand sends in its messages (Seb, 2026-11-10: "is MVP able
+  // to read that ... or at least giving the user maybe a TLDR?").
+  {
+    date: '2026-11-10',
+    gate: 'trybe',
+    badge: 'NEW',
+    tone: '#0D9488',
+    title: 'What the brand sent, in short',
+    desc: 'When a brand messages you links to its briefs and decks, press Read them for me above the chat. MVP reads the Google Docs, Slides, Sheets, Drive files and pages, writes a short TLDR of what to say, show and avoid, and Brand scripts for that brand follow it. A Canva deck only gives MVP its title, so download it from Canva as a PDF and add it there.',
+    href: '/trybe?tab=inbox',
+  },
   // The latest live replay, pinned on this card and in Tutorials (Seb,
   // 2026-11-10: "let's add the latest video to the latest pop up on mvp.. and
   // inside of tutorials").
