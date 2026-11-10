@@ -22,7 +22,7 @@ export function morningWords(m: MorningState | null): string {
   const last = !m.lastAt ? '' : m.lastResult === 'signed-out' ? ` The last morning (${when(m.lastAt)}) found this Chrome signed out of MVP, so nothing ran.`
     : m.lastResult === 'could-not-open' ? ` The last morning (${when(m.lastAt)}) SCOUT could not open MVP's page.`
     : ` Last opened by SCOUT ${when(m.lastAt)}.`
-  if (!m.on) return `Off. Press Daily refresh yourself, or turn this on.${last}`
+  if (!m.on) return `Off. Press Refresh everything yourself, or turn this on.${last}`
   return `On. Next run ${m.next ? when(m.next) : 'not set'}: SCOUT opens this page behind your tabs and runs every step. Chrome needs to be open and signed in to MVP and TRYBE; a computer asleep at that hour runs it when it wakes.${last}`
 }
 
@@ -57,7 +57,7 @@ export function autoRunWords(rec: AutoRunRecord | null, scoutOpenedAt: number | 
   // start there. (With no start recorded at all, nothing is claimed: starts
   // are recorded only since 2026-11-07.)
   if (scoutOpenedAt && Number.isFinite(started) && scoutOpenedAt - started > 5 * 60_000) {
-    return { tone: 'warn', text: `SCOUT opened this page ${when(scoutOpenedAt)}, but the run did not start in it. Open the MVP tab SCOUT left behind your others to see why, or press Daily refresh.` }
+    return { tone: 'warn', text: `SCOUT opened this page ${when(scoutOpenedAt)}, but the run did not start in it. Open the MVP tab SCOUT left behind your others to see why, or press Refresh everything.` }
   }
   if (!Number.isFinite(started)) return { tone: 'info', text: 'No run by itself is recorded yet. The next one says here when it started and when it finished.' }
   if (!Number.isFinite(finished) || finished < started) {

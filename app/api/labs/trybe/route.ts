@@ -50,6 +50,7 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { readSampleCatalogs, refreshCatalogs } from '@/lib/trybe-catalog-refresh'
+import { payLinePass, popularityPass, sitesPass, socialsPass, directoryLeft } from '@/lib/trybe-directory-refresh'
 import { getAuthAndOwner } from '@/lib/agency-auth'
 import { trybeAccess, TRYBE_PREVIEW_ACTIONS } from '@/lib/labs-preview'
 import { normalizeTier } from '@/lib/tier'
@@ -1266,6 +1267,23 @@ export async function POST(request: Request) {
     return NextResponse.json(r)
   }
 
+  if (action === 'directory_refresh') {
+    // THE BRANDS' WEBSITES, HOW KNOWN EACH IS, ITS TIKTOK AND ITS PAY LINE, a
+    // pass at a time (lib/trybe-directory-refresh), for Refresh everything
+    // (Seb, 2026-11-10: "a button that just runs and runs until all of the
+    // jobs are complete"). The cron reads the same every 10 minutes; the page
+    // asks again until nothing is left. Pay lines once a run (body.pay).
+    if (tier !== 'admin') return NextResponse.json({ error: 'Refresh everything is for the MVP team.' }, { status: 403 })
+    const started = Date.now()
+    const pay = body.pay === true ? await payLinePass(admin, 12).catch((e) => ({ error: e instanceof Error ? e.message : 'error' })) : null
+    const popularity = await popularityPass(admin, started + 25_000).catch((e) => ({ error: e instanceof Error ? e.message : 'error' }))
+    const sites = await sitesPass(admin, started + 50_000)
+    if (sites.error) return NextResponse.json({ error: sites.error }, { status: 500 })
+    const socials = Date.now() - started < 50_000 ? await socialsPass(admin, started + 55_000) : 0
+    const left = await directoryLeft(admin)
+    return NextResponse.json({ ok: true, sites, socials, popularity, pay, left: 'error' in left ? null : left, leftError: 'error' in left ? left.error : null, ms: Date.now() - started })
+  }
+
   if (action === 'daily_refresh') {
     if (tier !== 'admin') return NextResponse.json({ error: 'The daily refresh is for the MVP team.' }, { status: 403 })
     const KEY = 'daily_refresh'
@@ -1280,7 +1298,7 @@ export async function POST(request: Request) {
       if (e) return NextResponse.json({ error: e.message }, { status: 500 })
     }
     if (log) {
-      const steps = (Array.isArray(log.steps) ? log.steps : []).slice(0, 6).map((x) => {
+      const steps = (Array.isArray(log.steps) ? log.steps : []).slice(0, 8).map((x) => {
         const o = (x && typeof x === 'object' ? x : {}) as Record<string, unknown>
         return { id: String(o.id || '').slice(0, 20), label: String(o.label || '').slice(0, 60), state: String(o.state || '').slice(0, 12), text: String(o.text || '').slice(0, 600) }
       })

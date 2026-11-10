@@ -125,8 +125,8 @@ check('the pay figure never goes into a message to a brand', /never put a rate i
     && payLines(entry('USD', [{ type: 'META_ANALYTICS', value: '20', isActive: true, metricType: 'purchase_value_percentage' }]))[0] === '20% of sales from its ads')
   check('an entry with no brand currency is taken as USD', payCurrency({ program: { rules: [] } }) === 'USD' && payCurrency(entry('gbp', [])) === 'GBP')
   check('the rates cover every currency in Seb\'s list', ['TRY', 'ILS', 'NOK', 'AUD', 'INR', 'CHF', 'MAD', 'MXN', 'CAD', 'EUR', 'ZAR', 'NZD', 'PLN', 'SEK', 'JPY', 'GBP', 'AED', 'DKK', 'USD', 'PHP'].every((c) => USD_PER[c] > 0))
-  const J = read('app/api/cron/trybe-directory/route.ts')
-  check('the directory job fills empty pay lines from the kept entry, never made up', /async function payLinePass/.test(J) && /\.is\('pay_text', null\)\.is\('left_at', null\)/.test(J) && /readDirectoryItem\(r\.raw\)\?\.payText \?\? null/.test(J) && /\.filter\(\(r\) => !!r\.pay_text && !!r\.name\)/.test(J) && /const pay = await payLinePass\(sb\)/.test(J))
+  const J = read('lib/trybe-directory-refresh.ts') + read('app/api/cron/trybe-directory/route.ts')
+  check('the directory job fills empty pay lines from the kept entry, never made up', /async function payLinePass/.test(J) && /\.is\('pay_text', null\)\.is\('left_at', null\)/.test(J) && /readDirectoryItem\(r\.raw\)\?\.payText \?\? null/.test(J) && /\.filter\(\(r\) => !!r\.pay_text && !!r\.name\)/.test(J) && /const pay = await payLinePass\(sb, new Date\(\)\.getUTCMinutes\(\) < 10 \? 12 : 1\)/.test(J) && /if \(after\) q = q\.gt\('brand_id', after\)/.test(J))
   check('an empty pay index is never kept for 12 hours', /if \(index\.read > 0\) \{ try \{ await admin\.from\('trybe_directory_meta'\)\.upsert\(\{ key: 'pay_index'/.test(R) && /Number\(\(hit\.value as \{ read\?: unknown \} \| null\)\?\.read\) > 0/.test(R))
 }
 

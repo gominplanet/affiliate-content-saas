@@ -95,7 +95,7 @@ export default function TrybeAdsGallery({ isAdmin, scoutVersion, canRead, topBra
   const todo = useMemo(() => nextToRead(pool, { brands: data?.readAt || {} }, PER_PRESS), [pool, data])
 
   async function readTop() {
-    if (!todo.length) { setNote({ tone: 'warn', text: 'MVP has no Top 100 saved yet. Press Daily refresh at the top of TRYBE, then come back.' }); return }
+    if (!todo.length) { setNote({ tone: 'warn', text: 'MVP has no Top 100 saved yet. Press Refresh everything at the top of TRYBE, then come back.' }); return }
     setRun({ done: 0, total: todo.length }); setNote(null)
     try {
       const r = await readMetaAds(todo, { cards: true, onProgress: (done, total) => setRun({ done, total }) })
@@ -152,8 +152,8 @@ export default function TrybeAdsGallery({ isAdmin, scoutVersion, canRead, topBra
               </button>}
           <span style={soft}>
             {pool.length
-              ? `Of ${pool.length} in the Top 100${fromSaved && data?.top?.at ? ` (as saved ${new Date(data.top.at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })})` : ''}, the ones read longest ago first. Daily refresh and Find brands’ “Check for Meta ads” add to this too.`
-              : 'Daily refresh and Find brands’ “Check for Meta ads” add to this too.'}
+              ? `Of ${pool.length} in the Top 100${fromSaved && data?.top?.at ? ` (as saved ${new Date(data.top.at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })})` : ''}, the ones read longest ago first. Refresh everything and Find brands’ “Check for Meta ads” add to this too.`
+              : 'Refresh everything and Find brands’ “Check for Meta ads” add to this too.'}
           </span>
           {data && data.ads.some((a) => a.video) && (
             <span className="basis-full inline-flex flex-wrap items-center gap-2">

@@ -131,7 +131,7 @@ check('collecting the list reads TRYBE pages and never clicks anything', /\/back
 check('collecting runs in the creator\'s own TRYBE tab, opened behind MVP\'s first when none is (1.54.0)', /try \{ tabId = await trybeApiTabId\(\) \} catch \(e\) \{ tabId = null \}/.test(BG.slice(BG.indexOf('async function trybeHarvest('), BG.indexOf('async function trybeHarvest(') + 900)))
 check('the directory is shared, written by the server only', /action === 'directory'/.test(ROUTE) && /from\('trybe_directory'\)\.upsert/.test(ROUTE))
 check('the shortlist leaves out brands already on the list', /\.filter\(r => !have\.has\(r\.brand_id\)\)/.test(ROUTE))
-check('websites are read in the background', /researchBrandSite/.test(readFileSync('app/api/cron/trybe-directory/route.ts', 'utf8')))
+check('websites are read in the background', /researchBrandSite/.test(readFileSync('lib/trybe-directory-refresh.ts', 'utf8')) && /await sitesPass\(sb, started \+ BUDGET_MS\)/.test(readFileSync('app/api/cron/trybe-directory/route.ts', 'utf8')))
 
 // THE COLLECTOR RUNS IN TRYBE'S PAGE, ALONE. Chrome copies only that one
 // function into the page; 1.41.2 called a helper defined elsewhere in SCOUT

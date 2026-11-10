@@ -117,7 +117,7 @@ const ON = { on: true, origin: 'https://mvpaffiliate.io', hour: 4, minute: 0 }
   check('no answer from SCOUT is said, never shown as off', /SCOUT did not answer/.test(morningWords(null)))
   check('on: the next run and what it needs', /^On\. Next run /.test(morningWords({ on: true, hour: 4, minute: 0, next: T, lastAt: null, lastResult: null })) && /a computer asleep at that hour runs it when it wakes/.test(morningWords({ on: true, hour: 4, minute: 0, next: T, lastAt: null, lastResult: null })))
   check('a morning that found MVP signed out says nothing ran', /signed out of MVP, so nothing ran/.test(morningWords({ on: true, hour: 4, minute: 0, next: T, lastAt: T, lastResult: 'signed-out' })))
-  check('off says how to run it', /^Off\. Press Daily refresh yourself/.test(morningWords({ on: false, hour: 4, minute: 0, next: null, lastAt: null, lastResult: null })))
+  check('off says how to run it', /^Off\. Press Refresh everything yourself/.test(morningWords({ on: false, hour: 4, minute: 0, next: null, lastAt: null, lastResult: null })))
   check('no dashes in the words', [morningWords(null), morningWords({ on: true, hour: 4, minute: 0, next: T, lastAt: T, lastResult: 'could-not-open' })].every((w) => !/[–—]| - /.test(w)))
 
   // ── DID IT RUN? (Seb, 2026-11-07: "I watched it just go by and nothing
