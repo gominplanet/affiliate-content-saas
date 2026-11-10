@@ -36,7 +36,12 @@ const soft = { color: 'var(--text-3)' }
 const AMBER = '#B45309'
 const RED = '#B91C1C'
 
-interface Video { id: string; url: string; caption: string; postedAt: string | null; views: number | null; cover: string | null; products: Array<{ title: string | null; shop: string | null }> }
+interface Video { id: string; url: string; caption: string; postedAt: string | null; views: number | null; cover: string | null; products: Array<{ title: string | null; shop: string | null }>
+  /** Seconds; 0 is a photo post (pictures with music, no video file to save). */
+  duration?: number | null }
+/** A photo post: TikTok gives it no length, and it has no video file to save. */
+const isPhotoPost = (v: { duration?: number | null } | undefined) => v?.duration === 0
+const clock = (s: number) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, '0')}`
 interface Match { brandId: string; name: string; sureness: Sureness; videoIds: string[]; how: Array<{ kind: MatchKind; videoId: string; text: string; count?: number }>; newestAt: string | null; foundAt: string; joinedTrybeAt: string | null }
 interface Scan { id: string | null; source: string | null; status: string | null; read: number; total: number | null; withProduct: number; reachedEnd: boolean | null; error: string | null; startedAt: string | null; updatedAt: string | null; finishedAt: string | null }
 interface Library { handle: string; name: string | null; avatar: string | null; videoCount: number | null; privateAccount: boolean | null; scan: Scan; daily: boolean; kept: number; matchedAt: string | null; matchedNote: string | null; matchedBrands: number }
@@ -390,6 +395,14 @@ const DL_WORDS: Record<string, string> = {
   timeout: 'The download took too long, and this SCOUT stopped without saying where. Check your Downloads folder. SCOUT 1.60.2 follows a slow download to the end and says how far it got; Chrome updates SCOUT by itself.',
   'asked-where': 'Chrome asked where to save the video, and no folder was chosen. If you saw no Save window, open Chrome\u2019s Settings, then Downloads, and turn off \u201CAsk where to save each file before downloading\u201D. Then press Download again.',
   'open-tab-slow': 'SCOUT could not open TikTok in its window in time, so nothing was saved. Try again.',
+  // SCOUT 1.60.4.
+  'photo-post': 'This TikTok is a photo post (pictures with music), so there is no video file to save. TRYBE takes videos.',
+}
+/** A status TikTok's page gave instead of the video (SCOUT 1.60.4), in words. */
+function statusWords(code: number | null | undefined): string {
+  if (code === 10216 || code === 10222) return 'TikTok says this post is private, so SCOUT could not read it.'
+  if (code === 10204) return `TikTok would not show this post in SCOUT\u2019s window (TikTok status ${code}).`
+  return `TikTok showed a status instead of the video${code ? ` (TikTok status ${code})` : ''}.`
 }
 /** The step a download reached, for one that ran out of time (SCOUT 1.60.2). */
 const STEP_WORDS: Record<string, string> = {
@@ -443,10 +456,36 @@ function triedWords(tried: Array<{ way: string; result: string }> | undefined): 
 const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40) || 'brand'
 const fileFor = (brand: string, v: { id: string; postedAt: string | null }) => `${slug(brand)}-${v.postedAt ? v.postedAt.slice(0, 10) : 'tiktok'}-${v.id}`
 
+/** WHAT HAPPENED, KEPT (Seb, 2026-11-10: "It did not save, and it said try
+ *  again", the reason gone with the toast). Each download's full answer is kept
+ *  in this browser (the last 20), and a failed one's words stay under the card
+ *  until the next try, with Copy details for the team. */
+export interface DownloadReport {
+  at: string; videoId: string; brand: string; ok: boolean; why: string | null
+  error: string | null; step: string | null; way: string | null; from: string | null
+  bytes: number | null; total: number | null; status: number | null; seen: string | null
+  tried: Array<{ from: string; way: string; result: string }>; scout: string | null
+  /** Tried from a TikTok tab in front of the creator (SCOUT 1.60.4). */
+  visible?: boolean
+}
+const LOG_KEY = 'mvp.tiktokDownloads.v1'
+export function readDownloadLog(): DownloadReport[] {
+  try { const v = JSON.parse(localStorage.getItem(LOG_KEY) || '[]'); return Array.isArray(v) ? v : [] } catch { return [] }
+}
+function keepDownloadReport(r: DownloadReport) {
+  try { localStorage.setItem(LOG_KEY, JSON.stringify([r, ...readDownloadLog()].slice(0, 20))) } catch { /* private window: nothing kept */ }
+}
+/** The last failed try of each video, for its card after a reload. */
+function lastFailures(): Record<string, DownloadReport> {
+  const out: Record<string, DownloadReport> = {}
+  for (const r of readDownloadLog().slice().reverse()) { if (r.ok) delete out[r.videoId]; else out[r.videoId] = r }
+  return out
+}
+
 /** Save one video to the creator's Downloads through SCOUT; says what happened.
  *  SCOUT 1.60.2 also says how far it is (onProgress), and when Chrome asks
  *  where to save, the creator is told to choose a folder. */
-async function downloadVideo(handle: string, brand: string, v: { id: string; postedAt: string | null }, openUpload?: () => void, onProgress?: (words: string) => void): Promise<boolean> {
+async function downloadVideo(handle: string, brand: string, v: { id: string; postedAt: string | null }, openUpload?: () => void, onProgress?: (words: string) => void, visible = false): Promise<DownloadReport> {
   let told = false
   const r = await requestTikTokDownload(handle, v.id, fileFor(brand, v), (p) => {
     onProgress?.(progressWords(p))
@@ -454,24 +493,33 @@ async function downloadVideo(handle: string, brand: string, v: { id: string; pos
       told = true
       toast.info('Chrome is asking where to save the video: choose a folder in Chrome\u2019s Save window. Chrome asks because \u201CAsk where to save each file before downloading\u201D is on in its Downloads settings.', { duration: 15000 })
     }
-  })
+  }, { visible })
+  const report = (why: string | null): DownloadReport => {
+    const rep: DownloadReport = {
+      at: new Date().toISOString(), videoId: v.id, brand, ok: !!r.ok, why, visible, error: r.error ?? null, step: r.step ?? null, way: r.way ?? null, from: r.from ?? null,
+      bytes: r.bytes ?? null, total: r.total ?? null, status: r.status ?? null, seen: r.seen ?? null, tried: r.tried ?? [], scout: r.scout ?? null,
+    }
+    keepDownloadReport(rep)
+    return rep
+  }
   if (r.ok) {
     const mb = r.bytes ? ` (${(r.bytes / 1_048_576).toFixed(1)} MB)` : ''
     const file = (r.file || `${fileFor(brand, v)}.mp4`).split(/[\\/]/).pop()
     toast.success(`Saved to your Downloads: ${file}${mb}`, openUpload ? { duration: 10000, action: { label: 'Upload to TRYBE', onClick: openUpload } } : undefined)
-    return true
+    return report(null)
   }
   const tried = r.state === 'old' ? null : triedWords(r.tried)
   const came = r.bytes ? ` ${mb(r.bytes)} MB${r.total ? ` of ${mb(r.total)} MB` : ''} had come in.` : ''
   const base = r.state === 'old' ? `${r.error} Chrome updates SCOUT by itself within a day.`
     : r.error === 'too-slow' ? `Not saved: SCOUT ran out of time while ${STEP_WORDS[r.step || ''] || 'saving it'}.${came}`
       : r.error === 'not-saved' && tried ? 'Not saved.'
-        : (r.error && DL_WORDS[r.error]) || `Not saved: ${r.error || 'SCOUT did not say why'}.`
+        : r.error === 'tiktok-status' ? statusWords(r.status)
+          : (r.error && DL_WORDS[r.error]) || `Not saved: ${r.error || 'SCOUT did not say why'}.`
   // What the page and the profile showed, when neither gave an address (SCOUT 1.60.3).
-  const seen = r.error === 'no-video-address' && r.seen ? ` (What SCOUT saw: ${r.seen})` : ''
+  const seen = (r.error === 'no-video-address' || r.error === 'tiktok-status') && r.seen ? ` (What SCOUT saw: ${r.seen})` : ''
   const why = `${tried ? `${base} ${tried}` : base}${seen}`
   toast.error(why, { duration: 12000 })
-  return false
+  return report(why)
 }
 
 /** The product these videos show, for scripts: a TikTok Shop tag's title, else
@@ -489,15 +537,25 @@ function MatchCard({ m, videos, brand, picked, onPick, scoutOpens, actions }: { 
   const [dlAll, setDlAll] = useState<{ done: number; of: number; id: string } | null>(null)
   // How far each running download is, in words (SCOUT 1.60.2 says).
   const [dlNow, setDlNow] = useState<Record<string, string>>({})
-  const saveOne = async (v: { id: string; postedAt: string | null }) => {
+  // A failed download's full answer stays under the card until the next try.
+  const [dlFail, setDlFail] = useState<Record<string, DownloadReport>>({})
+  useEffect(() => { const f = lastFailures(); setDlFail(Object.fromEntries(m.videoIds.filter((id) => f[id]).map((id) => [id, f[id]]))) }, [m.videoIds])
+  const saveOne = async (v: { id: string; postedAt: string | null }, visible = false) => {
     setDl((d) => ({ ...d, [v.id]: 'busy' }))
-    const ok = await downloadVideo(actions.handle, m.name, v, actions.openUpload, (w) => setDlNow((n) => (n[v.id] === w ? n : { ...n, [v.id]: w })))
-    setDl((d) => ({ ...d, [v.id]: ok ? 'done' : 'failed' }))
+    setDlFail((f) => { const { [v.id]: _old, ...rest } = f; void _old; return rest })
+    const rep = await downloadVideo(actions.handle, m.name, v, actions.openUpload, (w) => setDlNow((n) => (n[v.id] === w ? n : { ...n, [v.id]: w })), visible)
+    setDl((d) => ({ ...d, [v.id]: rep.ok ? 'done' : 'failed' }))
+    if (!rep.ok) setDlFail((f) => ({ ...f, [v.id]: rep }))
     setDlNow((n) => { const { [v.id]: _gone, ...rest } = n; void _gone; return rest })
-    return ok
+    return rep.ok
   }
+  const copyReport = async (rep: DownloadReport) => {
+    try { await navigator.clipboard.writeText(JSON.stringify(rep, null, 1)); toast.success('Details copied. Paste them in a message to the MVP team.') } catch { toast.error('Copying was blocked; select the words under the card instead.') }
+  }
+  // Photo posts have no video file, so Download all leaves them out.
+  const savable = m.videoIds.filter((id) => !isPhotoPost(videos[id]))
   const saveAll = async () => {
-    const all = m.videoIds.map((id) => videos[id] ?? { id, postedAt: null })
+    const all = savable.map((id) => videos[id] ?? { id, postedAt: null })
     for (let i = 0; i < all.length; i++) {
       setDlAll({ done: i, of: all.length, id: all[i].id })
       // One failed download stops the rest: the reason is said once, not for every video.
@@ -543,23 +601,44 @@ function MatchCard({ m, videos, brand, picked, onPick, scoutOpens, actions }: { 
                       <img src={v.cover} alt="" loading="lazy" className="absolute inset-0 w-full h-full object-cover" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }} />
                     )}
                     {v.views != null && <span className="absolute left-1 bottom-1 text-[10.5px] font-bold rounded px-1 inline-flex items-center gap-0.5" style={{ background: 'rgba(0,0,0,0.6)', color: '#fff' }}><Eye size={10} />{compact(v.views)}</span>}
+                    {v.duration != null && <span className="absolute right-1 top-1 text-[10px] font-bold rounded px-1" style={{ background: 'rgba(0,0,0,0.6)', color: '#fff' }}>{isPhotoPost(v) ? 'Photos' : clock(v.duration)}</span>}
                   </span>
                   <span className="block px-1.5 pt-1 text-[10.5px] leading-tight">
                     <span className="font-semibold inline-flex items-center gap-0.5 whitespace-nowrap text-[10px] group-hover:underline" style={{ color: ACCENT }}>Watch on TikTok <ExternalLink size={9} /></span>
                     {v.postedAt && <span className="block" style={soft}>{day(v.postedAt)}</span>}
                   </span>
                 </a>
+                {isPhotoPost(v) ? (
+                  <p className="px-1.5 pb-1.5 pt-0.5 text-[10.5px]" style={soft} title="A photo post is pictures with music, so there is no video file to save. TRYBE takes videos.">Photo post, no video file</p>
+                ) : (
                 <button type="button" onClick={() => void saveOne(v)} disabled={dl[v.id] === 'busy' || !!dlAll}
                   className="w-full px-1.5 pb-1.5 pt-0.5 text-left text-[10.5px] font-semibold inline-flex items-center gap-1 disabled:opacity-60 hover:underline"
                   style={{ color: dl[v.id] === 'failed' ? AMBER : 'var(--text)' }} title="Save this video to your Downloads folder, to upload it to TRYBE">
                   {dl[v.id] === 'busy' ? <Loader2 size={11} className="animate-spin" /> : dl[v.id] === 'done' ? <Check size={11} /> : <Download size={11} />}
                   {dl[v.id] === 'busy' ? (dlNow[v.id] || 'Saving') : dl[v.id] === 'done' ? 'Saved' : dl[v.id] === 'failed' ? 'Try again' : 'Download'}
                 </button>
+                )}
               </div>
             ))}
             {m.videoIds.length > vids.length && <span className="self-center text-[12px] shrink-0" style={soft}>and {m.videoIds.length - vids.length} more</span>}
           </div>
         )}
+        {Object.values(dlFail).map((rep) => (
+          <div key={rep.videoId} className="mt-2 rounded-lg border px-2.5 py-2 text-[12px] select-text" style={{ borderColor: 'rgba(180,83,9,0.35)', background: 'rgba(180,83,9,0.06)', color: 'var(--text-2)' }}>
+            <p className="break-words"><span className="font-semibold" style={{ color: AMBER }}>Not saved{videos[rep.videoId]?.postedAt ? ` (video of ${day(videos[rep.videoId]!.postedAt!)})` : ''}:</span> {rep.why?.replace(/^Not saved[.:]\s*/, '')}</p>
+            <p className="mt-1 text-[11px]" style={soft}>
+              {new Date(rep.at).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}{rep.scout ? `, SCOUT ${rep.scout}` : ''}{rep.visible ? ', from a visible TikTok tab' : ''}{' '}
+              <button type="button" onClick={() => void copyReport(rep)} className="underline font-semibold" style={{ color: ACCENT }}>Copy details</button>
+            </p>
+            {rep.error !== 'photo-post' && !rep.visible && (
+              <button type="button" onClick={() => void saveOne(videos[rep.videoId] ?? { id: rep.videoId, postedAt: null }, true)} disabled={dl[rep.videoId] === 'busy' || !!dlAll}
+                className="mt-1.5 inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[11.5px] font-semibold disabled:opacity-50" style={{ borderColor: 'var(--border-2)', color: 'var(--text)' }}
+                title="SCOUT opens the video on TikTok in a tab in front of you, saves it from there, then closes the tab. If this works when the usual way does not, SCOUT's hidden window is what stopped it.">
+                <ExternalLink size={11} /> Try in a visible TikTok tab
+              </button>
+            )}
+          </div>
+        ))}
         {/* RIGHT FROM THE MATCH (Seb, 2026-11-09: "is there a direct way right
             there to request partnership with the brand and then also create
             scripts all from there?"). */}
@@ -578,10 +657,10 @@ function MatchCard({ m, videos, brand, picked, onPick, scoutOpens, actions }: { 
           {drafted && actions.openQueue && (
             <button type="button" onClick={actions.openQueue} className="text-[12.5px] font-semibold underline" style={{ color: ACCENT }}>Read it first in Ready to send</button>
           )}
-          {actions.handle && (
+          {actions.handle && savable.length > 0 && (
             <button type="button" onClick={() => void saveAll()} disabled={!!dlAll} className={`${btn} border`} style={{ borderColor: 'var(--border-2)', color: 'var(--text)' }}
               title="Save every video of this brand to your Downloads folder, one after another, to upload them to TRYBE">
-              {dlAll ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />} {dlAll ? `Saving ${dlAll.done + 1} of ${dlAll.of}${dlNow[dlAll.id] ? `: ${dlNow[dlAll.id]}` : ''}` : m.videoIds.length > 1 ? `Download all ${m.videoIds.length} videos` : 'Download the video'}
+              {dlAll ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />} {dlAll ? `Saving ${dlAll.done + 1} of ${dlAll.of}${dlNow[dlAll.id] ? `: ${dlNow[dlAll.id]}` : ''}` : savable.length > 1 ? `Download all ${savable.length} videos` : 'Download the video'}
             </button>
           )}
           {actions.scripts && (

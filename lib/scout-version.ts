@@ -8,7 +8,7 @@
  *     store installs to "update" — isScoutOutdated survives only as a
  *     low-level helper, not a user-facing gate.
  */
-export const SCOUT_LATEST_VERSION = '1.60.3'
+export const SCOUT_LATEST_VERSION = '1.60.4'
 
 /** One-line "what's new". No longer shown in a nag (store installs auto-update);
  *  kept as a changelog note for whoever bumps the version. */
@@ -212,3 +212,6 @@ export const SCOUT_TIKTOK_DOWNLOAD_MIN_VERSION = '1.60.0'
  *  waits while Chrome asks where to save, and is always answered with the step
  *  it reached (Seb, 2026-11-09: 1.60.1 still ended in "took too long"). */
 export const SCOUT_TIKTOK_DL_PROGRESS_MIN_VERSION = '1.60.2'
+/** SCOUT 1.60.4: a download from a TikTok tab in front of the creator, on
+ *  their ask, to tell whether SCOUT's hidden window is what stops it. */
+export const SCOUT_TIKTOK_VISIBLE_MIN_VERSION = '1.60.4'

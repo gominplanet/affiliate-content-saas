@@ -12607,7 +12607,7 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
     // time limit starts when it starts, and it is always answered with how
     // far it got (ttDownloadBounded), so one that will not end never holds
     // up the next.
-    const args = { handle: msg.handle, videoId: msg.videoId, filename: msg.filename }
+    const args = { handle: msg.handle, videoId: msg.videoId, filename: msg.filename, visible: msg.visible === true }
     ttDlWaiting++
     const job = ttDlBusy.then(() => { ttDlWaiting = Math.max(0, ttDlWaiting - 1); return ttDownloadBounded(args) })
     ttDlBusy = job.catch(() => null)
@@ -16716,7 +16716,7 @@ async function ttDailyTick() {
   await ttScan({ handle: d.handle, scanId: s.data.scanId, origin: d.origin, daily: true })
 }
 try { chrome.alarms.onAlarm.addListener((a) => { if (a && a.name === TT_DAILY_ALARM) void ttDailyTick() }) } catch (e) {}
-// ── MATCH MY TIKTOK: DOWNLOAD A VIDEO (1.60.0 to 1.60.3) ─────────────────────
+// ── MATCH MY TIKTOK: DOWNLOAD A VIDEO (1.60.0 to 1.60.4) ─────────────────────
 // Seb, 2026-11-09: "can we also add a download button for each video matched
 // so users can then re-upload those to trybe". The creator's own video, from
 // its own page on TikTok, opened in SCOUT's minimized window: SCOUT reads the
@@ -16770,11 +16770,34 @@ function ttLimit(p, ms, code) {
 // best first, and what the page showed (1.60.3: Seb's try on 1.60.2 found no
 // address, and nothing said what the page held). The video is looked for in
 // TikTok's page data under any video detail name, then anywhere in it by its
-// id, then in older page data. EVERYTHING IT USES IS INSIDE IT.
+// id, then in older page data.
+//
+// 1.60.4 (Seb's try on 1.60.3 failed again; tested against real TikTok on
+// 2026-11-10, where both ways saved a public video): best first means a file
+// every player and TRYBE take. TikTok lists several versions; yt-dlp's notes
+// and the test agree: H.264 plays everywhere, H.265 (bytevc1) less so, and
+// bytevc2 plays nowhere, so it is left out. Addresses on www.tiktok.com come
+// last (they refuse a download without the page behind it, and yt-dlp drops
+// them as broken), then the watermarked download version. The page also says
+// whether it is TikTok's "Please wait..." check (its own code finishes it and
+// reloads; SCOUT only waits), a photo post (pictures, no video file), or a
+// status TikTok gave instead of the video. EVERYTHING IT USES IS INSIDE IT.
 function ttVideoUrlsInPage(videoId) {
   const want = String(videoId || '')
-  const out = []
-  const add = (u, from) => { if (typeof u === 'string' && /^https:\/\//.test(u) && !out.some((x) => x.url === u)) out.push({ url: u, from }) }
+  const cands = []
+  const seenUrl = {}
+  const rankOf = (key, u, base) => {
+    const k = String(key || '')
+    let r = base + (/_h264_/i.test(k) ? 0 : /_bytevc1_|hvc1/i.test(k) ? 2 : 1)
+    if (/^https:\/\/www\.tiktok\.com\//.test(u)) r += 4
+    return r
+  }
+  const add = (u, from, key, br, base) => {
+    if (typeof u !== 'string' || !/^https:\/\//.test(u) || seenUrl[u]) return
+    if (/_bytevc2_/i.test(String(key || ''))) return
+    seenUrl[u] = 1
+    cands.push({ url: u, from, rank: rankOf(key, u, base), br: br || 0 })
+  }
   const isItem = (o) => !!o && typeof o === 'object' && !!o.video && typeof o.video === 'object' && (!want || String(o.id) === want)
   const findItem = (root) => {
     const q = [root]
@@ -16790,6 +16813,7 @@ function ttVideoUrlsInPage(videoId) {
   let hasData = false
   let scopes = []
   let status = null
+  let statusMsg = ''
   try {
     const el = document.getElementById('__UNIVERSAL_DATA_FOR_REHYDRATION__')
     const j = el ? JSON.parse(el.textContent || '{}') : null
@@ -16799,46 +16823,57 @@ function ttVideoUrlsInPage(videoId) {
       scopes = Object.keys(scope).slice(0, 14)
       const k = Object.keys(scope).find((x) => /video.?detail/i.test(x))
       const d = k ? scope[k] : null
-      if (d && d.statusCode != null) status = d.statusCode
+      if (d && d.statusCode != null) status = Number(d.statusCode)
+      if (d && d.statusMsg) statusMsg = String(d.statusMsg).slice(0, 60)
       const st = d && d.itemInfo && d.itemInfo.itemStruct
-      item = isItem(st) ? st : findItem(scope)
+      item = isItem(st) ? st : (st && st.imagePost ? st : findItem(scope))
     }
   } catch (e) {}
   try { const m = window.SIGI_STATE && window.SIGI_STATE.ItemModule; if (!item && m) item = m[want] || null } catch (e) {}
   try { if (!item) { const nd = document.getElementById('__NEXT_DATA__'); if (nd) item = findItem(JSON.parse(nd.textContent || '{}')) } } catch (e) {}
   const v = item && item.video
   if (v) {
-    // The highest quality first, from TikTok's own list of versions.
-    const rates = Array.isArray(v.bitrateInfo) ? v.bitrateInfo.slice().sort((a, b) => (b.Bitrate || 0) - (a.Bitrate || 0)) : []
-    for (const r of rates) for (const u of ((r.PlayAddr && r.PlayAddr.UrlList) || [])) add(u, 'bitrate')
-    for (const u of ((v.PlayAddrStruct && v.PlayAddrStruct.UrlList) || [])) add(u, 'play')
-    add(v.playAddr, 'play')
-    add(v.downloadAddr, 'download')
+    for (const r of (Array.isArray(v.bitrateInfo) ? v.bitrateInfo : [])) {
+      const key = (r.PlayAddr && r.PlayAddr.UrlKey) || r.GearName || r.CodecType || ''
+      for (const u of ((r.PlayAddr && r.PlayAddr.UrlList) || [])) add(u, 'bitrate', key, r.Bitrate, 0)
+    }
+    for (const u of ((v.PlayAddrStruct && v.PlayAddrStruct.UrlList) || [])) add(u, 'play', v.codecType || '', v.bitrate, 0)
+    add(v.playAddr, 'play', v.codecType || '', v.bitrate, 0)
+    add(v.downloadAddr, 'download', '', 0, 10)
   }
   const vid = document.querySelector('video')
   const src = vid ? String(vid.currentSrc || vid.src || '') : ''
-  if (vid) { add(src, 'player'); for (const s of Array.from(vid.querySelectorAll('source'))) add(s.src, 'player') }
+  if (vid) { add(src, 'player', '', 0, 12); for (const s of Array.from(vid.querySelectorAll('source'))) add(s.src, 'player', '', 0, 12) }
+  cands.sort((a, b) => a.rank - b.rank || b.br - a.br)
   const text = String((document.body && document.body.innerText) || '').slice(0, 4000)
+  const challenge = !hasData && (!!document.getElementById('wci') || (!!document.getElementById('cs') && /please wait/i.test(text)))
+  const photo = !!(item && item.imagePost && Array.isArray(item.imagePost.images) && item.imagePost.images.length)
   const seen = [
     'page ' + String(location.pathname || '').slice(0, 60),
+    challenge ? 'TikTok check page (Please wait)' : null,
     'data ' + (hasData ? 'yes' + (scopes.length ? ' (' + scopes.join(',') + ')' : '') : 'no'),
-    status != null ? 'status ' + status : null,
+    status != null ? 'status ' + status + (statusMsg ? ' ' + statusMsg : '') : null,
     'video ' + (item ? 'found' : 'not found'),
+    photo ? 'photo post (' + item.imagePost.images.length + ' pictures)' : null,
     v ? 'video fields ' + Object.keys(v).slice(0, 14).join(',') : null,
+    v && Array.isArray(v.bitrateInfo) ? 'versions ' + v.bitrateInfo.map((r) => String((r.PlayAddr && r.PlayAddr.UrlKey) || '').replace(/^v[^_]+_/, '')).join(' ').slice(0, 120) : null,
     'player ' + (vid ? (src.split(':')[0] || 'no address') : 'none'),
-  ].filter(Boolean).join('; ').slice(0, 420)
+  ].filter(Boolean).join('; ').slice(0, 520)
   return {
-    urls: out.slice(0, 8),
+    urls: cands.slice(0, 8).map((c) => ({ url: c.url, from: c.from })),
     found: !!item,
     seen,
+    status,
+    challenge,
+    photo,
     puzzle: /drag the (puzzle|slider)|verify to continue|select 2 objects that are the same/i.test(text),
     gone: /video (is )?(currently )?unavailable|couldn.?t find this (video|post)|this post is private|this video is private/i.test(text),
   }
 }
 
-// In page, on the creator's profile: one video's addresses, from the video
-// grid TikTok's page received (kept by tiktok-videos-hook.js, as the scan
-// reads it). EVERYTHING IT USES IS INSIDE IT.
+// In page, on the creator's profile: one video's addresses, best first as on
+// the video's page, from the video grid TikTok's page received (kept by
+// tiktok-videos-hook.js, as the scan reads it). EVERYTHING IT USES IS INSIDE IT.
 function ttItemUrlsInPage(videoId) {
   const t = window.__mvpTt
   const want = String(videoId || '')
@@ -16852,20 +16887,33 @@ function ttItemUrlsInPage(videoId) {
       if (d && Array.isArray(d.itemList)) it = d.itemList.find((x) => x && String(x.id) === want) || null
     }
   } catch (e) {}
-  const out = []
-  const add = (u, from) => { if (typeof u === 'string' && /^https:\/\//.test(u) && !out.some((x) => x.url === u)) out.push({ url: u, from }) }
+  const cands = []
+  const seenUrl = {}
+  const add = (u, from, key, br, base) => {
+    if (typeof u !== 'string' || !/^https:\/\//.test(u) || seenUrl[u]) return
+    const k = String(key || '')
+    if (/_bytevc2_/i.test(k)) return
+    seenUrl[u] = 1
+    let r = base + (/_h264_/i.test(k) ? 0 : /_bytevc1_|hvc1/i.test(k) ? 2 : 1)
+    if (/^https:\/\/www\.tiktok\.com\//.test(u)) r += 4
+    cands.push({ url: u, from, rank: r, br: br || 0 })
+  }
   const v = it && it.video
   if (v) {
-    const rates = Array.isArray(v.bitrateInfo) ? v.bitrateInfo.slice().sort((a, b) => (b.Bitrate || 0) - (a.Bitrate || 0)) : []
-    for (const r of rates) for (const u of ((r.PlayAddr && r.PlayAddr.UrlList) || [])) add(u, 'grid-bitrate')
-    for (const u of ((v.PlayAddrStruct && v.PlayAddrStruct.UrlList) || [])) add(u, 'grid-play')
-    add(v.playAddr, 'grid-play')
-    add(v.downloadAddr, 'grid-download')
+    for (const r of (Array.isArray(v.bitrateInfo) ? v.bitrateInfo : [])) {
+      const key = (r.PlayAddr && r.PlayAddr.UrlKey) || r.GearName || r.CodecType || ''
+      for (const u of ((r.PlayAddr && r.PlayAddr.UrlList) || [])) add(u, 'grid-bitrate', key, r.Bitrate, 0)
+    }
+    for (const u of ((v.PlayAddrStruct && v.PlayAddrStruct.UrlList) || [])) add(u, 'grid-play', v.codecType || '', v.bitrate, 0)
+    add(v.playAddr, 'grid-play', v.codecType || '', v.bitrate, 0)
+    add(v.downloadAddr, 'grid-download', '', 0, 10)
   }
+  cands.sort((a, b) => a.rank - b.rank || b.br - a.br)
   const text = String((document.body && document.body.innerText) || '').slice(0, 4000)
   return {
     found: !!it,
-    urls: out.slice(0, 8),
+    urls: cands.slice(0, 8).map((c) => ({ url: c.url, from: c.from })),
+    photo: !!(it && it.imagePost),
     have: t && Array.isArray(t.items) ? t.items.length : 0,
     hasMore: t ? t.hasMore : null,
     hooked: !!t,
@@ -16979,7 +17027,9 @@ async function ttFollowDownload(job, id, deadline, onAsk) {
     const d = items && items[0]
     if (!d) return { ok: false, error: 'chrome-gone' }
     if (d.state === 'complete') return { ok: true, bytes: d.fileSize || d.bytesReceived || null, file: d.filename }
-    if (d.state === 'interrupted') return { ok: false, error: 'chrome-' + (d.error || 'interrupted') }
+    // A refused try is taken off Chrome's list (1.60.4), so a creator never sees
+    // "Failed - Forbidden" next to the copy that was saved.
+    if (d.state === 'interrupted') { try { chrome.downloads.erase({ id }) } catch (e) {} return { ok: false, error: 'chrome-' + (d.error || 'interrupted') } }
     ttDlSet(job, { bytes: d.bytesReceived || 0, total: d.totalBytes > 0 ? d.totalBytes : 0 })
     if (d.bytesReceived !== last) { last = d.bytesReceived; lastMove = Date.now() }
     // Bytes coming in but still no file name: Chrome is asking where to save.
@@ -17059,7 +17109,7 @@ async function ttPageSave(job, tabId, c, name, withSignIn) {
   }
 }
 
-async function ttDownload(now, { handle, videoId, filename }) {
+async function ttDownload(now, { handle, videoId, filename, visible }) {
   const tried = now.tried
   const step = (s) => ttDlSet(now, { step: s })
   const say = (r) => Object.assign(r, { step: now.step, bytes: r.bytes != null ? r.bytes : now.bytes, total: now.total, tried: tried.slice() }, r.seen ? { seen: String(r.seen).slice(0, 600) } : {})
@@ -17072,23 +17122,34 @@ async function ttDownload(now, { handle, videoId, filename }) {
   let tabId = null
   try {
     step('opening')
-    const tab = await ttLimit(openWorkTab(`https://www.tiktok.com/@${encodeURIComponent(h)}/video/${encodeURIComponent(id)}`), 20000, 'open-tab-slow')
+    const videoUrl = `https://www.tiktok.com/@${encodeURIComponent(h)}/video/${encodeURIComponent(id)}`
+    // 1.60.4: on the creator's ask, a TikTok tab in front of them instead of
+    // SCOUT's minimized window (the same steps; the tab closes after), to tell
+    // whether the hidden window is what stops it.
+    const tab = visible
+      ? await ttLimit(chrome.tabs.create({ url: videoUrl, active: true }), 20000, 'open-tab-slow')
+      : await ttLimit(openWorkTab(videoUrl), 20000, 'open-tab-slow')
     tabId = tab.id
-    quietTabIds.add(tabId)
-    void quietShim(tabId)
+    if (!visible) { quietTabIds.add(tabId); void quietShim(tabId) }
     await waitForTabLoad(tabId, 30000)
     step('finding')
     let found = null
     let empty = 0
-    for (let i = 0; i < 12 && !now.stop; i++) {
+    for (let i = 0; i < 40 && !now.stop; i++) {
       await _sleep(1000)
       try { found = await ttLimit(trybeRun(ttVideoUrlsInPage, [id], tabId), 10000, 'page-busy') } catch (e) { found = null }
-      if (found && (found.puzzle || found.gone || found.urls.length)) break
+      if (found && (found.puzzle || found.gone || found.photo || found.urls.length)) break
+      // A status instead of the video: no use waiting for it.
+      if (found && found.status != null && found.status !== 0) break
+      // TikTok's "Please wait..." check: its own code finishes it and
+      // reloads the page; SCOUT only waits (up to 40 seconds), never solves it.
+      if (found && found.challenge) continue
       // The page answered six times with no address: on to the profile.
       if (found && ++empty >= 6) break
     }
     if (found && found.puzzle) return say({ ok: false, error: 'puzzle' })
     if (found && found.gone) return say({ ok: false, error: 'gone' })
+    if (found && found.photo) return say({ ok: false, error: 'photo-post', seen: found.seen })
     const pageSaw = found ? found.seen : 'no answer from the page'
     if (!found || !found.urls.length) {
       // 1.60.3: the video's page gave no address; the profile's own video
@@ -17096,13 +17157,16 @@ async function ttDownload(now, { handle, videoId, filename }) {
       step('profile')
       const g = await ttFromProfile(now, tabId, h, id)
       if (g && g.puzzle) return say({ ok: false, error: 'puzzle' })
+      if (g && g.found && g.photo) return say({ ok: false, error: 'photo-post', seen: `${pageSaw} | profile: a photo post` })
       const gridSaw = !g ? 'profile: no answer' : g.found ? `profile: video found${g.urls.length ? '' : `, no address (fields ${g.fields})`}` : `profile: ${g.have} videos read, this one not among them${g.hooked ? '' : ' (grid not read)'}`
-      if (!g || !g.urls.length) return say({ ok: false, error: 'no-video-address', seen: `${pageSaw} | ${gridSaw}` })
+      if (!g || !g.urls.length) return say({ ok: false, error: found && found.status ? 'tiktok-status' : 'no-video-address', status: found ? found.status : null, seen: `${pageSaw} | ${gridSaw}` })
       found = { urls: g.urls }
     }
     // 1. Chrome's own downloads, followed by their id while they move.
     step('chrome')
-    for (const c of found.urls.slice(0, 3)) {
+    // Up to four addresses: TikTok's servers differ in whether they answer a
+    // download without the page behind it (tested 2026-11-10: v16 refused, v19 gave it).
+    for (const c of found.urls.slice(0, 4)) {
       if (now.stop) break
       let dlId = null
       try { dlId = await ttLimit(chrome.downloads.download({ url: c.url, filename: name, conflictAction: 'uniquify', saveAs: false }), 15000, 'chrome-start-slow') } catch (e) { tried.push({ from: c.from, way: 'chrome', result: 'chrome-start: ' + (e && e.message ? e.message : 'error') }); continue }
@@ -17117,7 +17181,7 @@ async function ttDownload(now, { handle, videoId, filename }) {
     // 2. TikTok's page fetches its own file and saves it: with its sign-in,
     //    then without (an address that refuses a signed-in read from the page).
     step('page')
-    for (const c of found.urls.slice(0, 2)) {
+    for (const c of found.urls.slice(0, 3)) {
       for (const withSignIn of [true, false]) {
         if (now.stop) break
         ttDlSet(now, { bytes: 0, total: 0, asking: false })

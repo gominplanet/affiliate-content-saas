@@ -17,13 +17,18 @@
 //   the video's page gives no address (Seb's try on 1.60.2): found in the
 //     profile's own video grid, scrolled until it comes, and saved
 //   neither gives one: said, with what the page and the profile showed
+//   a photo post (1.60.4): said, nothing tried
+//   a status TikTok gave instead of the video: said with its code
+// and the page reading itself, on a page shaped like TikTok's (tested against
+// real TikTok on 2026-11-10): H.264 first, bytevc2 left out, www.tiktok.com
+// addresses last, its "Please wait..." check and photo posts told apart.
 import { readFileSync } from 'node:fs'
 
 const fails: string[] = []
 const check = (name: string, ok: boolean | undefined) => { if (!ok) fails.push(name) }
 
 const B = readFileSync('extension/background.js', 'utf8')
-const from = B.indexOf('// ── MATCH MY TIKTOK: DOWNLOAD A VIDEO (1.60.0 to 1.60.3)')
+const from = B.indexOf('// ── MATCH MY TIKTOK: DOWNLOAD A VIDEO (1.60.0 to 1.60.4)')
 const to = B.indexOf('let ttDlBusy = Promise.resolve()')
 check('the download section is where this check looks for it', from > 0 && to > from)
 let sec = B.slice(from, to)
@@ -164,8 +169,49 @@ const ways = (r: Any) => (r.tried || []).map((t: Any) => `${t.way}:${t.result}`)
       const r = await s.run(ARGS)
       check(`with no address on the page or the profile, it says what each showed (${r.seen})`, !r.ok && r.error === 'no-video-address' && /data no; video not found/.test(r.seen || '') && /profile: 120 videos read, this one not among them/.test(r.seen || ''))
     },
+    async () => {
+      const photo = () => ({ urls: [], found: true, photo: true, seen: 'page /@x/video/1; data yes; video found; photo post (6 pictures)' })
+      const s = scout({ urls: photo, chromeDl: () => item(), windows: [] })
+      const r = await s.run(ARGS)
+      check(`a photo post is said, and nothing is tried (${r.error})`, !r.ok && r.error === 'photo-post' && r.tried.length === 0)
+    },
+    async () => {
+      const blocked = () => ({ urls: [], found: false, status: 10204, seen: 'page /@x/video/1; data yes; status 10204; video not found' })
+      const s = scout({ urls: blocked, chromeDl: () => item(), windows: [], max: 25000, grid: () => ({ found: false, urls: [], have: 40, hasMore: false, hooked: true }) })
+      const r = await s.run(ARGS)
+      check(`a status TikTok gave instead of the video is said with its code (${r.error} ${r.status})`, !r.ok && r.error === 'tiktok-status' && r.status === 10204 && /status 10204/.test(r.seen || ''))
+    },
   ].map((f) => f()))
+
+  // ── The page reading, on a page shaped like TikTok's ──
+  {
+    const fn = sec.slice(sec.indexOf('function ttVideoUrlsInPage'), sec.indexOf('// In page, on the creator\'s profile'))
+    const page = (data: Any, extra: { ids?: string[]; text?: string } = {}) => {
+      const doc = {
+        getElementById: (id: string) => id === '__UNIVERSAL_DATA_FOR_REHYDRATION__' && data ? { textContent: JSON.stringify(data) } : (extra.ids || []).includes(id) ? {} : null,
+        querySelector: () => null,
+        body: { innerText: extra.text || '' },
+      }
+      return new Function('document', 'window', 'location', `${fn}\nreturn ttVideoUrlsInPage('7471')`)(doc, {}, { pathname: '/@x/video/7471' }) as Any
+    }
+    const ver = (key: string, br: number, hosts: string[]) => ({ Bitrate: br, PlayAddr: { UrlKey: key, UrlList: hosts.map((h) => `https://${h}/video/tos/${key}`) } })
+    const data = { __DEFAULT_SCOPE__: { 'webapp.video-detail': { statusCode: 0, itemInfo: { itemStruct: { id: '7471', video: {
+      bitrateInfo: [ver('v1_bytevc2_1080p_3000000', 3000000, ['v16.tiktok.com']), ver('v1_bytevc1_1080p_2500000', 2500000, ['v16.tiktok.com']), ver('v1_h264_720p_1900000', 1900000, ['www.tiktok.com', 'v16.tiktok.com', 'v19.tiktok.com']), ver('v1_h264_540p_1100000', 1100000, ['v16.tiktok.com'])],
+      playAddr: 'https://v16.tiktok.com/video/tos/play', downloadAddr: 'https://v16.tiktok.com/video/tos/download' } } } } } }
+    const r = page(data)
+    const order = r.urls.map((u: Any) => u.url.replace('https://', '').replace('/video/tos/', ' '))
+    check(`H.264 comes first, best first, www.tiktok.com after, bytevc2 left out, the watermarked version near the end (${order.join(' | ')})`,
+      order[0] === 'v16.tiktok.com v1_h264_720p_1900000' && order[1] === 'v19.tiktok.com v1_h264_720p_1900000' && order[2] === 'v16.tiktok.com v1_h264_540p_1100000'
+      && !order.some((o: string) => /bytevc2/.test(o)) && order.indexOf('www.tiktok.com v1_h264_720p_1900000') > order.indexOf('v16.tiktok.com v1_bytevc1_1080p_2500000') && order.indexOf('v16.tiktok.com download') > order.indexOf('v16.tiktok.com play'))
+    check('what the page held is said, with the versions TikTok listed', /data yes \(webapp\.video-detail\); status 0; video found/.test(r.seen) && /versions bytevc2_1080p_3000000 bytevc1_1080p_2500000 h264_720p_1900000/.test(r.seen))
+    const wait = page(null, { ids: ['cs', 'wci'], text: 'Please wait...' })
+    check('TikTok’s "Please wait..." check page is told apart, so SCOUT waits for it', wait.challenge === true && wait.urls.length === 0 && /TikTok check page/.test(wait.seen))
+    const pics = page({ __DEFAULT_SCOPE__: { 'webapp.video-detail': { statusCode: 0, itemInfo: { itemStruct: { id: '7471', imagePost: { images: [{}, {}, {}] }, video: { duration: 0 } } } } } })
+    check('a photo post is told apart', pics.photo === true && pics.urls.length === 0 && /photo post \(3 pictures\)/.test(pics.seen))
+    const st = page({ __DEFAULT_SCOPE__: { 'webapp.video-detail': { statusCode: 10204, statusMsg: 'blocked' } } })
+    check('a status instead of the video is read', st.status === 10204 && st.found === false && /status 10204 blocked/.test(st.seen))
+  }
   if (fails.length) { console.error(`✗ ${fails.length} SCOUT TikTok download check(s) failed:\n  ${fails.join('\n  ')}`); process.exit(1) }
-  console.log('✓ SCOUT TikTok download: a refused, slow, asking, silent or broken download each ends saved or says where it stopped and how much came in, and a video its page hides is found on the profile')
+  console.log('✓ SCOUT TikTok download: a refused, slow, asking, silent or broken download each ends saved or says where it stopped and how much came in; a video its page hides is found on the profile; H.264 first; photo posts, TikTok statuses and its check page told apart')
   process.exit(0)
 })()

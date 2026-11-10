@@ -15,7 +15,7 @@
 
 import { rankScoutCopies, type ScoutCopy } from '@/lib/scout-copies'
 import { trybeTabError, TRYBE_NOT_OPEN, trybeDropped, trybeDroppedWords, TRYBE_DROP_WAITS_MS, type TrybeTabState } from '@/lib/trybe-tab'
-import { scoutAtLeast, SCOUT_FB_GROUP_MIN_VERSION, SCOUT_FB_GROUP_MEDIA_MIN_VERSION, SCOUT_FB_GROUP_WATCH_MIN_VERSION, SCOUT_FB_ACCESS_MIN_VERSION, SCOUT_FB_GROUP_CLIP_MIN_VERSION, SCOUT_TRYBE_MIN_VERSION, SCOUT_TRYBE_TAB_OPEN_MIN_VERSION, SCOUT_HASHTAG_TRENDS_MIN_VERSION, SCOUT_FB_REEL_JOB_MIN_VERSION, SCOUT_FB_GROUP_SEARCH_MIN_VERSION, SCOUT_TIKTOK_LIBRARY_MIN_VERSION, SCOUT_TIKTOK_DOWNLOAD_MIN_VERSION, SCOUT_TIKTOK_DL_PROGRESS_MIN_VERSION } from '@/lib/scout-version'
+import { scoutAtLeast, SCOUT_FB_GROUP_MIN_VERSION, SCOUT_FB_GROUP_MEDIA_MIN_VERSION, SCOUT_FB_GROUP_WATCH_MIN_VERSION, SCOUT_FB_ACCESS_MIN_VERSION, SCOUT_FB_GROUP_CLIP_MIN_VERSION, SCOUT_TRYBE_MIN_VERSION, SCOUT_TRYBE_TAB_OPEN_MIN_VERSION, SCOUT_HASHTAG_TRENDS_MIN_VERSION, SCOUT_FB_REEL_JOB_MIN_VERSION, SCOUT_FB_GROUP_SEARCH_MIN_VERSION, SCOUT_TIKTOK_LIBRARY_MIN_VERSION, SCOUT_TIKTOK_DOWNLOAD_MIN_VERSION, SCOUT_TIKTOK_DL_PROGRESS_MIN_VERSION, SCOUT_TIKTOK_VISIBLE_MIN_VERSION } from '@/lib/scout-version'
 
 export const SCOUT_EXTENSION_ID = process.env.NEXT_PUBLIC_SCOUT_EXTENSION_ID || ''
 
@@ -1262,6 +1262,10 @@ export interface TikTokDownloadResult {
   step?: string; total?: number
   /** SCOUT 1.60.3: what the video's page and the profile showed, when neither gave an address. */
   seen?: string
+  /** SCOUT 1.60.4: the status TikTok's page gave instead of the video (10204, 10216, 10222). */
+  status?: number | null
+  /** The SCOUT version that answered, for the report MVP keeps. */
+  scout?: string | null
 }
 /** How far a download is, as SCOUT 1.60.2 says (MVP_TIKTOK_DL_STATUS). */
 export interface TikTokDownloadProgress {
@@ -1277,11 +1281,13 @@ export interface TikTokDownloadProgress {
  *  Downloads folder. 'old': this SCOUT cannot yet. SCOUT 1.60.2 also says how
  *  far it is while it runs (onProgress), and follows a slow download to the
  *  end, so MVP waits for its answer rather than giving up at a fixed time. */
-export async function requestTikTokDownload(handle: string, videoId: string, filename: string, onProgress?: (p: TikTokDownloadProgress) => void): Promise<TikTokDownloadResult & { state?: 'old' | 'no-scout' }> {
+export async function requestTikTokDownload(handle: string, videoId: string, filename: string, onProgress?: (p: TikTokDownloadProgress) => void, opts: { visible?: boolean } = {}): Promise<TikTokDownloadResult & { state?: 'old' | 'no-scout' }> {
   const status = await getScoutStatus()
   if (!status.installed) return { ok: false, error: 'SCOUT is not installed in this Chrome.', state: 'no-scout' }
   if (!scoutAtLeast(status.version, SCOUT_TIKTOK_DOWNLOAD_MIN_VERSION)) return { ok: false, error: `Downloading needs SCOUT ${SCOUT_TIKTOK_DOWNLOAD_MIN_VERSION}.`, state: 'old' }
   const tells = scoutAtLeast(status.version, SCOUT_TIKTOK_DL_PROGRESS_MIN_VERSION)
+  // A visible TikTok tab (SCOUT 1.60.4); an older SCOUT ignores the ask and uses its own window.
+  const visible = !!opts.visible && scoutAtLeast(status.version, SCOUT_TIKTOK_VISIBLE_MIN_VERSION)
   let poll: ReturnType<typeof setInterval> | null = null
   if (tells && onProgress) {
     poll = setInterval(() => {
@@ -1296,8 +1302,8 @@ export async function requestTikTokDownload(handle: string, videoId: string, fil
   try {
     // 1.60.2 always answers (its own limit is under five minutes, more while
     // Chrome waits for a folder, after any download queued before it).
-    const res = await sendToExtension<TikTokDownloadResult>({ type: 'MVP_TIKTOK_DOWNLOAD', handle, videoId, filename }, tells ? 20 * 60_000 : 150_000)
-    return res || { ok: false, error: 'SCOUT did not answer.' }
+    const res = await sendToExtension<TikTokDownloadResult>({ type: 'MVP_TIKTOK_DOWNLOAD', handle, videoId, filename, visible }, tells ? 20 * 60_000 : 150_000)
+    return { ...(res || { ok: false, error: 'SCOUT did not answer.' }), scout: status.version ?? null }
   } finally {
     if (poll) clearInterval(poll)
     poll = null
