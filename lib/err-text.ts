@@ -7,7 +7,14 @@
 // Lifted out of app/(dashboard)/content/page.tsx 2026-06-07 so extracted
 // components (GenerateButton, VideoCard) can share it without
 // re-importing the page they came from.
+import { looksLikeHtml, plainServerError } from './upstream-words'
+
 export function errText(e: unknown): string {
+  const t = errTextRaw(e)
+  // A gateway's HTML error page (2026-11-10: a Cloudflare 502 page shown as is).
+  return looksLikeHtml(t) ? plainServerError(t) : t
+}
+function errTextRaw(e: unknown): string {
   if (typeof e === 'string') return e
   // A gateway timeout answers with an HTML page, and `await res.json()` on it
   // throws a SyntaxError whose message ("Unexpected token '<'", "is not valid

@@ -57,6 +57,7 @@ import TrybeNav, { pageLabelV3 } from '@/components/labs/TrybeNav'
 import type { ClaimProof, RetainerRead } from '@/lib/trybe-evidence'
 import TrybeBrandTable from '@/components/labs/TrybeBrandTable'
 import { morningWords, autoRunWords, type AutoRunRecord } from '@/lib/trybe-morning'
+import { plainServerError, isPassingTrouble, PASSING_WAITS_MS } from '@/lib/upstream-words'
 import { APP, AppChip } from '@/components/labs/trybe-ui'
 import { DossierCtx, BrandName } from '@/components/labs/trybe-dossier-context'
 import TrybeWorking from '@/components/labs/TrybeWorking'
@@ -285,11 +286,26 @@ function priority(b: Brand): number {
   return (b.worked_with ? 1000 : 0) + (b.fit_score ?? 0) * 2 + (b.trybe_score ?? 0) + (b.pay_text ? Math.min(50, parseFloat((b.pay_text.match(/[\d.]+/) || ['0'])[0]) || 0) : 0)
 }
 
-async function api(body?: Record<string, unknown>) {
-  const r = await fetch('/api/labs/trybe', body ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : { cache: 'no-store' })
-  const d = await r.json().catch(() => ({}))
-  if (!r.ok && !d.capped) throw new Error(d.error || `Request failed (${r.status})`)
-  return d
+// A gateway's error page is said in words (Seb, 2026-11-10: Meta ads showed a
+// Cloudflare 502 page as its reason), and a passing trouble is asked again:
+// always for reading this page, for a change only when its caller says asking
+// twice does no harm (retry), as Refresh everything's steps do.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function api(body?: Record<string, unknown>, opts: { retry?: boolean } = {}): Promise<any> {
+  const again = !body || opts.retry === true
+  for (let n = 0; ; n++) {
+    let r: Response | null = null
+    let d: Record<string, any> = {} // eslint-disable-line @typescript-eslint/no-explicit-any
+    let why = ''
+    try {
+      r = await fetch('/api/labs/trybe', body ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : { cache: 'no-store' })
+      d = await r.json().catch(() => ({}))
+      if (r.ok || d.capped) return d
+      why = String(d.error || '')
+    } catch (e) { why = e instanceof Error ? e.message : 'no answer' }
+    if (!again || n >= PASSING_WAITS_MS.length || !isPassingTrouble(r ? r.status : null, why)) throw new Error(why ? plainServerError(why, r?.status) : `Request failed (${r ? r.status : 'no answer'})`)
+    await new Promise((res) => setTimeout(res, PASSING_WAITS_MS[n]))
+  }
 }
 
 function passWords(p: TrybeScanPass): string {
@@ -1789,7 +1805,7 @@ export default function TrybeOutreach({ preview = false, v2 = false, layout = fa
         for (;;) {
           if (dailyStop.current) break
           let r: { read: number; left: number; listed: number; open: number; refuse: number; none: number; refused: boolean; failed: number }
-          try { r = await api({ action: 'catalog_refresh' }) } catch (e) { failedCall = e instanceof Error ? e.message : 'no answer'; break }
+          try { r = await api({ action: 'catalog_refresh' }, { retry: true }) } catch (e) { failedCall = e instanceof Error ? e.message : 'no answer'; break }
           left = r.left; listed = r.listed
           sum.read += r.read; sum.open += r.open; sum.refuse += r.refuse; sum.none += r.none; sum.failed += r.failed
           step('products', 'running', `${sum.read.toLocaleString()} brand${sum.read === 1 ? '' : 's'}\u2019 products read this run. About ${left.toLocaleString()} left.`)
@@ -1823,7 +1839,7 @@ export default function TrybeOutreach({ preview = false, v2 = false, layout = fa
         for (;;) {
           if (dailyStop.current || leftRef.current) { why = 'Stopped.'; break }
           let r: { sites: { read: number; failed: number }; socials: number; popularity: { web?: { read: number; notRanked: number; shared: number }; google?: { read: number }; error?: string; missing?: boolean }; pay: { filled?: number; error?: string } | null; left: { sites: number; webRank: number; google: number; socials: number } | null }
-          try { r = await api({ action: 'directory_refresh', pay: firstPass }) } catch (e) { why = e instanceof Error ? e.message : 'no answer'; break }
+          try { r = await api({ action: 'directory_refresh', pay: firstPass }, { retry: true }) } catch (e) { why = e instanceof Error ? e.message : 'no answer'; break }
           firstPass = false
           const moved = r.sites.read + r.sites.failed + r.socials + (r.popularity.web ? r.popularity.web.read + r.popularity.web.notRanked + r.popularity.web.shared : 0) + (r.popularity.google?.read ?? 0)
           t.sites += r.sites.read; t.failed += r.sites.failed; t.socials += r.socials
@@ -1852,7 +1868,7 @@ export default function TrybeOutreach({ preview = false, v2 = false, layout = fa
       let left: number | null = null
       for (;;) {
         if (dailyStop.current || leftRef.current) { total.stopped = 'Stopped. Press Refresh everything to carry on: it picks up the brands not counted yet.'; break }
-        const list = await api({ action: 'browse', categories: [], keywords: [], limit: 1, sort: 'adsPerCreator', payType: 'any', includeMine: true, filters: NO_FILTERS })
+        const list = await api({ action: 'browse', categories: [], keywords: [], limit: 1, sort: 'adsPerCreator', payType: 'any', includeMine: true, filters: NO_FILTERS }, { retry: true })
         left = typeof list.metaLeft === 'number' ? list.metaLeft : left
         const todo = ((list.metaTodo || []) as Array<{ brand_id: string; name: string; page_id?: string | null; find_page?: boolean }>).filter((b) => !tried.has(b.brand_id)).slice(0, DAILY_META_CHUNK)
         if (!todo.length) break
@@ -1887,19 +1903,47 @@ export default function TrybeOutreach({ preview = false, v2 = false, layout = fa
       await sitesDone
     } catch (e) {
       const x = steps.find((y) => y.state === 'running')
-      if (x) { x.state = 'failed'; x.text = e instanceof Error ? e.message : 'It stopped with an error.' }
+      if (x) { x.state = 'failed'; x.text = e instanceof Error ? `${plainServerError(e.message)} It was asked again ${PASSING_WAITS_MS.length} times. Press Refresh everything to carry on from here.` : 'It stopped with an error.' }
     } finally {
       // A Meta ads step that ended with an error still waits for the server's.
       if (sitesDone) await (sitesDone as Promise<void>).catch(() => {})
       setFinding(null)
       const at = new Date().toISOString()
       setDaily({ running: false, steps: steps.map((x) => ({ ...x, state: x.state === 'waiting' || x.state === 'running' ? 'skipped' : x.state })), at, auto })
-      const saved = await api({ action: 'daily_refresh', log: { at, auto, startedAt, steps: steps.map((x) => ({ id: x.id, label: x.label, state: x.state === 'waiting' || x.state === 'running' ? 'skipped' : x.state, text: x.text.slice(0, 600) })) } }).catch(() => null)
+      const saved = await api({ action: 'daily_refresh', log: { at, auto, startedAt, steps: steps.map((x) => ({ id: x.id, label: x.label, state: x.state === 'waiting' || x.state === 'running' ? 'skipped' : x.state, text: x.text.slice(0, 600) })) } }, { retry: true }).catch(() => null)
       if (saved?.lastAuto) setAutoLast(saved.lastAuto)
       setLiveNonce((n) => n + 1)
       void load()
     }
   }
+
+  // THE MORNING RUN THAT COULD NOT LOAD (Seb, 2026-11-10: "SCOUT opened this
+  // page Tue 6:00 AM, but the run did not start in it"). The run starts once
+  // this page has loaded; when loading failed, nothing tried again. It now
+  // tries every minute for 20 minutes, and tells MVP why it is waiting, so the
+  // card says the reason instead of "open the tab to see why".
+  const [autoTries, setAutoTries] = useState(0)
+  useEffect(() => {
+    if (!autoAsked || autoDaily.current || !loadError) return
+    if (autoTries === 0) void api({ action: 'daily_refresh', autoBlocked: `this page could not load: ${loadError}` }, { retry: true }).catch(() => {})
+    if (autoTries >= 20) return
+    const t = setTimeout(() => { void load().then(() => setAutoTries((n) => n + 1)) }, 60_000)
+    return () => clearTimeout(t)
+  }, [autoAsked, loadError, load, autoTries])
+  // Anything else that holds the morning run back is said too, after 90 seconds.
+  const autoHeldBy = useRef('')
+  autoHeldBy.current = loadError ? '' : loading ? 'this page was still loading after 90 seconds'
+    : !isAdmin ? 'this Chrome is signed in to MVP as someone not on the MVP team'
+      : preview ? 'this page opened as a preview' : !directory ? 'MVP\u2019s server sent no TRYBE brand list'
+        : daily?.running ? 'a run was already going in this page' : 'it was still waiting after 90 seconds'
+  useEffect(() => {
+    if (!autoAsked) return
+    const t = setTimeout(() => {
+      if (autoDaily.current || !autoHeldBy.current) return
+      void api({ action: 'daily_refresh', autoBlocked: autoHeldBy.current }, { retry: true }).catch(() => {})
+    }, 90_000)
+    return () => clearTimeout(t)
+  }, [autoAsked])
 
   // OPENED BY SCOUT FOR THE MORNING RUN (?daily=auto): starts by itself once
   // the page has loaded, once. The address is cleaned so a reload does not

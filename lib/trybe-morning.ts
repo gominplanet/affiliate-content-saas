@@ -38,6 +38,9 @@ export interface AutoRunRecord {
   startedAt: string | null
   finishedAt: string | null
   steps?: Array<{ state: string }>
+  /** Why a morning run could not start, as the page SCOUT opened said it (2026-11-10). */
+  blockedAt?: string | null
+  blockedWhy?: string | null
 }
 
 /** Done, skipped, partly, failed, counted from the steps. */
@@ -57,6 +60,11 @@ export function autoRunWords(rec: AutoRunRecord | null, scoutOpenedAt: number | 
   // start there. (With no start recorded at all, nothing is claimed: starts
   // are recorded only since 2026-11-07.)
   if (scoutOpenedAt && Number.isFinite(started) && scoutOpenedAt - started > 5 * 60_000) {
+    // The page said why (2026-11-10): shown instead of "open the tab".
+    const blockedAt = rec?.blockedAt ? Date.parse(rec.blockedAt) : NaN
+    if (rec?.blockedWhy && Number.isFinite(blockedAt) && blockedAt >= scoutOpenedAt - 60_000) {
+      return { tone: 'warn', text: `SCOUT opened this page ${when(scoutOpenedAt)}, but the run could not start: ${rec.blockedWhy.replace(/\.?$/, '.')} The page tried again every minute for 20 minutes. Press Refresh everything to run it now.` }
+    }
     return { tone: 'warn', text: `SCOUT opened this page ${when(scoutOpenedAt)}, but the run did not start in it. Open the MVP tab SCOUT left behind your others to see why, or press Refresh everything.` }
   }
   if (!Number.isFinite(started)) return { tone: 'info', text: 'No run by itself is recorded yet. The next one says here when it started and when it finished.' }

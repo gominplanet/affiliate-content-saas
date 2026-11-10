@@ -131,7 +131,7 @@ check('not counted on Meta yet: handed to the page to count, best fits first', /
   const O = read('components/labs/TrybeOutreach.tsx')
   check('Products on TRYBE is its own step, after the brand list and before Meta ads, and says what it did',
     O.indexOf("{ id: 'list', label:") < O.indexOf("{ id: 'products', label: 'Products on TRYBE'") && O.indexOf("{ id: 'products', label: 'Products on TRYBE'") < O.indexOf("{ id: 'meta', label: 'Meta ads'")
-    && /api\(\{ action: 'catalog_refresh' \}\)/.test(O) && /TRYBE asked MVP to slow down/.test(O) && /could not be read this time/.test(O))
+    && /api\(\{ action: 'catalog_refresh' \}, \{ retry: true \}\)/.test(O) && /TRYBE asked MVP to slow down/.test(O) && /could not be read this time/.test(O))
 }
 check('samples are checked before Meta, so no brand is counted that would be left out anyway', R.indexOf("const sm = samplesProof({ trybe: statsBy.get(id)?.samples") < R.indexOf('const spend = adSpendProof({'))
 check('samples off, missing, or not said: no place, each counted', /else leftOut\[sm\.why === 'off' \? 'samplesOff' : sm\.why === 'missing' \? 'samplesMissing' : 'samplesUnknown'\]\+\+/.test(R))

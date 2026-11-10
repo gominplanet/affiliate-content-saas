@@ -8,6 +8,7 @@
 // too, for the gallery every member sees (app/api/labs/trybe 'meta_ads').
 
 import { requestMetaAdsCounts, type MetaAdsBrand } from '@/lib/extension-frame'
+import { plainServerError, isPassingTrouble, PASSING_WAITS_MS } from '@/lib/upstream-words'
 import { readAdLibraryCount, metaOwnOf, metaTrustOf, sameAsBefore } from '@/lib/trybe-pick'
 
 export interface MetaAdsRun {
@@ -62,9 +63,21 @@ const PAGE_WHY: Record<string, string> = {
 
 type SaveRow = { brandId: string; name: string; count: number; cards?: unknown; own?: number; sample?: number; basis?: 'page' | 'phrase'; pageId?: string | null; pageName?: string | null; pageWhy?: string | null }
 async function save(results: SaveRow[]): Promise<{ galleryAds: number; cardsMissed: number; saved: number; kept: number; notOwn: number }> {
-  const r = await fetch('/api/labs/trybe', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'meta_ads', results }), signal: AbortSignal.timeout(60_000) })
-  const d = await r.json().catch(() => ({}))
-  if (!r.ok) throw new Error(d.error || `Saving the Meta ad counts failed (${r.status})`)
+  // Saving is the same counts again, so a passing trouble (Seb, 2026-11-10: a
+  // Cloudflare 502 page ended a run of hours) is waited out and saved again.
+  let r: Response | null = null
+  let d: { error?: string; [k: string]: unknown } = {}
+  for (let n = 0; ; n++) {
+    let why = ''
+    try {
+      r = await fetch('/api/labs/trybe', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'meta_ads', results }), signal: AbortSignal.timeout(60_000) })
+      d = await r.json().catch(() => ({}))
+      if (r.ok) break
+      why = String(d.error || '')
+    } catch (e) { r = null; why = e instanceof Error ? e.message : 'no answer' }
+    if (n >= PASSING_WAITS_MS.length || !isPassingTrouble(r ? r.status : null, why)) throw new Error(why ? plainServerError(why, r?.status) : `Saving the Meta ad counts failed (${r ? r.status : 'no answer'})`)
+    await new Promise((res) => setTimeout(res, PASSING_WAITS_MS[n]))
+  }
   // An older server says nothing of saved: every count it took is saved.
   return { galleryAds: Number(d.galleryAds) || 0, cardsMissed: Number(d.cardsMissed) || 0, saved: typeof d.saved === 'number' ? d.saved : results.length, kept: Number(d.kept) || 0, notOwn: Number(d.notOwnAds) || 0 }
 }

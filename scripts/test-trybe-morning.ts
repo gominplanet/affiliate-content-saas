@@ -135,7 +135,7 @@ const ON = { on: true, origin: 'https://mvpaffiliate.io', hour: 4, minute: 0 }
   check('nothing recorded yet is said as that, never as a failure', none.tone === 'info' && /No run by itself is recorded yet/.test(none.text))
   check('no dashes in what it says', [fin, going, lost, notStarted, none].every(w => !/[\u2013\u2014]/.test(w.text)))
   const R2 = readFileSync('app/api/labs/trybe/route.ts', 'utf8')
-  check('the server keeps the run by itself apart: its start, then its finish with the steps', /const AUTO_KEY = 'daily_refresh_auto'/.test(R2) && /if \(body\.autoStart === true\) \{/.test(R2) && /value: \{ startedAt, finishedAt: now, by: ownerId, steps \}/.test(R2) && /lastAuto: byKey\.get\(AUTO_KEY\)/.test(R2))
+  check('the server keeps the run by itself apart: its start, then its finish with the steps', /const AUTO_KEY = 'daily_refresh_auto'/.test(R2) && /if \(body\.autoStart === true\) \{/.test(R2) && /value: \{ startedAt, finishedAt: now, by: ownerId, steps \}/.test(R2) && /const auto = byKey\.get\(AUTO_KEY\)/.test(R2) && /return NextResponse\.json\(\{ ok: true, last: byKey\.get\(KEY\) \?\? null, lastAuto \}\)/.test(R2))
   const P2 = readFileSync('components/labs/TrybeOutreach.tsx', 'utf8')
   check('the page says the start the moment SCOUT\u2019s run begins', /void api\(\{ action: 'daily_refresh', autoStart: true \}\)[\s\S]{0,160}void dailyRefresh\(true\)/.test(P2))
   check('the result in the tab that ran it is marked by itself', /at, auto \}\)\n\s*const saved = await api\(\{ action: 'daily_refresh', log: \{ at, auto, startedAt,/.test(P2))

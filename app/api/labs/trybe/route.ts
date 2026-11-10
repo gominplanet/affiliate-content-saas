@@ -1294,6 +1294,12 @@ export async function POST(request: Request) {
     // refresh no longer hides how the last one by itself went.
     const AUTO_KEY = 'daily_refresh_auto'
     const log = body.log && typeof body.log === 'object' ? body.log as { at?: unknown; steps?: unknown; auto?: unknown; startedAt?: unknown } : null
+    // Why a morning run could not start (Seb, 2026-11-10): kept beside it.
+    const BLOCKED_KEY = 'daily_refresh_auto_blocked'
+    if (typeof body.autoBlocked === 'string' && body.autoBlocked.trim()) {
+      const { error: e } = await admin.from('trybe_directory_meta').upsert({ key: BLOCKED_KEY, value: { at: now, why: body.autoBlocked.trim().slice(0, 400), by: ownerId }, updated_at: now })
+      if (e) return NextResponse.json({ error: e.message }, { status: 500 })
+    }
     if (body.autoStart === true) {
       const { error: e } = await admin.from('trybe_directory_meta').upsert({ key: AUTO_KEY, value: { startedAt: now, finishedAt: null, by: ownerId, steps: [] }, updated_at: now })
       if (e) return NextResponse.json({ error: e.message }, { status: 500 })
@@ -1311,9 +1317,12 @@ export async function POST(request: Request) {
         if (ae) return NextResponse.json({ error: ae.message }, { status: 500 })
       }
     }
-    const { data: rows } = await admin.from('trybe_directory_meta').select('key, value').in('key', [KEY, AUTO_KEY])
+    const { data: rows } = await admin.from('trybe_directory_meta').select('key, value').in('key', [KEY, AUTO_KEY, BLOCKED_KEY])
     const byKey = new Map(((rows || []) as Array<{ key: string; value: unknown }>).map(r => [r.key, r.value]))
-    return NextResponse.json({ ok: true, last: byKey.get(KEY) ?? null, lastAuto: byKey.get(AUTO_KEY) ?? null })
+    const blocked = byKey.get(BLOCKED_KEY) as { at?: string; why?: string } | undefined
+    const auto = byKey.get(AUTO_KEY) as Record<string, unknown> | undefined
+    const lastAuto = auto || blocked ? { ...(auto || { startedAt: null, finishedAt: null }), blockedAt: blocked?.at ?? null, blockedWhy: blocked?.why ?? null } : null
+    return NextResponse.json({ ok: true, last: byKey.get(KEY) ?? null, lastAuto })
   }
 
   if (action === 'meta_ads') {
