@@ -22,7 +22,8 @@ import { probeShort } from '@/lib/shorts-detect'
 import { canUsePreview } from '@/lib/labs-preview'
 import { hasVideoTools } from '@/lib/amazon-plan'
 import { SCOUT_LATEST_VERSION } from '@/lib/scout-version'
-import { MVP_CHANNEL_ID, latestVideos, parseChannelFeed, releasesFor, uploadsPlaylist, watchableVideos, type ChannelVideo, type NoteGate } from '@/lib/scout-news'
+import { MVP_CHANNEL_ID, latestVideos, parseChannelFeed, releasesFor, uploadsPlaylist, watchableVideos, withPinned, type ChannelVideo, type NoteGate } from '@/lib/scout-news'
+import { LATEST_VIDEO } from '@/lib/tutorial-videos'
 
 export const runtime = 'nodejs'
 export const maxDuration = 30
@@ -86,11 +87,14 @@ export async function GET() {
   let videos: ChannelVideo[] = []
   let videoSource: 'api' | 'feed' | null = null
   let videoError: string | null = null
+  // The pinned video plays first (Seb, 2026-11-10), even when the channel
+  // could not be read; the error is kept for the card to say.
+  const pinned: ChannelVideo = { id: LATEST_VIDEO.id, title: LATEST_VIDEO.title, published: LATEST_VIDEO.published }
   try {
     const got = await channelVideos()
-    videos = latestVideos(got.videos)
+    videos = withPinned(latestVideos(got.videos), pinned)
     videoSource = got.source
-  } catch (e) { videoError = e instanceof Error ? e.message : String(e) }
+  } catch (e) { videoError = e instanceof Error ? e.message : String(e); videos = withPinned([], pinned) }
 
   return NextResponse.json({ latest: SCOUT_LATEST_VERSION, releases: releasesFor(can), videos, videoSource, videoError })
 }

@@ -1,6 +1,6 @@
 import type { Metadata } from 'next'
-import { BookOpen, Youtube, Clapperboard } from 'lucide-react'
-import { TUTORIAL_VIDEOS_PAUSED } from '@/lib/tutorial-videos'
+import { BookOpen, Youtube, Clapperboard, ExternalLink } from 'lucide-react'
+import { TUTORIAL_VIDEOS_PAUSED, LATEST_VIDEO } from '@/lib/tutorial-videos'
 import { ByLook } from '@/components/layout/teal-ui'
 import PageHero from '@/components/layout/PageHero'
 
@@ -114,6 +114,42 @@ export default function TutorialsPage() {
           <Youtube size={16} /> Subscribe
         </span>
       </a>
+
+      {/* THE LATEST VIDEO (Seb, 2026-11-10: "let's add the latest video ...
+          inside of tutorials"), pinned in lib/tutorial-videos, shown while
+          the step by step tutorials are re-recorded too. */}
+      <section
+        aria-label="Latest video"
+        className="mb-8 rounded-2xl border overflow-hidden grid grid-cols-1 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]"
+        style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}
+      >
+        <div className="relative w-full aspect-video bg-black">
+          <iframe
+            src={`https://www.youtube.com/embed/${LATEST_VIDEO.id}?rel=0&modestbranding=1`}
+            title={LATEST_VIDEO.title}
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+            allowFullScreen
+            className="absolute inset-0 w-full h-full border-0"
+          />
+        </div>
+        <div className="p-5 sm:p-6 flex flex-col gap-2 justify-center min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-[10px] font-bold uppercase tracking-[0.12em] px-2 py-0.5 rounded-full" style={{ background: 'rgba(220,38,38,0.12)', color: '#DC2626' }}>Latest video</span>
+            <span className="text-[11px] font-semibold" style={{ color: 'var(--text-soft)' }}>{LATEST_VIDEO.kind}, {new Date(LATEST_VIDEO.published).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })}</span>
+          </div>
+          <h2 className="text-[18px] font-semibold leading-snug" style={{ color: 'var(--text)', textWrap: 'balance' }}>{LATEST_VIDEO.title}</h2>
+          <p className="text-[13px] leading-relaxed" style={{ color: 'var(--text-soft)' }}>{LATEST_VIDEO.description}</p>
+          <a
+            href={`https://www.youtube.com/watch?v=${LATEST_VIDEO.id}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="mt-1 inline-flex items-center gap-1.5 self-start text-[13px] font-semibold underline"
+            style={{ color: 'var(--text)' }}
+          >
+            Watch on YouTube <ExternalLink size={13} />
+          </a>
+        </div>
+      </section>
 
       {/* NEW TUTORIALS ON THE WAY. The old videos predate most of what MVP
           does now, so they are hidden (lib/tutorial-videos) rather than left

@@ -16,7 +16,8 @@
 // published videos to watch on that card"), no Shorts and nothing still to
 // come, from youtube-nocookie.
 import { readFileSync } from 'node:fs'
-import { SCOUT_RELEASES, scoutPopupPlan, releasesFor, parseChannelFeed, watchableVideos, latestVideos, uploadsPlaylist, MVP_CHANNEL_ID, MAX_NOTES, VIDEOS_ON_CARD, type ScoutRelease } from '../lib/scout-news'
+import { SCOUT_RELEASES, scoutPopupPlan, releasesFor, parseChannelFeed, watchableVideos, latestVideos, withPinned, uploadsPlaylist, MVP_CHANNEL_ID, MAX_NOTES, VIDEOS_ON_CARD, type ScoutRelease } from '../lib/scout-news'
+import { LATEST_VIDEO } from '../lib/tutorial-videos'
 import { SCOUT_LATEST_VERSION, scoutAtLeast } from '../lib/scout-version'
 import { canUsePreview } from '../lib/labs-preview'
 import { hasVideoTools } from '../lib/amazon-plan'
@@ -92,7 +93,12 @@ check('the uploads list of the MVP Affiliate channel', uploadsPlaylist(MVP_CHANN
 // ── The wiring ──
 const ROUTE = read('app/api/scout/whats-new/route.ts')
 check('the route needs a session and filters notes by the member’s plan', /if \(!user\) return NextResponse\.json\(\{ error: 'Unauthorized' \}, \{ status: 401 \}\)/.test(ROUTE) && /releases: releasesFor\(can\)/.test(ROUTE) && /\.eq\('user_id', user\.id\)/.test(ROUTE))
-check('the route sends the three latest', /videos = latestVideos\(got\.videos\)/.test(ROUTE))
+check('the route sends the three latest, the pinned video first', /videos = withPinned\(latestVideos\(got\.videos\), pinned\)/.test(ROUTE))
+// The pinned video (Seb, 2026-11-10: "let's add the latest video to the latest pop up on mvp.. and inside of tutorials").
+const pin = { id: 'pinnedvideo', title: 'p', published: null }
+check('the pinned video plays first, never twice, three in all', withPinned(latest, pin).map((v) => v.id).join() === 'pinnedvideo,newest,mid' && withPinned([pin, ...latest], pin).filter((v) => v.id === 'pinnedvideo').length === 1 && withPinned(latest, null).length === 3)
+check('the pinned video still plays when the channel could not be read', /videoError = e instanceof Error \? e\.message : String\(e\); videos = withPinned\(\[\], pinned\)/.test(ROUTE))
+check('the pinned video is a real video id, and Tutorials shows it with a link that says YouTube', /^[A-Za-z0-9_-]{11}$/.test(LATEST_VIDEO.id) && /youtube\.com\/embed\/\$\{LATEST_VIDEO\.id\}/.test(read('app/(dashboard)/tutorials/page.tsx')) && />\s*Watch on YouTube <ExternalLink/.test(read('app/(dashboard)/tutorials/page.tsx')))
 check('the API first and counted, the feed after, kept 6 hours, a failure not kept', /await ytFetch\(pl\.toString\(\)/.test(ROUTE) && ROUTE.indexOf('ytFetch(pl') < ROUTE.indexOf('feeds/videos.xml') && /revalidate: 6 \* 3600/.test(ROUTE) && /throw new Error\(`\$\{apiWhy\}; \$\{feedWhy\}`\)/.test(ROUTE))
 check('the feed’s videos are asked whether they are Shorts', /probeShort\(v\.id\)/.test(ROUTE) && /shorts\[k\] !== true/.test(ROUTE))
 check('no video: it says why, never a blank frame', /videoError = e instanceof Error/.test(ROUTE))

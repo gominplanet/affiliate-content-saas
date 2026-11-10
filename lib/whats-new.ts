@@ -29,6 +29,17 @@ export interface WhatsNewItem {
 }
 
 export const WHATS_NEW: WhatsNewItem[] = [
+  // The latest live replay, pinned on this card and in Tutorials (Seb,
+  // 2026-11-10: "let's add the latest video to the latest pop up on mvp.. and
+  // inside of tutorials").
+  {
+    date: '2026-11-10',
+    badge: 'VIDEO',
+    tone: '#DC2626',
+    title: 'New live replay: Amazon Influencers and TRYBE with MVP',
+    desc: 'Seb walks through MVP live, demos the latest tools and features, and answers questions about the Amazon Influencer Program, Amazon Associates, TRYBE and Creator Connections. It is the first video on this card, and it is at the top of Tutorials.',
+    href: '/tutorials',
+  },
   // Match my TikTok (Seb, 2026-11-09: "build both, but we're going to use
   // Scout to start").
   {

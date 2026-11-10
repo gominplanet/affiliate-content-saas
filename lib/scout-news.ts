@@ -308,5 +308,12 @@ export function latestVideos(videos: ChannelVideo[], n = VIDEOS_ON_CARD): Channe
   return [...videos].sort((a, b) => t(b) - t(a)).slice(0, n)
 }
 
+/** The pinned video first (lib/tutorial-videos LATEST_VIDEO), then the
+ *  channel's latest without it twice, `n` in all. Pure. */
+export function withPinned(videos: ChannelVideo[], pinned: ChannelVideo | null, n = VIDEOS_ON_CARD): ChannelVideo[] {
+  if (!pinned) return videos.slice(0, n)
+  return [pinned, ...videos.filter((v) => v.id !== pinned.id)].slice(0, n)
+}
+
 /** The channel's uploads playlist: UC... becomes UU... */
 export const uploadsPlaylist = (channelId: string) => 'UU' + channelId.slice(2)
