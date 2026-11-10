@@ -1,6 +1,6 @@
 // © 2026 Gominplanet / MVP Affiliate — proprietary & confidential.
 //
-// SCOUT'S TIKTOK DOWNLOAD, RUN (extension/background.js, 1.60.6; Seb,
+// SCOUT'S TIKTOK DOWNLOAD, RUN (extension/background.js, 1.60.7; Seb,
 // 2026-11-09: the download on 1.60.0 and again on 1.60.1 ended in "took too
 // long", with nothing said about where it stuck). The download code itself is
 // run here against a pretend Chrome and a pretend TikTok page, with its time
@@ -17,6 +17,10 @@
 //   a file smaller than TikTok says the video is (Seb's on 1.60.5 played 2
 //     seconds and froze): deleted, never kept as the video
 //   the TikTok tab closes part way (Seb's visible try: "No tab with id"): said
+//   1.60.7 (Seb: "the URL is just cycling through a bunch of different
+//     numbers"): the tab opens on TikTok's quiet address, never with the
+//     quiet-window shim; the video's page is read there as text, and opened
+//     itself only when that gives no address
 //   TikTok's page never answers SCOUT: stopped at the limit, and the answer
 //     says which step it reached (1.60.1 said only "took too long")
 //   TikTok stops sending part way: not saved, with how much had come in
@@ -34,7 +38,7 @@ const fails: string[] = []
 const check = (name: string, ok: boolean | undefined) => { if (!ok) fails.push(name) }
 
 const B = readFileSync('extension/background.js', 'utf8')
-const from = B.indexOf('// ── MATCH MY TIKTOK: DOWNLOAD A VIDEO (1.60.0 to 1.60.6)')
+const from = B.indexOf('// ── MATCH MY TIKTOK: DOWNLOAD A VIDEO (1.60.0 to 1.60.7)')
 const to = B.indexOf('let ttDlBusy = Promise.resolve()')
 check('the download section is where this check looks for it', from > 0 && to > from)
 let sec = B.slice(from, to)
@@ -88,8 +92,11 @@ interface Case { urls: () => Any; chromeDl: () => Any; page?: (args: Any[]) => A
   /** Files Chrome was told to delete. */
   removed?: number[]
   /** Close the tab after this many asks of the page. */
-  closeAfter?: number }
+  closeAfter?: number
+  /** Every address the tab was sent to, the quiet-window shim's uses, and the tabs it marks. */
+  visits?: string[]; shims?: number; quiet?: Set<number> }
 function scout(c: Case) {
+  let tabUrl = ''
   const dls: Record<number, Any> = {}
   let next = 1
   const created: Array<(i: Any) => void> = []
@@ -103,7 +110,7 @@ function scout(c: Case) {
       removeFile: (id: number, cb?: () => void) => { if (c.removed) c.removed.push(id); if (cb) cb() },
       onCreated: { addListener: (f: Any) => created.push(f), removeListener: (f: Any) => { const i = created.indexOf(f); if (i >= 0) created.splice(i, 1) } },
     },
-    tabs: { get: async () => ({ windowId: 9, ...(c.tab || {}) }), remove: async () => {}, update: async () => ({}),
+    tabs: { get: async () => ({ windowId: 9, status: 'complete', url: tabUrl, ...(c.tab || {}) }), remove: async () => {}, update: async (_id: number, o: { url?: string }) => { if (o && o.url) { tabUrl = o.url; c.visits?.push(o.url) } return {} },
       onRemoved: { addListener: (f: Any) => removedFns.push(f), removeListener: () => {} }, onReplaced: { addListener: () => {}, removeListener: () => {} } },
     scripting: { registerContentScripts: async () => {}, unregisterContentScripts: async () => {} },
     windows: { get: async () => ({ state: 'minimized' }), update: async (_id: number, o: { state: string }) => { c.windows.push(o.state) } },
@@ -128,7 +135,7 @@ function scout(c: Case) {
     return null
   }
   const env: Record<string, Any> = {
-    chrome, trybeRun, openWorkTab: async () => ({ id: 5 }), waitForTabLoad: async () => {}, quietTabIds: new Set(), quietShim: async () => {},
+    chrome, trybeRun, openWorkTab: async (u: string) => { tabUrl = u; c.visits?.push(u); return { id: 5 } }, waitForTabLoad: async () => {}, quietTabIds: c.quiet || new Set(), quietShim: async () => { c.shims = (c.shims || 0) + 1 },
     startKeepAlive: () => null, stopKeepAlive: () => {}, hasOrigins: async () => true, TT_ORIGINS: [], _sleep: sleep,
     ttRun: null, TT_HOOK_ID: 'hook', ttScrollInPage: function ttScrollInPage() { return 0 },
   }
@@ -148,7 +155,7 @@ const ways = (r: Any) => (r.tried || []).map((t: Any) => `${t.way}:${t.result}`)
       check(`the page's own read goes first, slow but moving, followed to the end and saved, and Chrome's own download is never tried (${ways(r)})`, r.ok && r.way === 'page' && r.bytes === 4e6 && ways(r) === 'page:ok')
     },
     async () => {
-      const s = scout({ urls: URLS, chromeDl: () => item({ size: 6e6, rate: 1.5e6 }), windows: [], tab: { frozen: true, url: 'https://www.tiktok.com/@gominreviews/video/747' } })
+      const s = scout({ urls: URLS, chromeDl: () => item({ size: 6e6, rate: 1.5e6 }), windows: [], tab: { frozen: true } })
       const t0 = Date.now()
       const r = await s.run(ARGS)
       check(`a page that stops answering is said with how Chrome held its tab, tried twice at most (${ways(r)})`, (r.tried || []).filter((t: Any) => t.way === 'page').length === 2 && /page:page-busy \(tab frozen by Chrome\)/.test(ways(r)))
@@ -185,7 +192,24 @@ const ways = (r: Any) => (r.tried || []).map((t: Any) => `${t.way}:${t.result}`)
     async () => {
       const s = scout({ urls: SIZED, chromeDl: () => item({ size: 4533599, rate: 4533599 }), windows: [] })
       const r = await s.run(ARGS)
-      check(`the whole file, as big as TikTok says, is kept, and the steps are written down (${r.trace})`, r.ok && r.way === 'chrome' && r.bytes === 4533599 && /hidden tab opened \| .*page loaded \| .*read 1: 3 addresses, first h264_720p 4533599 bytes/.test(r.trace || '') && /addresses \(video 38s long\)/.test(r.trace || '') && /saved by the chrome way$/.test(r.trace || ''))
+      check(`the whole file, as big as TikTok says, is kept, and the steps are written down (${r.trace})`, r.ok && r.way === 'chrome' && r.bytes === 4533599 && /hidden tab opened \| .*quiet TikTok page ready \| .*page as text: 3 addresses, first h264_720p 4533599 bytes/.test(r.trace || '') && /addresses \(video 38s long\)/.test(r.trace || '') && /saved by the chrome way$/.test(r.trace || ''))
+    },
+    async () => {
+      // Seb on 1.60.6: "the URL is just cycling through a bunch of different numbers".
+      const visits: string[] = []
+      const quiet = new Set<number>()
+      const c: Case = { urls: SIZED, chromeDl: () => item(), page: pageRead(300, 4533599), blobDl: () => item({ size: 4533599, rate: 4533599 }), windows: [], visits, quiet }
+      const s = scout(c)
+      const r = await s.run(ARGS)
+      check(`the tab opens on TikTok's quiet address, never with the quiet-window shim, and never opens the video's page when its text gave the address (${visits.join(' > ')}; shims ${c.shims || 0})`, r.ok && r.way === 'page' && visits.join(' > ') === 'https://www.tiktok.com/robots.txt' && !c.shims && quiet.size === 0 && /quiet TikTok page ready \| .*page as text: 3 addresses/.test(r.trace || ''))
+    },
+    async () => {
+      // The text gives no address: the video's page itself, then back to the quiet page to save.
+      const visits: string[] = []
+      let n = 0
+      const s = scout({ urls: () => (++n === 1 ? { urls: [], found: false, seen: 'page /@x/video/1 (read as text, 200); data no' } : SIZED()), chromeDl: () => item(), page: pageRead(300, 4533599), blobDl: () => item({ size: 4533599, rate: 4533599 }), windows: [], visits })
+      const r = await s.run(ARGS)
+      check(`when the text gives no address, the video's own page is opened, then SCOUT goes back to the quiet page to save (${visits.map((v) => v.split('.com')[1]).join(' > ')})`, r.ok && r.way === 'page' && visits.length === 3 && /robots\.txt$/.test(visits[0]) && /\/video\/7471234567890123456$/.test(visits[1]) && /robots\.txt$/.test(visits[2]) && /opening the video page itself/.test(r.trace || ''))
     },
     async () => {
       // Seb's visible try on 1.60.5: "No tab with id". The tab closes while SCOUT reads it.
@@ -240,33 +264,40 @@ const ways = (r: Any) => (r.tried || []).map((t: Any) => `${t.way}:${t.result}`)
 
   // ── The page reading, on a page shaped like TikTok's ──
   {
-    const fn = sec.slice(sec.indexOf('function ttVideoUrlsInPage'), sec.indexOf('// In page, on the creator\'s profile'))
+    const fn = sec.slice(sec.indexOf('async function ttVideoUrlsInPage'), sec.indexOf('// In page, on the creator\'s profile'))
     const page = (data: Any, extra: { ids?: string[]; text?: string } = {}) => {
       const doc = {
         getElementById: (id: string) => id === '__UNIVERSAL_DATA_FOR_REHYDRATION__' && data ? { textContent: JSON.stringify(data) } : (extra.ids || []).includes(id) ? {} : null,
         querySelector: () => null,
         body: { innerText: extra.text || '' },
       }
-      return new Function('document', 'window', 'location', `${fn}\nreturn ttVideoUrlsInPage('7471')`)(doc, {}, { pathname: '/@x/video/7471' }) as Any
+      return new Function('document', 'window', 'location', `${fn}\nreturn ttVideoUrlsInPage('7471')`)(doc, {}, { pathname: '/@x/video/7471' }) as Promise<Any>
     }
     // TikTok gives each version's size as a string (DataSize), as on the real page.
     const ver = (key: string, br: number, hosts: string[]) => ({ Bitrate: br, PlayAddr: { UrlKey: key, DataSize: String(Math.round(br * 38 / 8)), UrlList: hosts.map((h) => `https://${h}/video/tos/${key}`) } })
     const data = { __DEFAULT_SCOPE__: { 'webapp.video-detail': { statusCode: 0, itemInfo: { itemStruct: { id: '7471', video: {
       bitrateInfo: [ver('v1_bytevc2_1080p_3000000', 3000000, ['v16.tiktok.com']), ver('v1_bytevc1_1080p_2500000', 2500000, ['v16.tiktok.com']), ver('v1_h264_720p_1900000', 1900000, ['www.tiktok.com', 'v16.tiktok.com', 'v19.tiktok.com']), ver('v1_h264_540p_1100000', 1100000, ['v16.tiktok.com'])],
       playAddr: 'https://v16.tiktok.com/video/tos/play', downloadAddr: 'https://v16.tiktok.com/video/tos/download', duration: 38, size: '9025000' } } } } } }
-    const r = page(data)
+    const r = await page(data)
     const order = r.urls.map((u: Any) => u.url.replace('https://', '').replace('/video/tos/', ' '))
     check(`H.264 comes first, best first, www.tiktok.com after, bytevc2 left out, the watermarked version near the end (${order.join(' | ')})`,
       order[0] === 'v16.tiktok.com v1_h264_720p_1900000' && order[1] === 'v19.tiktok.com v1_h264_720p_1900000' && order[2] === 'v16.tiktok.com v1_h264_540p_1100000'
       && !order.some((o: string) => /bytevc2/.test(o)) && order.indexOf('www.tiktok.com v1_h264_720p_1900000') > order.indexOf('v16.tiktok.com v1_bytevc1_1080p_2500000') && order.indexOf('v16.tiktok.com download') > order.indexOf('v16.tiktok.com play'))
     check(`each version carries the size TikTok gives for it, and the video its length (${r.urls[0].size}, ${r.dur})`, r.urls[0].size === 9025000 && r.urls[0].q === 'h264_720p' && r.urls.find((u: Any) => /download$/.test(u.url)).size === 0 && r.urls.find((u: Any) => /play$/.test(u.url)).size === 9025000 && r.dur === 38)
     check('what the page held is said, with the versions TikTok listed', /data yes \(webapp\.video-detail\); status 0; video found/.test(r.seen) && /versions bytevc2_1080p_3000000 bytevc1_1080p_2500000 h264_720p_1900000/.test(r.seen))
-    const wait = page(null, { ids: ['cs', 'wci'], text: 'Please wait...' })
+    const wait = await page(null, { ids: ['cs', 'wci'], text: 'Please wait...' })
     check('TikTok’s "Please wait..." check page is told apart, so SCOUT waits for it', wait.challenge === true && wait.urls.length === 0 && /TikTok check page/.test(wait.seen))
-    const pics = page({ __DEFAULT_SCOPE__: { 'webapp.video-detail': { statusCode: 0, itemInfo: { itemStruct: { id: '7471', imagePost: { images: [{}, {}, {}] }, video: { duration: 0 } } } } } })
+    const pics = await page({ __DEFAULT_SCOPE__: { 'webapp.video-detail': { statusCode: 0, itemInfo: { itemStruct: { id: '7471', imagePost: { images: [{}, {}, {}] }, video: { duration: 0 } } } } } })
     check('a photo post is told apart', pics.photo === true && pics.urls.length === 0 && /photo post \(3 pictures\)/.test(pics.seen))
-    const st = page({ __DEFAULT_SCOPE__: { 'webapp.video-detail': { statusCode: 10204, statusMsg: 'blocked' } } })
+    const st = await page({ __DEFAULT_SCOPE__: { 'webapp.video-detail': { statusCode: 10204, statusMsg: 'blocked' } } })
     check('a status instead of the video is read', st.status === 10204 && st.found === false && /status 10204 blocked/.test(st.seen))
+    // 1.60.7: from the quiet page, the video's page read as text; the open page is never touched.
+    const asked: string[] = []
+    const parsed = { getElementById: (x: string) => x === '__UNIVERSAL_DATA_FOR_REHYDRATION__' ? { textContent: JSON.stringify(data) } : null, querySelectorAll: () => [], body: { textContent: '' } }
+    const touched = { getElementById: () => { asked.push('document') ; return null }, querySelector: () => { asked.push('document'); return null }, body: { innerText: '' } }
+    const viaText = await (new Function('document', 'window', 'location', 'fetch', 'DOMParser', `${fn}\nreturn ttVideoUrlsInPage('7471', '/@x/video/7471')`)(
+      touched, {}, { pathname: '/robots.txt' }, async (u: string) => { asked.push(u); return { status: 200, text: async () => '<html>' } }, class { parseFromString() { return parsed } }) as Promise<Any>)
+    check(`from the quiet page, the video's page is read as text, with the same addresses (${viaText.urls.length}; ${viaText.seen.slice(0, 80)})`, viaText.urls.length === r.urls.length && viaText.urls[0].url === r.urls[0].url && asked.join(',') === '/@x/video/7471' && /page \/@x\/video\/7471 \(read as text, 200\)/.test(viaText.seen))
   }
 
   // ── The page way's own check of the file, on an MP4 whole and cut short ──
@@ -274,11 +305,18 @@ const ways = (r: Any) => (r.tried || []).map((t: Any) => `${t.way}:${t.result}`)
     const save = sec.slice(sec.indexOf('function ttPageSaveStartInPage'), sec.indexOf('function ttPageSaveStateInPage'))
     const box = (type: string, size: number) => { const b = new Uint8Array(size); new DataView(b.buffer).setUint32(0, size); for (let i = 0; i < 4; i++) b[4 + i] = type.charCodeAt(i); return b }
     const mp4 = new Uint8Array([...box('ftyp', 24), ...box('moov', 400), ...box('mdat', 300000)])
-    const run = async (bytes: Uint8Array, want: number) => {
+    const run = async (bytes: Uint8Array, want: number, full = bytes.length) => {
       const win: Any = {}
       const clicked: string[] = []
       const doc = { querySelectorAll: () => [], createElement: () => ({ click() { clicked.push('a') }, remove() {}, style: {} }), body: { appendChild() {} } }
-      const fetchFn = async () => new Response(new Blob([bytes as BlobPart]), { headers: { 'content-type': 'video/mp4' } })
+      const fetchFn = async (_u: string, init: Any) => {
+        const m = /bytes=(\d+)-(\d+)/.exec((init && init.headers && init.headers.Range) || '')
+        if (!m) return new Response(new Blob([bytes as BlobPart]), { headers: { 'content-type': 'video/mp4' } })
+        const a = Number(m[1])
+        if (a >= bytes.length) return new Response(null, { status: 416 })
+        const piece = bytes.slice(a, Math.min(bytes.length, Number(m[2]) + 1))
+        return new Response(new Blob([piece as BlobPart]), { status: 206, headers: { 'content-type': 'video/mp4', 'content-range': `bytes ${a}-${a + piece.length - 1}/${full}` } })
+      }
       const url = { createObjectURL: () => 'blob:x', revokeObjectURL: () => {} }
       new Function('window', 'document', 'fetch', 'URL', `${save}\nreturn ttPageSaveStartInPage('https://v16/x', 'v.mp4', true, ${want})`)(win, doc, fetchFn, url)
       for (let i = 0; i < 50 && !win.__mvpTtSave.done; i++) await sleep(20)
@@ -288,6 +326,11 @@ const ways = (r: Any) => (r.tried || []).map((t: Any) => `${t.way}:${t.result}`)
     check(`a whole MP4 is saved (${whole.error || 'ok'})`, whole.ok === true && whole.clicked === 1)
     const cut = await run(mp4.slice(0, 120000), mp4.length)
     check(`an MP4 cut short is not saved, and says how much came (${cut.error}: ${cut.detail})`, cut.ok === false && cut.error === 'page-cut-short' && /120000 bytes, boxes ftyp,moov,mdat/.test(cut.detail) && cut.clicked === 0)
+    const big = new Uint8Array([...box('ftyp', 24), ...box('moov', 400), ...box('mdat', 2600000)])
+    const inParts = await run(big, big.length)
+    check(`a file is read in 1 MB parts, as TikTok's own player reads it, and saved whole (${inParts.parts} parts, ${inParts.bytes} bytes)`, inParts.ok === true && inParts.parts === 3 && inParts.bytes === big.length && inParts.clicked === 1)
+    const stops = await run(big.slice(0, 1048576), big.length, big.length)
+    check(`TikTok stopping after a part is a file cut short, said with how much came (${stops.error}: ${stops.detail})`, stops.ok === false && stops.error === 'page-cut-short' && /^1048576 of \d+ bytes, then TikTok answered 416$/.test(stops.detail) && stops.clicked === 0)
     const small = await run(mp4, mp4.length * 3)
     check(`a whole MP4 smaller than TikTok says is not saved (${small.error}: ${small.detail})`, small.ok === false && small.error === 'page-cut-short' && / of \d+ bytes/.test(small.detail))
   }

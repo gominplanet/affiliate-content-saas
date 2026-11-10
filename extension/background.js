@@ -16716,7 +16716,7 @@ async function ttDailyTick() {
   await ttScan({ handle: d.handle, scanId: s.data.scanId, origin: d.origin, daily: true })
 }
 try { chrome.alarms.onAlarm.addListener((a) => { if (a && a.name === TT_DAILY_ALARM) void ttDailyTick() }) } catch (e) {}
-// ── MATCH MY TIKTOK: DOWNLOAD A VIDEO (1.60.0 to 1.60.6) ─────────────────────
+// ── MATCH MY TIKTOK: DOWNLOAD A VIDEO (1.60.0 to 1.60.7) ─────────────────────
 // Seb, 2026-11-09: "can we also add a download button for each video matched
 // so users can then re-upload those to trybe". The creator's own video, from
 // its own page on TikTok, opened in SCOUT's minimized window: SCOUT reads the
@@ -16753,9 +16753,25 @@ try { chrome.alarms.onAlarm.addListener((a) => { if (a && a.name === TT_DAILY_AL
 // a page that has not answered yet again (asks piling up keep it busy); and
 // TikTok's own player in SCOUT's tab is paused while SCOUT saves the file.
 //
+// 1.60.7 (Seb, 2026-11-10: "the URL is just cycling through a bunch of
+// different numbers and the page doesn't load"): SCOUT's quiet-window shim
+// tells a page every element is on screen. On a TikTok video page a signed-in
+// creator gets, TikTok lists more videos below and moves the address to the
+// one it thinks is on screen; told all of them are, it ran from video to
+// video, loading and playing each, so the page stopped answering SCOUT and
+// TikTok's video servers were flooded. The download no longer uses the shim,
+// and no TikTok code runs while it works: SCOUT opens www.tiktok.com/robots.txt
+// (a TikTok address with no TikTok code), reads the video's page there as
+// text, and reads the file there in 1 MB parts the way TikTok's own player
+// does, asking again for a part that stops coming. Only when that text gives
+// no address is the video's own page opened (without the shim); the profile
+// fallback keeps the shim the scan uses, and SCOUT comes back to the quiet
+// address to save.
+//
 // It says which worked, the file name and its size; a puzzle, a private or
 // removed video, or a file TikTok would not give is said as such, never a
 // download that did not happen. Nothing is posted, liked or changed.
+const TT_DL_QUIET_URL = 'https://www.tiktok.com/robots.txt'
 const TT_DL_MAX_MS = 270000   // one whole download (under the five minutes Chrome gives one message)
 const TT_DL_STALL_MS = 20000  // no new bytes for this long: that try is over
 const TT_DL_ASK_MS = 120000   // time to answer Chrome's "where to save" window
@@ -16774,6 +16790,17 @@ function ttLimit(p, ms, code) {
     Promise.resolve(p).finally(() => clearTimeout(t)),
     new Promise((_, rej) => { t = setTimeout(() => rej(new Error(code)), ms) }),
   ])
+}
+
+// A tab on the address asked, finished loading (1.60.7: waitForTabLoad misses a
+// page that finished before it began listening, and robots.txt is quick).
+async function ttTabReady(tabId, url, ms) {
+  const until = Date.now() + ms
+  while (Date.now() < until) {
+    try { const t = await ttLimit(chrome.tabs.get(tabId), 3000, 'tab'); if (t.status === 'complete' && String(t.url || '').indexOf(url) === 0) return t } catch (e) { if (/No tab/i.test(String(e && e.message))) throw e }
+    await _sleep(250)
+  }
+  return null
 }
 
 // What happened, step by step, with the seconds since the download began
@@ -16817,8 +16844,22 @@ async function ttAsk(tabId, func, args, ms, code) {
 // whether it is TikTok's "Please wait..." check (its own code finishes it and
 // reloads; SCOUT only waits), a photo post (pictures, no video file), or a
 // status TikTok gave instead of the video. EVERYTHING IT USES IS INSIDE IT.
-function ttVideoUrlsInPage(videoId) {
+async function ttVideoUrlsInPage(videoId, fromPath) {
   const want = String(videoId || '')
+  // 1.60.7: from TikTok's quiet page, the video's page is read as text, and
+  // none of TikTok's code runs.
+  let D = document
+  let path = String(location.pathname || '')
+  if (fromPath) {
+    try {
+      const res = await fetch(fromPath, { credentials: 'include' })
+      const html = await res.text()
+      D = new DOMParser().parseFromString(html, 'text/html')
+      path = fromPath + ' (read as text, ' + res.status + ')'
+    } catch (e) {
+      return { urls: [], found: false, failed: true, seen: 'page read as text: ' + String((e && e.message) || e).slice(0, 80), status: null, challenge: false, photo: false, puzzle: false, gone: false }
+    }
+  }
   const cands = []
   const seenUrl = {}
   const rankOf = (key, u, base) => {
@@ -16850,7 +16891,7 @@ function ttVideoUrlsInPage(videoId) {
   let status = null
   let statusMsg = ''
   try {
-    const el = document.getElementById('__UNIVERSAL_DATA_FOR_REHYDRATION__')
+    const el = D.getElementById('__UNIVERSAL_DATA_FOR_REHYDRATION__')
     const j = el ? JSON.parse(el.textContent || '{}') : null
     const scope = j && j.__DEFAULT_SCOPE__
     if (scope) {
@@ -16864,8 +16905,8 @@ function ttVideoUrlsInPage(videoId) {
       item = isItem(st) ? st : (st && st.imagePost ? st : findItem(scope))
     }
   } catch (e) {}
-  try { const m = window.SIGI_STATE && window.SIGI_STATE.ItemModule; if (!item && m) item = m[want] || null } catch (e) {}
-  try { if (!item) { const nd = document.getElementById('__NEXT_DATA__'); if (nd) item = findItem(JSON.parse(nd.textContent || '{}')) } } catch (e) {}
+  try { const m = !fromPath && window.SIGI_STATE && window.SIGI_STATE.ItemModule; if (!item && m) item = m[want] || null } catch (e) {}
+  try { if (!item) { const nd = D.getElementById('__NEXT_DATA__'); if (nd) item = findItem(JSON.parse(nd.textContent || '{}')) } } catch (e) {}
   const v = item && item.video
   if (v) {
     for (const r of (Array.isArray(v.bitrateInfo) ? v.bitrateInfo : [])) {
@@ -16877,18 +16918,19 @@ function ttVideoUrlsInPage(videoId) {
     add(v.playAddr, 'play', v.codecType || '', v.bitrate, 0, playSize)
     add(v.downloadAddr, 'download', '', 0, 10, 0)
   }
-  const vid = document.querySelector('video')
+  const vid = fromPath ? null : document.querySelector('video')
   // How TikTok's own player is doing (1.60.6: Seb saw it stop after 2 seconds).
   let playerAt = ''
   try { if (vid) { const b = vid.buffered && vid.buffered.length ? vid.buffered.end(vid.buffered.length - 1) : 0; playerAt = ' at ' + vid.currentTime.toFixed(1) + 's, buffered to ' + b.toFixed(1) + 's, ready ' + vid.readyState + (vid.paused ? ', paused' : '') + (vid.error ? ', error ' + vid.error.code : '') } } catch (e) {}
   const src = vid ? String(vid.currentSrc || vid.src || '') : ''
   if (vid) { add(src, 'player', '', 0, 12); for (const s of Array.from(vid.querySelectorAll('source'))) add(s.src, 'player', '', 0, 12) }
   cands.sort((a, b) => a.rank - b.rank || b.br - a.br)
-  const text = String((document.body && document.body.innerText) || '').slice(0, 4000)
-  const challenge = !hasData && (!!document.getElementById('wci') || (!!document.getElementById('cs') && /please wait/i.test(text)))
+  if (fromPath) { try { for (const x of Array.from(D.querySelectorAll('script,style'))) x.remove() } catch (e) {} }
+  const text = String((D.body && (fromPath ? D.body.textContent : D.body.innerText)) || '').slice(0, 4000)
+  const challenge = !hasData && (!!D.getElementById('wci') || (!!D.getElementById('cs') && /please wait/i.test(text)))
   const photo = !!(item && item.imagePost && Array.isArray(item.imagePost.images) && item.imagePost.images.length)
   const seen = [
-    'page ' + String(location.pathname || '').slice(0, 60),
+    'page ' + path.slice(0, 90),
     challenge ? 'TikTok check page (Please wait)' : null,
     'data ' + (hasData ? 'yes' + (scopes.length ? ' (' + scopes.join(',') + ')' : '') : 'no'),
     status != null ? 'status ' + status + (statusMsg ? ' ' + statusMsg : '') : null,
@@ -16967,13 +17009,17 @@ function ttItemUrlsInPage(videoId) {
 // The profile way to a video's addresses (1.60.3): the creator's profile,
 // opened in the same tab with the scan's hook in place, scrolled until the
 // video comes in TikTok's own grid answers, the end, or the limit.
-async function ttFromProfile(now, tabId, handle, id) {
+async function ttFromProfile(now, tabId, handle, id, shim) {
   const mine = !ttRun // a scan running has the hook in place already
   try {
     if (mine) {
       try { await chrome.scripting.unregisterContentScripts({ ids: [TT_HOOK_ID] }) } catch (e) {}
       await ttLimit(chrome.scripting.registerContentScripts([{ id: TT_HOOK_ID, matches: TT_ORIGINS, js: ['tiktok-videos-hook.js'], runAt: 'document_start', world: 'MAIN', persistAcrossSessions: false }]), 10000, 'hook-slow')
     }
+    // The grid loads more only when TikTok thinks it is on screen: in SCOUT's
+    // minimized window the profile is told so, as the scan does (never the
+    // video's page, 1.60.7).
+    if (shim) quietTabIds.add(tabId)
     await ttLimit(chrome.tabs.update(tabId, { url: `https://www.tiktok.com/@${encodeURIComponent(handle)}` }), 10000, 'open-profile-slow')
     await waitForTabLoad(tabId, 30000)
     ttNote(now, 'profile open')
@@ -16996,6 +17042,7 @@ async function ttFromProfile(now, tabId, handle, id) {
     }
     return last
   } finally {
+    quietTabIds.delete(tabId)
     if (mine && !ttRun) { try { await chrome.scripting.unregisterContentScripts({ ids: [TT_HOOK_ID] }) } catch (e) {} }
   }
 }
@@ -17006,33 +17053,78 @@ async function ttFromProfile(now, tabId, handle, id) {
 // ttPageSaveStopInPage stops it. EVERYTHING IT USES IS INSIDE IT.
 function ttPageSaveStartInPage(url, filename, withSignIn, want) {
   try { const old = window.__mvpTtSave; if (old && old.stop) old.stop() } catch (e) {}
-  // TikTok's own player is paused while the file is read (1.60.6).
+  // TikTok's own player, on a page that has one, is paused while the file is read (1.60.6).
   try { for (const v of Array.from(document.querySelectorAll('video'))) { v.muted = true; v.pause() } } catch (e) {}
-  const st = { bytes: 0, total: 0, done: false, ok: false, error: null, detail: '', since: Date.now(), stop: null }
+  const st = { bytes: 0, total: 0, done: false, ok: false, error: null, detail: '', since: Date.now(), stop: null, parts: 0, again: 0 }
   window.__mvpTtSave = st
-  const ctl = new AbortController()
-  st.stop = () => { try { ctl.abort() } catch (e) {} }
-  ;(async () => {
-    try {
-      const r = await fetch(url, { credentials: withSignIn ? 'include' : 'omit', signal: ctl.signal })
+  let stopped = false
+  let ctl = null
+  st.stop = () => { stopped = true; try { if (ctl) ctl.abort() } catch (e) {} }
+  const PART = 1048576
+  // One part of the file by its byte range, as TikTok's own player reads it
+  // (1.60.7); a part that stops coming for 15 seconds is asked again, twice.
+  const part = async (from) => {
+    for (let n = 0; ; n++) {
+      if (stopped) throw new Error('stopped')
+      ctl = new AbortController()
+      const c = ctl
+      let quiet = null
+      let got = 0
+      const kick = () => { clearTimeout(quiet); quiet = setTimeout(() => { try { c.abort() } catch (e) {} }, 15000) }
       st.since = Date.now()
-      if (!r.ok) { st.error = 'page-http-' + r.status; return }
-      const type = r.headers.get('content-type') || ''
-      st.total = Number(r.headers.get('content-length')) || 0
-      if (type && !/video|octet-stream/i.test(type)) { st.error = 'page-not-a-video'; st.detail = type.slice(0, 60); return }
-      const parts = []
-      if (r.body && r.body.getReader) {
+      try {
+        kick()
+        const r = await fetch(url, { credentials: withSignIn ? 'include' : 'omit', signal: c.signal, headers: { Range: 'bytes=' + from + '-' + (from + PART - 1) } })
+        if (r.status !== 206 && r.status !== 200) { clearTimeout(quiet); return { status: r.status } }
+        const m = /\/(\d+)\s*$/.exec(r.headers.get('content-range') || '')
+        const total = m ? Number(m[1]) : r.status === 200 ? Number(r.headers.get('content-length')) || 0 : 0
+        const chunks = []
         const reader = r.body.getReader()
         for (;;) {
-          const { done, value } = await reader.read()
-          if (done) break
-          parts.push(value); st.bytes += value.length; st.since = Date.now()
+          kick()
+          const x = await reader.read()
+          if (x.done) break
+          chunks.push(x.value); got += x.value.length; st.bytes += x.value.length; st.since = Date.now()
         }
-      } else { const b = await r.blob(); parts.push(b); st.bytes = b.size }
-      const blob = new Blob(parts, { type: type || 'video/mp4' })
+        clearTimeout(quiet)
+        return { status: r.status, type: r.headers.get('content-type') || '', total, chunks, got }
+      } catch (e) {
+        clearTimeout(quiet)
+        st.bytes -= got
+        if (stopped) throw new Error('stopped')
+        if (n >= 2) throw e
+        st.again++
+      }
+    }
+  }
+  ;(async () => {
+    try {
+      const parts = []
+      let at = 0
+      let total = 0
+      let type = ''
+      for (let n = 0; n < 500; n++) {
+        const p = await part(at)
+        if (!p.chunks) {
+          if (n === 0) { st.error = 'page-http-' + p.status; return }
+          st.error = 'page-cut-short'; st.detail = at + ' of ' + total + ' bytes, then TikTok answered ' + p.status; return
+        }
+        if (n === 0) {
+          type = p.type
+          if (type && !/video|octet-stream/i.test(type)) { st.error = 'page-not-a-video'; st.detail = type.slice(0, 60); return }
+        }
+        for (const x of p.chunks) parts.push(x)
+        at += p.got
+        st.parts++
+        if (p.status === 200) { total = at; break }
+        total = p.total || total
+        st.total = total
+        if (!p.got || !total || at >= total) break
+      }
+      const blob = new Blob(parts, { type: 'video/mp4' })
       if (blob.size < 50000) { st.error = 'page-not-a-video'; st.detail = blob.size + ' bytes'; return }
       // A real MP4 says "ftyp" at its fifth byte (1.60.5: Seb's Downloads held
-      // two 300 KB "videos" that were TikTok pages).
+      // two 300 KB "videos").
       const head = new Uint8Array(await blob.slice(0, 12).arrayBuffer())
       if (String.fromCharCode(head[4], head[5], head[6], head[7]) !== 'ftyp') { st.error = 'page-not-a-video'; st.detail = 'starts ' + String.fromCharCode.apply(null, Array.from(head.slice(0, 9))).replace(/[^\x20-\x7e]/g, '.'); return }
       // Whole, not cut short (1.60.6: a 4.5 MB video saved as 300 KB played 2
@@ -17045,10 +17137,10 @@ function ttPageSaveStartInPage(url, filename, withSignIn, want) {
         const hb = new DataView(await blob.slice(off, off + 16).arrayBuffer())
         if (hb.byteLength < 8) { cut = true; break }
         let size = hb.getUint32(0)
-        const type = String.fromCharCode(hb.getUint8(4), hb.getUint8(5), hb.getUint8(6), hb.getUint8(7))
+        const t = String.fromCharCode(hb.getUint8(4), hb.getUint8(5), hb.getUint8(6), hb.getUint8(7))
         if (size === 1) { if (hb.byteLength < 16) { cut = true; break } size = hb.getUint32(8) * 4294967296 + hb.getUint32(12) } else if (size === 0) size = blob.size - off
         if (size < 8) { cut = true; break }
-        if (boxes.length < 12) boxes.push(type)
+        if (boxes.length < 12) boxes.push(t)
         if (off + size > blob.size) { cut = true; break }
         off += size
       }
@@ -17061,7 +17153,7 @@ function ttPageSaveStartInPage(url, filename, withSignIn, want) {
       setTimeout(() => { try { URL.revokeObjectURL(href) } catch (e) {} }, 600000)
       st.ok = true
     } catch (e) {
-      st.error = e && e.name === 'AbortError' ? 'page-stopped' : 'page-fetch-blocked'
+      st.error = stopped ? 'page-stopped' : e && e.name === 'AbortError' ? (st.bytes > 0 ? 'page-stalled' : 'page-no-answer') : 'page-fetch-blocked'
       st.detail = e && e.message ? String(e.message).slice(0, 120) : ''
     } finally { st.done = true }
   })()
@@ -17069,7 +17161,7 @@ function ttPageSaveStartInPage(url, filename, withSignIn, want) {
 }
 function ttPageSaveStateInPage() {
   const s = window.__mvpTtSave
-  return s ? { bytes: s.bytes, total: s.total, done: s.done, ok: s.ok, error: s.error, detail: s.detail, still: Date.now() - s.since } : null
+  return s ? { bytes: s.bytes, total: s.total, done: s.done, ok: s.ok, error: s.error, detail: s.detail, still: Date.now() - s.since, parts: s.parts || 0, again: s.again || 0 } : null
 }
 function ttPageSaveStopInPage() { try { const s = window.__mvpTtSave; if (s && s.stop) s.stop() } catch (e) {} return true }
 
@@ -17140,7 +17232,7 @@ async function ttTabState(tabId) {
     if (t.frozen) bits.push('frozen by Chrome')
     if (t.discarded) bits.push('discarded by Chrome')
     if (t.status && t.status !== 'complete') bits.push(t.status)
-    try { const u = new URL(t.url || t.pendingUrl || ''); if (!/\/video\//.test(u.pathname) && !/^\/@/.test(u.pathname)) bits.push('now on ' + u.hostname + u.pathname.slice(0, 30)) } catch (e) {}
+    try { const u = new URL(t.url || t.pendingUrl || ''); if (!/\/video\//.test(u.pathname) && !/^\/@/.test(u.pathname) && u.pathname !== '/robots.txt') bits.push('now on ' + u.hostname + u.pathname.slice(0, 30)) } catch (e) {}
     return bits.length ? ' (tab ' + bits.join(', ') + ')' : ''
   } catch (e) { return ' (tab gone)' }
 }
@@ -17200,7 +17292,7 @@ async function ttPageSave(job, tabId, c, name, withSignIn) {
       }
     }
     if (!st.ok) { caught.cancel(); ttNote(job, 'page read ended: ' + (st.error || 'error') + (st.detail ? ' (' + st.detail + ')' : '')); return { result: (st.error || 'page-error') + tag, detail: st.detail || '' } }
-    ttNote(job, 'page read whole: ' + st.bytes + ' bytes')
+    ttNote(job, 'page read whole: ' + st.bytes + ' bytes in ' + (st.parts || 1) + ' parts' + (st.again ? ', ' + st.again + ' asked again' : ''))
     const dlId = await caught.wait(10000)
     if (dlId == null) return { result: 'page-no-download' + tag }
     const d = await ttFollowDownload(job, dlId, Date.now() + 60000, async () => { shown = await ttShowTabWindow(tabId) })
@@ -17225,7 +17317,7 @@ async function ttDownload(now, { handle, videoId, filename, visible }) {
   // The tab, followed (1.60.6: Seb's visible try ended in "No tab with id"):
   // one Chrome replaces is followed to its new id; one that closes is said.
   const onGone = (gone, info) => { if (gone === tabId && !now.tabGone) { now.tabGone = { at: Date.now(), step: now.step, withWindow: !!(info && info.isWindowClosing) }; ttNote(now, 'tab closed' + (info && info.isWindowClosing ? ' with its window' : '') + ' during ' + now.step) } }
-  const onSwap = (added, removed) => { if (removed === tabId) { ttNote(now, 'tab replaced by Chrome (' + removed + ' to ' + added + ')'); tabId = added; if (!visible) quietTabIds.add(added) } }
+  const onSwap = (added, removed) => { if (removed === tabId) { ttNote(now, 'tab replaced by Chrome (' + removed + ' to ' + added + ')'); tabId = added } }
   try { chrome.tabs.onRemoved.addListener(onGone); chrome.tabs.onReplaced.addListener(onSwap) } catch (e) {}
   const closedWords = () => { const g = now.tabGone; return 'the TikTok tab closed ' + Math.round((g.at - now.startedAt) / 1000) + 's after SCOUT began, while ' + g.step + (g.withWindow ? ', with its window' : '') }
   try {
@@ -17234,23 +17326,42 @@ async function ttDownload(now, { handle, videoId, filename, visible }) {
     // 1.60.4: on the creator's ask, a TikTok tab in front of them instead of
     // SCOUT's minimized window (the same steps; the tab closes after), to tell
     // whether the hidden window is what stops it.
+    // 1.60.7: the tab opens on TikTok's quiet address (no TikTok code), and
+    // never with the quiet-window shim.
     const tab = visible
-      ? await ttLimit(chrome.tabs.create({ url: videoUrl, active: true }), 20000, 'open-tab-slow')
-      : await ttLimit(openWorkTab(videoUrl), 20000, 'open-tab-slow')
+      ? await ttLimit(chrome.tabs.create({ url: TT_DL_QUIET_URL, active: true }), 20000, 'open-tab-slow')
+      : await ttLimit(openWorkTab(TT_DL_QUIET_URL), 20000, 'open-tab-slow')
     tabId = tab.id
     ttNote(now, (visible ? 'visible' : 'hidden') + ' tab opened')
-    if (!visible) { quietTabIds.add(tabId); void quietShim(tabId) }
-    await waitForTabLoad(tabId, 30000)
-    ttNote(now, 'page loaded')
+    const atQuiet = async () => {
+      const t = await ttTabReady(tabId, TT_DL_QUIET_URL, 20000)
+      ttNote(now, t ? 'quiet TikTok page ready' : 'quiet TikTok page did not finish loading')
+      return !!t
+    }
+    let quiet = await atQuiet()
     step('finding')
     let found = null
+    const said = (f) => f ? (f.urls.length ? f.urls.length + ' addresses' + (f.urls[0].size ? ', first ' + f.urls[0].q + ' ' + f.urls[0].size + ' bytes' : '') : 'no address') : 'empty answer'
+    // The video's page, read as text from the quiet page.
+    if (quiet) {
+      try { found = await ttAsk(tabId, ttVideoUrlsInPage, [id, `/@${encodeURIComponent(h)}/video/${encodeURIComponent(id)}`], 25000, 'page-busy'); ttNote(now, 'page as text: ' + said(found) + (found && !found.urls.length ? ' (' + String(found.seen || '').slice(0, 160) + ')' : '')) } catch (e) { found = null; ttNote(now, 'page as text: ' + ttWhy(e, 'page-busy', 25000)) }
+    }
+    const settled = (f) => !!f && (f.puzzle || f.gone || f.photo || f.urls.length > 0 || (f.status != null && f.status !== 0))
     let empty = 0
     let lastSaid = ''
-    for (let i = 0; i < 40 && !now.stop && !now.tabGone; i++) {
+    // Only when the text gave no answer: the video's own page, opened, without the shim.
+    if (!settled(found) && !now.tabGone && !now.stop) {
+      ttNote(now, 'opening the video page itself')
+      quiet = false
+      await ttLimit(chrome.tabs.update(tabId, { url: videoUrl }), 10000, 'open-video-slow')
+      await waitForTabLoad(tabId, 30000)
+      ttNote(now, 'video page loaded')
+    }
+    for (let i = 0; i < 40 && !now.stop && !now.tabGone && !settled(found); i++) {
       await _sleep(1000)
-      let said = ''
-      try { found = await ttAsk(tabId, ttVideoUrlsInPage, [id], 10000, 'page-busy'); said = found ? (found.urls.length ? found.urls.length + ' addresses' + (found.urls[0].size ? ', first ' + found.urls[0].q + ' ' + found.urls[0].size + ' bytes' : '') : 'no address') : 'empty answer' } catch (e) { found = null; said = 'no answer: ' + ttWhy(e, 'page-busy', 10000) }
-      if (said !== lastSaid) { ttNote(now, 'read ' + (i + 1) + ': ' + said + (found && found.seen && !found.urls.length ? ' (' + found.seen.slice(0, 120) + ')' : '')); lastSaid = said }
+      let line = ''
+      try { found = await ttAsk(tabId, ttVideoUrlsInPage, [id], 10000, 'page-busy'); line = said(found) } catch (e) { found = null; line = 'no answer: ' + ttWhy(e, 'page-busy', 10000) }
+      if (line !== lastSaid) { ttNote(now, 'read ' + (i + 1) + ': ' + line + (found && found.seen && !found.urls.length ? ' (' + found.seen.slice(0, 120) + ')' : '')); lastSaid = line }
       if (found && (found.puzzle || found.gone || found.photo || found.urls.length)) break
       // A status instead of the video: no use waiting for it.
       if (found && found.status != null && found.status !== 0) break
@@ -17269,7 +17380,8 @@ async function ttDownload(now, { handle, videoId, filename, visible }) {
       // 1.60.3: the video's page gave no address; the profile's own video
       // grid, the way the scan reads it, carries the same addresses.
       step('profile')
-      const g = await ttFromProfile(now, tabId, h, id)
+      quiet = false
+      const g = await ttFromProfile(now, tabId, h, id, !visible)
       if (g && g.puzzle) return say({ ok: false, error: 'puzzle' })
       if (g && g.found && g.photo) return say({ ok: false, error: 'photo-post', seen: `${pageSaw} | profile: a photo post` })
       const gridSaw = !g ? 'profile: no answer' : g.found ? `profile: video found${g.urls.length ? '' : `, no address (fields ${g.fields})`}` : `profile: ${g.have} videos read, this one not among them${g.hooked ? '' : ' (grid not read)'}`
@@ -17281,6 +17393,10 @@ async function ttDownload(now, { handle, videoId, filename, visible }) {
     // at least 20 KB a second of the video (a cut short file is far below).
     const wholeAt = (c) => c.size ? Math.floor(c.size * 0.98) : dur ? dur * 20000 : 50000
     ttNote(now, 'addresses' + (dur ? ' (video ' + dur + 's long)' : '') + ': ' + found.urls.map((c) => c.from + (c.q ? ' ' + c.q : '') + (c.size ? ' ' + c.size : '') + ' ' + String(c.url).split('/')[2]).join(', '))
+    // Back to the quiet page to save (1.60.7), so no TikTok code runs meanwhile.
+    if (!quiet && !now.tabGone && !now.stop) {
+      try { await ttLimit(chrome.tabs.update(tabId, { url: TT_DL_QUIET_URL }), 10000, 'quiet-page-slow'); quiet = await atQuiet() } catch (e) { ttNote(now, 'back to the quiet page: ' + (e && e.message)) }
+    }
     // 1.60.5: TIKTOK'S PAGE FIRST, AS TIKTOK'S OWN PLAYER GETS IT (Seb's
     // Chrome, 2026-11-10: Chrome's own downloads, with no page behind them,
     // got TikTok pages saved as .mp4 and "File wasn't available on site").
