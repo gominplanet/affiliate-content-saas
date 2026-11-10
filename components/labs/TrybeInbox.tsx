@@ -18,7 +18,7 @@
 // A reply counts as sent only when it shows up in the conversation after.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Loader2, RefreshCw, Send, AlertTriangle, MessageCircle, Sparkles, Undo2 } from 'lucide-react'
+import { Loader2, RefreshCw, Send, AlertTriangle, MessageCircle, Sparkles, Undo2, Search, X } from 'lucide-react'
 import { requestTrybeApi } from '@/lib/extension-frame'
 import TrybeBrandCard from '@/components/labs/TrybeBrandCard'
 import TrybeBrandLinks from '@/components/labs/TrybeBrandLinks'
@@ -27,6 +27,7 @@ import { replyBlanks, REPLY_STEPS, type ReplySteps } from '@/lib/trybe-outreach'
 import { useTrybeVoice, readVoice, rememberMvpText } from '@/components/labs/useTrybeVoice'
 import { SCOUT_TRYBE_INBOX_MIN_VERSION, SCOUT_TRYBE_PLAYBOOK_MIN_VERSION, SCOUT_TRYBE_MYBRANDS_MIN_VERSION, scoutAtLeast } from '@/lib/scout-version'
 import { seenCovers, seenUpTo, rememberSeen } from '@/lib/trybe-read'
+import { searchChats, CHAT_PAGE, CHAT_PAGES_MAX } from '@/lib/trybe-inbox-search'
 
 const PURPLE = 'var(--accent)'
 const RED = '#DC2626'
@@ -233,6 +234,13 @@ export default function TrybeInbox({ scoutVersion, allowed, openRequest, onOpene
   directory?: Array<{ id: string; name: string; website?: string | null }>
 }) {
   const [convos, setConvos] = useState<Conversation[] | null>(null)
+  // SEARCH YOUR CHATS (Seb, 2026-11-10: "a search bar to search for the brand
+  // that we want to talk to"). The list holds TRYBE's newest 100; a search
+  // reads on through older pages (at most CHAT_PAGES_MAX) so an older brand
+  // is found too, and says how many chats it looked through.
+  const [chatQuery, setChatQuery] = useState('')
+  const [olderChats, setOlderChats] = useState<'more' | 'reading' | 'all' | 'capped' | 'failed'>('more')
+  const pagesRead = useRef(1)
   // The last list read, so a failed refresh keeps it on screen (Seb, 2026-11-09:
   // a dropped read wiped the inbox to one red line, "this happens too often").
   const convosRef = useRef<Conversation[]>([])
@@ -285,12 +293,40 @@ export default function TrybeInbox({ scoutVersion, allowed, openRequest, onOpene
       const r = await requestTrybeApi('GET', '/backend/api/channels?page=1&limit=100')
       if (!r.ok) { const had = convosRef.current.length; setListNote(had ? `${errWords(r)}. The chats below are from the last read.` : errWords(r)); return null }
       const list = listOf(r.json).map(readConversation).filter((c): c is Conversation => !!c).sort((a, b) => b.at - a.at)
+      pagesRead.current = 1
+      setOlderChats(listOf(r.json).length < CHAT_PAGE ? 'all' : 'more')
       setConvos(list)
       onConvos?.(list)
       if (!list.length) setListNote(listOf(r.json).length ? `MVP could not read TRYBE's conversations. TRYBE sent: ${shapeOf(r.json)}.` : 'No conversations on TRYBE yet.')
       return list
     } finally { setLoadingList(false); listing.current = false }
   }, [myName, onConvos]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // The older pages of TRYBE's chat list, read on for a search, merged in.
+  const readingOlder = useRef(false)
+  const loadOlderChats = useCallback(async () => {
+    if (readingOlder.current) return
+    readingOlder.current = true
+    setOlderChats('reading')
+    try {
+      for (let page = pagesRead.current + 1; page <= CHAT_PAGES_MAX; page++) {
+        const r = await requestTrybeApi('GET', `/backend/api/channels?page=${page}&limit=${CHAT_PAGE}`)
+        if (!r.ok) { setOlderChats('failed'); return }
+        const raw = listOf(r.json)
+        const more = raw.map(readConversation).filter((c): c is Conversation => !!c)
+        pagesRead.current = page
+        setConvos((prev) => {
+          const by = new Map((prev || []).map((c) => [c.id, c]))
+          for (const c of more) if (!by.has(c.id)) by.set(c.id, c)
+          return Array.from(by.values()).sort((a, b) => b.at - a.at)
+        })
+        if (raw.length < CHAT_PAGE) { setOlderChats('all'); return }
+      }
+      setOlderChats('capped')
+    } finally { readingOlder.current = false }
+  }, [])
+  useEffect(() => { if (chatQuery.trim() && olderChats === 'more') void loadOlderChats() }, [chatQuery, olderChats, loadOlderChats])
+  const shownChats = useMemo(() => searchChats(convos || [], chatQuery), [convos, chatQuery])
 
   const loadMessages = useCallback(async (id: string, quiet = false) => {
     if (!quiet) { setLoadingMsgs(true); setMsgNote(null) }
@@ -448,7 +484,25 @@ export default function TrybeInbox({ scoutVersion, allowed, openRequest, onOpene
         <div className="border-r overflow-y-auto max-h-[36rem]" style={{ borderColor: 'var(--border)' }}>
           {convos === null && <p className="p-4 text-[12px] inline-flex items-center gap-1.5" style={soft}><Loader2 size={12} className="animate-spin" /> Reading your conversations...</p>}
           {listNote && <p className="p-4 text-[12px]" style={{ color: convos?.length ? 'inherit' : AMBER }}>{listNote}</p>}
-          {(convos || []).map(c => (
+          {convos !== null && convos.length > 0 && (
+            <div className="sticky top-0 z-[1] px-3 py-2 border-b" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
+              <div className="relative">
+                <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2" style={soft} />
+                <input type="search" value={chatQuery} onChange={(e) => setChatQuery(e.target.value)} onKeyDown={(e) => { if (e.key === 'Escape') setChatQuery('') }}
+                  placeholder="Search brands" aria-label="Search your TRYBE chats by brand"
+                  className="w-full rounded-lg border pl-8 pr-8 py-1.5 text-[13px] bg-transparent" style={{ borderColor: 'var(--border)', color: 'var(--text)' }} />
+                {chatQuery && <button type="button" onClick={() => setChatQuery('')} aria-label="Clear the search" className="absolute right-2 top-1/2 -translate-y-1/2" style={soft}><X size={13} /></button>}
+              </div>
+              {chatQuery.trim() && (
+                <p className="text-[11px] mt-1 inline-flex items-center gap-1" style={soft}>
+                  {olderChats === 'reading' && <Loader2 size={10} className="animate-spin" />}
+                  {shownChats.length ? `${shownChats.length} of your ${convos.length.toLocaleString()} chats.` : `No chat with \u201C${chatQuery.trim()}\u201D in your ${convos.length.toLocaleString()} chats.`}
+                  {olderChats === 'reading' ? ' Reading your older chats on TRYBE...' : olderChats === 'capped' ? ` Your newest ${(CHAT_PAGE * CHAT_PAGES_MAX).toLocaleString()} were searched.` : olderChats === 'failed' ? ' TRYBE did not give the older ones; press Refresh to try again.' : ''}
+                </p>
+              )}
+            </div>
+          )}
+          {shownChats.map(c => (
             <button key={c.id} onClick={() => void open(c)} className="w-full text-left px-4 py-3 border-b block"
               style={{ borderColor: 'var(--border)', background: c.id === openId ? 'rgb(var(--brand-rgb) / 0.08)' : 'transparent' }}>
               <span className="flex items-center gap-2">
