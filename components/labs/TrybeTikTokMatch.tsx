@@ -397,6 +397,8 @@ const DL_WORDS: Record<string, string> = {
   'open-tab-slow': 'SCOUT could not open TikTok in its window in time, so nothing was saved. Try again.',
   // SCOUT 1.60.4.
   'photo-post': 'This TikTok is a photo post (pictures with music), so there is no video file to save. TRYBE takes videos.',
+  // SCOUT 1.60.6.
+  'tab-closed': 'The TikTok tab SCOUT opened was closed before the video was saved, so nothing was saved. Leave that tab open until SCOUT closes it by itself, then press Try again.',
 }
 /** A status TikTok's page gave instead of the video (SCOUT 1.60.4), in words. */
 function statusWords(code: number | null | undefined): string {
@@ -430,6 +432,8 @@ function tryWords(raw: string): string {
   // SCOUT 1.60.5: a busy page says how Chrome held its tab.
   if (/^page-busy/.test(code)) { const tab = code.match(/\(tab ([^)]*)\)/); return 'TikTok’s page stopped answering SCOUT' + (tab ? ` (the tab was ${tab[1]})` : '') }
   if (/^chrome-not-a-video/.test(code)) return 'TikTok sent a web page instead of the video, so SCOUT deleted it'
+  // SCOUT 1.60.6: smaller than TikTok says the video is (Seb's played 2 seconds and froze).
+  if (/^(chrome|page)-cut-short/.test(code)) return 'TikTok stopped sending the video part way, so SCOUT deleted the part that came'
   if (code === 'chrome-stopped' || code === 'page-stopped') return 'SCOUT stopped it at its time limit'
   if (code === 'chrome-stalled' || code === 'page-stalled') return 'TikTok stopped sending the file part way'
   if (code === 'chrome-no-answer' || code === 'page-no-answer') return 'TikTok did not start sending the file'
@@ -470,6 +474,8 @@ export interface DownloadReport {
   tried: Array<{ from: string; way: string; result: string }>; scout: string | null
   /** Tried from a TikTok tab in front of the creator (SCOUT 1.60.4). */
   visible?: boolean
+  /** Every step SCOUT took, with its time (SCOUT 1.60.6). */
+  trace?: string | null
 }
 const LOG_KEY = 'mvp.tiktokDownloads.v1'
 export function readDownloadLog(): DownloadReport[] {
@@ -500,7 +506,7 @@ async function downloadVideo(handle: string, brand: string, v: { id: string; pos
   const report = (why: string | null): DownloadReport => {
     const rep: DownloadReport = {
       at: new Date().toISOString(), videoId: v.id, brand, ok: !!r.ok, why, visible, error: r.error ?? null, step: r.step ?? null, way: r.way ?? null, from: r.from ?? null,
-      bytes: r.bytes ?? null, total: r.total ?? null, status: r.status ?? null, seen: r.seen ?? null, tried: r.tried ?? [], scout: r.scout ?? null,
+      bytes: r.bytes ?? null, total: r.total ?? null, status: r.status ?? null, seen: r.seen ?? null, tried: r.tried ?? [], scout: r.scout ?? null, trace: r.trace ?? null,
     }
     keepDownloadReport(rep)
     return rep

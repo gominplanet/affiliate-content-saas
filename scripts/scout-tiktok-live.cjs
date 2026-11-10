@@ -10,6 +10,7 @@
 //   node scripts/scout-tiktok-live.cjs [handle] [videoId]
 //   VISIBLE=1 ...      from a TikTok tab in front (the creator's retry)
 //   FORCE_PAGE=1 ...   Chrome's own downloads off, so the page way is used
+//   FORCE_CHROME=1 ... the page way off, so Chrome's own downloads are used
 //
 // First run on 2026-11-10 (Seb: "get to the bottom of this fully"): both ways
 // saved a 21 second H.264 and AAC file of @hankgreen1/video/7047596209028074758;
@@ -35,6 +36,7 @@ const videoId = process.argv[3] || '7047596209028074758'
   ctx.on('download', (d) => console.log('BROWSER DOWNLOAD', d.suggestedFilename()))
   const t0 = Date.now()
   const poll = setInterval(async () => { try { const n = await sw.evaluate(() => ttDlNow && { step: ttDlNow.step, bytes: ttDlNow.bytes, total: ttDlNow.total, asking: ttDlNow.asking, tried: ttDlNow.tried.length }); console.log(`  t+${Math.round((Date.now() - t0) / 1000)}s`, JSON.stringify(n)) } catch (e) {} }, 3000)
+  if (process.env.FORCE_CHROME) await sw.evaluate(() => { ttPageSave = async () => ({ result: 'page-busy (forced off for the test)' }) })
   if (process.env.FORCE_PAGE) await sw.evaluate(() => { const real = chrome.downloads.download.bind(chrome.downloads); chrome.downloads.download = (o) => /^https:/.test(o.url) ? Promise.reject(new Error('forced off for the test')) : real(o) })
   const r = await sw.evaluate(async ([h, id, VIS]) => await ttDownloadBounded({ handle: h, videoId: id, filename: 'probe-' + id, visible: VIS }), [handle, videoId, !!process.env.VISIBLE])
   clearInterval(poll)

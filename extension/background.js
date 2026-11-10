@@ -16716,7 +16716,7 @@ async function ttDailyTick() {
   await ttScan({ handle: d.handle, scanId: s.data.scanId, origin: d.origin, daily: true })
 }
 try { chrome.alarms.onAlarm.addListener((a) => { if (a && a.name === TT_DAILY_ALARM) void ttDailyTick() }) } catch (e) {}
-// ── MATCH MY TIKTOK: DOWNLOAD A VIDEO (1.60.0 to 1.60.5) ─────────────────────
+// ── MATCH MY TIKTOK: DOWNLOAD A VIDEO (1.60.0 to 1.60.6) ─────────────────────
 // Seb, 2026-11-09: "can we also add a download button for each video matched
 // so users can then re-upload those to trybe". The creator's own video, from
 // its own page on TikTok, opened in SCOUT's minimized window: SCOUT reads the
@@ -16743,6 +16743,16 @@ try { chrome.alarms.onAlarm.addListener((a) => { if (a && a.name === TT_DAILY_AL
 // own video grid (read the way the scan reads it) gives the video's
 // addresses. Nothing found says what the page and the profile showed.
 //
+// 1.60.6 (Seb, 2026-11-10: a saved file "only showed 2 seconds of it and then
+// froze the image"; his Downloads had held two 300 KB files of this 4.5 MB
+// video): a file is kept only when it is whole. TikTok's page data gives each
+// version's exact size, the page way walks the MP4's boxes, and anything cut
+// short is deleted and said. Every step is written down with its time
+// (trace), so a failure on the creator's Chrome says where it stood; a tab
+// Chrome replaces is followed and one that closes is said; SCOUT never asks
+// a page that has not answered yet again (asks piling up keep it busy); and
+// TikTok's own player in SCOUT's tab is paused while SCOUT saves the file.
+//
 // It says which worked, the file name and its size; a puzzle, a private or
 // removed video, or a file TikTok would not give is said as such, never a
 // download that did not happen. Nothing is posted, liked or changed.
@@ -16764,6 +16774,31 @@ function ttLimit(p, ms, code) {
     Promise.resolve(p).finally(() => clearTimeout(t)),
     new Promise((_, rej) => { t = setTimeout(() => rej(new Error(code)), ms) }),
   ])
+}
+
+// What happened, step by step, with the seconds since the download began
+// (1.60.6), for Copy details.
+function ttNote(job, line) {
+  if (!job || !Array.isArray(job.trace) || job.trace.length >= 80) return
+  job.trace.push(((Date.now() - (job.startedAt || Date.now())) / 1000).toFixed(1) + 's ' + String(line).slice(0, 320))
+}
+// Why an ask of the page failed, in a few words: no answer in time, or the
+// error Chrome gave.
+function ttWhy(e, code, ms) {
+  const m = e && e.message ? String(e.message) : 'error'
+  return m === code ? 'no answer in ' + Math.round(ms / 1000) + 's' : m.slice(0, 120)
+}
+// One ask of a page at a time (1.60.6): a page that has not answered the last
+// ask is not asked again, since asks piling up keep it busy for good.
+const ttPending = new Map()
+async function ttAsk(tabId, func, args, ms, code) {
+  const prev = ttPending.get(tabId)
+  if (prev) { try { await ttLimit(prev, ms, code) } catch (e) { throw new Error(code + ': still on an earlier ask') } }
+  const p = trybeRun(func, args, tabId)
+  const settled = p.then(() => null, () => null)
+  ttPending.set(tabId, settled)
+  settled.then(() => { if (ttPending.get(tabId) === settled) ttPending.delete(tabId) })
+  return ttLimit(p, ms, code)
 }
 
 // In page, on the video's own page: the addresses TikTok plays it from,
@@ -16792,11 +16827,11 @@ function ttVideoUrlsInPage(videoId) {
     if (/^https:\/\/www\.tiktok\.com\//.test(u)) r += 4
     return r
   }
-  const add = (u, from, key, br, base) => {
+  const add = (u, from, key, br, base, size) => {
     if (typeof u !== 'string' || !/^https:\/\//.test(u) || seenUrl[u]) return
     if (/_bytevc2_/i.test(String(key || ''))) return
     seenUrl[u] = 1
-    cands.push({ url: u, from, rank: rankOf(key, u, base), br: br || 0 })
+    cands.push({ url: u, from, rank: rankOf(key, u, base), br: br || 0, size: Number(size) || 0, q: String(key || '').replace(/^v[^_]*_/, '').replace(/_\d+$/, '').slice(0, 24) })
   }
   const isItem = (o) => !!o && typeof o === 'object' && !!o.video && typeof o.video === 'object' && (!want || String(o.id) === want)
   const findItem = (root) => {
@@ -16835,13 +16870,17 @@ function ttVideoUrlsInPage(videoId) {
   if (v) {
     for (const r of (Array.isArray(v.bitrateInfo) ? v.bitrateInfo : [])) {
       const key = (r.PlayAddr && r.PlayAddr.UrlKey) || r.GearName || r.CodecType || ''
-      for (const u of ((r.PlayAddr && r.PlayAddr.UrlList) || [])) add(u, 'bitrate', key, r.Bitrate, 0)
+      for (const u of ((r.PlayAddr && r.PlayAddr.UrlList) || [])) add(u, 'bitrate', key, r.Bitrate, 0, r.PlayAddr && r.PlayAddr.DataSize)
     }
-    for (const u of ((v.PlayAddrStruct && v.PlayAddrStruct.UrlList) || [])) add(u, 'play', v.codecType || '', v.bitrate, 0)
-    add(v.playAddr, 'play', v.codecType || '', v.bitrate, 0)
-    add(v.downloadAddr, 'download', '', 0, 10)
+    const playSize = (v.PlayAddrStruct && v.PlayAddrStruct.DataSize) || v.size
+    for (const u of ((v.PlayAddrStruct && v.PlayAddrStruct.UrlList) || [])) add(u, 'play', v.codecType || '', v.bitrate, 0, playSize)
+    add(v.playAddr, 'play', v.codecType || '', v.bitrate, 0, playSize)
+    add(v.downloadAddr, 'download', '', 0, 10, 0)
   }
   const vid = document.querySelector('video')
+  // How TikTok's own player is doing (1.60.6: Seb saw it stop after 2 seconds).
+  let playerAt = ''
+  try { if (vid) { const b = vid.buffered && vid.buffered.length ? vid.buffered.end(vid.buffered.length - 1) : 0; playerAt = ' at ' + vid.currentTime.toFixed(1) + 's, buffered to ' + b.toFixed(1) + 's, ready ' + vid.readyState + (vid.paused ? ', paused' : '') + (vid.error ? ', error ' + vid.error.code : '') } } catch (e) {}
   const src = vid ? String(vid.currentSrc || vid.src || '') : ''
   if (vid) { add(src, 'player', '', 0, 12); for (const s of Array.from(vid.querySelectorAll('source'))) add(s.src, 'player', '', 0, 12) }
   cands.sort((a, b) => a.rank - b.rank || b.br - a.br)
@@ -16857,10 +16896,11 @@ function ttVideoUrlsInPage(videoId) {
     photo ? 'photo post (' + item.imagePost.images.length + ' pictures)' : null,
     v ? 'video fields ' + Object.keys(v).slice(0, 14).join(',') : null,
     v && Array.isArray(v.bitrateInfo) ? 'versions ' + v.bitrateInfo.map((r) => String((r.PlayAddr && r.PlayAddr.UrlKey) || '').replace(/^v[^_]+_/, '')).join(' ').slice(0, 120) : null,
-    'player ' + (vid ? (src.split(':')[0] || 'no address') : 'none'),
-  ].filter(Boolean).join('; ').slice(0, 520)
+    'player ' + (vid ? (src.split(':')[0] || 'no address') + playerAt : 'none'),
+  ].filter(Boolean).join('; ').slice(0, 600)
   return {
-    urls: cands.slice(0, 8).map((c) => ({ url: c.url, from: c.from })),
+    urls: cands.slice(0, 8).map((c) => ({ url: c.url, from: c.from, size: c.size, q: c.q })),
+    dur: v ? Number(v.duration) || 0 : 0,
     found: !!item,
     seen,
     status,
@@ -16889,30 +16929,32 @@ function ttItemUrlsInPage(videoId) {
   } catch (e) {}
   const cands = []
   const seenUrl = {}
-  const add = (u, from, key, br, base) => {
+  const add = (u, from, key, br, base, size) => {
     if (typeof u !== 'string' || !/^https:\/\//.test(u) || seenUrl[u]) return
     const k = String(key || '')
     if (/_bytevc2_/i.test(k)) return
     seenUrl[u] = 1
     let r = base + (/_h264_/i.test(k) ? 0 : /_bytevc1_|hvc1/i.test(k) ? 2 : 1)
     if (/^https:\/\/www\.tiktok\.com\//.test(u)) r += 4
-    cands.push({ url: u, from, rank: r, br: br || 0 })
+    cands.push({ url: u, from, rank: r, br: br || 0, size: Number(size) || 0, q: k.replace(/^v[^_]*_/, '').replace(/_\d+$/, '').slice(0, 24) })
   }
   const v = it && it.video
   if (v) {
     for (const r of (Array.isArray(v.bitrateInfo) ? v.bitrateInfo : [])) {
       const key = (r.PlayAddr && r.PlayAddr.UrlKey) || r.GearName || r.CodecType || ''
-      for (const u of ((r.PlayAddr && r.PlayAddr.UrlList) || [])) add(u, 'grid-bitrate', key, r.Bitrate, 0)
+      for (const u of ((r.PlayAddr && r.PlayAddr.UrlList) || [])) add(u, 'grid-bitrate', key, r.Bitrate, 0, r.PlayAddr && r.PlayAddr.DataSize)
     }
-    for (const u of ((v.PlayAddrStruct && v.PlayAddrStruct.UrlList) || [])) add(u, 'grid-play', v.codecType || '', v.bitrate, 0)
-    add(v.playAddr, 'grid-play', v.codecType || '', v.bitrate, 0)
-    add(v.downloadAddr, 'grid-download', '', 0, 10)
+    const playSize = (v.PlayAddrStruct && v.PlayAddrStruct.DataSize) || v.size
+    for (const u of ((v.PlayAddrStruct && v.PlayAddrStruct.UrlList) || [])) add(u, 'grid-play', v.codecType || '', v.bitrate, 0, playSize)
+    add(v.playAddr, 'grid-play', v.codecType || '', v.bitrate, 0, playSize)
+    add(v.downloadAddr, 'grid-download', '', 0, 10, 0)
   }
   cands.sort((a, b) => a.rank - b.rank || b.br - a.br)
   const text = String((document.body && document.body.innerText) || '').slice(0, 4000)
   return {
     found: !!it,
-    urls: cands.slice(0, 8).map((c) => ({ url: c.url, from: c.from })),
+    urls: cands.slice(0, 8).map((c) => ({ url: c.url, from: c.from, size: c.size, q: c.q })),
+    dur: v ? Number(v.duration) || 0 : 0,
     photo: !!(it && it.imagePost),
     have: t && Array.isArray(t.items) ? t.items.length : 0,
     hasMore: t ? t.hasMore : null,
@@ -16934,6 +16976,7 @@ async function ttFromProfile(now, tabId, handle, id) {
     }
     await ttLimit(chrome.tabs.update(tabId, { url: `https://www.tiktok.com/@${encodeURIComponent(handle)}` }), 10000, 'open-profile-slow')
     await waitForTabLoad(tabId, 30000)
+    ttNote(now, 'profile open')
     let last = null
     let stillAt = -1
     let still = 0
@@ -16941,7 +16984,7 @@ async function ttFromProfile(now, tabId, handle, id) {
     for (let i = 0; i < 80 && Date.now() < until && !now.stop; i++) {
       await _sleep(i < 3 ? 1500 : 1800)
       let r = null
-      try { r = await ttLimit(trybeRun(ttItemUrlsInPage, [id], tabId), 10000, 'page-busy') } catch (e) { r = null }
+      try { r = await ttAsk(tabId, ttItemUrlsInPage, [id], 10000, 'page-busy') } catch (e) { r = null; ttNote(now, 'profile read: ' + ttWhy(e, 'page-busy', 10000)) }
       if (!r) continue
       last = r
       ttDlSet(now, { bytes: 0, total: 0, grid: r.have })
@@ -16949,7 +16992,7 @@ async function ttFromProfile(now, tabId, handle, id) {
       if (r.hasMore === false && r.have > 0) break
       // No new videos for a while: TikTok stopped loading more.
       if (r.have === stillAt) { if (++still >= 8) break } else { stillAt = r.have; still = 0 }
-      try { await ttLimit(trybeRun(ttScrollInPage, [], tabId), 8000, 'page-busy') } catch (e) {}
+      try { await ttAsk(tabId, ttScrollInPage, [], 8000, 'page-busy') } catch (e) {}
     }
     return last
   } finally {
@@ -16961,8 +17004,10 @@ async function ttFromProfile(now, tabId, handle, id) {
 // without it), and save it under the name given once it is whole. It returns
 // at once; how far it is stays in __mvpTtSave for ttPageSaveStateInPage, and
 // ttPageSaveStopInPage stops it. EVERYTHING IT USES IS INSIDE IT.
-function ttPageSaveStartInPage(url, filename, withSignIn) {
+function ttPageSaveStartInPage(url, filename, withSignIn, want) {
   try { const old = window.__mvpTtSave; if (old && old.stop) old.stop() } catch (e) {}
+  // TikTok's own player is paused while the file is read (1.60.6).
+  try { for (const v of Array.from(document.querySelectorAll('video'))) { v.muted = true; v.pause() } } catch (e) {}
   const st = { bytes: 0, total: 0, done: false, ok: false, error: null, detail: '', since: Date.now(), stop: null }
   window.__mvpTtSave = st
   const ctl = new AbortController()
@@ -16990,6 +17035,25 @@ function ttPageSaveStartInPage(url, filename, withSignIn) {
       // two 300 KB "videos" that were TikTok pages).
       const head = new Uint8Array(await blob.slice(0, 12).arrayBuffer())
       if (String.fromCharCode(head[4], head[5], head[6], head[7]) !== 'ftyp') { st.error = 'page-not-a-video'; st.detail = 'starts ' + String.fromCharCode.apply(null, Array.from(head.slice(0, 9))).replace(/[^\x20-\x7e]/g, '.'); return }
+      // Whole, not cut short (1.60.6: a 4.5 MB video saved as 300 KB played 2
+      // seconds and froze): each MP4 box ends inside the file, the movie and
+      // its data are both there, and it is as big as TikTok says.
+      const boxes = []
+      let off = 0
+      let cut = false
+      for (let n = 0; off < blob.size && n < 200; n++) {
+        const hb = new DataView(await blob.slice(off, off + 16).arrayBuffer())
+        if (hb.byteLength < 8) { cut = true; break }
+        let size = hb.getUint32(0)
+        const type = String.fromCharCode(hb.getUint8(4), hb.getUint8(5), hb.getUint8(6), hb.getUint8(7))
+        if (size === 1) { if (hb.byteLength < 16) { cut = true; break } size = hb.getUint32(8) * 4294967296 + hb.getUint32(12) } else if (size === 0) size = blob.size - off
+        if (size < 8) { cut = true; break }
+        if (boxes.length < 12) boxes.push(type)
+        if (off + size > blob.size) { cut = true; break }
+        off += size
+      }
+      if (cut || boxes.indexOf('moov') < 0 || boxes.indexOf('mdat') < 0) { st.error = 'page-cut-short'; st.detail = blob.size + ' bytes, boxes ' + boxes.join(','); return }
+      if (want && blob.size < want * 0.98) { st.error = 'page-cut-short'; st.detail = blob.size + ' of ' + want + ' bytes'; return }
       const href = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = href; a.download = filename; a.style.display = 'none'
@@ -17057,13 +17121,14 @@ async function ttFollowDownload(job, id, deadline, onAsk) {
 
 // A download SCOUT gave up on before Chrome said it started (1.60.5: Seb's
 // Chrome started some late, and two 300 KB pages were left in Downloads as
-// .mp4): any that starts in the next two minutes, or is already going, is
-// cancelled and taken off the list, with its file.
+// .mp4): any that starts in the next fifteen minutes (1.60.6, two were too
+// short), or is already there, is cancelled and taken off the list, with its
+// file. SCOUT never keeps a download it did not follow to the end.
 function ttAbandonDownload(url) {
   const drop = (item) => { try { chrome.downloads.cancel(item.id, () => { void chrome.runtime.lastError; try { chrome.downloads.removeFile(item.id, () => { void chrome.runtime.lastError; try { chrome.downloads.erase({ id: item.id }) } catch (e) {} }) } catch (e) {} }) } catch (e) {} }
   const on = (item) => { if (item && (item.url === url || item.finalUrl === url)) drop(item) }
-  try { chrome.downloads.onCreated.addListener(on); setTimeout(() => { try { chrome.downloads.onCreated.removeListener(on) } catch (e) {} }, 120000) } catch (e) {}
-  try { chrome.downloads.search({ url }, (items) => { void chrome.runtime.lastError; for (const it of items || []) if (it.state !== 'complete') drop(it); else if (it.mime && !/video|octet-stream/i.test(it.mime)) drop(it) }) } catch (e) {}
+  try { chrome.downloads.onCreated.addListener(on); setTimeout(() => { try { chrome.downloads.onCreated.removeListener(on) } catch (e) {} }, 900000) } catch (e) {}
+  try { chrome.downloads.search({ url }, (items) => { void chrome.runtime.lastError; for (const it of items || []) drop(it) }) } catch (e) {}
 }
 
 // How Chrome holds a tab that stopped answering: frozen, discarded, still
@@ -17098,7 +17163,13 @@ function ttCatchPageDownload() {
 // The window SCOUT's tab is in, brought up so Chrome's "where to save" window
 // attached to it can be seen; and put back down after.
 async function ttShowTabWindow(tabId) {
-  try { const t = await chrome.tabs.get(tabId); await chrome.windows.update(t.windowId, { state: 'normal', focused: true }); return t.windowId } catch (e) { return null }
+  try {
+    const t = await chrome.tabs.get(tabId)
+    // A tab in front of the creator (1.60.6): their window is never minimized after.
+    const w = await chrome.windows.get(t.windowId)
+    if (w && w.state !== 'minimized') return null
+    await chrome.windows.update(t.windowId, { state: 'normal', focused: true }); return t.windowId
+  } catch (e) { return null }
 }
 
 // The page way, for one address: start it, follow its bytes while they move,
@@ -17108,15 +17179,16 @@ async function ttPageSave(job, tabId, c, name, withSignIn) {
   const caught = ttCatchPageDownload()
   let shown = null
   try {
-    try { await ttLimit(trybeRun(ttPageSaveStartInPage, [c.url, name, !!withSignIn], tabId), 10000, 'page-busy') } catch (e) { caught.cancel(); return { result: 'page-busy' + tag + (await ttTabState(tabId)) } }
+    try { await ttAsk(tabId, ttPageSaveStartInPage, [c.url, name, !!withSignIn, c.size || 0], 10000, 'page-busy') } catch (e) { caught.cancel(); ttNote(job, 'page start: ' + ttWhy(e, 'page-busy', 10000)); return { result: 'page-busy' + tag + (await ttTabState(tabId)) } }
     let st = null
     let quiet = 0
     for (;;) {
       if (job.stop) { void trybeRun(ttPageSaveStopInPage, [], tabId).catch(() => null); caught.cancel(); return { result: 'page-stopped' + tag } }
       await _sleep(800)
       let s = null
-      try { s = await ttLimit(trybeRun(ttPageSaveStateInPage, [], tabId), 8000, 'page-busy') } catch (e) { s = null }
-      if (!s) { if (++quiet >= 6) { caught.cancel(); return { result: 'page-busy' + tag + (await ttTabState(tabId)) } } continue }
+      let why = 'no answer'
+      try { s = await ttAsk(tabId, ttPageSaveStateInPage, [], 8000, 'page-busy') } catch (e) { s = null; why = ttWhy(e, 'page-busy', 8000) }
+      if (!s) { if (++quiet >= 6) { caught.cancel(); ttNote(job, 'page reading: ' + why + ', six times'); return { result: 'page-busy' + tag + (await ttTabState(tabId)) } } continue }
       quiet = 0
       st = s
       ttDlSet(job, { bytes: st.bytes || 0, total: st.total || 0 })
@@ -17127,7 +17199,8 @@ async function ttPageSave(job, tabId, c, name, withSignIn) {
         return { result: (st.bytes > 0 ? 'page-stalled' : 'page-no-answer') + tag }
       }
     }
-    if (!st.ok) { caught.cancel(); return { result: (st.error || 'page-error') + tag, detail: st.detail || '' } }
+    if (!st.ok) { caught.cancel(); ttNote(job, 'page read ended: ' + (st.error || 'error') + (st.detail ? ' (' + st.detail + ')' : '')); return { result: (st.error || 'page-error') + tag, detail: st.detail || '' } }
+    ttNote(job, 'page read whole: ' + st.bytes + ' bytes')
     const dlId = await caught.wait(10000)
     if (dlId == null) return { result: 'page-no-download' + tag }
     const d = await ttFollowDownload(job, dlId, Date.now() + 60000, async () => { shown = await ttShowTabWindow(tabId) })
@@ -17141,7 +17214,7 @@ async function ttPageSave(job, tabId, c, name, withSignIn) {
 async function ttDownload(now, { handle, videoId, filename, visible }) {
   const tried = now.tried
   const step = (s) => ttDlSet(now, { step: s })
-  const say = (r) => Object.assign(r, { step: now.step, bytes: r.bytes != null ? r.bytes : (r.ok ? now.bytes : (now.peak || now.bytes)), total: r.ok ? now.total : (now.peak ? now.peakTotal : now.total), tried: tried.slice() }, r.seen ? { seen: String(r.seen).slice(0, 600) } : {})
+  const say = (r) => { ttNote(now, r.ok ? 'saved by the ' + r.way + ' way' : 'ended: ' + r.error); return Object.assign(r, { step: now.step, bytes: r.bytes != null ? r.bytes : (r.ok ? now.bytes : (now.peak || now.bytes)), total: r.ok ? now.total : (now.peak ? now.peakTotal : now.total), tried: tried.slice(), trace: now.trace.join(' | ').slice(0, 4000) }, r.seen ? { seen: String(r.seen).slice(0, 700) } : {}) }
   if (!(await hasOrigins(TT_ORIGINS))) return say({ ok: false, error: 'no-access' })
   const h = String(handle || '').trim().replace(/^@+/, '').toLowerCase()
   const id = String(videoId || '')
@@ -17149,6 +17222,12 @@ async function ttDownload(now, { handle, videoId, filename, visible }) {
   const name = (String(filename || '').replace(/[^\w.\- ]+/g, '').replace(/\s+/g, '-').slice(0, 80) || ('tiktok-' + id)).replace(/\.mp4$/i, '') + '.mp4'
   const ka = startKeepAlive()
   let tabId = null
+  // The tab, followed (1.60.6: Seb's visible try ended in "No tab with id"):
+  // one Chrome replaces is followed to its new id; one that closes is said.
+  const onGone = (gone, info) => { if (gone === tabId && !now.tabGone) { now.tabGone = { at: Date.now(), step: now.step, withWindow: !!(info && info.isWindowClosing) }; ttNote(now, 'tab closed' + (info && info.isWindowClosing ? ' with its window' : '') + ' during ' + now.step) } }
+  const onSwap = (added, removed) => { if (removed === tabId) { ttNote(now, 'tab replaced by Chrome (' + removed + ' to ' + added + ')'); tabId = added; if (!visible) quietTabIds.add(added) } }
+  try { chrome.tabs.onRemoved.addListener(onGone); chrome.tabs.onReplaced.addListener(onSwap) } catch (e) {}
+  const closedWords = () => { const g = now.tabGone; return 'the TikTok tab closed ' + Math.round((g.at - now.startedAt) / 1000) + 's after SCOUT began, while ' + g.step + (g.withWindow ? ', with its window' : '') }
   try {
     step('opening')
     const videoUrl = `https://www.tiktok.com/@${encodeURIComponent(h)}/video/${encodeURIComponent(id)}`
@@ -17159,14 +17238,19 @@ async function ttDownload(now, { handle, videoId, filename, visible }) {
       ? await ttLimit(chrome.tabs.create({ url: videoUrl, active: true }), 20000, 'open-tab-slow')
       : await ttLimit(openWorkTab(videoUrl), 20000, 'open-tab-slow')
     tabId = tab.id
+    ttNote(now, (visible ? 'visible' : 'hidden') + ' tab opened')
     if (!visible) { quietTabIds.add(tabId); void quietShim(tabId) }
     await waitForTabLoad(tabId, 30000)
+    ttNote(now, 'page loaded')
     step('finding')
     let found = null
     let empty = 0
-    for (let i = 0; i < 40 && !now.stop; i++) {
+    let lastSaid = ''
+    for (let i = 0; i < 40 && !now.stop && !now.tabGone; i++) {
       await _sleep(1000)
-      try { found = await ttLimit(trybeRun(ttVideoUrlsInPage, [id], tabId), 10000, 'page-busy') } catch (e) { found = null }
+      let said = ''
+      try { found = await ttAsk(tabId, ttVideoUrlsInPage, [id], 10000, 'page-busy'); said = found ? (found.urls.length ? found.urls.length + ' addresses' + (found.urls[0].size ? ', first ' + found.urls[0].q + ' ' + found.urls[0].size + ' bytes' : '') : 'no address') : 'empty answer' } catch (e) { found = null; said = 'no answer: ' + ttWhy(e, 'page-busy', 10000) }
+      if (said !== lastSaid) { ttNote(now, 'read ' + (i + 1) + ': ' + said + (found && found.seen && !found.urls.length ? ' (' + found.seen.slice(0, 120) + ')' : '')); lastSaid = said }
       if (found && (found.puzzle || found.gone || found.photo || found.urls.length)) break
       // A status instead of the video: no use waiting for it.
       if (found && found.status != null && found.status !== 0) break
@@ -17180,6 +17264,7 @@ async function ttDownload(now, { handle, videoId, filename, visible }) {
     if (found && found.gone) return say({ ok: false, error: 'gone' })
     if (found && found.photo) return say({ ok: false, error: 'photo-post', seen: found.seen })
     const pageSaw = found ? found.seen : 'no answer from the page'
+    if (now.tabGone) return say({ ok: false, error: 'tab-closed', seen: closedWords() + '. ' + pageSaw })
     if (!found || !found.urls.length) {
       // 1.60.3: the video's page gave no address; the profile's own video
       // grid, the way the scan reads it, carries the same addresses.
@@ -17189,8 +17274,13 @@ async function ttDownload(now, { handle, videoId, filename, visible }) {
       if (g && g.found && g.photo) return say({ ok: false, error: 'photo-post', seen: `${pageSaw} | profile: a photo post` })
       const gridSaw = !g ? 'profile: no answer' : g.found ? `profile: video found${g.urls.length ? '' : `, no address (fields ${g.fields})`}` : `profile: ${g.have} videos read, this one not among them${g.hooked ? '' : ' (grid not read)'}`
       if (!g || !g.urls.length) return say({ ok: false, error: found && found.status ? 'tiktok-status' : 'no-video-address', status: found ? found.status : null, seen: `${pageSaw} | ${gridSaw}` })
-      found = { urls: g.urls }
+      found = { urls: g.urls, dur: g.dur || 0 }
     }
+    const dur = found.dur || 0
+    // How big each version must be to be whole: TikTok's own size for it, or
+    // at least 20 KB a second of the video (a cut short file is far below).
+    const wholeAt = (c) => c.size ? Math.floor(c.size * 0.98) : dur ? dur * 20000 : 50000
+    ttNote(now, 'addresses' + (dur ? ' (video ' + dur + 's long)' : '') + ': ' + found.urls.map((c) => c.from + (c.q ? ' ' + c.q : '') + (c.size ? ' ' + c.size : '') + ' ' + String(c.url).split('/')[2]).join(', '))
     // 1.60.5: TIKTOK'S PAGE FIRST, AS TIKTOK'S OWN PLAYER GETS IT (Seb's
     // Chrome, 2026-11-10: Chrome's own downloads, with no page behind them,
     // got TikTok pages saved as .mp4 and "File wasn't available on site").
@@ -17199,12 +17289,13 @@ async function ttDownload(now, { handle, videoId, filename, visible }) {
     step('page')
     let pageBusy = 0
     for (const c of found.urls.slice(0, 3)) {
-      if (pageBusy >= 2) break
+      if (pageBusy >= 2 || now.tabGone) break
       for (const withSignIn of [true, false]) {
-        if (now.stop) break
+        if (now.stop || now.tabGone) break
         ttDlSet(now, { bytes: 0, total: 0, asking: false })
+        const t0 = Date.now()
         const r = await ttPageSave(now, tabId, c, name, withSignIn)
-        tried.push({ from: c.from, way: 'page', result: r.result })
+        tried.push({ from: c.from, way: 'page', result: r.result, q: c.q || '', host: String(c.url).split('/')[2], ms: Date.now() - t0 })
         if (r.ok) return say({ ok: true, way: 'page', from: c.from, bytes: r.bytes, file: r.file })
         if (r.result === 'chrome-asked-where') return say({ ok: false, error: 'asked-where' })
         // A page that does not answer will not answer the next address either.
@@ -17220,25 +17311,41 @@ async function ttDownload(now, { handle, videoId, filename, visible }) {
     for (const c of found.urls.slice(0, 4)) {
       if (now.stop || slowStarts >= 2) break
       let dlId = null
+      const t0 = Date.now()
+      const where = { q: c.q || '', host: String(c.url).split('/')[2] }
       try { dlId = await ttLimit(chrome.downloads.download({ url: c.url, filename: name, conflictAction: 'uniquify', saveAs: false }), 15000, 'chrome-start-slow') } catch (e) {
         const why = e && e.message ? e.message : 'error'
         if (why === 'chrome-start-slow') { slowStarts++; ttAbandonDownload(c.url) }
-        tried.push({ from: c.from, way: 'chrome', result: 'chrome-start: ' + why }); continue
+        ttNote(now, 'chrome start ' + where.host + ': ' + why)
+        tried.push({ from: c.from, way: 'chrome', result: 'chrome-start: ' + why, ...where, ms: Date.now() - t0 }); continue
       }
+      ttNote(now, 'chrome started ' + where.host + ' in ' + ((Date.now() - t0) / 1000).toFixed(1) + 's')
       ttDlSet(now, { bytes: 0, total: 0 })
       const d = await ttFollowDownload(now, dlId, Date.now() + TT_DL_MAX_MS)
       const notVideo = d.ok && ((d.bytes != null && d.bytes < 50000) || (d.mime && !/video|octet-stream/i.test(d.mime)))
-      if (notVideo) { tried.push({ from: c.from, way: 'chrome', result: d.mime && !/video|octet-stream/i.test(d.mime) ? 'chrome-not-a-video: ' + d.mime : 'chrome-too-small' }); try { chrome.downloads.removeFile(dlId, () => { void chrome.runtime.lastError; try { chrome.downloads.erase({ id: dlId }) } catch (e) {} }) } catch (e) {} continue }
-      tried.push({ from: c.from, way: 'chrome', result: d.ok ? 'ok' : d.error })
+      // 1.60.6: a file smaller than TikTok says the video is was cut short (Seb's
+      // played 2 seconds and froze); it is deleted, never kept as the video.
+      const cutShort = d.ok && !notVideo && d.bytes != null && d.bytes < wholeAt(c)
+      if (notVideo || cutShort) {
+        const res = cutShort ? 'chrome-cut-short: ' + d.bytes + ' of ' + (c.size || 'about ' + wholeAt(c)) + ' bytes' : d.mime && !/video|octet-stream/i.test(d.mime) ? 'chrome-not-a-video: ' + d.mime : 'chrome-too-small'
+        ttNote(now, 'chrome ' + where.host + ': ' + res + ', deleted')
+        tried.push({ from: c.from, way: 'chrome', result: res, ...where, ms: Date.now() - t0 })
+        try { chrome.downloads.removeFile(dlId, () => { void chrome.runtime.lastError; try { chrome.downloads.erase({ id: dlId }) } catch (e) {} }) } catch (e) {}
+        continue
+      }
+      if (!d.ok) ttNote(now, 'chrome ' + where.host + ': ' + d.error)
+      tried.push({ from: c.from, way: 'chrome', result: d.ok ? 'ok' : d.error, ...where, ms: Date.now() - t0 })
       if (d.ok) return say({ ok: true, way: 'chrome', from: c.from, bytes: d.bytes, file: d.file })
       // Chrome asked where to save and no folder was chosen: asking again would not help.
       if (d.error === 'chrome-asked-where') return say({ ok: false, error: 'asked-where' })
     }
     return say({ ok: false, error: now.stop ? 'too-slow' : 'not-saved' })
   } catch (e) {
+    if (now.tabGone) return say({ ok: false, error: 'tab-closed', seen: closedWords() + ' (' + (e && e.message ? String(e.message).slice(0, 80) : 'error') + ')' })
     return say({ ok: false, error: e && e.message ? e.message : 'exception' })
   } finally {
-    if (tabId != null) { try { quietTabIds.delete(tabId); await ttLimit(chrome.tabs.remove(tabId), 5000, 'close') } catch (e) {} }
+    try { chrome.tabs.onRemoved.removeListener(onGone); chrome.tabs.onReplaced.removeListener(onSwap) } catch (e) {}
+    if (tabId != null) { try { quietTabIds.delete(tabId); ttPending.delete(tabId); if (!now.tabGone) await ttLimit(chrome.tabs.remove(tabId), 5000, 'close') } catch (e) {} }
     stopKeepAlive(ka)
   }
 }
@@ -17248,7 +17355,7 @@ async function ttDownload(now, { handle, videoId, filename, visible }) {
 // had come in and what was tried. The next download never waits on one that
 // will not end.
 function ttDownloadBounded(args) {
-  ttDlNow = { videoId: String(args.videoId || ''), step: 'starting', bytes: 0, total: 0, asking: false, stop: false, done: false, tried: [], startedAt: Date.now(), at: Date.now() }
+  ttDlNow = { videoId: String(args.videoId || ''), step: 'starting', bytes: 0, total: 0, asking: false, stop: false, done: false, tried: [], trace: [], startedAt: Date.now(), at: Date.now() }
   const now = ttDlNow
   return new Promise((resolve) => {
     let over = false
@@ -17258,10 +17365,11 @@ function ttDownloadBounded(args) {
       const limit = now.startedAt + TT_DL_MAX_MS + (now.asking ? TT_DL_ASK_MS : 0)
       if (Date.now() > limit) {
         now.stop = true
-        finish({ ok: false, error: 'too-slow', step: now.step, bytes: now.bytes, total: now.total, tried: now.tried.slice() })
+        ttNote(now, 'out of time during ' + now.step)
+        finish({ ok: false, error: 'too-slow', step: now.step, bytes: now.bytes, total: now.total, tried: now.tried.slice(), trace: now.trace.join(' | ').slice(0, 4000) })
       }
     }, 1000)
-    ttDownload(now, args).then(finish, (e) => finish({ ok: false, error: e && e.message ? e.message : 'exception', step: now.step, bytes: now.bytes, total: now.total, tried: now.tried.slice() }))
+    ttDownload(now, args).then(finish, (e) => finish({ ok: false, error: e && e.message ? e.message : 'exception', step: now.step, bytes: now.bytes, total: now.total, tried: now.tried.slice(), trace: now.trace.join(' | ').slice(0, 4000) }))
   })
 }
 

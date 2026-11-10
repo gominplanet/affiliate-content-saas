@@ -1266,6 +1266,8 @@ export interface TikTokDownloadResult {
   status?: number | null
   /** The SCOUT version that answered, for the report MVP keeps. */
   scout?: string | null
+  /** SCOUT 1.60.6: every step with its time, for Copy details. */
+  trace?: string
 }
 /** How far a download is, as SCOUT 1.60.2 says (MVP_TIKTOK_DL_STATUS). */
 export interface TikTokDownloadProgress {
