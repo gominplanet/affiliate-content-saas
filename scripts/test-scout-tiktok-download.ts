@@ -1,15 +1,18 @@
 // © 2026 Gominplanet / MVP Affiliate — proprietary & confidential.
 //
-// SCOUT'S TIKTOK DOWNLOAD, RUN (extension/background.js, 1.60.2; Seb,
+// SCOUT'S TIKTOK DOWNLOAD, RUN (extension/background.js, 1.60.5; Seb,
 // 2026-11-09: the download on 1.60.0 and again on 1.60.1 ended in "took too
 // long", with nothing said about where it stuck). The download code itself is
 // run here against a pretend Chrome and a pretend TikTok page, with its time
 // limits shortened, in the ways it went wrong or could:
 //
-//   TikTok refuses Chrome's own download (no TikTok page behind it), and the
-//     page's own read is slow but moving: saved, from the page
-//   Chrome's download is slow but moving the whole time: followed to the end,
-//     never cut off at a fixed time
+//   the page's own read goes first (1.60.5), slow but moving: saved, from the
+//     page, and Chrome's own download is never tried
+//   the page stops answering (Seb's 1.60.4: "page-busy"): said with how Chrome
+//     held the tab, and Chrome's own download, slow but moving the whole time,
+//     is followed to the end, never cut off at a fixed time
+//   Chrome's own download brings a web page, not the video (Seb's Downloads on
+//     1.60.4 held two 300 KB "vigority...mp4" pages): deleted, never kept
 //   Chrome asks where to save: waited for, said, and saved once answered
 //   TikTok's page never answers SCOUT: stopped at the limit, and the answer
 //     says which step it reached (1.60.1 said only "took too long")
@@ -28,7 +31,7 @@ const fails: string[] = []
 const check = (name: string, ok: boolean | undefined) => { if (!ok) fails.push(name) }
 
 const B = readFileSync('extension/background.js', 'utf8')
-const from = B.indexOf('// ── MATCH MY TIKTOK: DOWNLOAD A VIDEO (1.60.0 to 1.60.4)')
+const from = B.indexOf('// ── MATCH MY TIKTOK: DOWNLOAD A VIDEO (1.60.0 to 1.60.5)')
 const to = B.indexOf('let ttDlBusy = Promise.resolve()')
 check('the download section is where this check looks for it', from > 0 && to > from)
 let sec = B.slice(from, to)
@@ -48,7 +51,7 @@ type Any = any
 // A download in the pretend Chrome: `rate` bytes a look, up to `size`;
 // refused at once; asking where to save for its first `askLooks` looks; or
 // stopping after `stopAfter` looks.
-function item(o: { size?: number; rate?: number; refuse?: string; askLooks?: number; stopAfter?: number } = {}) {
+function item(o: { size?: number; rate?: number; refuse?: string; askLooks?: number; stopAfter?: number; mime?: string } = {}) {
   const size = o.size ?? 5e6
   const rate = o.rate ?? 1e6
   let got = 0
@@ -62,17 +65,23 @@ function item(o: { size?: number; rate?: number; refuse?: string; askLooks?: num
       if (o.stopAfter == null || looks < o.stopAfter) got = Math.min(size, got + rate)
       const asking = looks <= (o.askLooks ?? 0)
       const whole = got >= size && !asking
-      return { state: whole ? 'complete' : 'in_progress', bytesReceived: got, totalBytes: size, fileSize: whole ? size : 0, filename: asking ? '' : '/Downloads/vigority.mp4' }
+      return { state: whole ? 'complete' : 'in_progress', bytesReceived: got, totalBytes: size, fileSize: whole ? size : 0, filename: asking ? '' : '/Downloads/vigority.mp4', mime: o.mime ?? 'video/mp4' }
     },
   }
 }
 const URLS = () => ({ urls: [{ url: 'https://v16-webapp-prime.tiktok.com/a', from: 'bitrate' }, { url: 'https://v19-webapp-prime.tiktok.com/b', from: 'bitrate' }, { url: 'https://www.tiktok.com/aweme/v1/play/c', from: 'bitrate' }], found: true })
 // The page's own read, whole after `ms`.
 const pageRead = (ms: number, size = 4e6) => () => { const t0 = Date.now(); return { state: async () => { const p = Math.min(1, (Date.now() - t0) / ms); return { bytes: Math.round(size * p), total: size, done: p >= 1, ok: p >= 1, error: null, still: 0 } } } }
+// The page that does not answer SCOUT at all (Seb's Chrome on 1.60.4).
+const pageBusy = () => { throw new Error('page-busy') }
 
 interface Case { urls: () => Any; chromeDl: () => Any; page?: (args: Any[]) => Any; blobDl?: () => Any; windows: string[]; grid?: (scrolls: number) => Any
   /** A longer whole limit, for a case that also reads the profile. */
-  max?: number }
+  max?: number
+  /** How Chrome holds SCOUT's tab. */
+  tab?: Any
+  /** Files Chrome was told to delete. */
+  removed?: number[] }
 function scout(c: Case) {
   const dls: Record<number, Any> = {}
   let next = 1
@@ -84,10 +93,10 @@ function scout(c: Case) {
       search: ({ id }: { id: number }, cb: (r: Any[]) => void) => { const d = dls[id]; cb(d ? [d.look()] : []) },
       cancel: (id: number, cb?: () => void) => { if (dls[id]) dls[id].cancelled = true; if (cb) cb() },
       erase: () => {},
-      removeFile: (_id: number, cb?: () => void) => { if (cb) cb() },
+      removeFile: (id: number, cb?: () => void) => { if (c.removed) c.removed.push(id); if (cb) cb() },
       onCreated: { addListener: (f: Any) => created.push(f), removeListener: (f: Any) => { const i = created.indexOf(f); if (i >= 0) created.splice(i, 1) } },
     },
-    tabs: { get: async () => ({ windowId: 9 }), remove: async () => {}, update: async () => ({}) },
+    tabs: { get: async () => ({ windowId: 9, ...(c.tab || {}) }), remove: async () => {}, update: async () => ({}) },
     scripting: { registerContentScripts: async () => {}, unregisterContentScripts: async () => {} },
     windows: { update: async (_id: number, o: { state: string }) => { c.windows.push(o.state) } },
   }
@@ -97,7 +106,7 @@ function scout(c: Case) {
     if (func.name === 'ttVideoUrlsInPage') return c.urls()
     if (func.name === 'ttItemUrlsInPage') return c.grid ? c.grid(scrolls) : { found: false, urls: [], have: 0, hasMore: false, hooked: true }
     if (func.name === 'ttScrollInPage') { scrolls++; return 1 }
-    if (func.name === 'ttPageSaveStartInPage') { save = c.page!(args); return true }
+    if (func.name === 'ttPageSaveStartInPage') { save = (c.page || pageBusy)(args); return true }
     if (func.name === 'ttPageSaveStateInPage') {
       const s = await save.state()
       // The page saving its finished file starts a download of a blob address.
@@ -125,18 +134,34 @@ const ways = (r: Any) => (r.tried || []).map((t: Any) => `${t.way}:${t.result}`)
     async () => {
       const s = scout({ urls: URLS, chromeDl: () => item({ refuse: 'SERVER_FORBIDDEN' }), page: pageRead(2500), blobDl: () => item({ size: 4e6, rate: 4e6 }), windows: [] })
       const r = await s.run(ARGS)
-      check(`TikTok refuses Chrome's own download; the page's slow read is followed to the end and saved (${ways(r)})`, r.ok && r.way === 'page' && r.bytes === 4e6 && /chrome:chrome-SERVER_FORBIDDEN/.test(ways(r)) && /page:ok$/.test(ways(r)))
+      check(`the page's own read goes first, slow but moving, followed to the end and saved, and Chrome's own download is never tried (${ways(r)})`, r.ok && r.way === 'page' && r.bytes === 4e6 && ways(r) === 'page:ok')
     },
     async () => {
-      const s = scout({ urls: URLS, chromeDl: () => item({ size: 6e6, rate: 1.5e6 }), windows: [] })
+      const s = scout({ urls: URLS, chromeDl: () => item({ size: 6e6, rate: 1.5e6 }), windows: [], tab: { frozen: true, url: 'https://www.tiktok.com/@gominreviews/video/747' } })
       const t0 = Date.now()
       const r = await s.run(ARGS)
-      check(`a slow download through Chrome that keeps moving is followed to the end (${ways(r)})`, r.ok && r.way === 'chrome' && r.bytes === 6e6 && Date.now() - t0 > 1500)
+      check(`a page that stops answering is said with how Chrome held its tab, tried twice at most (${ways(r)})`, (r.tried || []).filter((t: Any) => t.way === 'page').length === 2 && /page:page-busy \(tab frozen by Chrome\)/.test(ways(r)))
+      check(`then a slow download through Chrome that keeps moving is followed to the end (${ways(r)})`, r.ok && r.way === 'chrome' && r.bytes === 6e6 && Date.now() - t0 > 1500)
     },
     async () => {
       const s = scout({ urls: URLS, chromeDl: () => item({ size: 2e6, rate: 2e6, askLooks: 3 }), windows: [] })
       const r = await s.run(ARGS)
-      check(`Chrome asking where to save is waited for and said, then saved (${ways(r)})`, r.ok && s.now().asking === true)
+      check(`Chrome asking where to save is waited for and said, then saved (${ways(r)})`, r.ok && r.way === 'chrome' && s.now().asking === true)
+    },
+    async () => {
+      // Seb's Downloads on 1.60.4: TikTok answered Chrome's own downloads with 300 KB pages.
+      const removed: number[] = []
+      const s = scout({ urls: URLS, chromeDl: () => item({ size: 319000, rate: 319000, mime: 'text/html' }), windows: [], removed })
+      const r = await s.run(ARGS)
+      const html = (r.tried || []).filter((t: Any) => t.result === 'chrome-not-a-video: text/html').length
+      check(`a web page Chrome saved as .mp4 is deleted, never reported as the video (${ways(r)}; removed ${removed.length})`, !r.ok && r.error === 'not-saved' && html === 3 && removed.length === 3)
+    },
+    async () => {
+      // A small file with a video's type is still not a whole TikTok video.
+      const removed: number[] = []
+      const s = scout({ urls: URLS, chromeDl: () => item({ size: 20000, rate: 20000 }), windows: [], removed })
+      const r = await s.run(ARGS)
+      check(`a file too small to be the video is deleted too (${ways(r)})`, !r.ok && /chrome:chrome-too-small/.test(ways(r)) && removed.length === 3)
     },
     async () => {
       const w: string[] = []
@@ -153,7 +178,7 @@ const ways = (r: Any) => (r.tried || []).map((t: Any) => `${t.way}:${t.result}`)
     async () => {
       const s = scout({ urls: URLS, chromeDl: () => item({ refuse: 'SERVER_FORBIDDEN' }), page: () => { const t0 = Date.now(); return { state: async () => ({ bytes: 1e6, total: 4e6, done: false, ok: false, error: null, still: Date.now() - t0 }) } }, windows: [] })
       const r = await s.run(ARGS)
-      check(`TikTok stopping part way is not saved, and says how much had come in (${ways(r)})`, !r.ok && r.error === 'not-saved' && r.bytes === 1e6 && r.total === 4e6 && /page:page-stalled/.test(ways(r)))
+      check(`TikTok stopping part way is not saved, and says how much had come in (${ways(r)})`, !r.ok && r.error === 'not-saved' && r.bytes === 1e6 && r.total === 4e6 && /^page:page-stalled/.test(ways(r)) && /chrome:chrome-SERVER_FORBIDDEN$/.test(ways(r)))
     },
     async () => {
       // The video's page shows nothing (Seb, 2026-11-09, on 1.60.2); the profile's grid has it after two scrolls.
@@ -212,6 +237,6 @@ const ways = (r: Any) => (r.tried || []).map((t: Any) => `${t.way}:${t.result}`)
     check('a status instead of the video is read', st.status === 10204 && st.found === false && /status 10204 blocked/.test(st.seen))
   }
   if (fails.length) { console.error(`✗ ${fails.length} SCOUT TikTok download check(s) failed:\n  ${fails.join('\n  ')}`); process.exit(1) }
-  console.log('✓ SCOUT TikTok download: a refused, slow, asking, silent or broken download each ends saved or says where it stopped and how much came in; a video its page hides is found on the profile; H.264 first; photo posts, TikTok statuses and its check page told apart')
+  console.log('✓ SCOUT TikTok download: the page’s own read first, a refused, slow, asking, silent or broken download each ends saved or says where it stopped and how much came in; a web page saved as .mp4 deleted; a video its page hides is found on the profile; H.264 first; photo posts, TikTok statuses and its check page told apart')
   process.exit(0)
 })()

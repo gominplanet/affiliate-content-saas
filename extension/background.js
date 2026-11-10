@@ -16716,7 +16716,7 @@ async function ttDailyTick() {
   await ttScan({ handle: d.handle, scanId: s.data.scanId, origin: d.origin, daily: true })
 }
 try { chrome.alarms.onAlarm.addListener((a) => { if (a && a.name === TT_DAILY_ALARM) void ttDailyTick() }) } catch (e) {}
-// ── MATCH MY TIKTOK: DOWNLOAD A VIDEO (1.60.0 to 1.60.4) ─────────────────────
+// ── MATCH MY TIKTOK: DOWNLOAD A VIDEO (1.60.0 to 1.60.5) ─────────────────────
 // Seb, 2026-11-09: "can we also add a download button for each video matched
 // so users can then re-upload those to trybe". The creator's own video, from
 // its own page on TikTok, opened in SCOUT's minimized window: SCOUT reads the
@@ -16755,7 +16755,7 @@ const TT_DL_ASK_MS = 120000   // time to answer Chrome's "where to save" window
 let ttDlNow = null
 let ttDlWaiting = 0
 // Each step updates its own download's record (never a newer one's).
-function ttDlSet(job, patch) { if (job) Object.assign(job, patch, { at: Date.now() }) }
+function ttDlSet(job, patch) { if (job) { Object.assign(job, patch, { at: Date.now() }); if (patch.bytes > (job.peak || 0)) { job.peak = patch.bytes; job.peakTotal = job.total || 0 } } }
 
 // A step that might never answer gets a limit, and says which step it was.
 function ttLimit(p, ms, code) {
@@ -16986,6 +16986,10 @@ function ttPageSaveStartInPage(url, filename, withSignIn) {
       } else { const b = await r.blob(); parts.push(b); st.bytes = b.size }
       const blob = new Blob(parts, { type: type || 'video/mp4' })
       if (blob.size < 50000) { st.error = 'page-not-a-video'; st.detail = blob.size + ' bytes'; return }
+      // A real MP4 says "ftyp" at its fifth byte (1.60.5: Seb's Downloads held
+      // two 300 KB "videos" that were TikTok pages).
+      const head = new Uint8Array(await blob.slice(0, 12).arrayBuffer())
+      if (String.fromCharCode(head[4], head[5], head[6], head[7]) !== 'ftyp') { st.error = 'page-not-a-video'; st.detail = 'starts ' + String.fromCharCode.apply(null, Array.from(head.slice(0, 9))).replace(/[^\x20-\x7e]/g, '.'); return }
       const href = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = href; a.download = filename; a.style.display = 'none'
@@ -17026,7 +17030,7 @@ async function ttFollowDownload(job, id, deadline, onAsk) {
     try { items = await ttLimit(new Promise((res) => chrome.downloads.search({ id }, res)), 5000, 'search') } catch (e) { items = [] }
     const d = items && items[0]
     if (!d) return { ok: false, error: 'chrome-gone' }
-    if (d.state === 'complete') return { ok: true, bytes: d.fileSize || d.bytesReceived || null, file: d.filename }
+    if (d.state === 'complete') return { ok: true, bytes: d.fileSize || d.bytesReceived || null, file: d.filename, mime: d.mime || '' }
     // A refused try is taken off Chrome's list (1.60.4), so a creator never sees
     // "Failed - Forbidden" next to the copy that was saved.
     if (d.state === 'interrupted') { try { chrome.downloads.erase({ id }) } catch (e) {} return { ok: false, error: 'chrome-' + (d.error || 'interrupted') } }
@@ -17049,6 +17053,31 @@ async function ttFollowDownload(job, id, deadline, onAsk) {
   }
   ttDropDownload(id)
   return { ok: false, error: askSince ? 'chrome-asked-where' : 'chrome-too-slow' }
+}
+
+// A download SCOUT gave up on before Chrome said it started (1.60.5: Seb's
+// Chrome started some late, and two 300 KB pages were left in Downloads as
+// .mp4): any that starts in the next two minutes, or is already going, is
+// cancelled and taken off the list, with its file.
+function ttAbandonDownload(url) {
+  const drop = (item) => { try { chrome.downloads.cancel(item.id, () => { void chrome.runtime.lastError; try { chrome.downloads.removeFile(item.id, () => { void chrome.runtime.lastError; try { chrome.downloads.erase({ id: item.id }) } catch (e) {} }) } catch (e) {} }) } catch (e) {} }
+  const on = (item) => { if (item && (item.url === url || item.finalUrl === url)) drop(item) }
+  try { chrome.downloads.onCreated.addListener(on); setTimeout(() => { try { chrome.downloads.onCreated.removeListener(on) } catch (e) {} }, 120000) } catch (e) {}
+  try { chrome.downloads.search({ url }, (items) => { void chrome.runtime.lastError; for (const it of items || []) if (it.state !== 'complete') drop(it); else if (it.mime && !/video|octet-stream/i.test(it.mime)) drop(it) }) } catch (e) {}
+}
+
+// How Chrome holds a tab that stopped answering: frozen, discarded, still
+// loading, or moved away, so a busy page is said with why.
+async function ttTabState(tabId) {
+  try {
+    const t = await ttLimit(chrome.tabs.get(tabId), 3000, 'tab')
+    const bits = []
+    if (t.frozen) bits.push('frozen by Chrome')
+    if (t.discarded) bits.push('discarded by Chrome')
+    if (t.status && t.status !== 'complete') bits.push(t.status)
+    try { const u = new URL(t.url || t.pendingUrl || ''); if (!/\/video\//.test(u.pathname) && !/^\/@/.test(u.pathname)) bits.push('now on ' + u.hostname + u.pathname.slice(0, 30)) } catch (e) {}
+    return bits.length ? ' (tab ' + bits.join(', ') + ')' : ''
+  } catch (e) { return ' (tab gone)' }
 }
 
 // The first new download that starts from TikTok's page (a blob address of
@@ -17079,7 +17108,7 @@ async function ttPageSave(job, tabId, c, name, withSignIn) {
   const caught = ttCatchPageDownload()
   let shown = null
   try {
-    try { await ttLimit(trybeRun(ttPageSaveStartInPage, [c.url, name, !!withSignIn], tabId), 10000, 'page-busy') } catch (e) { caught.cancel(); return { result: 'page-busy' + tag } }
+    try { await ttLimit(trybeRun(ttPageSaveStartInPage, [c.url, name, !!withSignIn], tabId), 10000, 'page-busy') } catch (e) { caught.cancel(); return { result: 'page-busy' + tag + (await ttTabState(tabId)) } }
     let st = null
     let quiet = 0
     for (;;) {
@@ -17087,7 +17116,7 @@ async function ttPageSave(job, tabId, c, name, withSignIn) {
       await _sleep(800)
       let s = null
       try { s = await ttLimit(trybeRun(ttPageSaveStateInPage, [], tabId), 8000, 'page-busy') } catch (e) { s = null }
-      if (!s) { if (++quiet >= 6) { caught.cancel(); return { result: 'page-busy' + tag } } continue }
+      if (!s) { if (++quiet >= 6) { caught.cancel(); return { result: 'page-busy' + tag + (await ttTabState(tabId)) } } continue }
       quiet = 0
       st = s
       ttDlSet(job, { bytes: st.bytes || 0, total: st.total || 0 })
@@ -17112,7 +17141,7 @@ async function ttPageSave(job, tabId, c, name, withSignIn) {
 async function ttDownload(now, { handle, videoId, filename, visible }) {
   const tried = now.tried
   const step = (s) => ttDlSet(now, { step: s })
-  const say = (r) => Object.assign(r, { step: now.step, bytes: r.bytes != null ? r.bytes : now.bytes, total: now.total, tried: tried.slice() }, r.seen ? { seen: String(r.seen).slice(0, 600) } : {})
+  const say = (r) => Object.assign(r, { step: now.step, bytes: r.bytes != null ? r.bytes : (r.ok ? now.bytes : (now.peak || now.bytes)), total: r.ok ? now.total : (now.peak ? now.peakTotal : now.total), tried: tried.slice() }, r.seen ? { seen: String(r.seen).slice(0, 600) } : {})
   if (!(await hasOrigins(TT_ORIGINS))) return say({ ok: false, error: 'no-access' })
   const h = String(handle || '').trim().replace(/^@+/, '').toLowerCase()
   const id = String(videoId || '')
@@ -17162,26 +17191,15 @@ async function ttDownload(now, { handle, videoId, filename, visible }) {
       if (!g || !g.urls.length) return say({ ok: false, error: found && found.status ? 'tiktok-status' : 'no-video-address', status: found ? found.status : null, seen: `${pageSaw} | ${gridSaw}` })
       found = { urls: g.urls }
     }
-    // 1. Chrome's own downloads, followed by their id while they move.
-    step('chrome')
-    // Up to four addresses: TikTok's servers differ in whether they answer a
-    // download without the page behind it (tested 2026-11-10: v16 refused, v19 gave it).
-    for (const c of found.urls.slice(0, 4)) {
-      if (now.stop) break
-      let dlId = null
-      try { dlId = await ttLimit(chrome.downloads.download({ url: c.url, filename: name, conflictAction: 'uniquify', saveAs: false }), 15000, 'chrome-start-slow') } catch (e) { tried.push({ from: c.from, way: 'chrome', result: 'chrome-start: ' + (e && e.message ? e.message : 'error') }); continue }
-      ttDlSet(now, { bytes: 0, total: 0 })
-      const d = await ttFollowDownload(now, dlId, Date.now() + TT_DL_MAX_MS)
-      if (d.ok && d.bytes != null && d.bytes < 50000) { tried.push({ from: c.from, way: 'chrome', result: 'chrome-too-small' }); try { chrome.downloads.removeFile(dlId, () => { void chrome.runtime.lastError; try { chrome.downloads.erase({ id: dlId }) } catch (e) {} }) } catch (e) {} continue }
-      tried.push({ from: c.from, way: 'chrome', result: d.ok ? 'ok' : d.error })
-      if (d.ok) return say({ ok: true, way: 'chrome', from: c.from, bytes: d.bytes, file: d.file })
-      // Chrome asked where to save and no folder was chosen: asking again would not help.
-      if (d.error === 'chrome-asked-where') return say({ ok: false, error: 'asked-where' })
-    }
-    // 2. TikTok's page fetches its own file and saves it: with its sign-in,
+    // 1.60.5: TIKTOK'S PAGE FIRST, AS TIKTOK'S OWN PLAYER GETS IT (Seb's
+    // Chrome, 2026-11-10: Chrome's own downloads, with no page behind them,
+    // got TikTok pages saved as .mp4 and "File wasn't available on site").
+    // 1. TikTok's page fetches its own file and saves it: with its sign-in,
     //    then without (an address that refuses a signed-in read from the page).
     step('page')
+    let pageBusy = 0
     for (const c of found.urls.slice(0, 3)) {
+      if (pageBusy >= 2) break
       for (const withSignIn of [true, false]) {
         if (now.stop) break
         ttDlSet(now, { bytes: 0, total: 0, asking: false })
@@ -17189,9 +17207,32 @@ async function ttDownload(now, { handle, videoId, filename, visible }) {
         tried.push({ from: c.from, way: 'page', result: r.result })
         if (r.ok) return say({ ok: true, way: 'page', from: c.from, bytes: r.bytes, file: r.file })
         if (r.result === 'chrome-asked-where') return say({ ok: false, error: 'asked-where' })
+        // A page that does not answer will not answer the next address either.
+        if (/^page-busy/.test(r.result)) pageBusy++
         // Only a page that could not read the file at all is tried without sign-in.
         if (r.result !== 'page-fetch-blocked') break
       }
+    }
+    // 2. Chrome's own downloads, followed by their id while they move; a file
+    //    that is not a video (a page TikTok answered with) is deleted.
+    step('chrome')
+    let slowStarts = 0
+    for (const c of found.urls.slice(0, 4)) {
+      if (now.stop || slowStarts >= 2) break
+      let dlId = null
+      try { dlId = await ttLimit(chrome.downloads.download({ url: c.url, filename: name, conflictAction: 'uniquify', saveAs: false }), 15000, 'chrome-start-slow') } catch (e) {
+        const why = e && e.message ? e.message : 'error'
+        if (why === 'chrome-start-slow') { slowStarts++; ttAbandonDownload(c.url) }
+        tried.push({ from: c.from, way: 'chrome', result: 'chrome-start: ' + why }); continue
+      }
+      ttDlSet(now, { bytes: 0, total: 0 })
+      const d = await ttFollowDownload(now, dlId, Date.now() + TT_DL_MAX_MS)
+      const notVideo = d.ok && ((d.bytes != null && d.bytes < 50000) || (d.mime && !/video|octet-stream/i.test(d.mime)))
+      if (notVideo) { tried.push({ from: c.from, way: 'chrome', result: d.mime && !/video|octet-stream/i.test(d.mime) ? 'chrome-not-a-video: ' + d.mime : 'chrome-too-small' }); try { chrome.downloads.removeFile(dlId, () => { void chrome.runtime.lastError; try { chrome.downloads.erase({ id: dlId }) } catch (e) {} }) } catch (e) {} continue }
+      tried.push({ from: c.from, way: 'chrome', result: d.ok ? 'ok' : d.error })
+      if (d.ok) return say({ ok: true, way: 'chrome', from: c.from, bytes: d.bytes, file: d.file })
+      // Chrome asked where to save and no folder was chosen: asking again would not help.
+      if (d.error === 'chrome-asked-where') return say({ ok: false, error: 'asked-where' })
     }
     return say({ ok: false, error: now.stop ? 'too-slow' : 'not-saved' })
   } catch (e) {

@@ -423,19 +423,22 @@ function progressWords(p: TikTokDownloadProgress): string {
 }
 /** What each try SCOUT made means (SCOUT 1.60.1 says what it tried). */
 function tryWords(raw: string): string {
-  // '+nosignin': the page's second try, without its sign-in (the code keeps it).
-  const code = raw.replace(/\+nosignin$/, '')
+  // '+nosignin': the page's second try, without its sign-in (the code keeps it,
+  // before any "(tab ...)" SCOUT 1.60.5 adds).
+  const code = raw.replace(/\+nosignin/, '')
   if (code === 'chrome-asked-where') return 'Chrome asked where to save it, and no folder was chosen'
+  // SCOUT 1.60.5: a busy page says how Chrome held its tab.
+  if (/^page-busy/.test(code)) { const tab = code.match(/\(tab ([^)]*)\)/); return 'TikTok’s page stopped answering SCOUT' + (tab ? ` (the tab was ${tab[1]})` : '') }
+  if (/^chrome-not-a-video/.test(code)) return 'TikTok sent a web page instead of the video, so SCOUT deleted it'
   if (code === 'chrome-stopped' || code === 'page-stopped') return 'SCOUT stopped it at its time limit'
   if (code === 'chrome-stalled' || code === 'page-stalled') return 'TikTok stopped sending the file part way'
   if (code === 'chrome-no-answer' || code === 'page-no-answer') return 'TikTok did not start sending the file'
   if (code === 'chrome-too-slow') return 'it was still coming in at SCOUT\u2019s time limit'
   if (code === 'chrome-gone') return 'the download disappeared from Chrome\u2019s list'
-  if (code === 'page-busy') return 'TikTok\u2019s page stopped answering SCOUT'
   if (/^chrome-SERVER_(FORBIDDEN|UNAUTHORIZED)/.test(code)) return 'TikTok refused to send the file (Forbidden)'
   if (/^chrome-SERVER_/.test(code)) return 'TikTok answered with an error'
   if (/^chrome-NETWORK_/.test(code)) return 'the connection to TikTok failed'
-  if (code === 'chrome-too-small' || code === 'page-not-a-video') return 'TikTok sent a page instead of the video'
+  if (code === 'chrome-too-small' || code === 'page-not-a-video') return 'TikTok sent a page instead of the video, so nothing was kept'
   if (/^chrome-start/.test(code)) return 'Chrome would not start the download'
   if (code === 'page-fetch-blocked') return 'TikTok\u2019s page could not read its own file'
   if (/^page-http-40[13]$/.test(code)) return 'TikTok refused the file to its own page'
