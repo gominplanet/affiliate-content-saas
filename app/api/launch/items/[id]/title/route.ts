@@ -18,8 +18,11 @@
 
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
-import { generateProductTitleOptions } from '@/lib/title-options'
 import { generateAmazonTitleOptions } from '@/lib/amazon-title'
+import { createAdminClient } from '@/lib/supabase/admin'
+import { productNameFor } from '@/lib/product-name-lookup'
+import { realTitles, genericTitleWhy } from '@/lib/youtube-title-guard'
+import { writeYouTubeTitles } from '@/lib/youtube-title-writer'
 import { postToSelf } from '@/lib/self-url'
 import { normalizeTier } from '@/lib/tier'
 import { spendGate } from '@/lib/ai-spend'
@@ -70,59 +73,69 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const hint = String(item.title || '').trim()
   const useful = hint && hint.toUpperCase() !== asin.toUpperCase() ? hint : ''
 
-  let options: string[] = []
   if (forAmazon) {
-    options = await generateAmazonTitleOptions({ asin, videoTitle: useful, count: 5, ctx: { userId: user.id, tier } })
+    const options = await generateAmazonTitleOptions({ asin, videoTitle: useful, count: 5, ctx: { userId: user.id, tier } })
     const amazon = options.map(t => t.trim()).filter(Boolean)
     if (amazon.length === 0) {
       return NextResponse.json({ error: 'Nothing usable came back. Try again, or type one yourself.' }, { status: 502 })
     }
     return NextResponse.json({ ok: true, titles: amazon })
   }
-  // ── THE YOUTUBE TITLE: CO-PILOT'S WRITER ─────────────────────────────────
-  // This box used to be filled by the THUMBNAIL headline writer (two or three
-  // words, all capitals: FLY TRAP WORKS, GNATS GONE?), which is neither a
-  // YouTube title nor the one the worker gives the video when nobody picks.
-  // Co-Pilot's writer is both, and returns a best title plus alternatives.
-  try {
-    const res = await postToSelf({
-      path: '/api/youtube/generate-metadata',
-      userId: user.id,
-      timeoutMs: 110_000,
-      body: { videoTitle: useful, asin, skipAsinCheck: !asin },
-    })
-    if (res.ok) {
-      const j = await res.json().catch(() => ({})) as { generated?: { title?: string; title_alternatives?: string[] } }
-      const yt = [j.generated?.title, ...(j.generated?.title_alternatives ?? [])]
-        .map((t) => String(t || '').trim()).filter((t) => t && t.toUpperCase() !== asin.toUpperCase())
-      const uniq = Array.from(new Set(yt)).slice(0, 5)
-      if (uniq.length > 0) return NextResponse.json({ ok: true, titles: uniq })
-    }
-  } catch { /* the headline writer below is the fallback */ }
-  try {
-    options = await generateProductTitleOptions({
-      // NOT "Amazon product B0H3P7H9T2". That placeholder was handed to the
-      // writer as the video title, and it is the only subject in the prompt
-      // that reads as a word, so it came back with AMAZON TEST, AMAZON WIN and
-      // AMAZON PRODUCT REVIEW: five titles about a shop.
-      //
-      // Empty is honest and the writer knows what to do with it: the product's
-      // real name is looked up from the ASIN and that becomes the subject.
-      videoTitle: useful,
-      asin,
-      count: 5,
-      ctx: { userId: user.id, tier },
-    })
-  } catch {
-    return NextResponse.json({
-      error: 'Could not write a title just now. Try again, or type one yourself.',
-    }, { status: 502 })
-  }
 
-  const titles = options.map(t => t.trim()).filter(Boolean)
-  if (titles.length === 0) {
+  // ── THE YOUTUBE TITLE: NEVER A STAND-IN (2026-11-11) ─────────────────────
+  // Jarett's Drop offered THIS TEST, WORTH IT?, THIS PRODUCT REVIEW, THIS WIN?
+  // and BIG MISTAKE?. Co-Pilot's writer refused the call (an empty video title
+  // is a 400 there), the thumbnail headline writer stood in for it, and with
+  // no product name it answered with its stock lines. Now:
+  //   1. the product's name, from what MVP holds or may ask (no Amazon page)
+  //   2. Co-Pilot's writer, given that name as the product and a video title
+  //   3. a short title writer from the name, if Co-Pilot's did not answer
+  // and every title is checked (lib/youtube-title-guard) before it is shown.
+  // No name and no title: said, never guessed.
+  const found = await productNameFor(createAdminClient(), asin)
+  const product = found ? { brand: found.brand, canonical: found.canonical } : null
+  // The title already there is a hint only when it is one: a file name or a
+  // thumbnail line ("WORTH IT?") fed back in is how the writer got stuck on it.
+  const realHint = useful && !genericTitleWhy(useful) ? useful : ''
+  // With no name anywhere MVP may look, Co-Pilot's writer still gets the
+  // ASIN to find the product by; a title that comes back carrying the code
+  // instead of a name is refused by the guard.
+  const subject = realHint || found?.canonical || found?.title || asin
+  let titles: string[] = []
+  let coPilotWhy = ''
+  if (subject) {
+    try {
+      const res = await postToSelf({
+        path: '/api/youtube/generate-metadata',
+        userId: user.id,
+        timeoutMs: 80_000,
+        // The product's name as the video title when the creator has given
+        // none: if Amazon's page answers Co-Pilot it has the bullets too, and
+        // if not, its product falls back to this name rather than to nothing.
+        // A creator's own words are checked against the product as before.
+        body: { videoTitle: subject, asin, skipAsinCheck: !realHint },
+      })
+      if (res.ok) {
+        const j = await res.json().catch(() => ({})) as { generated?: { title?: string; title_alternatives?: string[] } }
+        titles = realTitles([j.generated?.title, ...(j.generated?.title_alternatives ?? [])], product).slice(0, 5)
+        if (!titles.length) coPilotWhy = 'its titles did not name the product'
+      } else {
+        const j = await res.json().catch(() => ({})) as { error?: string; asinMismatch?: boolean }
+        // A product that does not match the video is said as it is: titles
+        // for the wrong product are worse than none.
+        if (j.asinMismatch && j.error) return NextResponse.json({ error: j.error }, { status: 422 })
+        coPilotWhy = String(j.error || `it answered ${res.status}`).slice(0, 160)
+      }
+    } catch (e) { coPilotWhy = e instanceof Error && /abort|timeout/i.test(e.message) ? 'it did not answer in time' : 'it did not answer' }
+  }
+  if (!titles.length && found) {
+    titles = await writeYouTubeTitles({ productTitle: found.title, brand: found.brand, canonical: found.canonical, hint: realHint, count: 5, ctx: { userId: user.id, tier } })
+  }
+  if (!titles.length) {
     return NextResponse.json({
-      error: 'Nothing usable came back. Try again, or type one yourself.',
+      error: found
+        ? `MVP could not write a title that names ${found.canonical}${coPilotWhy ? ` (Co-Pilot's writer: ${coPilotWhy})` : ''}. Press Write again, or type one yourself.`
+        : `MVP could not find this product's name from ${asin}, so it did not guess a title. Check the product, or type the title yourself.`,
     }, { status: 502 })
   }
 

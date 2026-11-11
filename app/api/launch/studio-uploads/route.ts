@@ -15,6 +15,7 @@
 // none, so a late report can never replace a video already recorded.
 
 import { NextResponse } from 'next/server'
+import { genericTitleWhy } from '@/lib/youtube-title-guard'
 import { createServerClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { normalizeStudioOptions, storeStudioRun, readStudioRun } from '@/lib/studio-finish'
@@ -35,6 +36,7 @@ type Row = {
   rendered_url: string | null; planned_publish_at: string | null; publish_tries: number | null
   reason: string | null; updated_at: string | null; youtube_video_id: string | null; state: string
   thumbnail_url?: string | null
+  title_source?: string | null
 }
 
 type SentStep = { step?: string; ok?: boolean; detail?: string; skipped?: boolean; readBack?: unknown; debug?: unknown }
@@ -72,7 +74,7 @@ export async function GET() {
   if (g instanceof NextResponse) return g
   const { user, sb } = g
   const { data: rows, error } = await sb.from('launch_items')
-    .select('id,batch_id,title,description,tags,rendered_url,thumbnail_url,planned_publish_at,publish_tries,reason,updated_at,youtube_video_id,state')
+    .select('id,batch_id,title,title_source,description,tags,rendered_url,thumbnail_url,planned_publish_at,publish_tries,reason,updated_at,youtube_video_id,state')
     .eq('user_id', user.id).eq('state', 'prepared').is('youtube_video_id', null)
     .not('planned_publish_at', 'is', null).not('rendered_url', 'is', null)
     .order('planned_publish_at', { ascending: true }).limit(20)
@@ -80,6 +82,9 @@ export async function GET() {
   const now = Date.now()
   const waiting = ((rows ?? []) as Row[]).filter((r) => {
     if (!/^https:\/\//i.test(String(r.rendered_url || '')) || !String(r.title || '').trim()) return false
+    // Not under a stand-in title (lib/youtube-title-guard): the worker writes
+    // a real one, or holds the video and says why, before SCOUT may take it.
+    if (String(r.title_source || '') !== 'creator' && genericTitleWhy(r.title)) return false
     // Claimed by a SCOUT that is still within its time.
     if (isStudioRunning(r.reason) && r.updated_at && now - new Date(r.updated_at).getTime() < STUDIO_UPLOAD_CLAIM_MS) return false
     // A channel at its own daily limit is asked again hourly.

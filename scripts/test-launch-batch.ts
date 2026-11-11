@@ -865,7 +865,7 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
     /Write it for me/.test(BOARD) && /items\/\$\{item\.id\}\/title/.test(BOARD),
     'typing ten titles by hand is the opposite of walking away from the computer')
   check('the title writer is the one the studio uses',
-    /generateProductTitleOptions/.test(TITLEROUTE),
+    /path: '\/api\/youtube\/generate-metadata'/.test(TITLEROUTE) && !/generateProductTitleOptions/.test(TITLEROUTE),
     'a second title writer drifts from the first')
   check('it needs the product first, and says so',
     /Set the product first/.test(TITLEROUTE),
@@ -1296,7 +1296,7 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
     && /planned_publish_at,publish_tries,reason/.test(DRAIN),
     'a column the publish step does not select is a description that never ships')
   check('and the tags go with it',
-    /tags: String\(it\.tags \|\| ''\)/.test(DRAIN) && /title,description,tags,rendered_url/.test(DRAIN),
+    /tags: String\(it\.tags \|\| ''\)/.test(DRAIN) && /title,(title_source,)?description,tags,rendered_url/.test(DRAIN),
     'tags were written and then dropped on the way to YouTube')
 
   // A VIDEO THAT EARNS NOTHING MUST NOT LOOK LIKE ONE THAT DOES.
@@ -1677,7 +1677,7 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
     'each tried once; a refusal is written, not retried every minute')
   // THE YOUTUBE TITLE IS A TITLE, NOT THE THUMBNAIL HOOK.
   check('a batch video gets the YouTube title Co-Pilot\'s writer returns',
-    /title: meta\.title\.slice\(0, 100\), title_source: 'mvp'/.test(DRAIN) && /\.eq\('id', it\.id\)\.or\('title_source\.is\.null,title_source\.neq\.creator'\)/.test(DRAIN)
+    /const real = meta\.title \? realTitles\(\[meta\.title\.slice\(0, 100\)\], product\)\[0\]/.test(DRAIN) && /update\(\{ title: t, title_source: 'mvp'/.test(DRAIN) && /\.eq\('id', it\.id\)\.or\('title_source\.is\.null,title_source\.neq\.creator'\)/.test(DRAIN)
     && !/\.neq\('title_source', 'creator'\)/.test(DRAIN),
     '"CHIA WORTH IT?" is a thumbnail hook, and it went to YouTube as the title')
   // ── THE WORKER DOES NOT DOUBLE UP, AND NEVER OUTLIVES ITS FIRING ───────
@@ -1876,19 +1876,19 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
     check('a typed title becomes the creator’s and is never overwritten',
       /patch\.title_source = 'creator'/.test(ITEM_PATCH),
       'the worker would otherwise replace a title somebody chose')
-    check('the worker writes a title for anything nobody chose',
-      /if \(titleSource !== 'creator' && titleSource !== 'mvp'\)/.test(DRAIN)
-      && /await productTitle\(it\.user_id, title, asin\)/.test(DRAIN),
+    check('the worker writes a title for anything nobody chose (and for an old MVP title that is not one)',
+      /let needsTitle = titleSource !== 'creator' && \(titleSource !== 'mvp' \|\| !!genericTitleWhy\(title, product\)\)/.test(DRAIN)
+      && /writeYouTubeTitles\(\{ productTitle: found\.title/.test(DRAIN),
       'a button that must be pressed once per video is not an unattended batch')
     check('and writes it before the thumbnail and the description are built',
-      DRAIN.indexOf('await productTitle(') > -1
-      && inOrder(DRAIN, 'await productTitle(', 'await styledThumbnail('),
+      DRAIN.indexOf('await saveTitle(fresh)') > -1
+      && inOrder(DRAIN, 'await saveTitle(real)', 'await styledThumbnail(') && inOrder(DRAIN, 'await saveTitle(fresh)', 'await styledThumbnail('),
       'both are written FROM the title, so fixing it after leaves an image about a file name')
     check('it writes it once, not on every firing',
       /title_source: 'mvp'/.test(DRAIN) && /titleSource !== 'mvp'/.test(DRAIN),
       'rewriting an MVP title every minute would spend a call a minute per video')
     check('the file name is not fed back to the writer as the subject',
-      /videoTitle: '',\n      asin,/.test(DRAIN),
+      /const subject = !needsTitle \? title : \(found\?\.canonical \|\| asin\)/.test(DRAIN) && /videoMetadata\(it\.user_id, subject, asin, needsTitle\)/.test(DRAIN),
       'handing it back produced five variations on a file name')
     check('the worker can see the provenance',
       /asin,title,title_source,description/.test(DRAIN)
@@ -2066,7 +2066,7 @@ function item(over: Partial<ItemRow> = {}): ItemRow {
     && /generateAmazonTitleOptions\(/.test(TITLE),
     'otherwise the Amazon box would fill with YouTube titles')
   check('the YouTube box gets Co-Pilot\'s title writer, not the thumbnail headline',
-    /path: '\/api\/youtube\/generate-metadata'/.test(TITLE) && inOrder(TITLE, "generate-metadata'", 'generateProductTitleOptions({'),
+    /path: '\/api\/youtube\/generate-metadata'/.test(TITLE) && inOrder(TITLE, "generate-metadata'", 'writeYouTubeTitles({') && !/generateProductTitleOptions/.test(TITLE),
     'FLY TRAP WORKS is a thumbnail line, not a YouTube title')
   check('the row shows both boxes, labelled',
     /Title for YouTube/.test(BOARD) && /Title for Amazon/.test(BOARD)

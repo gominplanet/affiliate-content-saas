@@ -47,5 +47,8 @@ export async function POST(request: Request) {
     ctx: { userId: user.id, tier },
   })
 
+  // Said, not shown as an empty list (2026-11-11): the writer no longer makes
+  // up stock lines when it cannot find what the video is about.
+  if (!titles.length) return NextResponse.json({ error: 'MVP could not find what this product is from its title or ASIN, so it did not write lines that could fit any video. Add the product (ASIN or link) or a few words about it, and try again.' }, { status: 422 })
   return NextResponse.json({ ok: true, titles })
 }

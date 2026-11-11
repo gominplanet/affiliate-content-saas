@@ -33,7 +33,9 @@ import { validateThumbnailPreset, presetToRequestFields, parseFacePick, type Thu
 import { postToSelf } from '@/lib/self-url'
 import { getChannelOAuthToken } from '@/lib/youtube-channels'
 import { wrongChannelMessage } from '@/lib/launch-channel'
-import { generateProductTitleOptions } from '@/lib/title-options'
+import { productNameFor } from '@/lib/product-name-lookup'
+import { genericTitleWhy, realTitles } from '@/lib/youtube-title-guard'
+import { writeYouTubeTitles } from '@/lib/youtube-title-writer'
 import { generateAmazonTitleOptions } from '@/lib/amazon-title'
 import { asinInFileName } from '@/lib/asin'
 import { canUsePreview } from '@/lib/labs-preview'
@@ -419,15 +421,29 @@ async function thumbs(sb: Sb, left: Left): Promise<{ done: number; blocked: numb
     // A ROW WITH NO SOURCE AT ALL counts as nobody's: in SQL, NULL <> 'creator'
     // is not true, so a plain "not creator" filter skipped exactly those rows
     // and their file-name titles went to YouTube.
+    //
+    // NEVER THE THUMBNAIL LINE (2026-11-11, Jarett: "THIS TEST, WORTH IT?,
+    // THIS PRODUCT REVIEW, THIS WIN?, BIG MISTAKE?"). This step used to save
+    // the thumbnail headline writer's line as the title, and when the
+    // description below did not replace it, that line went to YouTube; with no
+    // product name, the line was a stock one. The title is now only ever a
+    // YouTube title that names the product (lib/youtube-title-guard), and a
+    // file name, an ASIN or an old thumbnail line MVP saved is replaced.
     const titleSource = String(it.title_source || 'filename')
-    if (titleSource !== 'creator' && titleSource !== 'mvp') {
-      const written = await productTitle(it.user_id, title, asin)
-      if (written) {
-        title = written
-        await sb.from('launch_items')
-          .update({ title, title_source: 'mvp', updated_at: now() }).eq('id', it.id).or('title_source.is.null,title_source.neq.creator')
-      }
+    const found = await productNameFor(sb, asin)
+    const product = found ? { brand: found.brand, canonical: found.canonical } : null
+    let needsTitle = titleSource !== 'creator' && (titleSource !== 'mvp' || !!genericTitleWhy(title, product))
+    const saveTitle = async (t: string) => {
+      const { data: took } = await sb.from('launch_items')
+        .update({ title: t, title_source: 'mvp', updated_at: now() })
+        .eq('id', it.id).or('title_source.is.null,title_source.neq.creator').select('id')
+      if ((took ?? []).length > 0) { title = t; needsTitle = false }
     }
+    // What the writers are told the video is about: the creator's own words,
+    // a real title MVP wrote, or the product's name; never a file name. With
+    // no name anywhere MVP may look, the ASIN, which Co-Pilot's writer finds
+    // the product by (a title that comes back carrying the code is refused).
+    const subject = !needsTitle ? title : (found?.canonical || asin)
 
     // ── THE DESCRIPTION FIRST, WHICH IS WHERE THE AFFILIATE LINK LIVES ───
     //
@@ -444,7 +460,7 @@ async function thumbs(sb: Sb, left: Left): Promise<{ done: number; blocked: numb
     let ytTitle = title
     if (!haveDescription && left() > 90_000) {
       metaTried = true
-      const meta = await videoMetadata(it.user_id, title, asin)
+      const meta = await videoMetadata(it.user_id, subject, asin, needsTitle)
       if (meta?.description) {
         const { data: d } = await sb.from('launch_items')
           .update({ description: meta.description, ...(meta.tags?.length ? { tags: meta.tags.join(', ') } : {}), updated_at: now() })
@@ -454,16 +470,24 @@ async function thumbs(sb: Sb, left: Left): Promise<{ done: number; blocked: numb
         // IT?") is right on the image and wrong as a YouTube title, and it went
         // to YouTube as one because this title, returned by the same call, was
         // thrown away. Only alongside the description it came with.
-        if ((d ?? []).length > 0 && meta.title) {
-          await sb.from('launch_items')
-            .update({ title: meta.title.slice(0, 100), title_source: 'mvp', updated_at: now() })
-            .eq('id', it.id).or('title_source.is.null,title_source.neq.creator')
-          ytTitle = meta.title.slice(0, 100)
+        const real = meta.title ? realTitles([meta.title.slice(0, 100)], product)[0] : undefined
+        if ((d ?? []).length > 0 && needsTitle && real) {
+          await saveTitle(real)
+          ytTitle = real
         }
       } else {
         metaMissing++
       }
     }
+    // Co-Pilot's writer did not run or gave nothing that names the product:
+    // the short title writer, from the product's name. With no name, the
+    // title is left as it is, and the upload step will not send it as one.
+    if (needsTitle && found && left() > 60_000) {
+      const fresh = (await writeYouTubeTitles({ productTitle: found.title, brand: found.brand, canonical: found.canonical, count: 3, ctx: { userId: it.user_id, tier: await ownerTier(sb, String(it.user_id)) } }))[0]
+      if (fresh) { await saveTitle(fresh); ytTitle = fresh }
+    }
+    // The thumbnail is written about the product, not about a file name.
+    if (needsTitle && found) title = found.canonical
 
     // ── THE AMAZON TITLE, WRITTEN WHILE THERE IS STILL TIME TO READ IT ───
     // Written during prepare, so it is in the row's "Title for Amazon" box
@@ -676,40 +700,6 @@ async function thumbs(sb: Sb, left: Left): Promise<{ done: number; blocked: numb
  * Returns null rather than throwing. A video with no description is worse than
  * one with, and far better than one that never goes up at all.
  */
-/**
- * Write one English title for a video from its product.
- *
- * THE SAME WRITER THE BUTTON USES, and the same one Launchpad uses, so a title
- * written by the worker and a title written by a press come from one place
- * rather than two that drift. It takes the first option because there is
- * nobody here to pick, which is the whole point of the unattended half.
- *
- * Returns null rather than throwing: a poor title is better than no video.
- */
-async function productTitle(
-  userId: string, current: string, asin: string,
-): Promise<string | null> {
-  try {
-    const { data: integ } = await (createAdminClient() as Sb)
-      .from('integrations').select('tier').eq('user_id', userId).maybeSingle()
-    // THE FILE NAME IS NOT A HINT. Feeding it back in as the video's subject is
-    // how a writer produced five variations on a file name. The product's real
-    // name is looked up from the ASIN and that is the subject.
-    const options = await generateProductTitleOptions({
-      videoTitle: '',
-      asin,
-      count: 3,
-      ctx: { userId, tier: normalizeTier(integ?.tier) },
-    })
-    const first = (options ?? []).map((t) => String(t || '').trim()).filter(Boolean)[0] || ''
-    // NOT A SWAP FOR THE SAME THING. If the writer hands back what is already
-    // there, writing it would spend a call and change nothing.
-    if (!first || first.toLowerCase() === current.trim().toLowerCase()) return null
-    return first.slice(0, 100)
-  } catch {
-    return null
-  }
-}
 
 /**
  * The storefront title for one video: the one the creator typed, the one MVP
@@ -752,13 +742,16 @@ async function ensureAmazonTitle(sb: any, itemId: string, userId: string, asin: 
 
 async function videoMetadata(
   userId: string, title: string, asin: string,
+  /** The subject is MVP's (the product's name or its ASIN), not the creator's
+   *  words, so there is nothing of theirs to check the product against. */
+  ownSubject = false,
 ): Promise<{ description: string; tags: string[]; title: string | null } | null> {
   try {
     const res = await postToSelf({
       path: '/api/youtube/generate-metadata',
       userId,
       timeoutMs: META_CALL_MS,
-      body: { videoTitle: title, asin: asin || undefined, skipAsinCheck: !asin },
+      body: { videoTitle: title, asin: asin || undefined, skipAsinCheck: !asin || ownSubject },
     })
     if (!res.ok) return null
     const j = await res.json().catch(() => ({})) as { generated?: { title?: string; description?: string; tags?: string[] } }
@@ -867,7 +860,7 @@ async function publishes(sb: Sb, left: Left): Promise<{ scheduled: number; faile
   const capped = new Set<string>()
   tierCache.clear()
   const { data: rows } = await sb.from('launch_items')
-    .select('id,user_id,batch_id,position,title,description,tags,rendered_url,clean_url,thumbnail_url,thumbnail_clean_url,asin,duration_seconds,planned_publish_at,publish_tries,reason,youtube_video_id,updated_at')
+    .select('id,user_id,batch_id,position,title,title_source,description,tags,rendered_url,clean_url,thumbnail_url,thumbnail_clean_url,asin,duration_seconds,planned_publish_at,publish_tries,reason,youtube_video_id,updated_at')
     .eq('state', 'prepared').not('planned_publish_at', 'is', null)
     // Room for rows waiting on SCOUT's Studio upload (below), which are passed
     // over here and must not crowd out the rows this firing can upload.
@@ -990,7 +983,7 @@ async function publishes(sb: Sb, left: Left): Promise<{ scheduled: number; faile
   for (const it of items) {
     if (budget <= 0) break
     const src = (it.rendered_url || '').trim()
-    const title = (it.title || '').trim()
+    let title = (it.title || '').trim()
     if (!/^https:\/\//i.test(src) || !title) {
       // SAID, NOT SKIPPED. A row with no file or no title used to be passed
       // over in silence every firing, reading "Queued for upload" for ever
@@ -1020,6 +1013,38 @@ async function publishes(sb: Sb, left: Left): Promise<{ scheduled: number; faile
       await noteHandOver(sb, it.id, handed, true)
       scheduled++
       continue
+    }
+
+    // ── NO STAND-IN TITLE GOES TO YOUTUBE (2026-11-11) ───────────────────
+    // The last look before either upload (here, or SCOUT's in Studio, which
+    // only takes rows this has passed: app/api/launch/studio-uploads). A title
+    // the creator typed is theirs. Anything else that does not name the
+    // product (a file name, the ASIN, a thumbnail line, THIS TEST or BIG
+    // MISTAKE?) is written again from the product's name, and when that cannot
+    // be done the video waits and says why, rather than going out under it.
+    if (String(it.title_source || '') !== 'creator' && !String(it.youtube_video_id || '').trim()) {
+      const found = await productNameFor(sb, it.asin)
+      const product = found ? { brand: found.brand, canonical: found.canonical } : null
+      const why = genericTitleWhy(title, product)
+      if (why) {
+        const fresh = found && left() > 45_000
+          ? (await writeYouTubeTitles({ productTitle: found.title, brand: found.brand, canonical: found.canonical, count: 3, ctx: { userId: String(it.user_id), tier: await ownerTier(sb, String(it.user_id)) } }))[0]
+          : undefined
+        if (fresh) {
+          const { data: took } = await sb.from('launch_items').update({ title: fresh, title_source: 'mvp', updated_at: stamp() })
+            .eq('id', it.id).eq('state', 'prepared').or('title_source.is.null,title_source.neq.creator').select('id')
+          if (!took || took.length === 0) continue
+          title = fresh
+          it.title = fresh
+        } else {
+          await sb.from('launch_items').update({
+            state: 'blocked',
+            reason: `Held back: its title "${title.slice(0, 60)}" is not a YouTube title (${why}). ${found ? 'MVP could not write one just now; press Try again, or type a title that names the product.' : 'MVP could not find the product\u2019s name to write one; type a title that names the product, or check the product, then press Try again.'}`,
+            updated_at: stamp(),
+          }).eq('id', it.id).eq('state', 'prepared').is('youtube_video_id', null)
+          continue
+        }
+      }
     }
 
     // ── UPLOADED BY SCOUT IN YOUTUBE STUDIO, NOT HERE ────────────────────

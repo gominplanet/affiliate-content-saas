@@ -18,6 +18,9 @@ import { fetchAmazonProduct } from '@/services/amazon'
 import { createAnthropicClient } from './anthropic'
 import { recordAnthropicUsage } from './ai-usage'
 import { scrubTitle } from './scrub'
+import { createAdminClient } from './supabase/admin'
+import { productNameFor } from './product-name-lookup'
+import { genericTitleWhy } from './youtube-title-guard'
 
 export interface TitleOptionsCtx {
   userId: string | null
@@ -26,8 +29,8 @@ export interface TitleOptionsCtx {
 
 /**
  * Returns up to `count` distinct, product/video-specific thumbnail title
- * options. Falls back to a small set of safe defaults if Claude fails (so the
- * UI never gets stuck loading forever).
+ * options. If Claude fails, lines made of the product's own name, or none
+ * (never a stock line that fits any video; callers say nothing was written).
  */
 export async function generateProductTitleOptions(opts: {
   videoTitle: string
@@ -57,7 +60,15 @@ export async function generateProductTitleOptions(opts: {
   // the difference between titles about a product and titles about a shop, and
   // it is one call the caller should not have to know to make. Best effort: a
   // lookup that fails leaves the prompt exactly as it was before.
+  //
+  // 2026-11-11 (Jarett's Drop titles): what MVP already holds or may ask
+  // (lib/product-name-lookup: his own Amazon video products, the storefront
+  // lists, Keepa, Amazon's Creators API) first, so a product is named even when
+  // Amazon's page does not answer.
   let productTitle = (opts.productTitle || '').trim()
+  if (!productTitle && asin) {
+    try { productTitle = (await productNameFor(createAdminClient(), asin))?.title || '' } catch { /* asked below */ }
+  }
   if (!productTitle && asin) {
     try {
       const p = await fetchAmazonProduct(asin)
@@ -146,23 +157,19 @@ Return ONLY a JSON array of exactly ${count} strings. No prose around it.`
     const unique = titles.filter(t => seen.has(t) ? false : (seen.add(t), true))
     return unique.slice(0, count)
   } catch {
-    // Safe deterministic fallback so the UI never hangs. Derived from the video
-    // title so it stays at least loosely on-topic. All 2-3 words MAX to match
-    // the new poppy-thumbnail rule — the fallback used to reintroduce 4-5
-    // word titles ("BEFORE YOU BUY", "MY REAL TAKE") that the rest of the
-    // pipeline was working hard to prevent.
-    const FILLER_FB = new Set(['A','AN','THE','IS','ARE','WAS','WERE','OF','FOR','TO','IN','ON','WITH','AND','OR','MY','OUR','YOUR'])
-    const base = (opts.videoTitle || 'this product').toUpperCase().replace(/[^A-Z0-9 ]/g, '').trim()
-    const words = base.split(/\s+/).filter(w => w && !FILLER_FB.has(w))
-    const noun = words[0] || 'THIS'
-    const noun2 = words[1] || ''
-    const productPair = noun2 ? `${noun} ${noun2}` : noun
-    return [
-      `${noun} TEST`,
-      `WORTH IT?`,
-      `${productPair} REVIEW`.split(/\s+/).slice(0, 3).join(' '),
-      `${noun} WIN?`,
-      `BIG MISTAKE?`,
-    ].slice(0, count)
+    // NO STOCK LINES (2026-11-11). This used to answer every failure with
+    // "<word> TEST", "WORTH IT?", "<words> REVIEW", "<word> WIN?" and "BIG
+    // MISTAKE?", and with no product to take the word from, that was THIS
+    // TEST, THIS PRODUCT REVIEW and THIS WIN?, which went to YouTube as
+    // Jarett's titles. Now a failure gives lines made of the product's own
+    // name, or nothing, and every caller says nothing was written.
+    const FILLER_FB = new Set(['A','AN','THE','IS','ARE','WAS','WERE','OF','FOR','TO','IN','ON','WITH','AND','OR','MY','OUR','YOUR','THIS','THAT','IT','NEW','PRODUCT','ITEM','AMAZON','REVIEW','TEST'])
+    const fromName = (raw: string) => raw.toUpperCase().replace(/[^A-Z0-9 ]/g, ' ').split(/\s+/).filter((w) => w.length >= 3 && !/^\d+$/.test(w) && !FILLER_FB.has(w))
+    const named = fromName(productTitle)
+    const fromVideo = genericTitleWhy(opts.videoTitle) ? [] : fromName(opts.videoTitle || '')
+    const words = named.length ? named : fromVideo
+    if (words.length < 2) return []
+    const pair = `${words[0]} ${words[1]}`
+    return Array.from(new Set([pair, `${words[1]} ${words[2] || words[0]}`, `${pair}?`])).slice(0, count)
   }
 }
