@@ -26,6 +26,7 @@ import { normalizeTier } from '@/lib/tier'
 import { buildCoverage, familyKeys, type YtVideo, type AmzVideo } from '@/lib/yt-amazon-match'
 import { familiesFor } from '@/lib/asin-family'
 import { productsOfVideo, type LinkLookup } from '@/lib/yt-amazon-links'
+import { asinFromAmazonUrl } from '@/lib/asin'
 import { passportCodeFromUrl } from '@/lib/passport-links'
 import { geniuslinkAsins, geniusCode } from '@/lib/yt-amazon-geniuslink'
 
@@ -52,8 +53,10 @@ async function gate(): Promise<{ error: NextResponse } | { ownerId: string; db: 
 // whenever that happens to be, with no clock to guess (2026-11-11: the third
 // reader reads "Product ASIN: B0..." lines and says where a link failed; the
 // fourth looks Passport codes up in MVP's own table instead of following them;
-// the fifth reads geni.us links from the creator's Geniuslink account).
-const READER = 'r5'
+// the fifth reads geni.us links from the creator's Geniuslink account; the
+// sixth starts from what MVP already knows: the video's own product
+// (youtube_videos.asin, product_url) and the geni.us links MVP made).
+const READER = 'r6'
 
 const MIGRATION = 'MVP needs migration 466 (youtube_video_products) in Supabase before it can match your videos. It is in the message from the MVP team.'
 const missingSchema = (m: string) => /youtube_video_products|products_read_at|products_why|does not exist|schema cache/i.test(m)
@@ -136,7 +139,7 @@ export async function POST(req: Request) {
 
   // The next videos not read yet, newest first, read six at a time inside a
   // time budget, each saved as it is read so a stop loses nothing.
-  const { data: todo, error } = await db.from('youtube_videos').select('youtube_video_id, title, description').eq('user_id', ownerId).is('products_read_at', null).order('published_at', { ascending: false }).limit(60)
+  const { data: todo, error } = await db.from('youtube_videos').select('youtube_video_id, title, description, asin, product_url').eq('user_id', ownerId).is('products_read_at', null).order('published_at', { ascending: false }).limit(60)
   if (error) return NextResponse.json({ error: missingSchema(error.message) ? MIGRATION : error.message }, { status: missingSchema(error.message) ? 409 : 500 })
   const started = Date.now()
   let read = 0
@@ -151,7 +154,26 @@ export async function POST(req: Request) {
     const prior = await every<{ via: string | null; asin: string }>((a, b) => db.from('youtube_video_products').select('via, asin').eq('user_id', ownerId).like('via', 'http%').range(a, b), 60000)
     for (const r of prior) if (r.via) known.set(r.via, r.asin)
   } catch { /* followed again, as before */ }
-  const queue = [...((todo || []) as Array<{ youtube_video_id: string; title: string | null; description: string | null }>)]
+  const queue = [...((todo || []) as Array<{ youtube_video_id: string; title: string | null; description: string | null; asin?: string | null; product_url?: string | null }>)]
+  // The geni.us links MVP made for this creator, each with its ASIN
+  // (geniuslink_codes, written when MVP built the link from the product).
+  const madeByMvp = new Map<string, string>()
+  try {
+    const rows = await every<{ code: string; asin: string }>((a, b) => db.from('geniuslink_codes').select('code, asin').eq('user_id', ownerId).range(a, b), 60000)
+    for (const r of rows) if (r.code && /^[A-Z0-9]{10}$/i.test(String(r.asin || ''))) madeByMvp.set(String(r.code), String(r.asin).toUpperCase())
+  } catch { /* followed or read from the account instead */ }
+  let alreadyKnown = 0
+  // A saved product on so many of the creator's videos that it is no one
+  // video's product (a gear list item an early reader saved) is not trusted:
+  // those videos have their links read instead.
+  const savedCount = new Map<string, number>()
+  let often = Infinity
+  try {
+    const saved = await every<{ asin: string | null }>((a, b) => db.from('youtube_videos').select('asin').eq('user_id', ownerId).not('asin', 'is', null).range(a, b))
+    for (const r of saved) { const k = String(r.asin || '').toUpperCase(); if (k) savedCount.set(k, (savedCount.get(k) || 0) + 1) }
+    const { count: videos } = await db.from('youtube_videos').select('youtube_video_id', { count: 'exact', head: true }).eq('user_id', ownerId)
+    often = Math.max(6, Math.ceil((videos || saved.length) * 0.08))
+  } catch { often = 6 }
   // MVP's own Passport links (mvpl.ink/CODE, /go/CODE) are looked up, never
   // followed: the table holds each code's ASIN, and a followed one would log a
   // click and could lead to a Levanta link or another country's store.
@@ -178,6 +200,7 @@ export async function POST(req: Request) {
     const code = passportCodeFromUrl(u)
     if (code) return passport.get(code) ?? null
     const g = geniusCode(u)
+    if (g && madeByMvp.has(g)) { viaGenius++; return { asin: madeByMvp.get(g)! } }
     const e = g ? genius.map.get(g) : undefined
     if (!e) return null
     viaGenius++
@@ -188,7 +211,16 @@ export async function POST(req: Request) {
       if (Date.now() - started > 70_000 || saveError) return
       const v = queue.shift()
       if (!v) return
-      const r = await productsOfVideo(v.title || '', v.description || '', known, resolve)
+      // THE VIDEO'S OWN PRODUCT, WHEN MVP ALREADY KNOWS IT: youtube_videos.asin
+      // ("resolved product ASIN for this video", written at blog generation
+      // and by the Creator Connections badge) or an Amazon product_url. Nothing
+      // to follow for those.
+      const saved = /^[A-Z0-9]{10}$/i.test(String(v.asin || '')) ? String(v.asin).toUpperCase() : asinFromAmazonUrl(String(v.product_url || ''))
+      const own = saved && (savedCount.get(saved) || 0) <= often ? saved : null
+      const r = own
+        ? { asins: [{ asin: own, via: 'mvp-known' }], why: null as string | null, followed: 0 }
+        : await productsOfVideo(v.title || '', v.description || '', known, resolve)
+      if (own) alreadyKnown++
       followed += r.followed
       if (r.why === 'rate-limited') slowed++
       const now = new Date().toISOString()
@@ -209,5 +241,5 @@ export async function POST(req: Request) {
   await Promise.all(Array.from({ length: 3 }, worker))
   if (saveError) return NextResponse.json({ error: missingSchema(saveError) ? MIGRATION : `MVP could not save what it read: ${saveError}`, read }, { status: missingSchema(saveError) ? 409 : 500 })
   const { count } = await db.from('youtube_videos').select('youtube_video_id', { count: 'exact', head: true }).eq('user_id', ownerId).is('products_read_at', null)
-  return NextResponse.json({ ok: true, read, found, followed, slowed, left: count ?? 0, geniuslink: { state: genius.state, why: genius.why, read: viaGenius } })
+  return NextResponse.json({ ok: true, read, found, followed, slowed, left: count ?? 0, known: alreadyKnown, geniuslink: { state: genius.state, why: genius.why, read: viaGenius } })
 }

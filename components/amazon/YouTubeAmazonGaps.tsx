@@ -115,10 +115,14 @@ export default function YouTubeAmazonGaps() {
         const errWords = err === 'signed-out' ? 'this Chrome is signed out of Amazon. Sign in to Amazon, then press Read again'
           : err === 'list-api-empty' ? 'Amazon\u2019s video list answered with nothing'
           : err === 'no-result' ? 'Amazon\u2019s video page did not show the list' : err
-        listOk = !!st && !err && !st.interrupted
+        listOk = !!st && !err && !st.interrupted && !(st.source && /rendered rows/.test(st.source))
         listWords = !st ? 'SCOUT did not say how the list read went.'
           : err ? `SCOUT could not read your Amazon video list: ${errWords}${st.probe ? ` (${String(st.probe).slice(0, 700)})` : ''}. ${num(st.saved)} videos were saved.`
           : st.interrupted ? `Chrome stopped SCOUT part way through your Amazon video list; ${num(st.saved)} videos were saved. Press Read again to carry on.`
+          // The page's grid, not Amazon's list (SCOUT did not catch the list
+          // request): said as a partial read, never as the list (Seb's run read
+          // 91 of 7,992 this way, shown in green).
+          : st.source && /rendered rows/.test(st.source) ? `SCOUT could not catch Amazon's own video list this time, so it read only the ${num(st.saved)} videos the page showed. ${report?.coverage ? `Your saved list of ${num(report.coverage.counts.amazon)} videos is kept and used. ` : ''}Press Read again to try for the whole list${st.scoutVersion && !scoutAtLeast(st.scoutVersion, '1.60.10') ? `; SCOUT 1.60.10 waits longer for it (this Chrome has ${st.scoutVersion}, and Chrome updates SCOUT by itself)` : ''}.`
           : `SCOUT read ${num(st.saved)} videos from your Amazon video list${st.total ? ` (Amazon says ${num(st.total)})` : ''}${st.stopped ? `: ${st.stopped}` : ''}.`
       }
       // SCOUT 1.60.8 asks Amazon again when the list comes back empty; an
@@ -163,6 +167,7 @@ export default function YouTubeAmazonGaps() {
     let gState = ''
     let gWhy = ''
     let gRead = 0
+    let knownN = 0
     const geniusWords = () => gState === 'no-keys'
       ? ' MVP has no Geniuslink keys for you, so geni.us links are followed at the ten a minute geni.us allows; add your Geniuslink API key and secret on the Brand page and MVP reads them all from your account at once.'
       : gState === 'error' ? ` Your Geniuslink account did not answer (${gWhy}), so geni.us links are followed at the ten a minute geni.us allows.`
@@ -184,8 +189,9 @@ export default function YouTubeAmazonGaps() {
           const g = (j.geniuslink || {}) as { state?: string; why?: string | null; read?: number }
           if (g.state && g.state !== 'read') { gState = g.state; gWhy = String(g.why || '') } else if (g.state === 'read' && !gState) gState = 'read'
           gRead += Number(g.read) || 0
+          knownN += Number(j.known) || 0
           const left = Number(j.left) || 0
-          setLine(`Reading the product link at the top of your YouTube descriptions: ${read.toLocaleString()} videos read, ${found.toLocaleString()} with a product, ${left.toLocaleString()} to go.${geniusWords()}`)
+          setLine(`Reading the product link at the top of your YouTube descriptions: ${read.toLocaleString()} videos read, ${found.toLocaleString()} with a product${knownN ? ` (${knownN.toLocaleString()} already known to MVP)` : ''}, ${left.toLocaleString()} to go.${geniusWords()}`)
           if (!left || !Number(j.read)) break
         }
         if (!slowed || stop.current) break

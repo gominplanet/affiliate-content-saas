@@ -977,10 +977,21 @@ async function ensureRecipesLoaded() {
   } catch (e) {}
 }
 
+// The Manage content page's own video list request, kept apart (1.60.10). It
+// sat in the twelve-slot ring with everything else the page asks for, and on
+// Seb's run it was pushed out before SCOUT looked: the read fell back to the
+// page's grid and read 91 videos of 7,992.
+let _listNetRec = null
+
 function recordNetCapture(rec) {
   if (!rec || !rec.url) return
   _ccNetRing.push(rec)
   if (_ccNetRing.length > 12) _ccNetRing.shift()
+  try {
+    if (/\/manage-content\/api\/get-content-list/i.test(String(rec.url)) && rec.body && /^post$/i.test(String(rec.method || ''))) {
+      _listNetRec = { ...rec, seenAt: Date.now() }
+    }
+  } catch (e) {}
   // Reporting calls get their own ring. The earnings page fires enough requests
   // to flush a 12-slot buffer before we ever read it, and these are the ones the
   // per-product sync replays.
@@ -5997,9 +6008,13 @@ async function scanCreatorHubVideosBackground(userUrl, startAt, onProgress) {
     // ("Frame with ID 0 was removed", Seb, 2026-11-11, at 400 of 7,958).
     try { await chrome.tabs.update(tabId, { autoDiscardable: false }) } catch (e) {}
     await waitForTabLoad(tabId, 30000)
-    // Long enough for the page to fire its own list request, which net-hook then
-    // captures. Everything good depends on catching that one call.
-    await _sleep(6000)
+    // The page fires its own list request, which net-hook captures, and
+    // everything good depends on catching that one call. Waited for up to 25
+    // seconds (it was a flat 6), from its own slot so nothing pushes it out.
+    const lookedFrom = startedAt
+    const freshList = () => (_listNetRec && _listNetRec.seenAt >= lookedFrom ? _listNetRec : null)
+    for (let waited = 0; waited < 25000 && !freshList(); waited += 500) await _sleep(500)
+    if (!freshList()) await _sleep(1000)
     // The page's own list API first. Its answer is complete and carries no cart
     // widgets, so the DOM crawl below is now only a fallback for when we cannot
     // capture that request.
@@ -6007,7 +6022,7 @@ async function scanCreatorHubVideosBackground(userUrl, startAt, onProgress) {
     // parameterless GET returns the first page and nothing else.
     const listRecs = (_ccNetRing || []).slice().reverse()
       .filter((x) => x && /\/manage-content\/api\/get-content-list/i.test(String(x.url || '')))
-    let apiRec = listRecs.find((x) => x.body && /^post$/i.test(String(x.method || ''))) || listRecs[0]
+    let apiRec = freshList() || listRecs.find((x) => x.body && /^post$/i.test(String(x.method || ''))) || listRecs[0] || _listNetRec
     let apiNote = apiRec ? 'captured the list request' : 'never saw the list request'
     if (apiRec) {
       // Batch after batch, pushing each one, until Amazon says the library is
@@ -6051,7 +6066,7 @@ async function scanCreatorHubVideosBackground(userUrl, startAt, onProgress) {
         if (/\/ap\/signin/.test(String(now.url || ''))) return 'Amazon signed this Chrome out'
         // The newest list request the page made: after a reload, the reloaded
         // page's own (its session and token), never older than the one in hand.
-        const fresh = (_ccNetRing || []).slice().reverse()
+        const fresh = (_listNetRec && apiRec && _listNetRec.seenAt > (apiRec.seenAt || 0) ? _listNetRec : null) || (_ccNetRing || []).slice().reverse()
           .find((x) => x && x.body && /^post$/i.test(String(x.method || '')) && /\/manage-content\/api\/get-content-list/i.test(String(x.url || '')))
         if (fresh) apiRec = fresh
         return null

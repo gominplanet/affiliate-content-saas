@@ -31,7 +31,7 @@ const check = (name, ok, detail) => { if (!ok) fails.push(`${name}${detail !== u
 const LIB = 1000
 const MANAGE = 'https://www.amazon.com/manage-content?ref=ive_cp'
 
-function world({ breakOn = [], kind = 'reload' }) {
+function world({ breakOn = [], kind = 'reload', flushed = false }) {
   let nextId = 7
   const tabs = new Map()
   const ring = []
@@ -67,9 +67,17 @@ function world({ breakOn = [], kind = 'reload' }) {
   }
   const saved = []
   const push = async (videos) => { saved.push(...videos.map((v) => v.aci)); return { ok: true } }
-  const make = new Function('chrome', 'waitForTabLoad', '_sleep', '_ccNetRing', 'pushVideoLibraryToMvp', 'harvestCreatorHubVideosInPage', 'fetchContentListInPage', 'describeProbe',
+  const make = new Function('chrome', 'waitForTabLoad', '_sleep', '_ccNetRing', 'pushVideoLibraryToMvp', 'harvestCreatorHubVideosInPage', 'fetchContentListInPage', 'describeProbe', '_listNetRec',
     `${scanSrc}\nreturn scanCreatorHubVideosBackground`)
-  const scan = make(chrome, async () => {}, async () => {}, ring, push, () => {}, () => {}, () => '')
+  // Seb's run (1.60.10): the page's list request pushed out of the twelve-slot
+  // ring by everything else it asked for, but kept in its own slot.
+  let kept = null
+  if (flushed) {
+    kept = { url: 'https://www.amazon.com/manage-content/api/get-content-list', method: 'POST', headers: { tag: 'kept' }, body: JSON.stringify({ pageSize: 10, startIndex: 0 }), seenAt: Date.now() + 1000 }
+    const realCreate = chrome.tabs.create
+    chrome.tabs.create = async (o) => { const r = await realCreate(o); ring.length = 0; for (let i = 0; i < 12; i++) ring.push({ url: `https://www.amazon.com/other/${i}`, method: 'GET' }); return r }
+  }
+  const scan = make(chrome, async () => {}, async () => {}, ring, push, () => {}, () => {}, () => '', kept)
   return { scan, tabs, asked, updates, created, saved }
 }
 
@@ -99,6 +107,13 @@ function world({ breakOn = [], kind = 'reload' }) {
   const w = world({ breakOn: [2, 3, 4, 5, 6] })
   const r = await w.scan(MANAGE, 0, () => {})
   check('a tab that keeps going away stops the read with the reason, and the 400 read are kept', r.ok && r.count === 400 && r.partial === true && /Frame with ID 0 was removed/.test(String(r.stopped)) && r.nextOffset === 400, r)
+}
+
+// E. The list request was pushed out of the ring, and kept in its own slot.
+{
+  const w = world({ flushed: true })
+  const r = await w.scan(MANAGE, 0, () => {})
+  check('a list request pushed out of the ring is still used, from its own slot, and the whole library is read', r.ok && r.count === LIB && w.asked[0] && w.asked[0].tag === 'kept' && /own video list/.test(String(r.source)), { r, asked: w.asked })
 }
 
 if (fails.length) { console.error(`❌ amazon-list-tab-back: ${fails.length} failure(s)\n${fails.map((f) => `   • ${f}`).join('\n')}`); process.exit(1) }
