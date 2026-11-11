@@ -12,6 +12,9 @@
 //                               time, and say how many are left
 //   POST { action: 'again' }    read every video's links again (after the
 //                               creator changed descriptions)
+//   POST { action: 'unplaced' } read again the videos with no product whose
+//                               link did not answer, and once, the ones the
+//                               first reader (before READER_2) could not place
 //
 // Labs: the MVP team only, like the Amazon video library it reads.
 import { NextResponse } from 'next/server'
@@ -39,6 +42,10 @@ async function gate(): Promise<{ error: NextResponse } | { ownerId: string; db: 
   if (normalizeTier(intg?.tier) !== 'admin') return { error: NextResponse.json({ error: 'This is in Labs, for the MVP team.' }, { status: 403 }) }
   return { ownerId, db }
 }
+
+// The second link reader (lib/yt-amazon-links, 2026-11-11): videos the first
+// one could not place are read again once by Check everything.
+const READER_2 = '2026-11-11T18:45:00Z'
 
 const MIGRATION = 'MVP needs migration 466 (youtube_video_products) in Supabase before it can match your videos. It is in the message from the MVP team.'
 const missingSchema = (m: string) => /youtube_video_products|products_read_at|products_why|does not exist|schema cache/i.test(m)
@@ -101,6 +108,13 @@ export async function POST(req: Request) {
     if (error) return NextResponse.json({ error: missingSchema(error.message) ? MIGRATION : error.message }, { status: missingSchema(error.message) ? 409 : 500 })
     return NextResponse.json({ ok: true })
   }
+  if (body.action === 'unplaced') {
+    const a = await db.from('youtube_videos').update({ products_read_at: null }).eq('user_id', ownerId).in('products_why', ['link-failed', 'rate-limited'])
+    const b = await db.from('youtube_videos').update({ products_read_at: null }).eq('user_id', ownerId).not('products_why', 'is', null).lt('products_read_at', READER_2)
+    const err = a.error || b.error
+    if (err) return NextResponse.json({ error: missingSchema(err.message) ? MIGRATION : err.message }, { status: missingSchema(err.message) ? 409 : 500 })
+    return NextResponse.json({ ok: true })
+  }
   if (body.action !== 'read') return NextResponse.json({ error: 'Unknown action.' }, { status: 400 })
 
   // The next videos not read yet, newest first, read six at a time inside a
@@ -110,14 +124,25 @@ export async function POST(req: Request) {
   const started = Date.now()
   let read = 0
   let found = 0
+  let followed = 0
+  let slowed = 0
   let saveError: string | null = null
+  // Every link already resolved for this creator, so a link in many
+  // descriptions is followed once, ever.
+  const known = new Map<string, string | null>()
+  try {
+    const prior = await every<{ via: string | null; asin: string }>((a, b) => db.from('youtube_video_products').select('via, asin').eq('user_id', ownerId).like('via', 'http%').range(a, b), 60000)
+    for (const r of prior) if (r.via) known.set(r.via, r.asin)
+  } catch { /* followed again, as before */ }
   const queue = [...((todo || []) as Array<{ youtube_video_id: string; title: string | null; description: string | null }>)]
   const worker = async () => {
     for (;;) {
       if (Date.now() - started > 70_000 || saveError) return
       const v = queue.shift()
       if (!v) return
-      const r = await productsOfVideo(v.title || '', v.description || '')
+      const r = await productsOfVideo(v.title || '', v.description || '', known)
+      followed += r.followed
+      if (r.why === 'rate-limited') slowed++
       const now = new Date().toISOString()
       if (r.asins.length) {
         const { error: pe } = await db.from('youtube_video_products').upsert(r.asins.map((a) => ({ user_id: ownerId, youtube_video_id: v.youtube_video_id, asin: a.asin, via: a.via })), { onConflict: 'user_id,youtube_video_id,asin' })
@@ -132,8 +157,9 @@ export async function POST(req: Request) {
       read++
     }
   }
-  await Promise.all(Array.from({ length: 6 }, worker))
+  // Three at a time: the link services answer a steady pace, not a burst.
+  await Promise.all(Array.from({ length: 3 }, worker))
   if (saveError) return NextResponse.json({ error: missingSchema(saveError) ? MIGRATION : `MVP could not save what it read: ${saveError}`, read }, { status: missingSchema(saveError) ? 409 : 500 })
   const { count } = await db.from('youtube_videos').select('youtube_video_id', { count: 'exact', head: true }).eq('user_id', ownerId).is('products_read_at', null)
-  return NextResponse.json({ ok: true, read, found, left: count ?? 0 })
+  return NextResponse.json({ ok: true, read, found, followed, slowed, left: count ?? 0 })
 }

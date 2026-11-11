@@ -95,20 +95,30 @@ export default function YouTubeAmazonGaps() {
   const readAmazon = async (): Promise<boolean> => {
     setRunning('amazon')
     try {
+      // WHAT SCOUT'S LIST READ GOT, said as it is (Seb's first run: the list
+      // stayed "read Sep 30" and nothing on the page said why).
+      let listWords = ''
+      let listOk = false
       const s = await startCreatorHubVideosScan()
       if (!s.ok) {
-        const why = s.error === 'not-installed' ? 'SCOUT is not installed in this Chrome' : s.error === 'needs-update' ? 'SCOUT needs updating' : s.error || 'SCOUT did not start'
-        note('amazon', false, `Your Amazon video list was not read: ${why}. The products of the videos MVP already has are still matched.`)
+        listWords = `Your Amazon video list was not read again: ${s.error === 'not-installed' ? 'SCOUT is not installed in this Chrome' : s.error === 'needs-update' ? 'SCOUT needs updating' : s.error || 'SCOUT did not start'}.`
       } else {
+        let st: Awaited<ReturnType<typeof getVideoScanStatus>> = null
         for (let i = 0; i < 450 && !stop.current; i++) {
-          const st = await getVideoScanStatus()
+          st = await getVideoScanStatus()
           setLine(`SCOUT is reading your Amazon video list in a background tab: ${num(st?.saved ?? 0)}${st?.total ? ` of ${num(st.total)}` : ''} videos.`)
-          if (!st || st.done || !st.running) {
-            if (st?.error) note('amazon', false, `SCOUT stopped reading your Amazon video list: ${st.error}. ${num(st.saved)} videos were saved.`)
-            break
-          }
+          if (!st || !st.running) break
           await sleep(2000)
         }
+        const err = st?.error ? String(st.error) : ''
+        const errWords = err === 'signed-out' ? 'this Chrome is signed out of Amazon. Sign in to Amazon, then press Read again'
+          : err === 'list-api-empty' ? 'Amazon\u2019s video list answered with nothing'
+          : err === 'no-result' ? 'Amazon\u2019s video page did not show the list' : err
+        listOk = !!st && !err && !st.interrupted
+        listWords = !st ? 'SCOUT did not say how the list read went.'
+          : err ? `SCOUT could not read your Amazon video list: ${errWords}${st.probe ? ` (${String(st.probe).slice(0, 140)})` : ''}. ${num(st.saved)} videos were saved.`
+          : st.interrupted ? `Chrome stopped SCOUT part way through your Amazon video list; ${num(st.saved)} videos were saved. Press Read again to carry on.`
+          : `SCOUT read ${num(st.saved)} videos from your Amazon video list${st.total ? ` (Amazon says ${num(st.total)})` : ''}${st.stopped ? `: ${st.stopped}` : ''}.`
       }
       const show = (p: ProductReadProgress) => {
         const doneN = p.total != null && p.remaining != null ? Math.max(0, p.total + -p.remaining) : null
@@ -120,29 +130,41 @@ export default function YouTubeAmazonGaps() {
         out = viaScout.kind === 'done' || viaScout.kind === 'stopped' ? viaScout : { kind: 'stuck', p: viaScout.p, error: viaScout.kind === 'no-scout' ? 'Amazon paused MVP’s server and SCOUT is not installed' : viaScout.kind === 'old-scout' ? 'Amazon paused MVP’s server and SCOUT needs updating' : viaScout.error || 'Amazon paused the reads' }
       }
       const p = out.p
-      if (out.kind === 'done') note('amazon', true, `Every Amazon video's products are read (${num(p.withProducts)} matched to a product this run).`)
-      else if (out.kind === 'stopped') note('amazon', true, `Stopped. ${num(p.withProducts)} Amazon videos matched to a product this run; MVP reads the rest by itself.`)
-      else if (out.kind === 'no-library') note('amazon', false, 'MVP has no Amazon video list yet, so nothing on Amazon can be matched. Install SCOUT, sign in to Amazon in this Chrome, and press Check everything again.')
-      else note('amazon', false, `Reading the Amazon videos' products stopped: ${'error' in out ? out.error : 'no answer'}. ${num(p.remaining)} still to read; MVP carries on by itself.`)
-      return true
+      if (out.kind === 'done') note('amazon', listOk, `${listWords} Every Amazon video's products are read (${num(p.withProducts)} newly matched to a product).`)
+      else if (out.kind === 'stopped') note('amazon', listOk, `${listWords} Stopped. ${num(p.withProducts)} Amazon videos matched to a product this run; MVP reads the rest by itself.`)
+      else if (out.kind === 'no-library') note('amazon', false, `${listWords} MVP has no Amazon video list yet, so nothing on Amazon can be matched.`)
+      else note('amazon', false, `${listWords} Reading the Amazon videos' products stopped: ${'error' in out ? out.error : 'no answer'}. ${num(p.remaining)} still to read; MVP carries on by itself.`)
+      return listOk
     } finally { setRunning(null); setLine(null) }
   }
 
   // 3. Each YouTube video's links, a batch at a time.
-  const readLinks = async (): Promise<boolean> => {
+  // The videos with no product whose link did not answer (and, once, the ones
+  // the first reader could not place) are read again, then the link services
+  // that asked MVP to slow down get two more rounds, a minute apart.
+  const readLinks = async (retryUnplaced = true): Promise<boolean> => {
     setRunning('links')
     let read = 0
     let found = 0
+    let slowed = 0
     try {
-      for (let i = 0; i < 400 && !stop.current; i++) {
-        const j = await post('/api/labs/yt-amazon', { action: 'read' })
-        read += Number(j.read) || 0
-        found += Number(j.found) || 0
-        const left = Number(j.left) || 0
-        setLine(`Following the links in your YouTube descriptions: ${read.toLocaleString()} videos read, ${found.toLocaleString()} with a product, ${left.toLocaleString()} to go.`)
-        if (!left || !Number(j.read)) break
+      if (retryUnplaced) await post('/api/labs/yt-amazon', { action: 'unplaced' })
+      for (let round = 0; round < 3 && !stop.current; round++) {
+        slowed = 0
+        for (let i = 0; i < 400 && !stop.current; i++) {
+          const j = await post('/api/labs/yt-amazon', { action: 'read' })
+          read += Number(j.read) || 0
+          found += Number(j.found) || 0
+          slowed += Number(j.slowed) || 0
+          const left = Number(j.left) || 0
+          setLine(`Following the product links at the top of your YouTube descriptions: ${read.toLocaleString()} videos read, ${found.toLocaleString()} with a product, ${left.toLocaleString()} to go.`)
+          if (!left || !Number(j.read)) break
+        }
+        if (!slowed || round === 2 || stop.current) break
+        for (let w = 60; w > 0 && !stop.current; w -= 5) { setLine(`${slowed.toLocaleString()} links were asked to wait by the link service. Trying them again in ${w} seconds.`); await sleep(5000) }
+        await post('/api/labs/yt-amazon', { action: 'unplaced' })
       }
-      note('links', true, `${read.toLocaleString()} YouTube videos' links read this run, ${found.toLocaleString()} leading to a product${stop.current ? '. Stopped; press again to carry on' : ''}.`)
+      note('links', !slowed, `${read.toLocaleString()} YouTube videos' links read this run, ${found.toLocaleString()} leading to a product${slowed ? `; ${slowed.toLocaleString()} links were still asked to wait, so press Find the products again later` : ''}${stop.current ? '. Stopped; press again to carry on' : ''}.`)
       return true
     } catch (e) {
       note('links', false, `Following the links stopped after ${read.toLocaleString()} videos: ${e instanceof Error ? e.message : 'no answer'}`)
@@ -162,7 +184,7 @@ export default function YouTubeAmazonGaps() {
   const readAgain = async () => {
     stop.current = false
     try { await post('/api/labs/yt-amazon', { action: 'again' }) } catch (e) { note('links', false, e instanceof Error ? e.message : 'MVP did not answer.'); return }
-    await readLinks(); await load()
+    await readLinks(false); await load()
   }
 
   const c = report?.coverage
@@ -202,7 +224,7 @@ export default function YouTubeAmazonGaps() {
       <div className="rounded-2xl border p-4 mb-4 grid gap-3 sm:grid-cols-3 text-[13px]" style={{ borderColor: 'var(--border-2)', background: 'var(--surface)' }}>
         {([
           { s: 'youtube' as Step, title: 'Your YouTube uploads', what: c ? `${c.counts.youtube.toLocaleString()} public videos${report?.youtubeNewest ? `, newest ${day(report.youtubeNewest)}` : ''}.` : '', act: () => one(readYouTube), btn: 'Read again' },
-          { s: 'links' as Step, title: 'Products in your YouTube videos', what: c ? `Links read for ${c.counts.youtubeRead.toLocaleString()} of ${c.counts.youtube.toLocaleString()} videos.` : '', act: () => one(readLinks), btn: c && c.counts.youtubeRead < c.counts.youtube ? 'Find the products' : 'Read new ones' },
+          { s: 'links' as Step, title: 'Products in your YouTube videos', what: c ? `Links read for ${c.counts.youtubeRead.toLocaleString()} of ${c.counts.youtube.toLocaleString()} videos; ${(c.counts.youtube + -c.counts.unknown).toLocaleString()} placed.` : '', act: () => one(() => readLinks(true)), btn: 'Find the products' },
           { s: 'amazon' as Step, title: 'Your Amazon videos', what: c ? `${c.counts.amazon.toLocaleString()} videos${report?.amazonReadAt ? `, list read ${day(report.amazonReadAt)}` : ''}${c.counts.amazonUnread ? `; products not read yet for ${c.counts.amazonUnread.toLocaleString()}` : ''}.` : '', act: () => one(readAmazon), btn: 'Read again' },
         ]).map((x) => (
           <div key={x.s} className="min-w-0">
@@ -258,7 +280,7 @@ export default function YouTubeAmazonGaps() {
             {tab === 'both' && rows.both.slice(0, 300).map((m) => (
               <YtRow key={m.yt.id} v={m.yt}>
                 <AsinLinks asins={m.asins} />
-                <p className="text-[12px]" style={{ color: GREEN }}>On Amazon: {m.amazon.slice(0, 3).map((a) => amzName(a)).join('; ')}{m.amazon.length > 3 ? ` and ${m.amazon.slice(3).length} more` : ''}</p>
+                <p className="text-[12px]" style={{ color: GREEN }}>On Amazon{m.byTitle ? ' (same title)' : ''}: {m.amazon.slice(0, 3).map((a) => amzName(a)).join('; ')}{m.amazon.length > 3 ? ` and ${m.amazon.slice(3).length} more` : ''}</p>
               </YtRow>
             ))}
             {tab === 'unknown' && rows.unknown.slice(0, 300).map((m) => (
@@ -299,7 +321,7 @@ function TabNote({ tab, c }: { tab: Tab; c: Coverage }) {
   if (tab === 'missing') parts.push('These YouTube videos link to a product that has no video on your Amazon storefront. The ones with the most views come first.')
   if (tab === 'amazonOnly') parts.push('These Amazon videos show a product none of your YouTube videos links to.')
   if (tab === 'unknown') parts.push('MVP could not tell which product these YouTube videos are about. Each says why.')
-  if (tab === 'both') parts.push('These YouTube videos have an Amazon video for their product.')
+  if (tab === 'both') parts.push(`These YouTube videos have an Amazon video for their product${c.counts.bothByTitle ? `; ${c.counts.bothByTitle.toLocaleString()} were paired by the same title, where no product link could be read` : ''}.`)
   if ((tab === 'missing' || tab === 'amazonOnly') && c.counts.amazonUnread) parts.push(`MVP has not read the products of ${c.counts.amazonUnread.toLocaleString()} Amazon videos yet, so this list may still change; press Read again under Your Amazon videos.`)
   const unreadYt = c.counts.youtube + -c.counts.youtubeRead
   if ((tab === 'missing' || tab === 'both') && unreadYt > 0) parts.push(`${unreadYt.toLocaleString()} YouTube videos' links are not read yet.`)

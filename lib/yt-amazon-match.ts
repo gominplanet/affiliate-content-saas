@@ -59,6 +59,71 @@ export function titleAsins(title: string): string[] {
   return Array.from(new Set((String(title || '').toUpperCase().match(/\bB0[A-Z0-9]{8}\b/g) || [])))
 }
 
+/** THE PRODUCT LINKS AT THE TOP OF A DESCRIPTION (Seb, 2026-11-11: "most
+ *  youtube videos have links in their description.. that is where you will
+ *  find the product"). A review's own product link sits at the top ("CHECK OUT
+ *  TODAY'S PRICE: https://geni.us/pbKL5 (Amazon link)"); below a separator or
+ *  a heading come the standing links (RESOURCES, WHAT WE SHOOT REVIEWS WITH,
+ *  gear, socials) that every description repeats. Only the top block is
+ *  followed, so thousands of gear links are not. Pure. */
+export function topLinks(description: string, max = 5): string[] {
+  const out: string[] = []
+  for (const line of String(description || '').split('\n')) {
+    const t = line.trim()
+    if (out.length && (/^([-\u2013\u2014_=.*~\u2022\u25ba]\s*){1,}$/.test(t) || /^(disclaimer|resources|what we|our fav|my gear|gear|equipment|follow|connect|music|social|chapters|timestamps|links|support)/i.test(t.replace(/^[^a-z0-9]+/i, '')))) break
+    for (const u of t.match(/https?:\/\/[^\s)>\]"'\u25ba]+/gi) || []) { out.push(u.replace(/[.,;:!]+$/, '')); if (out.length >= max) return out }
+  }
+  return out
+}
+
+/** A title, as a key that survives punctuation, emoji, hashtags and case. Pure. */
+export function titleKey(s: string): string {
+  return String(s || '').split('\n')[0].normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+    .replace(/#[\w-]+/g, ' ').replace(/&/g, ' and ').replace(/[^a-z0-9]+/g, ' ').trim().slice(0, 200)
+}
+const STOP = new Set(['the', 'a', 'an', 'and', 'or', 'for', 'to', 'of', 'in', 'on', 'my', 'your', 'our', 'is', 'it', 'this', 'that', 'with', 'vs', 'review', 'reviews', 'honest', 'really', 'worth', 'it', 'test', 'tested', 'best', 'new', 'how', 'why', 'what', 'does', 'do', 'you', 'we', 'i', 'me', 'after', 'from', 'by', 'at', 'be', 'can', 'are', 'buy', 'should', 'amazon', 'find', 'finds', 'must', 'have', 'shorts'])
+const tokens = (key: string) => new Set(key.split(' ').filter((w) => w.length > 1 && !STOP.has(w)))
+
+/** Amazon videos whose own words carry this YouTube title: the same title, or
+ *  nearly the same words (at least three, and 70 percent shared). Pure. */
+export function titleMatcher(amz: AmzVideo[]): (title: string) => AmzVideo[] {
+  const byKey = new Map<string, AmzVideo[]>()
+  const toks = new Map<AmzVideo, Set<string>>()
+  const index = new Map<string, AmzVideo[]>()
+  for (const v of amz) {
+    const k = titleKey(v.description || '')
+    if (k.length < 8) continue
+    const l = byKey.get(k) || []; l.push(v); byKey.set(k, l)
+    const t = tokens(k)
+    toks.set(v, t)
+    for (const w of t) { const x = index.get(w) || []; x.push(v); index.set(w, x) }
+  }
+  return (title: string) => {
+    const k = titleKey(title)
+    if (k.length < 8) return []
+    const exact = byKey.get(k)
+    if (exact) return exact
+    const mine = tokens(k)
+    if (mine.size < 3) return []
+    // Candidates share one of the title's rarer words.
+    const rare = Array.from(mine).filter((w) => (index.get(w)?.length ?? 0) > 0).sort((a, b) => index.get(a)!.length - index.get(b)!.length).slice(0, 3)
+    const seen = new Set<AmzVideo>()
+    let best = 0
+    let hits: AmzVideo[] = []
+    for (const w of rare) for (const v of index.get(w)!.slice(0, 200)) {
+      if (seen.has(v)) continue
+      seen.add(v)
+      const t = toks.get(v)!
+      let both = 0
+      for (const x of mine) if (t.has(x)) both++
+      const score = both / (mine.size + t.size - both)
+      if (both < 3 || score < 0.7) continue
+      if (score > best) { best = score; hits = [v] } else if (score === best) hits.push(v)
+    }
+    return hits
+  }
+}
+
 /** Why a YouTube video has no product, in words. */
 export function whyWords(v: Pick<YtVideo, 'readAt' | 'why'>): string {
   if (!v.readAt) return 'Not read yet. Press Find the products.'
@@ -66,13 +131,15 @@ export function whyWords(v: Pick<YtVideo, 'readAt' | 'why'>): string {
   if (w === 'no-link') return 'No Amazon or product link in its title or description.'
   if (w === 'amazon-not-product') return 'Its Amazon links go to a storefront or search, not one product.'
   if (w.startsWith('elsewhere:')) return `Its links lead to ${w.slice(10).split(',').filter(Boolean).slice(0, 3).join(', ')}, not to Amazon.`
-  if (w === 'link-failed') return 'Its links did not answer when MVP followed them. Press Read again later.'
+  if (w === 'link-failed') return 'Its product link did not answer when MVP followed it. Check everything tries it again.'
+  if (w === 'rate-limited') return 'The link service asked MVP to slow down before this link was read. Check everything tries it again.'
   return w || 'No product found in its links.'
 }
 
 export interface Coverage {
   missing: Array<{ yt: YtVideo; asins: string[]; rejected: AmzVideo[] }>
-  both: Array<{ yt: YtVideo; asins: string[]; amazon: AmzVideo[] }>
+  /** byTitle: paired by the words of the title, not by a product link. */
+  both: Array<{ yt: YtVideo; asins: string[]; amazon: AmzVideo[]; byTitle?: boolean }>
   unknown: Array<{ yt: YtVideo; why: string }>
   amazonOnly: Array<{ amz: AmzVideo; products: Array<{ asin: string; title: string | null }> }>
   /** ASINs in most descriptions, left out of the matching, with how many videos link each. */
@@ -85,6 +152,7 @@ export interface Coverage {
     amazonNoProduct: number
     missing: number
     both: number
+    bothByTitle: number
     unknown: number
     amazonOnly: number
   }
@@ -132,20 +200,32 @@ export function buildCoverage(
   const both: Coverage['both'] = []
   const unknown: Coverage['unknown'] = []
   const ytAsins = new Set<string>()
+  // THE SAME VIDEO BY ITS TITLE (2026-11-11): an Amazon video's own words are
+  // often the YouTube title, so the two pair even when no link could be read.
+  const sameTitle = titleMatcher(amz.filter((x) => amazonState(x.state) !== 'rejected'))
+  const pairedByTitle = new Set<AmzVideo>()
   for (const v of yt) {
     const asins = asinsOf.get(v.id) || []
     for (const a of asins) ytAsins.add(a)
-    if (!asins.length) { unknown.push({ yt: v, why: hadCommonOnly.has(v.id) ? 'Its only product links are the ones in most of your descriptions (a gear list?), so MVP cannot tell which product this video is about.' : whyWords(v) }); continue }
     const on = asins.flatMap((a) => amzOfAsin.get(a) || [])
     const showing = Array.from(new Set(on.filter((x) => amazonState(x.state) !== 'rejected')))
-    if (showing.length) both.push({ yt: v, asins, amazon: showing })
-    else missing.push({ yt: v, asins, rejected: Array.from(new Set(on)) })
+    if (showing.length) { both.push({ yt: v, asins, amazon: showing }); continue }
+    const titled = sameTitle(v.title)
+    if (titled.length) {
+      for (const t of titled) pairedByTitle.add(t)
+      const theirs = Array.from(new Set(titled.flatMap((t) => (productsOf.get(t.aci) || []).map((p) => p.asin))))
+      both.push({ yt: v, asins: asins.length ? asins : theirs, amazon: titled, byTitle: true })
+      continue
+    }
+    if (!asins.length) { unknown.push({ yt: v, why: hadCommonOnly.has(v.id) ? 'Its only product links are the ones in most of your descriptions (a gear list?), so MVP cannot tell which product this video is about.' : whyWords(v) }); continue }
+    missing.push({ yt: v, asins, rejected: Array.from(new Set(on)) })
   }
   const amazonOnly: Coverage['amazonOnly'] = []
   let amazonUnread = 0
   let amazonNoProduct = 0
   for (const v of amz) {
     if (amazonState(v.state) === 'rejected') continue
+    if (pairedByTitle.has(v)) continue
     if (!v.productsRead) { amazonUnread++; continue }
     const products = productsOf.get(v.aci) || []
     if (!products.length) { amazonNoProduct++; continue }
@@ -160,7 +240,7 @@ export function buildCoverage(
     counts: {
       youtube: yt.length, youtubeRead: yt.filter((v) => v.readAt).length,
       amazon: amz.length, amazonUnread, amazonNoProduct,
-      missing: missing.length, both: both.length, unknown: unknown.length, amazonOnly: amazonOnly.length,
+      missing: missing.length, both: both.length, bothByTitle: both.filter((b) => b.byTitle).length, unknown: unknown.length, amazonOnly: amazonOnly.length,
     },
   }
 }
