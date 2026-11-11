@@ -21,6 +21,11 @@
 // is read first, with no request; and a link that does not answer now says
 // where it was and what it said ("link-failed:mvpl.ink:403"), so the page can
 // count the reasons instead of hiding them behind one sentence.
+//
+// Seb's third run (1,175 read, 161 with a product): mvpl.ink is MVP's own
+// Passport. Its codes are in MVP's database with their ASIN, so the route looks
+// them up (`resolve`) instead of following them: no click is logged, and no
+// Levanta link or country store stands in for the product.
 // Server only.
 
 import { allProductUrls, RESOLVER_UA } from '@/lib/product-link'
@@ -75,7 +80,11 @@ export async function followToAsin(url: string, waitMs = (ms: number) => new Pro
  *  from; or, when none, why (lib/yt-amazon-match whyWords). `known` holds
  *  links already resolved (an ASIN, or null for one that leads elsewhere), and
  *  learns the ones followed here. */
-export async function productsOfVideo(title: string, description: string, known: Map<string, string | null> = new Map()): Promise<{ asins: Array<{ asin: string; via: string }>; why: string | null; followed: number }> {
+/** What MVP already knows a link is (a Passport code: its ASIN, or where it
+ *  leads), or null for a link it has to follow. */
+export type LinkLookup = (url: string) => { asin?: string | null; url?: string | null } | null
+
+export async function productsOfVideo(title: string, description: string, known: Map<string, string | null> = new Map(), resolve?: LinkLookup): Promise<{ asins: Array<{ asin: string; via: string }>; why: string | null; followed: number }> {
   const found = new Map<string, string>()
   for (const a of titleAsins(title)) found.set(a, 'title')
   const text = String(description || '')
@@ -96,9 +105,11 @@ export async function productsOfVideo(title: string, description: string, known:
   let followed = 0
   for (const u of toFollow) {
     const key = u.slice(0, 300)
+    const own = resolve ? resolve(u) : null
+    if (own?.asin) { const a = own.asin.toUpperCase(); known.set(key, a); if (!found.has(a)) found.set(a, key); continue }
     if (known.has(key)) { const k = known.get(key); if (k && !found.has(k)) found.set(k, key); continue }
     followed++
-    const r = await followToAsin(u)
+    const r = await followToAsin(own?.url || u)
     if ('asin' in r) { known.set(key, r.asin); if (!found.has(r.asin)) found.set(r.asin, key) }
     else if (r.why === 'elsewhere') { known.set(key, null); elsewhere.add(r.host.replace(/^www\./, '')) }
     else if (r.why === 'amazon-not-product') { known.set(key, null); notProduct++ }

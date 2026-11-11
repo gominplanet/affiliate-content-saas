@@ -5993,6 +5993,9 @@ async function scanCreatorHubVideosBackground(userUrl, startAt, onProgress) {
     // Recorded straight away so an interrupted run can be cleaned up rather than
     // leaving a hidden Amazon tab behind for every attempt.
     report({ tabId })
+    // A background tab Chrome's Memory Saver throws away mid read ends the read
+    // ("Frame with ID 0 was removed", Seb, 2026-11-11, at 400 of 7,958).
+    try { await chrome.tabs.update(tabId, { autoDiscardable: false }) } catch (e) {}
     await waitForTabLoad(tabId, 30000)
     // Long enough for the page to fire its own list request, which net-hook then
     // captures. Everything good depends on catching that one call.
@@ -6004,7 +6007,7 @@ async function scanCreatorHubVideosBackground(userUrl, startAt, onProgress) {
     // parameterless GET returns the first page and nothing else.
     const listRecs = (_ccNetRing || []).slice().reverse()
       .filter((x) => x && /\/manage-content\/api\/get-content-list/i.test(String(x.url || '')))
-    const apiRec = listRecs.find((x) => x.body && /^post$/i.test(String(x.method || ''))) || listRecs[0]
+    let apiRec = listRecs.find((x) => x.body && /^post$/i.test(String(x.method || ''))) || listRecs[0]
     let apiNote = apiRec ? 'captured the list request' : 'never saw the list request'
     if (apiRec) {
       // Batch after batch, pushing each one, until Amazon says the library is
@@ -6023,18 +6026,62 @@ async function scanCreatorHubVideosBackground(userUrl, startAt, onProgress) {
       // longer waiting on this call. It polls for progress instead, so the crawl
       // runs to the end of the library in one go. The cap that remains is a
       // safety net against a loop that never terminates, not a budget.
+      // 1.60.9: the tab going away under a batch ("Frame with ID 0 was
+      // removed", "No tab with id") is not the end of the library. The tab is
+      // brought back on Manage content (or opened again), the page's own fresh
+      // list request is taken if it made one, and the same batch is asked
+      // again, up to three times in a row.
+      let tabBack = 0
+      const bringTabBack = async () => {
+        let t = null
+        try { t = await chrome.tabs.get(tabId) } catch (e) { t = null }
+        if (!t) {
+          const nt = await chrome.tabs.create({ url, active: false })
+          tabId = nt.id
+          report({ tabId })
+        } else if (t.discarded || !/amazon\.[a-z.]+\/manage-content/i.test(String(t.url || t.pendingUrl || ''))) {
+          await chrome.tabs.update(tabId, { url })
+        }
+        try { await chrome.tabs.update(tabId, { autoDiscardable: false }) } catch (e) {}
+        await waitForTabLoad(tabId, 30000)
+        await _sleep(6000)
+        let now = null
+        try { now = await chrome.tabs.get(tabId) } catch (e) { now = null }
+        if (!now) return 'the Amazon tab closed'
+        if (/\/ap\/signin/.test(String(now.url || ''))) return 'Amazon signed this Chrome out'
+        // The newest list request the page made: after a reload, the reloaded
+        // page's own (its session and token), never older than the one in hand.
+        const fresh = (_ccNetRing || []).slice().reverse()
+          .find((x) => x && x.body && /^post$/i.test(String(x.method || '')) && /\/manage-content\/api\/get-content-list/i.test(String(x.url || '')))
+        if (fresh) apiRec = fresh
+        return null
+      }
       try {
         for (let batch = 0; batch < 400 && Date.now() - startedAt < 900000; batch++) {
-          const viaApi = await chrome.scripting.executeScript({
-            target: { tabId }, world: 'MAIN', func: fetchContentListInPage,
-            args: [{
-              url: apiRec.url, method: apiRec.method || 'POST',
-              headers: apiRec.headers || {}, body: apiRec.body || null,
-              startAt: offset, maxRows: 400,
-              variant: variantUsed,
-            }],
-          })
+          let viaApi = null
+          try {
+            viaApi = await chrome.scripting.executeScript({
+              target: { tabId }, world: 'MAIN', func: fetchContentListInPage,
+              args: [{
+                url: apiRec.url, method: apiRec.method || 'POST',
+                headers: apiRec.headers || {}, body: apiRec.body || null,
+                startAt: offset, maxRows: 400,
+                variant: variantUsed,
+              }],
+            })
+          } catch (e) {
+            const msg = (e && e.message) || String(e)
+            if (tabBack < 3 && /frame|tab|removed|navigat|discard|cannot access|back\/forward/i.test(msg)) {
+              tabBack++
+              const why = await bringTabBack()
+              if (why) { lastError = `${msg}; ${why}`; break }
+              batch--
+              continue
+            }
+            throw e
+          }
           const a = (viaApi && viaApi[0] && viaApi[0].result) || null
+          tabBack = 0
           if (!a) { lastError = 'the page returned no result'; break }
           if (a.total != null) total = a.total
           if (a.sample && !sample) sample = a.sample

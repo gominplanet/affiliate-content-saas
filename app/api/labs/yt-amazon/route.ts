@@ -24,7 +24,8 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { getAuthAndOwner } from '@/lib/agency-auth'
 import { normalizeTier } from '@/lib/tier'
 import { buildCoverage, type YtVideo, type AmzVideo } from '@/lib/yt-amazon-match'
-import { productsOfVideo } from '@/lib/yt-amazon-links'
+import { productsOfVideo, type LinkLookup } from '@/lib/yt-amazon-links'
+import { passportCodeFromUrl } from '@/lib/passport-links'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -47,8 +48,9 @@ async function gate(): Promise<{ error: NextResponse } | { ownerId: string; db: 
 // The reader that wrote a reason, saved in front of it ("r3:no-link"). A video
 // an earlier reader could not place is read again once by the newer one,
 // whenever that happens to be, with no clock to guess (2026-11-11: the third
-// reader reads "Product ASIN: B0..." lines and says where a link failed).
-const READER = 'r3'
+// reader reads "Product ASIN: B0..." lines and says where a link failed; the
+// fourth looks Passport codes up in MVP's own table instead of following them).
+const READER = 'r4'
 
 const MIGRATION = 'MVP needs migration 466 (youtube_video_products) in Supabase before it can match your videos. It is in the message from the MVP team.'
 const missingSchema = (m: string) => /youtube_video_products|products_read_at|products_why|does not exist|schema cache/i.test(m)
@@ -139,12 +141,28 @@ export async function POST(req: Request) {
     for (const r of prior) if (r.via) known.set(r.via, r.asin)
   } catch { /* followed again, as before */ }
   const queue = [...((todo || []) as Array<{ youtube_video_id: string; title: string | null; description: string | null }>)]
+  // MVP's own Passport links (mvpl.ink/CODE, /go/CODE) are looked up, never
+  // followed: the table holds each code's ASIN, and a followed one would log a
+  // click and could lead to a Levanta link or another country's store.
+  const passport = new Map<string, { asin: string | null; url: string | null }>()
+  const codes = new Set<string>()
+  for (const v of queue) {
+    for (const raw of String(v.description || '').match(/https?:\/\/[^\s)>\]"']+/gi) || []) {
+      const code = passportCodeFromUrl(raw.replace(/[.,;:!)\]]+$/, ''))
+      if (code) codes.add(code)
+    }
+  }
+  if (codes.size) {
+    const { data: rows } = await db.from('passport_links').select('*').in('code', Array.from(codes))
+    for (const r of (rows || []) as Array<Record<string, unknown>>) passport.set(String(r.code), { asin: r.asin ? String(r.asin) : null, url: (r.destination_url as string) || null })
+  }
+  const resolve: LinkLookup = (u) => { const code = passportCodeFromUrl(u); return code ? passport.get(code) ?? null : null }
   const worker = async () => {
     for (;;) {
       if (Date.now() - started > 70_000 || saveError) return
       const v = queue.shift()
       if (!v) return
-      const r = await productsOfVideo(v.title || '', v.description || '', known)
+      const r = await productsOfVideo(v.title || '', v.description || '', known, resolve)
       followed += r.followed
       if (r.why === 'rate-limited') slowed++
       const now = new Date().toISOString()

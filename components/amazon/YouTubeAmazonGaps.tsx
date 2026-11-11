@@ -123,9 +123,12 @@ export default function YouTubeAmazonGaps() {
       }
       // SCOUT 1.60.8 asks Amazon again when the list comes back empty; an
       // older SCOUT is said by name, so the fix waiting in Chrome is known.
-      if (!listOk && /answered with nothing/.test(listWords)) {
+      // SCOUT 1.60.9 carries on when Chrome reloads or throws away the Amazon tab.
+      const fixedIn = /answered with nothing/.test(listWords) ? { v: '1.60.8', what: 'asks Amazon again the way its own page does' }
+        : /Frame with ID|No tab with id/i.test(listWords) ? { v: '1.60.9', what: 'carries on when Chrome reloads or closes the Amazon tab' } : null
+      if (fixedIn) {
         const v = (await getScoutStatus().catch(() => null))?.version || null
-        if (v && !scoutAtLeast(v, '1.60.8')) listWords += ` This Chrome has SCOUT ${v}; SCOUT 1.60.8 asks Amazon again the way its own page does. Chrome updates SCOUT by itself within a few hours; then press Read again.`
+        if (v && !scoutAtLeast(v, fixedIn.v)) listWords += ` This Chrome has SCOUT ${v}; SCOUT ${fixedIn.v} ${fixedIn.what}. Chrome updates SCOUT by itself within a few hours; then press Read again.`
       }
       const show = (p: ProductReadProgress) => {
         const doneN = p.total != null && p.remaining != null ? Math.max(0, p.total + -p.remaining) : null

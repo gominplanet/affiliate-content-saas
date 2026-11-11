@@ -103,6 +103,14 @@ check('a video with no readable link is paired by its title, takes the Amazon vi
     check('a link already resolved (in any earlier video) is taken from memory, with no request at all', viaKnown.asins.map((a) => a.asin).join() === 'B0CWS46T3D' && viaKnown.followed === 0 && calls.length === 0)
     const labelled = await productsOfVideo('Some review', sebNew)
     check('a description that names its ASIN gives it with no request, and the link is not followed', labelled.asins.map((a) => `${a.asin}:${a.via}`).join() === 'B0HKJZCSQV:asin-label' && labelled.followed === 0 && calls.length === 0, labelled)
+    // MVP's own Passport links are looked up, never followed: no click, no Levanta swap.
+    calls.length = 0
+    const short = '\ud83d\uded2 Grab it on Amazon \ud83d\udc49 https://www.mvpl.ink/ctjbac7'
+    const lookup = (u: string) => (/mvpl\.ink\/ctjbac7$/.test(u) ? { asin: 'b0gl89xqfx' } : null)
+    const own = await productsOfVideo('Short', short, new Map(), lookup)
+    check('a Passport link is looked up in MVP\u2019s own table, with no request at all', own.asins.map((a) => a.asin).join() === 'B0GL89XQFX' && own.followed === 0 && calls.length === 0, own)
+    const toUrl = await productsOfVideo('Short', short, new Map(), () => ({ asin: null, url: 'https://www.amazon.com/dp/B0DESTURL1?tag=x' }))
+    check('a Passport link to a full address is read from that address, never from the short link', toUrl.asins.map((a) => a.asin).join() === 'B0DESTURL1' && calls.length === 0, toUrl)
     globalThis.fetch = (async () => new Response('no', { status: 403 })) as typeof fetch
     const dead = await productsOfVideo('Short', '\ud83d\uded2 Grab it on Amazon \ud83d\udc49 https://93.184.216.34/ctjbac7')
     check('a link that refuses says its host and answer, so the page can count it', dead.why === 'link-failed:93.184.216.34:403', dead)
@@ -110,7 +118,8 @@ check('a video with no readable link is paired by its title, takes the Amazon vi
 
   const R = read('app/api/labs/yt-amazon/route.ts')
   check('the route is for the MVP team only, and says when migration 466 is missing', /normalizeTier\(intg\?\.tier\) !== 'admin'/.test(R) && /migration 466/.test(R))
-  check('links are read a batch at a time inside a time limit, each saved as it is read', /Date\.now\(\) - started > 70_000/.test(R) && /\.limit\(60\)/.test(R) && /Array\.from\(\{ length: 3 \}, worker\)/.test(R) && /const known = new Map<string, string \| null>\(\)/.test(R) && /productsOfVideo\(v\.title \|\| '', v\.description \|\| '', known\)/.test(R))
+  check('links are read a batch at a time inside a time limit, each saved as it is read', /Date\.now\(\) - started > 70_000/.test(R) && /\.limit\(60\)/.test(R) && /Array\.from\(\{ length: 3 \}, worker\)/.test(R) && /const known = new Map<string, string \| null>\(\)/.test(R) && /productsOfVideo\(v\.title \|\| '', v\.description \|\| '', known, resolve\)/.test(R))
+  check('the batch\u2019s Passport codes are read from passport_links in one ask', /passportCodeFromUrl\(raw/.test(R) && /from\('passport_links'\)\.select\('\*'\)\.in\('code', Array\.from\(codes\)\)/.test(R))
   check('videos with no product whose link did not answer, and once those an earlier reader could not place, are read again', /if \(body\.action === 'unplaced'\)/.test(R) && /\.not\('products_why', 'like', `\$\{READER\}:%`\)/.test(R) && /\.like\('products_why', `\$\{READER\}:link-failed%`\)/.test(R) && /\.like\('products_why', `\$\{READER\}:rate-limited%`\)/.test(R) && !/READER_2|\.lt\('products_read_at'/.test(R))
   check('every reason is saved with the reader that wrote it', /products_why: r\.why \? `\$\{READER\}:\$\{r\.why\}` : null/.test(R) && /const READER = 'r\d+'/.test(R))
   const L = read('lib/yt-amazon-links.ts')
