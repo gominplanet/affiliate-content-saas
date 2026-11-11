@@ -103,7 +103,7 @@ export function answerWhy(kind: LinkKind, status: number, landedOnSignIn: boolea
   return `The link answered ${status}.`
 }
 
-/** One read link, as kept. */
+/** One read link, as kept. A PDF the creator added has a `file:` url. */
 export interface ReadLink {
   url: string
   kind: LinkKind
@@ -112,7 +112,12 @@ export interface ReadLink {
   why: string | null
   /** The words read, capped. */
   text: string
+  /** Longer than MVP could copy out: only its first part was read (2026-11-11). */
+  cut?: boolean
 }
+
+/** A PDF the creator added (not a link in a message). Pure. */
+export const isAddedFile = (l: { url: string }) => l.url.startsWith('file:')
 
 /** The TLDR MVP writes from the words read. */
 export interface LinksTldr { points: string[]; say: string[]; avoid: string[] }
@@ -127,19 +132,42 @@ export interface LinksDigest {
 }
 
 export const LINK_TEXT_MAX = 8000
-export const SCRIPT_TEXT_MAX = 9000
+/** A PDF the brand sent, added by the creator: read whole (Seb, 2026-11-11:
+ *  "take into consideration everything in it before scripting"). */
+export const PDF_TEXT_MAX = 60000
+/** What Brand scripts get of it all: room for a long brand guide. */
+export const SCRIPT_TEXT_MAX = 60000
 
-/** The words of the read links, for the script writer, capped. Pure. */
-export function digestForScripts(d: LinksDigest | null): string {
-  if (!d) return ''
+/** The words of what the brand sent, for the script writer, and which
+ *  documents went in whole: the TLDR, then the PDFs the creator added, then
+ *  the links. Pure. */
+export function docsForScripts(d: LinksDigest | null): { text: string; docs: Array<{ title: string; whole: boolean }> } {
+  if (!d) return { text: '', docs: [] }
   const parts: string[] = []
   if (d.tldr) {
     if (d.tldr.points.length) parts.push(`In short:\n${d.tldr.points.map((p) => `- ${p}`).join('\n')}`)
     if (d.tldr.say.length) parts.push(`Say or show:\n${d.tldr.say.map((p) => `- ${p}`).join('\n')}`)
     if (d.tldr.avoid.length) parts.push(`Avoid:\n${d.tldr.avoid.map((p) => `- ${p}`).join('\n')}`)
   }
-  for (const l of d.links) if (l.ok && l.text) parts.push(`From "${l.title || l.url}":\n${l.text}`)
-  return parts.join('\n\n').slice(0, SCRIPT_TEXT_MAX)
+  const docs: Array<{ title: string; whole: boolean }> = []
+  let used = parts.join('\n\n').length
+  const read = d.links.filter((l) => l.ok && l.text)
+  for (const l of [...read.filter(isAddedFile), ...read.filter((l) => !isAddedFile(l))]) {
+    const title = l.title || l.url
+    const head = `From "${title}":\n`
+    const room = SCRIPT_TEXT_MAX - used - head.length - 2
+    if (room < 400) { docs.push({ title, whole: false }); continue }
+    const body = l.text.slice(0, room)
+    parts.push(head + body)
+    used += head.length + body.length + 2
+    docs.push({ title, whole: body.length === l.text.length && !l.cut })
+  }
+  return { text: parts.join('\n\n').slice(0, SCRIPT_TEXT_MAX), docs }
+}
+
+/** The words of the read links, for the script writer, capped. Pure. */
+export function digestForScripts(d: LinksDigest | null): string {
+  return docsForScripts(d).text
 }
 
 /** The TLDR as Claude answered it, checked: lists of short plain lines, no

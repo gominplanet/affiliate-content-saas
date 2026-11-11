@@ -12,6 +12,7 @@
 // or failed read says which it is.
 
 import TrybeTopHooks from '@/components/labs/TrybeTopHooks'
+import TrybeBrandDocs from '@/components/labs/TrybeBrandDocs'
 import TrybeFilmIt, { type FilmScript } from '@/components/labs/TrybeFilmIt'
 import WhyThisHook from '@/components/labs/WhyThisHook'
 import { BuyersCard, ScriptVideoCard, BuiltOnLine } from '@/components/labs/ScriptParts'
@@ -510,6 +511,9 @@ export default function TrybeVideoIdeas({ brandId, name, plan: initial, canRead,
             </div>
           )}
 
+          {/* What the brand sent: its PDFs and documents, read for the scripts (2026-11-11). */}
+          {!pageLoading && brandId && <TrybeBrandDocs brandId={brandId} brandName={name} accent={PURPLE} />}
+
           {/* The product on hand. */}
           {!pageLoading && (
             <div>
@@ -589,6 +593,11 @@ export default function TrybeVideoIdeas({ brandId, name, plan: initial, canRead,
             </div>
           )}
           {plan.brief === 'link_only' && <p style={{ color: AMBER }}>Their brief is a document MVP cannot open. Open it from the brand page and check these ideas against it.</p>}
+          {/* WHICH DOCUMENTS THE SCRIPTS FOLLOWED (2026-11-11): named, and any that did not fit whole said. */}
+          {plan.brandDocs && plan.brandDocs.length > 0 && (() => {
+            const part = plan.brandDocs.filter((d) => !d.whole)
+            return <p className="text-[12px]" style={{ color: part.length ? AMBER : GREEN }}>Written following what {name} sent: {plan.brandDocs.map((d) => `\u201C${d.title}\u201D`).join(', ')}.{part.length ? ` Only the first part of ${part.map((d) => `\u201C${d.title}\u201D`).join(', ')} fit, so check the scripts against the rest.` : ''}</p>
+          })()}
           {filming && <TrybeFilmIt script={filming} onClose={() => setFilming(null)} />}
           {/* WHO BUYS IT, as the script agent read the buyers, and what it read. */}
           {plan.buyerReport && <p className="text-[12px]" style={{ color: plan.buyerReport.reviews || plan.buyerReport.critical || plan.buyerReport.customersSay ? GREEN : AMBER }}>{buyerReportWords(plan.buyerReport, SCOUT_AMAZON_REVIEWS_MIN_VERSION)}</p>}

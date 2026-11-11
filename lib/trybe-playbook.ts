@@ -251,6 +251,10 @@ export interface VideoPlan {
   buyers?: BuyerRead
   /** What it read about them: reviews, from where, and why none when none. */
   buyerReport?: BuyerReport
+  /** Written with what the brand sent (its PDFs and linked documents), and
+   *  which ones went in whole (2026-11-11). Said on screen. */
+  fromMessages?: boolean
+  brandDocs?: Array<{ title: string; whole: boolean }>
 }
 
 /** THE LAST LOOK BEFORE ANSWERING (Seb, 2026-11-06, on the first real Video
