@@ -1836,6 +1836,9 @@ export default function TrybeOutreach({ preview = false, v2 = false, layout = fa
         const t = { sites: 0, failed: 0, socials: 0, web: 0, google: 0, pay: 0 }
         let last: { sites: number; webRank: number; google: number; socials: number } | null = null
         let idle = 0, firstPass = true, why = ''
+        // A pass that failed says so: a pay line pass that could not read looked
+        // exactly like one that had nothing to fill, and the step still said done.
+        let payWhy = '', popWhy = ''
         for (;;) {
           if (dailyStop.current || leftRef.current) { why = 'Stopped.'; break }
           let r: { sites: { read: number; failed: number }; socials: number; popularity: { web?: { read: number; notRanked: number; shared: number }; google?: { read: number }; error?: string; missing?: boolean }; pay: { filled?: number; error?: string } | null; left: { sites: number; webRank: number; google: number; socials: number } | null }
@@ -1846,6 +1849,8 @@ export default function TrybeOutreach({ preview = false, v2 = false, layout = fa
           t.web += r.popularity.web ? r.popularity.web.read + r.popularity.web.notRanked + r.popularity.web.shared : 0
           t.google += r.popularity.google?.read ?? 0
           t.pay += r.pay?.filled ?? 0
+          if (r.pay?.error) payWhy = r.pay.error
+          popWhy = r.popularity.error || ''
           last = r.left
           const leftAll = last ? last.sites + last.webRank + last.google + last.socials : null
           step('sites', 'running', `${t.sites.toLocaleString()} websites, ${t.web.toLocaleString()} website ranks, ${t.google.toLocaleString()} Google searches, ${t.socials.toLocaleString()} TikTok checks${t.pay ? ` and ${t.pay.toLocaleString()} pay lines` : ''} read this run.${last ? ` Left: ${last.sites.toLocaleString()} websites, ${last.webRank.toLocaleString()} ranks, ${last.google.toLocaleString()} Google searches, ${last.socials.toLocaleString()} TikTok checks.` : ''}`)
@@ -1854,8 +1859,9 @@ export default function TrybeOutreach({ preview = false, v2 = false, layout = fa
           if (!moved) { if (++idle >= 2) { why = r.popularity.missing ? 'The website rank columns are missing (migration 452).' : 'Two passes in a row read nothing more (a source did not answer); MVP\u2019s server carries on by itself every 10 minutes.'; break } } else idle = 0
         }
         const leftAll = last ? last.sites + last.webRank + last.google + last.socials : null
+        const failedWhy = [payWhy && `Pay lines were not read: ${payWhy}.`, popWhy && `Website ranks and Google searches stopped: ${popWhy}.`].filter(Boolean).join(' ')
         const did = `${t.sites.toLocaleString()} websites read (${t.failed.toLocaleString()} could not be read and are tried again in a month), ${t.web.toLocaleString()} website ranks, ${t.google.toLocaleString()} Google searches, ${t.socials.toLocaleString()} TikTok checks${t.pay ? `, ${t.pay.toLocaleString()} pay lines filled` : ''}.`
-        step('sites', leftAll === 0 ? 'done' : why === 'Stopped.' ? 'skipped' : 'warn', leftAll === 0 ? `${did} Every brand is read; ranks and Google searches are read again after two weeks.` : `${did}${why ? ` ${why}` : ''}${last ? ` Left: ${last.sites.toLocaleString()} websites, ${last.webRank.toLocaleString()} ranks, ${last.google.toLocaleString()} Google searches, ${last.socials.toLocaleString()} TikTok checks.` : ''}`)
+        step('sites', leftAll === 0 && !failedWhy ? 'done' : why === 'Stopped.' ? 'skipped' : 'warn', leftAll === 0 ? `${did}${failedWhy ? ` ${failedWhy}` : ''} Every brand is read; ranks and Google searches are read again after two weeks.` : `${did}${failedWhy ? ` ${failedWhy}` : ''}${why ? ` ${why}` : ''}${last ? ` Left: ${last.sites.toLocaleString()} websites, ${last.webRank.toLocaleString()} ranks, ${last.google.toLocaleString()} Google searches, ${last.socials.toLocaleString()} TikTok checks.` : ''}`)
       })()
       // 5. Meta ads for EVERY brand (Seb: "keep it running until everything is
       // counted"), a few hundred at a time: the server names the next ones
