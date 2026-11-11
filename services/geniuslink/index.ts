@@ -15,6 +15,15 @@ export interface CreateLinkOpts {
   note?: string
 }
 
+/** One short link on a creator's Geniuslink account and where it leads. */
+export interface GeniuslinkLink {
+  code: string
+  domain: string
+  destination: string | null
+  productUrl: string | null
+  aliases: Array<{ code: string; domain: string }>
+}
+
 export class GeniuslinkService {
   private apiKey: string
   private apiSecret: string
@@ -362,6 +371,44 @@ export class GeniuslinkService {
     throw new Error(
       `Geniuslink: could not parse URL from response. Keys: ${Object.keys(data).join(', ')} | ${text.slice(0, 300)}`
     )
+  }
+
+  /**
+   * THE CREATOR'S SHORT LINKS AND WHERE EACH GOES (GET /v1/links/list,
+   * "Returns all the short links that have been created on your account", per
+   * api.geni.us/json/metadata?op=ListLinksRequest). Used by YouTube vs Amazon
+   * (2026-11-11): geni.us answers ten follows a minute, so 3,500 descriptions
+   * read by following each link took hours and mostly came back "slow down";
+   * the account's own list says the same thing in one call.
+   *
+   * `codes` narrows the list to those short codes (BaseShortCodes); with none
+   * it is a page of everything (Take/Skip). Never throws: an error comes back
+   * as `error`, in Geniuslink's words.
+   */
+  async listLinks(opts: { codes?: string[]; take?: number; skip?: number } = {}): Promise<{ links: GeniuslinkLink[]; error: string | null }> {
+    const params = new URLSearchParams({ GroupId: '0', IncludeArchived: 'true', Take: String(opts.take ?? 500), Skip: String(opts.skip ?? 0) })
+    if (opts.codes?.length) params.set('BaseShortCodes', opts.codes.join(','))
+    try {
+      const res = await fetch(`${GENIUSLINK_API}/v1/links/list?${params.toString()}`, { headers: this.authHeaders, signal: AbortSignal.timeout(25_000) })
+      const text = await res.text()
+      let data: Record<string, unknown> = {}
+      try { data = JSON.parse(text) } catch { /* said below */ }
+      const status = (data.ResponseStatus || {}) as { ErrorCode?: string; Message?: string }
+      if (!res.ok || status.ErrorCode || data.ErrorMessage) {
+        return { links: [], error: String(status.Message || data.ErrorMessage || status.ErrorCode || `Geniuslink answered ${res.status}`).slice(0, 200) }
+      }
+      const rows = Array.isArray(data.Results) ? (data.Results as Array<Record<string, unknown>>) : []
+      const links: GeniuslinkLink[] = rows.map((r) => ({
+        code: String(r.ShortUrlCode || ''),
+        domain: String(r.Domain || 'geni.us').replace(/^https?:\/\//, '').toLowerCase(),
+        destination: (r.DestinationUrl as string) || null,
+        productUrl: (r.ProductUrl as string) || null,
+        aliases: Array.isArray(r.Aliases) ? (r.Aliases as Array<Record<string, unknown>>).map((a) => ({ code: String(a.Code || ''), domain: String(a.Domain || '').toLowerCase() })).filter((a) => a.code) : [],
+      })).filter((l) => l.code)
+      return { links, error: null }
+    } catch (e) {
+      return { links: [], error: e instanceof Error ? (/timeout|abort/i.test(e.message) ? 'Geniuslink did not answer in time' : e.message.slice(0, 200)) : 'Geniuslink did not answer' }
+    }
   }
 
   /**

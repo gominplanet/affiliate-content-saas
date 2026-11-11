@@ -23,9 +23,11 @@ import { createServerClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getAuthAndOwner } from '@/lib/agency-auth'
 import { normalizeTier } from '@/lib/tier'
-import { buildCoverage, type YtVideo, type AmzVideo } from '@/lib/yt-amazon-match'
+import { buildCoverage, familyKeys, type YtVideo, type AmzVideo } from '@/lib/yt-amazon-match'
+import { familiesFor } from '@/lib/asin-family'
 import { productsOfVideo, type LinkLookup } from '@/lib/yt-amazon-links'
 import { passportCodeFromUrl } from '@/lib/passport-links'
+import { geniuslinkAsins, geniusCode } from '@/lib/yt-amazon-geniuslink'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -49,8 +51,9 @@ async function gate(): Promise<{ error: NextResponse } | { ownerId: string; db: 
 // an earlier reader could not place is read again once by the newer one,
 // whenever that happens to be, with no clock to guess (2026-11-11: the third
 // reader reads "Product ASIN: B0..." lines and says where a link failed; the
-// fourth looks Passport codes up in MVP's own table instead of following them).
-const READER = 'r4'
+// fourth looks Passport codes up in MVP's own table instead of following them;
+// the fifth reads geni.us links from the creator's Geniuslink account).
+const READER = 'r5'
 
 const MIGRATION = 'MVP needs migration 466 (youtube_video_products) in Supabase before it can match your videos. It is in the message from the MVP team.'
 const missingSchema = (m: string) => /youtube_video_products|products_read_at|products_why|does not exist|schema cache/i.test(m)
@@ -88,11 +91,19 @@ export async function GET() {
       aci: String(r.aci), description: (r.description as string) || null, state: (r.state as string) || null,
       publishedAt: (r.published_at as string) || null, views: r.views == null ? null : Number(r.views), productsRead: !!r.products_synced_at,
     }))
+    // The same product in another colour or size counts as the same product:
+    // the families MVP already holds (no new lookups here).
+    let sameAs = new Map<string, string>()
+    try {
+      const { families } = await familiesFor(db, [...ytp.map((r) => String(r.asin)), ...amzp.map((r) => String(r.asin))], { maxLookups: 0 })
+      sameAs = familyKeys(families.values())
+    } catch { /* exact matching, as before */ }
     const coverage = buildCoverage(
       ytVideos,
       ytp.map((r) => ({ videoId: String(r.youtube_video_id), asin: String(r.asin), via: (r.via as string) || null })),
       amzVideos,
       amzp.map((r) => ({ aci: String(r.aci), asin: String(r.asin), title: (r.title as string) || null })),
+      sameAs,
     )
     const amazonReadAt = amz.reduce<string | null>((m, r) => (r.synced_at && (!m || String(r.synced_at) > m) ? String(r.synced_at) : m), null)
     return NextResponse.json({ ok: true, coverage, youtubeNewest: ytVideos[0]?.publishedAt ?? null, amazonReadAt })
@@ -156,7 +167,22 @@ export async function POST(req: Request) {
     const { data: rows } = await db.from('passport_links').select('*').in('code', Array.from(codes))
     for (const r of (rows || []) as Array<Record<string, unknown>>) passport.set(String(r.code), { asin: r.asin ? String(r.asin) : null, url: (r.destination_url as string) || null })
   }
-  const resolve: LinkLookup = (u) => { const code = passportCodeFromUrl(u); return code ? passport.get(code) ?? null : null }
+  // The creator's geni.us links, from their own Geniuslink account in one ask
+  // per batch (lib/yt-amazon-geniuslink): geni.us itself answers ten follows a
+  // minute, which is what left most of Seb's videos "slow down".
+  const allUrls: string[] = []
+  for (const v of queue) for (const raw of String(v.description || '').match(/https?:\/\/[^\s)>\]"']+/gi) || []) allUrls.push(raw.replace(/[.,;:!)\]]+$/, ''))
+  const genius = await geniuslinkAsins(db, ownerId, allUrls)
+  let viaGenius = 0
+  const resolve: LinkLookup = (u) => {
+    const code = passportCodeFromUrl(u)
+    if (code) return passport.get(code) ?? null
+    const g = geniusCode(u)
+    const e = g ? genius.map.get(g) : undefined
+    if (!e) return null
+    viaGenius++
+    return e.asin ? { asin: e.asin } : { asin: null, url: e.destination }
+  }
   const worker = async () => {
     for (;;) {
       if (Date.now() - started > 70_000 || saveError) return
@@ -183,5 +209,5 @@ export async function POST(req: Request) {
   await Promise.all(Array.from({ length: 3 }, worker))
   if (saveError) return NextResponse.json({ error: missingSchema(saveError) ? MIGRATION : `MVP could not save what it read: ${saveError}`, read }, { status: missingSchema(saveError) ? 409 : 500 })
   const { count } = await db.from('youtube_videos').select('youtube_video_id', { count: 'exact', head: true }).eq('user_id', ownerId).is('products_read_at', null)
-  return NextResponse.json({ ok: true, read, found, followed, slowed, left: count ?? 0 })
+  return NextResponse.json({ ok: true, read, found, followed, slowed, left: count ?? 0, geniuslink: { state: genius.state, why: genius.why, read: viaGenius } })
 }

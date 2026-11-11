@@ -26,6 +26,14 @@
 // Passport. Its codes are in MVP's database with their ASIN, so the route looks
 // them up (`resolve`) instead of following them: no click is logged, and no
 // Levanta link or country store stands in for the product.
+//
+// Seb, later still: "most YouTube videos, if not all of them, will have a
+// link". geni.us allows ten follows a minute (its ratelimit-limit header), and
+// three readers at once spent that in seconds and kept asking: 15 of 25 of his
+// 2025 videos came back "slow down". geni.us links are now read from the
+// creator's Geniuslink account (lib/yt-amazon-geniuslink, through `resolve`),
+// and a link service that says how long to wait is left alone until then:
+// nothing is sent to it meanwhile, and the video is read again in a later round.
 // Server only.
 
 import { allProductUrls, RESOLVER_UA } from '@/lib/product-link'
@@ -34,6 +42,23 @@ import { assertPublicHttpUrlResolved } from '@/lib/ssrf-guard'
 import { labelAsins, titleAsins, topLinks } from '@/lib/yt-amazon-match'
 
 const AMAZON_HOST = /(^|\.)amazon\.[a-z.]+$|(^|\.)amzn\.com$/i
+
+/** Hosts that asked MVP to wait, until when (ms). Shared by every reader in
+ *  this process, so three readers do not each spend the allowance. */
+const pausedUntil = new Map<string, number>()
+/** For tests. */
+export function forgetPauses(): void { pausedUntil.clear() }
+
+/** When a link service says its allowance runs out ("ratelimit-remaining: 0",
+ *  "ratelimit-reset: <epoch seconds>"), or how long a "slow down" lasts. */
+function waitFrom(res: Response | null): number | null {
+  if (!res) return null
+  const after = Number(res.headers.get('retry-after'))
+  if (Number.isFinite(after) && after > 0) return after * 1000
+  const reset = Number(res.headers.get('ratelimit-reset'))
+  if (Number.isFinite(reset) && reset > 1e9) return Math.max(0, reset * 1000 - Date.now())
+  return null
+}
 
 type Followed = { asin: string } | { why: 'amazon-not-product' | 'elsewhere' | 'link-failed' | 'rate-limited'; host: string; status?: number }
 
@@ -48,22 +73,31 @@ export async function followToAsin(url: string, waitMs = (ms: number) => new Pro
     // Amazon itself is never fetched: an Amazon address with no ASIN is a
     // storefront, a search or a list, not one product.
     if (AMAZON_HOST.test(host)) return { why: 'amazon-not-product', host }
+    // A service that asked MVP to wait is not asked again before it said.
+    if ((pausedUntil.get(host) || 0) > Date.now()) return { why: 'rate-limited', host }
     try { await assertPublicHttpUrlResolved(current) } catch { return { why: 'link-failed', host } }
     let res: Response | null = null
-    // A "slow down" (429) or a busy answer (503) is waited out, twice.
+    // A "slow down" (429) or a busy answer (503) is waited out, twice, when
+    // the wait is short; a longer one pauses this service until it is over.
     for (let tryN = 0; tryN < 3; tryN++) {
       try {
         res = await fetch(current, { method: 'GET', redirect: 'manual', headers: { 'User-Agent': RESOLVER_UA, Range: 'bytes=0-0' }, signal: AbortSignal.timeout(8000) })
       } catch { res = null }
       try { await res?.body?.cancel() } catch { /* nothing to read */ }
-      if (res && res.status !== 429 && res.status !== 503) break
-      if (tryN < 2) {
-        const after = Number(res?.headers.get('retry-after'))
-        await waitMs(Number.isFinite(after) && after > 0 ? Math.min(10, after) * 1000 : 2000 * (tryN + 1))
+      if (res && Number(res.headers.get('ratelimit-remaining')) === 0 && res.headers.get('ratelimit-remaining') !== null) {
+        const w = waitFrom(res)
+        pausedUntil.set(host, Date.now() + (w ?? 60_000))
       }
+      if (res && res.status !== 429 && res.status !== 503) break
+      const w = waitFrom(res)
+      if (w !== null && w > 10_000) { pausedUntil.set(host, Date.now() + w); break }
+      if (tryN < 2) await waitMs(w !== null ? w : 2000 * (tryN + 1))
     }
     if (!res) return { why: 'link-failed', host }
-    if (res.status === 429 || res.status === 503) return { why: 'rate-limited', host }
+    if (res.status === 429 || res.status === 503) {
+      if (res.status === 429 && !((pausedUntil.get(host) || 0) > Date.now())) pausedUntil.set(host, Date.now() + 60_000)
+      return { why: 'rate-limited', host }
+    }
     if (res.status >= 300 && res.status < 400) {
       const loc = res.headers.get('location')
       if (!loc) return { why: 'link-failed', host }

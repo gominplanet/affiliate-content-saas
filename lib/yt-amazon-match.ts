@@ -197,13 +197,30 @@ export interface Coverage {
   }
 }
 
+/** One key per product family (lib/asin-family: a parent listing and its
+ *  colours and sizes), so a YouTube link to the black one and an Amazon video
+ *  of the white one count as the same product. Pure. */
+export function familyKeys(families: Iterable<{ asin: string; parentAsin: string | null; siblings: string[] }>): Map<string, string> {
+  const out = new Map<string, string>()
+  for (const f of families) {
+    const members = [f.asin, ...(f.parentAsin ? [f.parentAsin] : []), ...f.siblings]
+    const key = members.map((m) => out.get(m)).find(Boolean) || f.parentAsin || [...members].sort()[0]
+    for (const m of members) if (!out.has(m)) out.set(m, key)
+  }
+  return out
+}
+
 /** The four lists. Bigger videos first: they are worth the most. Pure. */
 export function buildCoverage(
   yt: YtVideo[],
   ytProducts: Array<{ videoId: string; asin: string; via?: string | null }>,
   amz: AmzVideo[],
   amzProducts: Array<{ aci: string; asin: string; title: string | null }>,
+  /** The same product under another ASIN (a colour or size of one listing),
+   *  as a shared key per family; an ASIN not in it is only itself. */
+  sameAs: Map<string, string> = new Map(),
 ): Coverage {
+  const keyOf = (a: string) => sameAs.get(a) || a
   // The links in most descriptions.
   const linkedBy = new Map<string, Set<string>>()
   const inTitle = new Set<string>()
@@ -227,9 +244,9 @@ export function buildCoverage(
   for (const p of amzProducts) {
     const v = amzBy.get(p.aci)
     if (!v) continue
-    const list = amzOfAsin.get(p.asin) || []
+    const list = amzOfAsin.get(keyOf(p.asin)) || []
     if (!list.includes(v)) list.push(v)
-    amzOfAsin.set(p.asin, list)
+    amzOfAsin.set(keyOf(p.asin), list)
     const ps = productsOf.get(p.aci) || []
     if (!ps.some((x) => x.asin === p.asin)) ps.push({ asin: p.asin, title: p.title })
     productsOf.set(p.aci, ps)
@@ -246,8 +263,8 @@ export function buildCoverage(
   const pairedByTitle = new Set<AmzVideo>()
   for (const v of yt) {
     const asins = asinsOf.get(v.id) || []
-    for (const a of asins) ytAsins.add(a)
-    const on = asins.flatMap((a) => amzOfAsin.get(a) || [])
+    for (const a of asins) ytAsins.add(keyOf(a))
+    const on = asins.flatMap((a) => amzOfAsin.get(keyOf(a)) || [])
     const showing = Array.from(new Set(on.filter((x) => amazonState(x.state) !== 'rejected')))
     if (showing.length) { both.push({ yt: v, asins, amazon: showing }); continue }
     const titled = sameTitle(v.title)
@@ -275,7 +292,7 @@ export function buildCoverage(
     if (!v.productsRead) { amazonUnread++; continue }
     const products = productsOf.get(v.aci) || []
     if (!products.length) { amazonNoProduct++; continue }
-    if (!products.some((p) => ytAsins.has(p.asin))) amazonOnly.push({ amz: v, products })
+    if (!products.some((p) => ytAsins.has(keyOf(p.asin)))) amazonOnly.push({ amz: v, products })
   }
   missing.sort((a, b) => byViews(a.yt, b.yt))
   both.sort((a, b) => byViews(a.yt, b.yt))

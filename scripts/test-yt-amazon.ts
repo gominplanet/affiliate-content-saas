@@ -7,8 +7,10 @@
 // short link followed to its ASIN without Amazon's own page ever being
 // fetched; and the page in Labs for the team only.
 import { readFileSync, existsSync } from 'node:fs'
+import { familyKeys } from '../lib/yt-amazon-match'
 import { buildCoverage, titleAsins, labelAsins, whyWords, whyGroup, amazonState, listText, topLinks, titleMatcher, titleKey, type YtVideo, type AmzVideo } from '../lib/yt-amazon-match'
-import { followToAsin, productsOfVideo } from '../lib/yt-amazon-links'
+import { followToAsin, productsOfVideo, forgetPauses } from '../lib/yt-amazon-links'
+import { geniuslinkAsins, geniusCode } from '../lib/yt-amazon-geniuslink'
 
 const fails: string[] = []
 const check = (name: string, ok: boolean | undefined, detail?: unknown) => { if (!ok) fails.push(`${name}${detail !== undefined ? `: ${JSON.stringify(detail)}` : ''}`) }
@@ -57,6 +59,14 @@ check('an ASIN named in a description is read: "Product ASIN: B0...", "ASIN B0..
 const cl = buildCoverage(Array.from({ length: 20 }, (_, i) => yt(`L${i}`, i)), Array.from({ length: 20 }, (_, i) => ({ videoId: `L${i}`, asin: 'B0SAMEONE0', via: 'asin-label' })), [], [])
 check('a product named by its ASIN line is never taken for a gear list, however many videos name it', cl.common.length === 0 && cl.counts.missing === 20)
 
+// The same product in another colour: a YouTube link to the black fan and an
+// Amazon video of the white one are the same product, not a gap on each side.
+const fam = familyKeys([{ asin: 'B0FANBLACK', parentAsin: 'B0FANPARNT', siblings: ['B0FANWHITE', 'B0FANBLACK'] }])
+const cf = buildCoverage([yt('fan', 500)], [{ videoId: 'fan', asin: 'B0FANBLACK', via: 'https://geni.us/fan' }], [amz('w', 10)], [{ aci: 'w', asin: 'B0FANWHITE', title: 'Fan, white' }], fam)
+const cx = buildCoverage([yt('fan', 500)], [{ videoId: 'fan', asin: 'B0FANBLACK', via: 'https://geni.us/fan' }], [amz('w', 10)], [{ aci: 'w', asin: 'B0FANWHITE', title: 'Fan, white' }])
+check('another colour of the same product counts as on both, and without its family it would show as a gap on each side', cf.counts.both === 1 && cf.counts.missing === 0 && cf.counts.amazonOnly === 0 && cx.counts.missing === 1 && cx.counts.amazonOnly === 1)
+check('the families MVP already holds are used, with no new lookups', /familiesFor\(db, \[\.\.\.ytp\.map/.test(read('app/api/labs/yt-amazon/route.ts')) && /\{ maxLookups: 0 \}/.test(read('app/api/labs/yt-amazon/route.ts')))
+
 // SEB'S DESCRIPTIONS (2026-11-11, his first run: 3,248 of 3,539 not placed).
 const sebDesc = `CHECK OUT TODAY'S PRICE: \u25ba\u25ba\u25ba     \n\nhttps://geni.us/pbKL5\n(Amazon link)\n-\nDISCLAIMER: This video and description may contain affiliate links.\n-\nRESOURCES:\n\u27a1\ufe0f Start Reviewing Products on Amazon: https://tinyurl.com/224mdynm\n\u27a1\ufe0f Get Unlimited Copyright Free Music: https://tinyurl.com/mrxyneeb\n\nWHAT WE SHOOT REVIEWS WITH:\n\u27a1\ufe0f Our Favorite Phone: https://geni.us/oH9Zog (Amazon)\n\u27a1\ufe0f Our Favorite Lights: https://geni.us/IWcXF (Amazon)\n#windshield #carcare`
 check('only the product link at the top of a description is followed, never the promo and gear links below it', topLinks(sebDesc).join(' ') === 'https://geni.us/pbKL5', topLinks(sebDesc))
@@ -95,6 +105,23 @@ check('a video with no readable link is paired by its title, takes the Amazon vi
     globalThis.fetch = (async () => new Response(null, { status: 429 })) as typeof fetch
     const still = await followToAsin('https://93.184.216.34/s', async () => {})
     check('one that keeps saying slow down is said as that, never as a dead link', 'why' in still && still.why === 'rate-limited')
+    // geni.us says how long to wait (ratelimit-reset, a minute ahead): nothing
+    // more is sent to it until then, by any reader.
+    forgetPauses()
+    calls.length = 0
+    const resetAt = String(Math.floor(Date.now() / 1000) + 60)
+    globalThis.fetch = (async (u: string) => { calls.push(String(u)); return new Response(null, { status: 429, headers: { 'ratelimit-limit': '10', 'ratelimit-remaining': '0', 'ratelimit-reset': resetAt } }) }) as typeof fetch
+    const waits2: number[] = []
+    const p1 = await followToAsin('https://93.184.216.34/a', async (ms) => { waits2.push(ms) })
+    const p2 = await followToAsin('https://93.184.216.34/b', async (ms) => { waits2.push(ms) })
+    check(`a service that asks for a minute is not asked again for that minute, and nobody sits waiting (${calls.length} asked, waits ${waits2.join(',')})`, 'why' in p1 && p1.why === 'rate-limited' && 'why' in p2 && p2.why === 'rate-limited' && calls.length === 1 && waits2.length === 0)
+    forgetPauses()
+    calls.length = 0
+    globalThis.fetch = (async (u: string) => { calls.push(String(u)); return new Response(null, { status: 302, headers: { location: 'https://www.amazon.com/dp/B0LASTONE1', 'ratelimit-remaining': '0', 'ratelimit-reset': resetAt } }) }) as typeof fetch
+    const last = await followToAsin('https://93.184.216.34/c')
+    const after = await followToAsin('https://93.184.216.34/d')
+    check('the last follow of the allowance is read, and the next waits for the reset without asking', 'asin' in last && last.asin === 'B0LASTONE1' && 'why' in after && after.why === 'rate-limited' && calls.length === 1)
+    forgetPauses()
     // A link already resolved is never followed again.
     calls.length = 0
     globalThis.fetch = (async (u: string) => { calls.push(String(u)); return new Response(null, { status: 500 }) }) as typeof fetch
@@ -116,9 +143,40 @@ check('a video with no readable link is paired by its title, takes the Amazon vi
     check('a link that refuses says its host and answer, so the page can count it', dead.why === 'link-failed:93.184.216.34:403', dead)
   } finally { globalThis.fetch = realFetch }
 
+  // geni.us links from the creator's own Geniuslink account: one ask a batch.
+  check('a geni.us link\u2019s code is read from its address; other links are not geni.us', geniusCode('https://geni.us/pbKL5') === 'pbKL5' && geniusCode('https://www.geni.us/nWq1W/') === 'nWq1W' && geniusCode('https://amzn.to/abc') === null && geniusCode('https://geni.us/') === null)
+  const fakeDb = (keys: boolean) => ({ from: () => { const q: any = { select: () => q, eq: () => q, maybeSingle: async () => ({ data: keys ? { geniuslink_api_key: 'k ', geniuslink_api_secret: 's' } : null }), single: async () => ({ data: null }) }; return q } })
+  {
+    const asked: string[] = []
+    const real = globalThis.fetch
+    const link = (code: string, dest: string) => ({ ShortUrlCode: code, Domain: 'geni.us', DestinationUrl: dest, Aliases: [] })
+    globalThis.fetch = (async (u: string, init?: RequestInit) => {
+      asked.push(String(u))
+      const h = (init?.headers || {}) as Record<string, string>
+      if (h['X-Api-Key'] !== 'k' || h['X-Api-Secret'] !== 's') return new Response(JSON.stringify({ ResponseStatus: { ErrorCode: 'Unauthorized', Message: 'Unauthorized' } }), { status: 401 })
+      return new Response(JSON.stringify({ Results: [link('pbKL5', 'https://www.amazon.com/dp/B0CWS46T3D?tag=gomin0e-20'), link('nWq1W', 'https://brand.example.com/shop')] }), { status: 200 })
+    }) as typeof fetch
+    try {
+      const got = await geniuslinkAsins(fakeDb(true), 'u1', ['https://geni.us/pbKL5', 'https://geni.us/nWq1W', 'https://amzn.to/x'])
+      check(`the batch\u2019s geni.us links are read from the creator\u2019s account in one ask, with no follow (${asked.join(' ')})`, got.state === 'read' && got.map.get('pbKL5')?.asin === 'B0CWS46T3D' && got.map.get('nWq1W')?.asin === null && got.map.get('nWq1W')?.destination === 'https://brand.example.com/shop' && asked.length === 1 && /api\.geni\.us\/v1\/links\/list\?/.test(asked[0]) && /BaseShortCodes=pbKL5%2CnWq1W/.test(asked[0]) && !asked.some((u) => /\/\/geni\.us\//.test(u)), got)
+      asked.length = 0
+      const none = await geniuslinkAsins(fakeDb(false), 'u2', ['https://geni.us/pbKL5'])
+      check('with no Geniuslink keys saved, that is said and nothing is asked', none.state === 'no-keys' && asked.length === 0)
+      globalThis.fetch = (async () => new Response(JSON.stringify({ ResponseStatus: { ErrorCode: 'Unauthorized', Message: 'Invalid API key' } }), { status: 401 })) as typeof fetch
+      const bad = await geniuslinkAsins(fakeDb(true), 'u3', ['https://geni.us/pbKL5'])
+      check('keys Geniuslink refuses are said in its words', bad.state === 'error' && /Invalid API key/.test(String(bad.why)))
+      // An account that does not narrow its list by code: the whole list, once.
+      let pages = 0
+      globalThis.fetch = (async (u: string) => { pages++; const skip = Number(new URL(u).searchParams.get('Skip')); return new Response(JSON.stringify({ Results: skip === 0 ? [link('other1', 'https://www.amazon.com/dp/B0OTHER001'), ...Array.from({ length: 499 }, (_, i) => link(`x${i}`, 'https://example.com'))] : [link('pbKL5', 'https://www.amazon.com/dp/B0CWS46T3D')] }), { status: 200 }) }) as typeof fetch
+      const wide = await geniuslinkAsins(fakeDb(true), 'u4', ['https://geni.us/pbKL5'])
+      check(`when the account does not narrow by code, its whole list is read a page at a time (${pages} asks)`, wide.state === 'read' && wide.map.get('pbKL5')?.asin === 'B0CWS46T3D' && pages === 3)
+    } finally { globalThis.fetch = real }
+  }
+
   const R = read('app/api/labs/yt-amazon/route.ts')
   check('the route is for the MVP team only, and says when migration 466 is missing', /normalizeTier\(intg\?\.tier\) !== 'admin'/.test(R) && /migration 466/.test(R))
   check('links are read a batch at a time inside a time limit, each saved as it is read', /Date\.now\(\) - started > 70_000/.test(R) && /\.limit\(60\)/.test(R) && /Array\.from\(\{ length: 3 \}, worker\)/.test(R) && /const known = new Map<string, string \| null>\(\)/.test(R) && /productsOfVideo\(v\.title \|\| '', v\.description \|\| '', known, resolve\)/.test(R))
+  check('the batch\u2019s geni.us links are read from the creator\u2019s Geniuslink account and said', /const genius = await geniuslinkAsins\(db, ownerId, allUrls\)/.test(R) && /const g = geniusCode\(u\)/.test(R) && /geniuslink: \{ state: genius\.state, why: genius\.why, read: viaGenius \}/.test(R))
   check('the batch\u2019s Passport codes are read from passport_links in one ask', /passportCodeFromUrl\(raw/.test(R) && /from\('passport_links'\)\.select\('\*'\)\.in\('code', Array\.from\(codes\)\)/.test(R))
   check('videos with no product whose link did not answer, and once those an earlier reader could not place, are read again', /if \(body\.action === 'unplaced'\)/.test(R) && /\.not\('products_why', 'like', `\$\{READER\}:%`\)/.test(R) && /\.like\('products_why', `\$\{READER\}:link-failed%`\)/.test(R) && /\.like\('products_why', `\$\{READER\}:rate-limited%`\)/.test(R) && !/READER_2|\.lt\('products_read_at'/.test(R))
   check('every reason is saved with the reader that wrote it', /products_why: r\.why \? `\$\{READER\}:\$\{r\.why\}` : null/.test(R) && /const READER = 'r\d+'/.test(R))
@@ -130,6 +188,7 @@ check('a video with no readable link is paired by its title, takes the Amazon vi
   const P = read('components/amazon/YouTubeAmazonGaps.tsx')
   check('Check everything reads YouTube, then Amazon, then the links, and each step says what it read', /await readYouTube\(\)\n\s*if \(!stop\.current\) await readAmazon\(\)\n\s*if \(!stop\.current\) await readLinks\(\)/.test(P) && /note\('youtube', true/.test(P) && /note\('amazon', false/.test(P) && /note\('links', !slowed/.test(P) && /if \(retryUnplaced\) await post\('\/api\/labs\/yt-amazon', \{ action: 'unplaced' \}\)/.test(P))
   check('what SCOUT\u2019s Amazon list read got is said: how many videos, or why it stopped', /SCOUT read \$\{num\(st\.saved\)\} videos from your Amazon video list/.test(P) && /SCOUT could not read your Amazon video list: \$\{errWords\}/.test(P) && /this Chrome is signed out of Amazon/.test(P))
+  check('the page says how geni.us links were read, and what to add when they cannot be', /MVP has no Geniuslink keys for you/.test(P) && /Your Geniuslink account did not answer/.test(P) && /geni\.us links read from your Geniuslink account/.test(P) && /if \(stuck >= 3\) break/.test(P))
   check('the Could not tell list counts its reasons', /counted: \$\{c\.unknownWhy\.slice\(0, 6\)/.test(P))
   check('a pair found by the same title is marked', /On Amazon\{m\.byTitle \? ' \(same title\)' : ''\}/.test(P))
   check('every link names where it goes', /Watch on YouTube/.test(P) && /see it on Amazon/.test(P) && !/>\s*(Open|Buy now|Click here|Shop now)\s*</.test(P))

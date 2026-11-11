@@ -151,30 +151,51 @@ export default function YouTubeAmazonGaps() {
   // 3. Each YouTube video's links, a batch at a time.
   // The videos with no product whose link did not answer (and, once, the ones
   // the first reader could not place) are read again, then the link services
-  // that asked MVP to slow down get two more rounds, a minute apart.
+  // that asked MVP to slow down get more rounds, a minute apart, while each
+  // round gets further.
   const readLinks = async (retryUnplaced = true): Promise<boolean> => {
     setRunning('links')
     let read = 0
     let found = 0
     let slowed = 0
+    // How the geni.us links were read: from the creator's Geniuslink account,
+    // or followed at geni.us's pace of ten a minute (and why).
+    let gState = ''
+    let gWhy = ''
+    let gRead = 0
+    const geniusWords = () => gState === 'no-keys'
+      ? ' MVP has no Geniuslink keys for you, so geni.us links are followed at the ten a minute geni.us allows; add your Geniuslink API key and secret on the Brand page and MVP reads them all from your account at once.'
+      : gState === 'error' ? ` Your Geniuslink account did not answer (${gWhy}), so geni.us links are followed at the ten a minute geni.us allows.`
+      : gRead ? ` ${gRead.toLocaleString()} geni.us links read from your Geniuslink account.` : ''
     try {
       if (retryUnplaced) await post('/api/labs/yt-amazon', { action: 'unplaced' })
-      for (let round = 0; round < 3 && !stop.current; round++) {
+      // Rounds while links are still being asked to wait and each round gets
+      // further (geni.us allows ten a minute without the Geniuslink account);
+      // three rounds with no progress end it, and the note says what is left.
+      let lastSlowed = Infinity
+      let stuck = 0
+      for (let round = 0; round < 300 && !stop.current; round++) {
         slowed = 0
         for (let i = 0; i < 400 && !stop.current; i++) {
           const j = await post('/api/labs/yt-amazon', { action: 'read' })
           read += Number(j.read) || 0
           found += Number(j.found) || 0
           slowed += Number(j.slowed) || 0
+          const g = (j.geniuslink || {}) as { state?: string; why?: string | null; read?: number }
+          if (g.state && g.state !== 'read') { gState = g.state; gWhy = String(g.why || '') } else if (g.state === 'read' && !gState) gState = 'read'
+          gRead += Number(g.read) || 0
           const left = Number(j.left) || 0
-          setLine(`Following the product links at the top of your YouTube descriptions: ${read.toLocaleString()} videos read, ${found.toLocaleString()} with a product, ${left.toLocaleString()} to go.`)
+          setLine(`Reading the product link at the top of your YouTube descriptions: ${read.toLocaleString()} videos read, ${found.toLocaleString()} with a product, ${left.toLocaleString()} to go.${geniusWords()}`)
           if (!left || !Number(j.read)) break
         }
-        if (!slowed || round === 2 || stop.current) break
-        for (let w = 60; w > 0 && !stop.current; w -= 5) { setLine(`${slowed.toLocaleString()} links were asked to wait by the link service. Trying them again in ${w} seconds.`); await sleep(5000) }
+        if (!slowed || stop.current) break
+        stuck = slowed >= lastSlowed ? stuck + 1 : 0
+        lastSlowed = slowed
+        if (stuck >= 3) break
+        for (let w = 60; w > 0 && !stop.current; w -= 5) { setLine(`${slowed.toLocaleString()} links were asked to wait by the link service. Trying them again in ${w} seconds.${geniusWords()}`); await sleep(5000) }
         await post('/api/labs/yt-amazon', { action: 'unplaced' })
       }
-      note('links', !slowed, `${read.toLocaleString()} YouTube videos' links read this run, ${found.toLocaleString()} leading to a product${slowed ? `; ${slowed.toLocaleString()} links were still asked to wait, so press Find the products again later` : ''}${stop.current ? '. Stopped; press again to carry on' : ''}.`)
+      note('links', !slowed && gState !== 'error', `${read.toLocaleString()} YouTube videos' links read this run, ${found.toLocaleString()} leading to a product${slowed ? `; ${slowed.toLocaleString()} links were still asked to wait, so press Find the products again later` : ''}${stop.current ? '. Stopped; press again to carry on' : ''}.${geniusWords()}`)
       return true
     } catch (e) {
       note('links', false, `Following the links stopped after ${read.toLocaleString()} videos: ${e instanceof Error ? e.message : 'no answer'}`)
