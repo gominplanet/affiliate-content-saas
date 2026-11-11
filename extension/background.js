@@ -4977,14 +4977,39 @@ function fetchContentListInPage(rec) {
     //   orderingType, retrieveMetrics, globalizeStatus
     // so pageSize is set to 100 rather than left at the UI's 10, which is ten
     // times fewer round trips for the same rows.
-    const out = { videos: [], total: null, nextOffset: 0, done: false, error: null, pages: 0, sample: null, variant: null }
+    const out = { videos: [], total: null, nextOffset: 0, done: false, error: null, pages: 0, sample: null, variant: null, empty: null }
     const ASIN_RE = /^[A-Z0-9]{10}$/
+    // The rows of an answer: "result" as Amazon has always sent it, or the first
+    // list of video records under any other name, so a renamed field is read
+    // rather than taken for an empty library (1.60.8).
+    const rowsOf = (j) => {
+      if (j && Array.isArray(j.result)) return j.result
+      if (j && typeof j === 'object') {
+        for (const k of Object.keys(j)) {
+          const v = j[k]
+          if (Array.isArray(v) && v.length && v[0] && typeof v[0] === 'object' && (v[0].contentDetail || v[0].mediaACI)) return v
+        }
+      }
+      return []
+    }
+    const totalOf = (j) => {
+      const t = j && ((j.metadata && j.metadata.totalResults) != null ? j.metadata.totalResults : j.totalResults)
+      return Number.isFinite(t) ? t : null
+    }
+    // What an answer with no videos looked like, said in a few words, so a
+    // failure names what Amazon sent instead of "answered with nothing".
+    const shapeOf = (j) => {
+      if (!j || typeof j !== 'object') return 'not JSON'
+      const keys = Object.keys(j).slice(0, 8).map((k) => (Array.isArray(j[k]) ? `${k}(${j[k].length})` : k)).join(',')
+      const t = totalOf(j)
+      return `{${keys}}${t != null ? ` totalResults ${t}` : ''}`
+    }
     const startAt = Number(rec.startAt) || 0
     const maxRows = Number(rec.maxRows) || 400
     let offset = startAt
 
     const readVideos = (j, into) => {
-      const rows = (j && Array.isArray(j.result)) ? j.result : []
+      const rows = rowsOf(j)
       for (const r of rows) {
         if (!r || typeof r !== 'object') continue
         const d = r.contentDetail || {}
@@ -5029,12 +5054,22 @@ function fetchContentListInPage(rec) {
     // extra took down a request that had been working. Same shape of mistake as
     // forcing an aggregation enum earlier: an enhancement must degrade, not
     // break. These are tried in order and the first that answers is kept.
+    //
+    // 1.60.8 (Seb, 2026-11-11): "list API saved nothing". Amazon answered the
+    // first shape with no rows, and an answer with no rows was taken as the end
+    // of a library of 6,953 videos. A shape now has to bring back videos to be
+    // kept; an empty answer moves on to the next one, down to the page's own
+    // request sent unchanged, and every shape's answer is reported if none do.
     const VARIANTS = [
       { metrics: true, size: 100, label: 'metrics, 100 a page' },
+      { metrics: true, size: 50, label: 'metrics, 50 a page' },
       { metrics: true, size: 10, label: 'metrics, 10 a page' },
       { metrics: false, size: 100, label: 'no metrics, 100 a page' },
+      { metrics: false, size: 50, label: 'no metrics, 50 a page' },
       { metrics: false, size: 10, label: 'no metrics, as the page asks' },
+      { raw: true, label: 'the page request unchanged' },
     ]
+    const PLAIN = VARIANTS[5]
     // The shape Amazon accepted on an earlier batch. Renegotiating it on every
     // batch meant paying two rejected requests each time metrics were refused,
     // roughly seventy wasted calls across a library of thousands, which is a
@@ -5050,52 +5085,65 @@ function fetchContentListInPage(rec) {
       while (videos.size < maxRows && Date.now() - started < 100000) {
         const buildBody = (v) => {
           const o = JSON.parse(rec.body)
-          o.pageSize = v.size
           o.startIndex = offset
-          o.retrieveMetrics = v.metrics
+          if (!v.raw) {
+            o.pageSize = v.size
+            o.retrieveMetrics = v.metrics
+          }
           return JSON.stringify(o)
         }
+        const ask = (v) => fetch(new URL(rec.url, location.href).toString(), {
+          method: rec.method || 'POST', credentials: 'include', headers,
+          body: buildBody(v), signal: AbortSignal.timeout(30000),
+        })
 
-        let res = null
+        let j = null
         if (variant) {
-          try {
-            res = await fetch(new URL(rec.url, location.href).toString(), {
-              method: rec.method || 'POST', credentials: 'include', headers,
-              body: buildBody(variant), signal: AbortSignal.timeout(30000),
-            })
-          } catch (e) { res = null }
+          let res = null
+          try { res = await ask(variant) } catch (e) { res = null }
+          if (!res) { out.error = `no response at offset ${offset}`; break }
+          if (!res.ok) {
+            // A combination that worked and then stopped: drop back to the plain
+            // request rather than ending the run on one bad page.
+            if (variant.metrics) {
+              variant = PLAIN
+              out.variant = `${variant.label} (fell back after HTTP ${res.status})`
+              continue
+            }
+            out.error = `HTTP ${res.status} at offset ${offset}`
+            break
+          }
+          j = await res.json().catch(() => null)
+          if (!j) { out.error = `unreadable response at offset ${offset}`; break }
         } else {
-          // First call of the run: find a combination Amazon accepts.
+          // First call of the run: find a combination that brings back videos.
+          const tried = []
+          let firstEmpty = null
           for (const v of VARIANTS) {
             try {
-              const r = await fetch(new URL(rec.url, location.href).toString(), {
-                method: rec.method || 'POST', credentials: 'include', headers,
-                body: buildBody(v), signal: AbortSignal.timeout(30000),
-              })
-              if (r.ok) { res = r; variant = v; out.variant = v.label; break }
-            } catch (e) { /* try the next combination */ }
+              const r = await ask(v)
+              if (!r.ok) tried.push(`${v.label}: HTTP ${r.status}`)
+              else {
+                const jj = await r.json().catch(() => null)
+                if (jj && rowsOf(jj).length) { j = jj; variant = v; out.variant = v.label; break }
+                tried.push(`${v.label}: ${shapeOf(jj)}`)
+                if (jj && !firstEmpty) firstEmpty = { v, jj }
+              }
+            } catch (e) { tried.push(`${v.label}: ${(e && e.name) || 'no answer'}`) }
             await new Promise((r) => setTimeout(r, 200))
           }
-          if (!variant) { out.error = `Amazon refused every request shape at offset ${offset}`; break }
-        }
-        if (!res) { out.error = `no response at offset ${offset}`; break }
-        if (!res.ok) {
-          // A combination that worked and then stopped: drop back to the plain
-          // request rather than ending the run on one bad page.
-          if (variant && variant.metrics) {
-            variant = VARIANTS[VARIANTS.length - 1]
-            out.variant = `${variant.label} (fell back after HTTP ${res.status})`
-            continue
+          if (!variant && firstEmpty) {
+            // Every shape answered and none had a video: said with what each
+            // answered, never as an empty library.
+            variant = firstEmpty.v
+            out.variant = variant.label
+            j = firstEmpty.jj
+            out.empty = `Amazon answered every request shape with no videos at offset ${offset} (${tried.join('; ')})`.slice(0, 900)
           }
-          out.error = `HTTP ${res.status} at offset ${offset}`
-          break
+          if (!variant) { out.error = `Amazon refused every request shape at offset ${offset} (${tried.join('; ')})`.slice(0, 900); break }
         }
-        const j = await res.json().catch(() => null)
-        if (!j) { out.error = `unreadable response at offset ${offset}`; break }
-        try {
-          const t = j.metadata && j.metadata.totalResults
-          if (Number.isFinite(t)) out.total = t
-        } catch (e) {}
+        const t = totalOf(j)
+        if (t != null) out.total = t
 
         // What Amazon actually sent, once per run.
         //
@@ -5108,7 +5156,7 @@ function fetchContentListInPage(rec) {
         // is made against the real payload.
         if (!out.sample) {
           try {
-            const first = (j && Array.isArray(j.result) && j.result[0]) || null
+            const first = rowsOf(j)[0] || null
             if (first) {
               const paths = []
               const walk = (node, prefix, depth) => {
@@ -5995,6 +6043,7 @@ async function scanCreatorHubVideosBackground(userUrl, startAt, onProgress) {
           // carrying the first one forward would keep sending the failing one.
           if (a.variant) variantUsed = a.variant
           if (a.error) lastError = a.error
+          else if (a.empty && !saved) lastError = a.empty
           if (a.videos && a.videos.length) {
             const pushed = await pushVideoLibraryToMvp(a.videos, [], [])
             if (!pushed || !pushed.ok) { lastError = (pushed && pushed.error) || 'could not save'; break }

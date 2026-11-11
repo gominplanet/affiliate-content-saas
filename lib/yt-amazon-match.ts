@@ -59,6 +59,15 @@ export function titleAsins(title: string): string[] {
   return Array.from(new Set((String(title || '').toUpperCase().match(/\bB0[A-Z0-9]{8}\b/g) || [])))
 }
 
+/** ASINs a description names in words ("Product ASIN: B0HKJZCSQV", Seb's
+ *  descriptions since 2025, under the price link). The video's own product,
+ *  read with no request at all. Only the B0 form. Pure. */
+export function labelAsins(description: string): string[] {
+  const out = new Set<string>()
+  for (const m of String(description || '').matchAll(/\bASIN\b[^A-Za-z0-9\n]{0,6}(B0[A-Za-z0-9]{8})\b/gi)) out.add(m[1].toUpperCase())
+  return Array.from(out)
+}
+
 /** THE PRODUCT LINKS AT THE TOP OF A DESCRIPTION (Seb, 2026-11-11: "most
  *  youtube videos have links in their description.. that is where you will
  *  find the product"). A review's own product link sits at the top ("CHECK OUT
@@ -125,15 +134,43 @@ export function titleMatcher(amz: AmzVideo[]): (title: string) => AmzVideo[] {
 }
 
 /** Why a YouTube video has no product, in words. */
+/** A reason as saved: the reader that wrote it ("r3:"), then the reason. */
+export function bareWhy(why: string | null): string {
+  return String(why || '').replace(/^r\d+:/, '')
+}
+
+/** A dead link's host and answer, from "link-failed:mvpl.ink:403". */
+function failedLink(w: string): { host: string; status: number } | null {
+  const m = /^link-failed(?::([^:]*):(\d+))?$/.exec(w)
+  return m ? { host: m[1] || '', status: Number(m[2] || 0) } : null
+}
+
 export function whyWords(v: Pick<YtVideo, 'readAt' | 'why'>): string {
   if (!v.readAt) return 'Not read yet. Press Find the products.'
-  const w = String(v.why || '')
+  const w = bareWhy(v.why)
   if (w === 'no-link') return 'No Amazon or product link in its title or description.'
   if (w === 'amazon-not-product') return 'Its Amazon links go to a storefront or search, not one product.'
   if (w.startsWith('elsewhere:')) return `Its links lead to ${w.slice(10).split(',').filter(Boolean).slice(0, 3).join(', ')}, not to Amazon.`
-  if (w === 'link-failed') return 'Its product link did not answer when MVP followed it. Check everything tries it again.'
+  const f = failedLink(w)
+  if (f) return `Its product link${f.host ? ` on ${f.host}` : ''} did not answer when MVP followed it${f.status ? ` (it said ${f.status})` : ''}. Check everything tries it again.`
   if (w === 'rate-limited') return 'The link service asked MVP to slow down before this link was read. Check everything tries it again.'
   return w || 'No product found in its links.'
+}
+
+const GEAR_ONLY = 'Its only product links are the ones in most of your descriptions (a gear list?), so MVP cannot tell which product this video is about.'
+
+/** The reason in a few words, so a thousand reasons count up into a handful. */
+export function whyGroup(v: Pick<YtVideo, 'readAt' | 'why'>, gearOnly = false): string {
+  if (gearOnly) return 'only gear list links'
+  if (!v.readAt) return 'not read yet'
+  const w = bareWhy(v.why)
+  if (w === 'no-link') return 'no product link in the description'
+  if (w === 'amazon-not-product') return 'Amazon links to a storefront or search'
+  if (w.startsWith('elsewhere:')) return `links lead to ${w.slice(10).split(',')[0] || 'another site'}`
+  const f = failedLink(w)
+  if (f) return `link${f.host ? ` on ${f.host}` : ''} did not answer${f.status ? ` (${f.status})` : ''}`
+  if (w === 'rate-limited') return 'link service asked MVP to slow down'
+  return 'no product found in its links'
 }
 
 export interface Coverage {
@@ -141,6 +178,8 @@ export interface Coverage {
   /** byTitle: paired by the words of the title, not by a product link. */
   both: Array<{ yt: YtVideo; asins: string[]; amazon: AmzVideo[]; byTitle?: boolean }>
   unknown: Array<{ yt: YtVideo; why: string }>
+  /** Why, counted: the biggest reasons first. */
+  unknownWhy: Array<{ why: string; videos: number }>
   amazonOnly: Array<{ amz: AmzVideo; products: Array<{ asin: string; title: string | null }> }>
   /** ASINs in most descriptions, left out of the matching, with how many videos link each. */
   common: Array<{ asin: string; videos: number }>
@@ -169,7 +208,7 @@ export function buildCoverage(
   const linkedBy = new Map<string, Set<string>>()
   const inTitle = new Set<string>()
   for (const p of ytProducts) {
-    if (p.via === 'title') inTitle.add(p.asin)
+    if (p.via === 'title' || p.via === 'asin-label') inTitle.add(p.asin)
     const s = linkedBy.get(p.asin) || new Set<string>(); s.add(p.videoId); linkedBy.set(p.asin, s)
   }
   const often = Math.max(6, Math.ceil(yt.length * 0.08))
@@ -199,6 +238,7 @@ export function buildCoverage(
   const missing: Coverage['missing'] = []
   const both: Coverage['both'] = []
   const unknown: Coverage['unknown'] = []
+  const whyCount = new Map<string, number>()
   const ytAsins = new Set<string>()
   // THE SAME VIDEO BY ITS TITLE (2026-11-11): an Amazon video's own words are
   // often the YouTube title, so the two pair even when no link could be read.
@@ -217,7 +257,13 @@ export function buildCoverage(
       both.push({ yt: v, asins: asins.length ? asins : theirs, amazon: titled, byTitle: true })
       continue
     }
-    if (!asins.length) { unknown.push({ yt: v, why: hadCommonOnly.has(v.id) ? 'Its only product links are the ones in most of your descriptions (a gear list?), so MVP cannot tell which product this video is about.' : whyWords(v) }); continue }
+    if (!asins.length) {
+      const gear = hadCommonOnly.has(v.id)
+      unknown.push({ yt: v, why: gear ? GEAR_ONLY : whyWords(v) })
+      const g = whyGroup(v, gear)
+      whyCount.set(g, (whyCount.get(g) || 0) + 1)
+      continue
+    }
     missing.push({ yt: v, asins, rejected: Array.from(new Set(on)) })
   }
   const amazonOnly: Coverage['amazonOnly'] = []
@@ -237,6 +283,7 @@ export function buildCoverage(
   amazonOnly.sort((a, b) => byViews(a.amz, b.amz))
   return {
     missing, both, unknown, amazonOnly, common,
+    unknownWhy: Array.from(whyCount, ([why, videos]) => ({ why, videos })).sort((a, b) => b.videos - a.videos),
     counts: {
       youtube: yt.length, youtubeRead: yt.filter((v) => v.readAt).length,
       amazon: amz.length, amazonUnread, amazonNoProduct,

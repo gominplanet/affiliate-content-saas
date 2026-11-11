@@ -21,7 +21,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Loader2, ExternalLink, Copy, Check, AlertTriangle, RefreshCw, Youtube, ShoppingBag, HelpCircle, CheckCircle2, Search, Square, ListChecks } from 'lucide-react'
 import { toast } from 'sonner'
 import { TealHeader } from '@/components/layout/teal-ui'
-import { startCreatorHubVideosScan, getVideoScanStatus } from '@/lib/extension-frame'
+import { startCreatorHubVideosScan, getVideoScanStatus, getScoutStatus } from '@/lib/extension-frame'
+import { scoutAtLeast } from '@/lib/scout-version'
 import { readAllVideoProducts, readVideoProductsViaScout, type ProductReadProgress } from '@/lib/amazon-video-products-client'
 import { listText, amazonState, type Coverage, type YtVideo, type AmzVideo } from '@/lib/yt-amazon-match'
 
@@ -116,9 +117,15 @@ export default function YouTubeAmazonGaps() {
           : err === 'no-result' ? 'Amazon\u2019s video page did not show the list' : err
         listOk = !!st && !err && !st.interrupted
         listWords = !st ? 'SCOUT did not say how the list read went.'
-          : err ? `SCOUT could not read your Amazon video list: ${errWords}${st.probe ? ` (${String(st.probe).slice(0, 140)})` : ''}. ${num(st.saved)} videos were saved.`
+          : err ? `SCOUT could not read your Amazon video list: ${errWords}${st.probe ? ` (${String(st.probe).slice(0, 700)})` : ''}. ${num(st.saved)} videos were saved.`
           : st.interrupted ? `Chrome stopped SCOUT part way through your Amazon video list; ${num(st.saved)} videos were saved. Press Read again to carry on.`
           : `SCOUT read ${num(st.saved)} videos from your Amazon video list${st.total ? ` (Amazon says ${num(st.total)})` : ''}${st.stopped ? `: ${st.stopped}` : ''}.`
+      }
+      // SCOUT 1.60.8 asks Amazon again when the list comes back empty; an
+      // older SCOUT is said by name, so the fix waiting in Chrome is known.
+      if (!listOk && /answered with nothing/.test(listWords)) {
+        const v = (await getScoutStatus().catch(() => null))?.version || null
+        if (v && !scoutAtLeast(v, '1.60.8')) listWords += ` This Chrome has SCOUT ${v}; SCOUT 1.60.8 asks Amazon again the way its own page does. Chrome updates SCOUT by itself within a few hours; then press Read again.`
       }
       const show = (p: ProductReadProgress) => {
         const doneN = p.total != null && p.remaining != null ? Math.max(0, p.total + -p.remaining) : null
@@ -320,7 +327,7 @@ function TabNote({ tab, c }: { tab: Tab; c: Coverage }) {
   const parts: string[] = []
   if (tab === 'missing') parts.push('These YouTube videos link to a product that has no video on your Amazon storefront. The ones with the most views come first.')
   if (tab === 'amazonOnly') parts.push('These Amazon videos show a product none of your YouTube videos links to.')
-  if (tab === 'unknown') parts.push('MVP could not tell which product these YouTube videos are about. Each says why.')
+  if (tab === 'unknown') parts.push(`MVP could not tell which product these YouTube videos are about. Each says why${c.unknownWhy?.length ? `; counted: ${c.unknownWhy.slice(0, 6).map((w) => `${w.videos.toLocaleString()} ${w.why}`).join(', ')}` : ''}.`)
   if (tab === 'both') parts.push(`These YouTube videos have an Amazon video for their product${c.counts.bothByTitle ? `; ${c.counts.bothByTitle.toLocaleString()} were paired by the same title, where no product link could be read` : ''}.`)
   if ((tab === 'missing' || tab === 'amazonOnly') && c.counts.amazonUnread) parts.push(`MVP has not read the products of ${c.counts.amazonUnread.toLocaleString()} Amazon videos yet, so this list may still change; press Read again under Your Amazon videos.`)
   const unreadYt = c.counts.youtube + -c.counts.youtubeRead

@@ -13,8 +13,9 @@
 //   POST { action: 'again' }    read every video's links again (after the
 //                               creator changed descriptions)
 //   POST { action: 'unplaced' } read again the videos with no product whose
-//                               link did not answer, and once, the ones the
-//                               first reader (before READER_2) could not place
+//                               link did not answer, and once, the ones an
+//                               earlier reader could not place (their reason
+//                               does not start with READER)
 //
 // Labs: the MVP team only, like the Amazon video library it reads.
 import { NextResponse } from 'next/server'
@@ -43,9 +44,11 @@ async function gate(): Promise<{ error: NextResponse } | { ownerId: string; db: 
   return { ownerId, db }
 }
 
-// The second link reader (lib/yt-amazon-links, 2026-11-11): videos the first
-// one could not place are read again once by Check everything.
-const READER_2 = '2026-11-11T18:45:00Z'
+// The reader that wrote a reason, saved in front of it ("r3:no-link"). A video
+// an earlier reader could not place is read again once by the newer one,
+// whenever that happens to be, with no clock to guess (2026-11-11: the third
+// reader reads "Product ASIN: B0..." lines and says where a link failed).
+const READER = 'r3'
 
 const MIGRATION = 'MVP needs migration 466 (youtube_video_products) in Supabase before it can match your videos. It is in the message from the MVP team.'
 const missingSchema = (m: string) => /youtube_video_products|products_read_at|products_why|does not exist|schema cache/i.test(m)
@@ -109,9 +112,10 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true })
   }
   if (body.action === 'unplaced') {
-    const a = await db.from('youtube_videos').update({ products_read_at: null }).eq('user_id', ownerId).in('products_why', ['link-failed', 'rate-limited'])
-    const b = await db.from('youtube_videos').update({ products_read_at: null }).eq('user_id', ownerId).not('products_why', 'is', null).lt('products_read_at', READER_2)
-    const err = a.error || b.error
+    const older = await db.from('youtube_videos').update({ products_read_at: null }).eq('user_id', ownerId).not('products_why', 'is', null).not('products_why', 'like', `${READER}:%`)
+    const failed = await db.from('youtube_videos').update({ products_read_at: null }).eq('user_id', ownerId).like('products_why', `${READER}:link-failed%`)
+    const slowed = await db.from('youtube_videos').update({ products_read_at: null }).eq('user_id', ownerId).like('products_why', `${READER}:rate-limited%`)
+    const err = older.error || failed.error || slowed.error
     if (err) return NextResponse.json({ error: missingSchema(err.message) ? MIGRATION : err.message }, { status: missingSchema(err.message) ? 409 : 500 })
     return NextResponse.json({ ok: true })
   }
@@ -149,7 +153,7 @@ export async function POST(req: Request) {
         if (pe) { saveError = pe.message; return }
         found++
       }
-      const { error: ve } = await db.from('youtube_videos').update({ products_read_at: now, products_why: r.why }).eq('user_id', ownerId).eq('youtube_video_id', v.youtube_video_id)
+      const { error: ve } = await db.from('youtube_videos').update({ products_read_at: now, products_why: r.why ? `${READER}:${r.why}` : null }).eq('user_id', ownerId).eq('youtube_video_id', v.youtube_video_id)
       if (ve) { saveError = ve.message; return }
       // The video's main product, where nothing set one before (the column the
       // Creator Connections badge and blog posts read).

@@ -200,7 +200,7 @@ check('SCOUT reads in its own minimized window, told it is on screen', /const ta
 check('a puzzle stops the scan and is said, never solved', /if \(read\.puzzle\) \{ error = TT_SAY\.puzzle; break \}/.test(B) && /it never answers those/.test(B))
 check('SCOUT hands each batch to MVP itself, so the scan goes on with MVP’s tab closed', /\/api\/labs\/tiktok-library/.test(B) && /void ttScan\(\{ handle, scanId: String\(msg\.scanId\), origin \}\)/.test(B))
 check('the end of every scan is handed over, with how it ended', /try \{ await hand\(\[\], null, true\) \} catch/.test(B) && /body\.reachedEnd = reachedEnd; if \(error\) body\.error = error/.test(B))
-check('SCOUT and MVP agree on the version', MF.version === '1.60.7' && /SCOUT_LATEST_VERSION = '1\.60\.7'/.test(read('lib/scout-version.ts')) && /SCOUT_TIKTOK_DL_PROGRESS_MIN_VERSION = '1\.60\.2'/.test(read('lib/scout-version.ts')) && /SCOUT_TIKTOK_LIBRARY_MIN_VERSION = '1\.59\.0'/.test(read('lib/scout-version.ts')) && /SCOUT_TIKTOK_DOWNLOAD_MIN_VERSION = '1\.60\.0'/.test(read('lib/scout-version.ts')))
+check('SCOUT and MVP agree on the version', /^1\.(60\.([7-9]|\d\d)|(6[1-9]|[7-9]\d)\.\d+)$/.test(MF.version) && read('lib/scout-version.ts').includes(`SCOUT_LATEST_VERSION = '${MF.version}'`) && /SCOUT_TIKTOK_DL_PROGRESS_MIN_VERSION = '1\.60\.2'/.test(read('lib/scout-version.ts')) && /SCOUT_TIKTOK_LIBRARY_MIN_VERSION = '1\.59\.0'/.test(read('lib/scout-version.ts')) && /SCOUT_TIKTOK_DOWNLOAD_MIN_VERSION = '1\.60\.0'/.test(read('lib/scout-version.ts')))
 
 // ── DOWNLOADS (Seb, 2026-11-09: "a download button for each video matched so
 // users can then re-upload those to trybe") ──

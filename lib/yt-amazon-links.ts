@@ -15,16 +15,22 @@
 // answering, so the product link at the top failed with the rest. Now only
 // the top block is followed, a link already resolved is never followed again
 // (`known`), and a "slow down" answer is waited out and tried again.
+//
+// Later the same day, Seb's second run (109 read, 10 placed): his descriptions
+// since 2025 say "Product ASIN: B0HKJZCSQV" under the price link, so that line
+// is read first, with no request; and a link that does not answer now says
+// where it was and what it said ("link-failed:mvpl.ink:403"), so the page can
+// count the reasons instead of hiding them behind one sentence.
 // Server only.
 
 import { allProductUrls, RESOLVER_UA } from '@/lib/product-link'
 import { asinFromAmazonUrl } from '@/lib/asin'
 import { assertPublicHttpUrlResolved } from '@/lib/ssrf-guard'
-import { titleAsins, topLinks } from '@/lib/yt-amazon-match'
+import { labelAsins, titleAsins, topLinks } from '@/lib/yt-amazon-match'
 
 const AMAZON_HOST = /(^|\.)amazon\.[a-z.]+$|(^|\.)amzn\.com$/i
 
-type Followed = { asin: string } | { why: 'amazon-not-product' | 'elsewhere' | 'link-failed' | 'rate-limited'; host: string }
+type Followed = { asin: string } | { why: 'amazon-not-product' | 'elsewhere' | 'link-failed' | 'rate-limited'; host: string; status?: number }
 
 /** Where one link leads: an ASIN, or why not. Never throws. */
 export async function followToAsin(url: string, waitMs = (ms: number) => new Promise<void>((r) => setTimeout(r, ms))): Promise<Followed> {
@@ -59,7 +65,7 @@ export async function followToAsin(url: string, waitMs = (ms: number) => new Pro
       try { current = new URL(loc, current).toString() } catch { return { why: 'link-failed', host } }
       continue
     }
-    if (!res.ok && res.status !== 206 && res.status !== 416) return { why: 'link-failed', host }
+    if (!res.ok && res.status !== 206 && res.status !== 416) return { why: 'link-failed', host, status: res.status }
     return { why: 'elsewhere', host }
   }
   return { why: 'link-failed', host }
@@ -73,6 +79,10 @@ export async function productsOfVideo(title: string, description: string, known:
   const found = new Map<string, string>()
   for (const a of titleAsins(title)) found.set(a, 'title')
   const text = String(description || '')
+  // "Product ASIN: B0..." says the video's product outright: nothing to follow.
+  const labelled = labelAsins(text)
+  for (const a of labelled) if (!found.has(a)) found.set(a, 'asin-label')
+  if (labelled.length) return { asins: Array.from(found, ([asin, via]) => ({ asin, via })), why: null, followed: 0 }
   // Amazon product links anywhere cost nothing to read.
   for (const u of allProductUrls(text, null, 30)) { const d = asinFromAmazonUrl(u); if (d && !found.has(d)) found.set(d, u.slice(0, 300)) }
   // The links at the top are followed; with none there, the first two anywhere.
@@ -80,6 +90,7 @@ export async function productsOfVideo(title: string, description: string, known:
   const toFollow = (top.length ? top : allProductUrls(text, null, 2)).filter((u) => !asinFromAmazonUrl(u))
   const elsewhere = new Set<string>()
   let failed = 0
+  let failedAt = ''
   let slowed = 0
   let notProduct = 0
   let followed = 0
@@ -92,11 +103,11 @@ export async function productsOfVideo(title: string, description: string, known:
     else if (r.why === 'elsewhere') { known.set(key, null); elsewhere.add(r.host.replace(/^www\./, '')) }
     else if (r.why === 'amazon-not-product') { known.set(key, null); notProduct++ }
     else if (r.why === 'rate-limited') slowed++
-    else failed++
+    else { failed++; if (!failedAt) failedAt = `${r.host.replace(/^www\./, '').replace(/:/g, '')}:${r.status || 0}` }
   }
   if (found.size) return { asins: Array.from(found, ([asin, via]) => ({ asin, via })), why: null, followed }
   // A storefront link is dropped as "not a product" before it is followed.
   if (!notProduct && /amazon\.[a-z.]+\/(shop|stores|s\?|b\?)/i.test(text)) notProduct = 1
-  const why = slowed ? 'rate-limited' : failed ? 'link-failed' : elsewhere.size ? `elsewhere:${Array.from(elsewhere).slice(0, 4).join(',')}` : notProduct ? 'amazon-not-product' : 'no-link'
+  const why = slowed ? 'rate-limited' : failed ? `link-failed:${failedAt}` : elsewhere.size ? `elsewhere:${Array.from(elsewhere).slice(0, 4).join(',')}` : notProduct ? 'amazon-not-product' : 'no-link'
   return { asins: [], why, followed }
 }

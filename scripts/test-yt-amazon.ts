@@ -7,7 +7,7 @@
 // short link followed to its ASIN without Amazon's own page ever being
 // fetched; and the page in Labs for the team only.
 import { readFileSync, existsSync } from 'node:fs'
-import { buildCoverage, titleAsins, whyWords, amazonState, listText, topLinks, titleMatcher, titleKey, type YtVideo, type AmzVideo } from '../lib/yt-amazon-match'
+import { buildCoverage, titleAsins, labelAsins, whyWords, whyGroup, amazonState, listText, topLinks, titleMatcher, titleKey, type YtVideo, type AmzVideo } from '../lib/yt-amazon-match'
 import { followToAsin, productsOfVideo } from '../lib/yt-amazon-links'
 
 const fails: string[] = []
@@ -47,7 +47,15 @@ check('an Amazon video whose products are not read yet is counted apart, never l
 check('counts add up', c.counts.youtube === 10 && c.counts.missing + c.counts.both + c.counts.unknown === 10 && c.counts.youtubeRead === 9)
 check('Copy this list gives a line per video with its YouTube link and ASINs', listText(c, 'missing').split('\n')[0] === 'Video a\thttps://www.youtube.com/watch?v=a\tB0AAAAAAAA')
 check('an ASIN in a title is only the B0 form, never a model number', titleAsins('Review B0ABCDEF12 and the XR500PRO12') .join() === 'B0ABCDEF12' && titleAsins('No asin here').length === 0)
-check('every reason has words', ['no-link', 'amazon-not-product', 'link-failed', 'elsewhere:a.com,b.com'].every((w) => whyWords({ readAt: 'x', why: w }).length > 20))
+check('every reason has words', ['no-link', 'amazon-not-product', 'link-failed', 'elsewhere:a.com,b.com', 'r3:no-link', 'r3:link-failed:mvpl.ink:403'].every((w) => whyWords({ readAt: 'x', why: w }).length > 20))
+check('a reason saved with its reader reads the same as before', whyWords({ readAt: 'x', why: 'r3:no-link' }) === whyWords({ readAt: 'x', why: 'no-link' }) && whyWords({ readAt: 'x', why: 'r3:elsewhere:brand.com' }) === whyWords({ readAt: 'x', why: 'elsewhere:brand.com' }))
+check('a dead link says where it was and what it answered', /on mvpl\.ink did not answer when MVP followed it \(it said 403\)/.test(whyWords({ readAt: 'x', why: 'r3:link-failed:mvpl.ink:403' })) && whyGroup({ readAt: 'x', why: 'r3:link-failed:mvpl.ink:403' }) === 'link on mvpl.ink did not answer (403)' && /^Its product link did not answer/.test(whyWords({ readAt: 'x', why: 'link-failed' })))
+check('the reasons are counted, biggest first, gear list included', c.unknownWhy.length > 0 && c.unknownWhy.reduce((n, w) => n + w.videos, 0) === c.counts.unknown && c.unknownWhy.some((w) => w.why === 'only gear list links') && c.unknownWhy.every((w, i, a) => !i || a[i - 1].videos >= w.videos), c.unknownWhy)
+// "Product ASIN: B0..." in Seb's newer descriptions: the product, with no request.
+const sebNew = "Check Today's Price and Availability on AMAZON here: https://www.mvpl.ink/xcj8sf8\n(affiliate link)\n----------\nIn this video we test it.\nProduct ASIN: B0HKJZCSQV\n----------\nProduct Description: Great."
+check('an ASIN named in a description is read: "Product ASIN: B0...", "ASIN B0...", "asin#b0..."; a model number is not', labelAsins(sebNew).join() === 'B0HKJZCSQV' && labelAsins('ASIN B0ABCDEFGH and asin#b0zzzzzzzz').join() === 'B0ABCDEFGH,B0ZZZZZZZZ' && labelAsins('Model XR500PRO12, no label B0NOTLABEL').length === 0)
+const cl = buildCoverage(Array.from({ length: 20 }, (_, i) => yt(`L${i}`, i)), Array.from({ length: 20 }, (_, i) => ({ videoId: `L${i}`, asin: 'B0SAMEONE0', via: 'asin-label' })), [], [])
+check('a product named by its ASIN line is never taken for a gear list, however many videos name it', cl.common.length === 0 && cl.counts.missing === 20)
 
 // SEB'S DESCRIPTIONS (2026-11-11, his first run: 3,248 of 3,539 not placed).
 const sebDesc = `CHECK OUT TODAY'S PRICE: \u25ba\u25ba\u25ba     \n\nhttps://geni.us/pbKL5\n(Amazon link)\n-\nDISCLAIMER: This video and description may contain affiliate links.\n-\nRESOURCES:\n\u27a1\ufe0f Start Reviewing Products on Amazon: https://tinyurl.com/224mdynm\n\u27a1\ufe0f Get Unlimited Copyright Free Music: https://tinyurl.com/mrxyneeb\n\nWHAT WE SHOOT REVIEWS WITH:\n\u27a1\ufe0f Our Favorite Phone: https://geni.us/oH9Zog (Amazon)\n\u27a1\ufe0f Our Favorite Lights: https://geni.us/IWcXF (Amazon)\n#windshield #carcare`
@@ -93,12 +101,18 @@ check('a video with no readable link is paired by its title, takes the Amazon vi
     const known = new Map<string, string | null>([['https://geni.us/pbKL5', 'B0CWS46T3D']])
     const viaKnown = await productsOfVideo('Windshield Sun Shade Umbrella', sebDesc, known)
     check('a link already resolved (in any earlier video) is taken from memory, with no request at all', viaKnown.asins.map((a) => a.asin).join() === 'B0CWS46T3D' && viaKnown.followed === 0 && calls.length === 0)
+    const labelled = await productsOfVideo('Some review', sebNew)
+    check('a description that names its ASIN gives it with no request, and the link is not followed', labelled.asins.map((a) => `${a.asin}:${a.via}`).join() === 'B0HKJZCSQV:asin-label' && labelled.followed === 0 && calls.length === 0, labelled)
+    globalThis.fetch = (async () => new Response('no', { status: 403 })) as typeof fetch
+    const dead = await productsOfVideo('Short', '\ud83d\uded2 Grab it on Amazon \ud83d\udc49 https://93.184.216.34/ctjbac7')
+    check('a link that refuses says its host and answer, so the page can count it', dead.why === 'link-failed:93.184.216.34:403', dead)
   } finally { globalThis.fetch = realFetch }
 
   const R = read('app/api/labs/yt-amazon/route.ts')
   check('the route is for the MVP team only, and says when migration 466 is missing', /normalizeTier\(intg\?\.tier\) !== 'admin'/.test(R) && /migration 466/.test(R))
   check('links are read a batch at a time inside a time limit, each saved as it is read', /Date\.now\(\) - started > 70_000/.test(R) && /\.limit\(60\)/.test(R) && /Array\.from\(\{ length: 3 \}, worker\)/.test(R) && /const known = new Map<string, string \| null>\(\)/.test(R) && /productsOfVideo\(v\.title \|\| '', v\.description \|\| '', known\)/.test(R))
-  check('videos with no product whose link did not answer, and once those the first reader could not place, are read again', /if \(body\.action === 'unplaced'\)/.test(R) && /\.in\('products_why', \['link-failed', 'rate-limited'\]\)/.test(R) && /\.lt\('products_read_at', READER_2\)/.test(R))
+  check('videos with no product whose link did not answer, and once those an earlier reader could not place, are read again', /if \(body\.action === 'unplaced'\)/.test(R) && /\.not\('products_why', 'like', `\$\{READER\}:%`\)/.test(R) && /\.like\('products_why', `\$\{READER\}:link-failed%`\)/.test(R) && /\.like\('products_why', `\$\{READER\}:rate-limited%`\)/.test(R) && !/READER_2|\.lt\('products_read_at'/.test(R))
+  check('every reason is saved with the reader that wrote it', /products_why: r\.why \? `\$\{READER\}:\$\{r\.why\}` : null/.test(R) && /const READER = 'r\d+'/.test(R))
   const L = read('lib/yt-amazon-links.ts')
   check('the follower checks for Amazon before it fetches, and every hop is checked as public', L.indexOf('AMAZON_HOST.test(host)') < L.indexOf('await fetch(') && L.indexOf('assertPublicHttpUrlResolved(current)') < L.indexOf('await fetch(') && /'User-Agent': RESOLVER_UA/.test(L))
   const M = read('supabase/migrations/466_youtube_video_products.sql')
@@ -107,6 +121,7 @@ check('a video with no readable link is paired by its title, takes the Amazon vi
   const P = read('components/amazon/YouTubeAmazonGaps.tsx')
   check('Check everything reads YouTube, then Amazon, then the links, and each step says what it read', /await readYouTube\(\)\n\s*if \(!stop\.current\) await readAmazon\(\)\n\s*if \(!stop\.current\) await readLinks\(\)/.test(P) && /note\('youtube', true/.test(P) && /note\('amazon', false/.test(P) && /note\('links', !slowed/.test(P) && /if \(retryUnplaced\) await post\('\/api\/labs\/yt-amazon', \{ action: 'unplaced' \}\)/.test(P))
   check('what SCOUT\u2019s Amazon list read got is said: how many videos, or why it stopped', /SCOUT read \$\{num\(st\.saved\)\} videos from your Amazon video list/.test(P) && /SCOUT could not read your Amazon video list: \$\{errWords\}/.test(P) && /this Chrome is signed out of Amazon/.test(P))
+  check('the Could not tell list counts its reasons', /counted: \$\{c\.unknownWhy\.slice\(0, 6\)/.test(P))
   check('a pair found by the same title is marked', /On Amazon\{m\.byTitle \? ' \(same title\)' : ''\}/.test(P))
   check('every link names where it goes', /Watch on YouTube/.test(P) && /see it on Amazon/.test(P) && !/>\s*(Open|Buy now|Click here|Shop now)\s*</.test(P))
   const words = (src: string) => (src.split('\n').filter((l) => !/^\s*(\/\/|\*)/.test(l)).join('\n').match(/'[^'\n]*'|`[^`\n]*`|>[^<>{}\n]+</g) || []).join(' ')
