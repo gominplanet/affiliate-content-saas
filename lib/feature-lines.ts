@@ -73,6 +73,7 @@ export const FEATURE_LINES: Record<string, string> = {
   // Labs (admin)
   '/storefront': 'Your Amazon storefront earnings, synced by SCOUT.',
   '/earnings': 'Amazon earnings by product, and campaigns for products already selling.',
+  '/youtube-amazon': 'Your YouTube videos against your Amazon storefront: which still need an Amazon video.',
   '/brand-radar': 'The brands you have worked with, from your storefront and TikTok.',
   '/tiktok-shop': 'TikTok Shop products added from their link.',
   '/plan-video': 'A joined Creator Connections campaign turned into a filming plan.',

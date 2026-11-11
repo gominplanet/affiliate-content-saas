@@ -103,7 +103,7 @@ export function allProductUrls(description: string, ownSite?: string | null, max
 // a real visitor click. A browser UA ('Mozilla/5.0') made Geniuslink (and other
 // redirectors) log these as CLICKS, inflating the creator's stats. Announcing
 // ourselves as a bot opts us out of click counting on services that filter bots.
-const RESOLVER_UA = 'MVPAffiliateResolverBot/1.0 (+https://www.mvpaffiliate.io/bot; link verification, not a visitor)'
+export const RESOLVER_UA = 'MVPAffiliateResolverBot/1.0 (+https://www.mvpaffiliate.io/bot; link verification, not a visitor)'
 
 /** Follow a short link / redirect to its FINAL destination. Hard 5s timeouts
  *  so a slow host can't stall a generation request. Returns the best-known URL

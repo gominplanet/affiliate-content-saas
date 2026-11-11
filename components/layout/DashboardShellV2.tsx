@@ -821,6 +821,9 @@ export default function DashboardShellV2({
         { href: '/storefront', icon: <BarChart3 size={15} />, label: 'AMZ Storefront', gate: isAdmin },
         // Admin only while in Labs (lib/labs-preview earnings).
         { href: '/earnings', icon: <TrendingUp size={15} />, label: 'Amazon Earnings', gate: isAdmin },
+        // YouTube vs Amazon (Seb, 2026-11-11): every YouTube upload checked
+        // against the Amazon storefront's videos by product. Admin while tested.
+        { href: '/youtube-amazon', icon: <ListChecks size={15} />, label: 'YouTube vs Amazon', gate: isAdmin, badge: 'New' },
         // Brand Radar: storefront + TikTok ingestion into the brands a creator
         // has worked with. Ships dark until a provider token is set.
         { href: '/brand-radar', icon: <Radar size={15} />, label: 'Brand Radar', gate: isAdmin },
