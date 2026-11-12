@@ -122,7 +122,7 @@ export default function YouTubeAmazonGaps() {
           // The page's grid, not Amazon's list (SCOUT did not catch the list
           // request): said as a partial read, never as the list (Seb's run read
           // 91 of 7,992 this way, shown in green).
-          : st.source && /rendered rows/.test(st.source) ? `SCOUT could not catch Amazon's own video list this time, so it read only the ${num(st.saved)} videos the page showed. ${report?.coverage ? `Your saved list of ${num(report.coverage.counts.amazon)} videos is kept and used. ` : ''}Press Read again to try for the whole list${st.scoutVersion && !scoutAtLeast(st.scoutVersion, '1.60.10') ? `; SCOUT 1.60.10 waits longer for it (this Chrome has ${st.scoutVersion}, and Chrome updates SCOUT by itself)` : ''}.`
+          : st.source && /rendered rows/.test(st.source) ? `SCOUT could not catch Amazon's own video list this time, so it read only the ${num(st.saved)} videos the page showed. ${report?.coverage ? `Your saved list of ${num(report.coverage.counts.amazon)} videos is kept and used. ` : ''}What SCOUT saw: ${st.source.replace(/^the page's rendered rows \(/, '').replace(/\)$/, '')}. Press Read again to try for the whole list${st.scoutVersion && !scoutAtLeast(st.scoutVersion, '1.60.11') ? `; SCOUT 1.60.11 asks Amazon for the list itself when it does not see the page ask (this Chrome has ${st.scoutVersion}, and Chrome updates SCOUT by itself)` : ''}.`
           : `SCOUT read ${num(st.saved)} videos from your Amazon video list${st.total ? ` (Amazon says ${num(st.total)})` : ''}${st.stopped ? `: ${st.stopped}` : ''}.`
       }
       // SCOUT 1.60.8 asks Amazon again when the list comes back empty; an

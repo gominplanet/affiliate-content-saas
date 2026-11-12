@@ -5987,6 +5987,47 @@ async function startVideoLibraryJob(userUrl, startAt) {
   return { ok: true, started: true }
 }
 
+// THE CREATOR'S OWN IDS ON THE MANAGE CONTENT PAGE (MAIN world), so SCOUT can
+// ask for the video list itself when it did not see the page ask (1.60.11).
+// net-hook.js goes into the page when the page has loaded, and Amazon often
+// asks for the list before that: on Seb's runs the request was never seen and
+// the read fell back to the page's grid (91, then 52 videos of 7,992). The
+// list request needs the creator's affiliate id and the page's anti-CSRF
+// token; both are read the way storefront-upload.js reads them for uploads.
+function listContextInPage() {
+  const out = { owner: null, csrf: null, via: [] }
+  try {
+    const raw = document.getElementById('pageState') && document.getElementById('pageState').getAttribute('data-page-state')
+    if (raw) {
+      const ps = JSON.parse(raw)
+      const sf = (ps && (ps.defaultStorefront || (Array.isArray(ps.storefronts) ? ps.storefronts[0] : null))) || {}
+      if (sf.rootAffiliateId) { out.owner = sf.rootAffiliateId; out.via.push('pageState') }
+    }
+  } catch (e) {}
+  let html = ''
+  try { html = document.documentElement.innerHTML } catch (e) {}
+  if (!out.owner) {
+    const m = html.match(/"(?:ownerAffiliateId|rootAffiliateId)"\s*:\s*"([^"]+)"/) ||
+      html.match(/&quot;(?:ownerAffiliateId|rootAffiliateId)&quot;\s*:\s*&quot;([^&]+)&quot;/) ||
+      html.match(/\b(influencer-[0-9a-z]{6,})\b/i)
+    if (m) { out.owner = m[1]; out.via.push('page') }
+  }
+  try {
+    out.csrf = (document.querySelector('meta[name="anti-csrftoken-a2z"]') || {}).content ||
+      (document.querySelector('input[name="anti-csrftoken-a2z"]') || {}).value || null
+  } catch (e) {}
+  if (!out.csrf) {
+    const m = html.match(/anti-csrftoken-a2z["'\s:=]+(?:&quot;)?([A-Za-z0-9+/=_-]{20,})/)
+    if (m) out.csrf = m[1]
+  }
+  if (out.csrf) out.via.push('csrf')
+  return out
+}
+
+// The last list request that read the library, kept in this Chrome only, for
+// a run that neither sees the page ask nor finds the ids on the page.
+const VIDEO_LIST_RECIPE_KEY = 'mvpVideoListRecipe'
+
 async function scanCreatorHubVideosBackground(userUrl, startAt, onProgress) {
   const report = typeof onProgress === 'function' ? onProgress : () => {}
   // The creator can supply the exact page. Guessing a URL and harvesting
@@ -6023,7 +6064,49 @@ async function scanCreatorHubVideosBackground(userUrl, startAt, onProgress) {
     const listRecs = (_ccNetRing || []).slice().reverse()
       .filter((x) => x && /\/manage-content\/api\/get-content-list/i.test(String(x.url || '')))
     let apiRec = freshList() || listRecs.find((x) => x.body && /^post$/i.test(String(x.method || ''))) || listRecs[0] || _listNetRec
-    let apiNote = apiRec ? 'captured the list request' : 'never saw the list request'
+    // Where the request came from: seen on the page, or built by SCOUT from the
+    // last one that worked and the ids on the page (1.60.11).
+    let apiFrom = apiRec ? 'captured' : null
+    let builtNote = ''
+    if (!apiRec) {
+      let stored = null
+      try { stored = ((await chrome.storage.local.get(VIDEO_LIST_RECIPE_KEY)) || {})[VIDEO_LIST_RECIPE_KEY] || null } catch (e) { stored = null }
+      let ctx = null
+      try {
+        const got = await chrome.scripting.executeScript({ target: { tabId }, world: 'MAIN', func: listContextInPage })
+        ctx = (got && got[0] && got[0].result) || null
+      } catch (e) { ctx = null }
+      // The page's token from its own most recent Amazon request, else the page.
+      let csrf = null
+      for (const x of (_ccNetRing || []).slice().reverse()) {
+        if (!x || !x.headers || !/amazon\./i.test(String(x.url || ''))) continue
+        for (const k of Object.keys(x.headers)) { if (/^anti-csrftoken-a2z$/i.test(k) && x.headers[k]) { csrf = x.headers[k]; break } }
+        if (csrf) break
+      }
+      csrf = csrf || (ctx && ctx.csrf) || null
+      let storedBody = null
+      try { storedBody = stored && stored.body ? JSON.parse(stored.body) : null } catch (e) { storedBody = null }
+      const owner = (ctx && ctx.owner) || (storedBody && storedBody.ownerAffiliateId) || null
+      if (owner) {
+        // The page's own shape, as Seb's captured one began: pageSize 10,
+        // startIndex 0, ownerAffiliateId, then query filters LAST_UPDATE.
+        const body = storedBody || { pageSize: 10, startIndex: 0, ownerAffiliateId: owner, query: { filters: ['LAST_UPDATE'], sorts: ['LAST_UPDATE'] }, orderingType: 'DECREASING', retrieveMetrics: false, globalizeStatus: 'notApplicable' }
+        body.ownerAffiliateId = owner
+        const headers = {}
+        for (const k of Object.keys((stored && stored.headers) || {})) { if (!/^anti-csrftoken-a2z$/i.test(k)) headers[k] = stored.headers[k] }
+        headers['Content-Type'] = headers['Content-Type'] || headers['content-type'] || 'application/json'
+        if (csrf) headers['anti-csrftoken-a2z'] = csrf
+        let origin = 'https://www.amazon.com'
+        try { origin = new URL(url).origin } catch (e) {}
+        apiRec = { url: (stored && stored.url) || `${origin}/manage-content/api/get-content-list`, method: 'POST', headers, body: JSON.stringify(body) }
+        apiFrom = stored ? 'saved' : 'built'
+      } else {
+        builtNote = `and could not find your creator id on the page to ask for it${ctx && ctx.via && ctx.via.length ? ` (found: ${ctx.via.join(', ')})` : ''}`
+      }
+    }
+    let apiNote = apiRec
+      ? (apiFrom === 'captured' ? 'captured the list request' : `did not see the page ask for the list, so asked for it itself (${apiFrom === 'saved' ? 'from the last request that worked' : 'from the ids on the page'})`)
+      : `never saw the list request${builtNote ? ` ${builtNote}` : ''}`
     if (apiRec) {
       // Batch after batch, pushing each one, until Amazon says the library is
       // finished. Each call returns a bounded set, so nothing is lost to a
@@ -6125,6 +6208,11 @@ async function scanCreatorHubVideosBackground(userUrl, startAt, onProgress) {
       }
 
       if (saved > 0) {
+        // The request that read the library, kept in this Chrome for a run that
+        // does not see the page ask (it never leaves this Chrome).
+        if (apiFrom === 'captured' && apiRec.body) {
+          try { await chrome.storage.local.set({ [VIDEO_LIST_RECIPE_KEY]: { url: apiRec.url, method: apiRec.method || 'POST', headers: apiRec.headers || {}, body: apiRec.body, at: Date.now() } }) } catch (e) {}
+        }
         const short = Number.isFinite(total) && (Number(startAt) || 0) + saved < total
         return {
           ok: true,
@@ -6142,7 +6230,7 @@ async function scanCreatorHubVideosBackground(userUrl, startAt, onProgress) {
             : lastError
               ? `stopped: ${lastError}`
               : short ? `Amazon reports ${total.toLocaleString()} videos and this run reached ${((Number(startAt) || 0) + saved).toLocaleString()}` : 'end',
-          source: `Amazon's own video list${startAt ? `, resumed from ${startAt}` : ''}${variantUsed ? ` (${variantUsed})` : ''}`,
+          source: `Amazon's own video list${startAt ? `, resumed from ${startAt}` : ''}${variantUsed ? ` (${variantUsed})` : ''}${apiFrom && apiFrom !== 'captured' ? `, asked for by SCOUT (${apiFrom === 'saved' ? 'the last request that worked' : 'the ids on the page'})` : ''}`,
           sample,
         }
       }
@@ -6164,7 +6252,10 @@ async function scanCreatorHubVideosBackground(userUrl, startAt, onProgress) {
         }
       }
       apiNote = `list API saved nothing${lastError ? `: ${lastError}` : ''}${total ? `, though Amazon reports ${total} items` : ''}${apiRec.body ? `. The request body: ${String(apiRec.body).slice(0, 500)}` : ''}`
-      return { ok: false, error: 'list-api-empty', probe: apiNote, source: "Amazon's own list API", scoutVersion: (chrome.runtime.getManifest() || {}).version || null }
+      // A request SCOUT built that Amazon did not answer with videos is not the
+      // end: the page's grid is read as before, and the note says both.
+      if (apiFrom === 'captured') return { ok: false, error: 'list-api-empty', probe: apiNote, source: "Amazon's own list API", scoutVersion: (chrome.runtime.getManifest() || {}).version || null }
+      apiNote = `asked for the list itself (${apiFrom}) and it ${apiNote}`
     }
 
     // allFrames, because an Amazon console panel is often an iframe and the main
@@ -6179,8 +6270,8 @@ async function scanCreatorHubVideosBackground(userUrl, startAt, onProgress) {
     })
     const frames = (results || []).map((x) => x && x.result).filter(Boolean)
     let r = frames.slice().sort((a, b) => ((b.asins || []).length - (a.asins || []).length))[0] || null
-    if (!r || !r.ok) return { ok: false, error: 'no-result' }
-    if (r.signedOut) return { ok: false, error: 'signed-out' }
+    if (!r || !r.ok) return { ok: false, error: 'no-result', probe: apiNote }
+    if (r.signedOut) return { ok: false, error: 'signed-out', probe: apiNote }
 
     // Merge across however many page loads it takes. Everything found so far is
     // kept even if a later page fails, because a partial answer that says it is

@@ -31,7 +31,7 @@ const check = (name, ok, detail) => { if (!ok) fails.push(`${name}${detail !== u
 const LIB = 1000
 const MANAGE = 'https://www.amazon.com/manage-content?ref=ive_cp'
 
-function world({ breakOn = [], kind = 'reload', flushed = false }) {
+function world({ breakOn = [], kind = 'reload', flushed = false, unseen = false, pageIds = null, stored = null }) {
   let nextId = 7
   const tabs = new Map()
   const ring = []
@@ -39,9 +39,14 @@ function world({ breakOn = [], kind = 'reload', flushed = false }) {
   const updates = []
   const created = []
   let calls = 0
-  const capture = (tag) => ring.push({ url: 'https://www.amazon.com/manage-content/api/get-content-list', method: 'POST', headers: { tag }, body: JSON.stringify({ pageSize: 10, startIndex: 0 }) })
+  const store = stored ? { mvpVideoListRecipe: stored } : {}
+  const stores = []
+  // unseen: the page asked before SCOUT's hook was in, so nothing is captured
+  // (Seb's runs on 1.60.9 and 1.60.10).
+  const capture = (tag) => unseen ? 0 : ring.push({ url: 'https://www.amazon.com/manage-content/api/get-content-list', method: 'POST', headers: { tag }, body: JSON.stringify({ pageSize: 10, startIndex: 0 }) })
   const chrome = {
     runtime: { getManifest: () => ({ version: 'test' }) },
+    storage: { local: { get: async (k) => ({ [k]: store[k] }), set: async (o) => { Object.assign(store, o); stores.push(o) } } },
     tabs: {
       create: async ({ url }) => { const id = nextId++; tabs.set(id, { id, url, discarded: false }); created.push(id); capture(`load-${id}`); return { id } },
       get: async (id) => { const t = tabs.get(id); if (!t) throw new Error(`No tab with id: ${id}.`); return { ...t } },
@@ -49,7 +54,8 @@ function world({ breakOn = [], kind = 'reload', flushed = false }) {
       remove: async (id) => { tabs.delete(id) },
     },
     scripting: {
-      executeScript: async ({ target, args }) => {
+      executeScript: async ({ target, args, func }) => {
+        if (func && func.name === 'listContextInPage') return [{ result: pageIds || { owner: null, csrf: null, via: [] } }]
         calls++
         const rec = args[0]
         if (breakOn.includes(calls)) {
@@ -58,7 +64,9 @@ function world({ breakOn = [], kind = 'reload', flushed = false }) {
           capture(`reload-${target.tabId}`)
           throw new Error('Frame with ID 0 was removed.')
         }
-        asked.push({ tabId: target.tabId, startAt: rec.startAt, tag: rec.headers && rec.headers.tag })
+        let owner = null
+        try { owner = JSON.parse(rec.body).ownerAffiliateId || null } catch (e) {}
+        asked.push({ tabId: target.tabId, startAt: rec.startAt, tag: rec.headers && rec.headers.tag, owner, csrf: rec.headers && rec.headers['anti-csrftoken-a2z'], url: rec.url })
         const n = Math.max(0, Math.min(rec.maxRows, LIB - rec.startAt))
         const videos = Array.from({ length: n }, (_, k) => ({ aci: `aci-${rec.startAt + k}` }))
         return [{ result: { videos, total: LIB, nextOffset: rec.startAt + n, done: rec.startAt + n >= LIB, variant: 'metrics, 50 a page', pages: Math.ceil(n / 50) } }]
@@ -67,7 +75,7 @@ function world({ breakOn = [], kind = 'reload', flushed = false }) {
   }
   const saved = []
   const push = async (videos) => { saved.push(...videos.map((v) => v.aci)); return { ok: true } }
-  const make = new Function('chrome', 'waitForTabLoad', '_sleep', '_ccNetRing', 'pushVideoLibraryToMvp', 'harvestCreatorHubVideosInPage', 'fetchContentListInPage', 'describeProbe', '_listNetRec',
+  const make = new Function('chrome', 'waitForTabLoad', '_sleep', '_ccNetRing', 'pushVideoLibraryToMvp', 'harvestCreatorHubVideosInPage', 'fetchContentListInPage', 'describeProbe', '_listNetRec', 'listContextInPage', 'VIDEO_LIST_RECIPE_KEY',
     `${scanSrc}\nreturn scanCreatorHubVideosBackground`)
   // Seb's run (1.60.10): the page's list request pushed out of the twelve-slot
   // ring by everything else it asked for, but kept in its own slot.
@@ -77,8 +85,10 @@ function world({ breakOn = [], kind = 'reload', flushed = false }) {
     const realCreate = chrome.tabs.create
     chrome.tabs.create = async (o) => { const r = await realCreate(o); ring.length = 0; for (let i = 0; i < 12; i++) ring.push({ url: `https://www.amazon.com/other/${i}`, method: 'GET' }); return r }
   }
-  const scan = make(chrome, async () => {}, async () => {}, ring, push, () => {}, () => {}, () => '', kept)
-  return { scan, tabs, asked, updates, created, saved }
+  // A token from the page's own other Amazon requests, as the page sends it.
+  if (unseen) ring.push({ url: 'https://www.amazon.com/manage-content/api/other', method: 'POST', headers: { 'anti-csrftoken-a2z': 'ring-token' } })
+  const scan = make(chrome, async () => {}, async () => {}, ring, push, () => {}, () => {}, () => '', kept, function listContextInPage() {}, 'mvpVideoListRecipe')
+  return { scan, tabs, asked, updates, created, saved, stores }
 }
 
 // A. The page reloads under the second batch (Seb's "Frame with ID 0 was removed").
@@ -114,6 +124,35 @@ function world({ breakOn = [], kind = 'reload', flushed = false }) {
   const w = world({ flushed: true })
   const r = await w.scan(MANAGE, 0, () => {})
   check('a list request pushed out of the ring is still used, from its own slot, and the whole library is read', r.ok && r.count === LIB && w.asked[0] && w.asked[0].tag === 'kept' && /own video list/.test(String(r.source)), { r, asked: w.asked })
+}
+
+// F. The page asked before SCOUT's hook was in (Seb's 91 and 52 videos):
+// SCOUT asks for the list itself, with the ids on the page.
+{
+  const w = world({ unseen: true, pageIds: { owner: 'influencer-abc767279e2', csrf: 'page-token', via: ['page', 'csrf'] } })
+  const r = await w.scan(MANAGE, 0, () => {})
+  check('when the page was not seen asking, SCOUT asks for the whole list itself with the creator id from the page and the page\u2019s own token', r.ok && r.count === LIB && w.asked[0] && w.asked[0].owner === 'influencer-abc767279e2' && w.asked[0].csrf === 'ring-token' && /\/manage-content\/api\/get-content-list$/.test(w.asked[0].url) && /asked for by SCOUT \(the ids on the page\)/.test(String(r.source)), { r, asked: w.asked[0] })
+  check('a list SCOUT asked for itself is not kept as the request to reuse', w.stores.length === 0)
+}
+// G. No ids on the page: the last request that worked, kept in this Chrome.
+{
+  const stored = { url: 'https://www.amazon.com/manage-content/api/get-content-list', method: 'POST', headers: { 'anti-csrftoken-a2z': 'old-token', 'x-keep': '1' }, body: JSON.stringify({ pageSize: 10, startIndex: 0, ownerAffiliateId: 'influencer-stored01' }) }
+  const w = world({ unseen: true, stored })
+  const r = await w.scan(MANAGE, 0, () => {})
+  check('with no ids on the page, the last request that worked is asked again, with today\u2019s token', r.ok && r.count === LIB && w.asked[0].owner === 'influencer-stored01' && w.asked[0].csrf === 'ring-token' && /the last request that worked/.test(String(r.source)), { r, asked: w.asked[0] })
+}
+// H. A list request seen on the page that reads the library is kept for next time.
+{
+  const w = world({})
+  const r = await w.scan(MANAGE, 0, () => {})
+  const k = w.stores.find((o) => o.mvpVideoListRecipe)
+  check('a list request seen on the page that read the library is kept, in this Chrome, for a run that does not see it', r.ok && !!k && /get-content-list/.test(k.mvpVideoListRecipe.url) && !!k.mvpVideoListRecipe.body)
+}
+// I. Nothing seen, no ids, nothing kept: said, never a silent grid read.
+{
+  const w = world({ unseen: true })
+  const r = await w.scan(MANAGE, 0, () => {})
+  check('with nothing to ask with, SCOUT asks Amazon for nothing and says it could not find the creator id', w.asked.every((a) => !a.url) && /could not find your creator id/.test(JSON.stringify(r)), r)
 }
 
 if (fails.length) { console.error(`❌ amazon-list-tab-back: ${fails.length} failure(s)\n${fails.map((f) => `   • ${f}`).join('\n')}`); process.exit(1) }
