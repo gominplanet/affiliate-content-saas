@@ -649,7 +649,29 @@ app.post('/clip', async (req, res) => {
 // Captions, the hook card and the silence cuts live in render-filters.js so
 // they can be tested without ffmpeg (test-render-filters.js).
 
-function ffmpegRender(input, startSec, dur, vf, outPath, af, timeoutMs) {
+// THE SOUND TRACK FFMPEG CAN PLAY (2026-11-12, Lisa's IMG_9223.mov: "Could
+// not find tag for codec none in stream #2"). An iPhone 16 records its sound
+// twice: AAC, and Apple's spatial audio (APAC), which ffmpeg cannot read and
+// lists as codec "none", plus metadata tracks. Mapping every audio track, or
+// letting ffmpeg pick (it picks the one with the most channels: the APAC one),
+// failed the CTA burn and the clips. Every render now takes the first audio
+// track with a codec ffmpeg knows, or none when there is none.
+//   map   '0:<index>' for -map and filter labels, or null (no playable sound)
+//   codec its codec name, so AAC can be copied and anything else re-encoded
+function playableAudio(file) {
+  return new Promise((resolve) => {
+    execFile('ffprobe', ['-v', 'error', '-select_streams', 'a', '-show_entries', 'stream=index,codec_name', '-of', 'json', file], { timeout: 30_000, killSignal: 'SIGKILL' }, (err, stdout) => {
+      // Could not look: the first audio track, if there is one, as before.
+      if (err) return resolve({ map: '0:a:0?', codec: null })
+      let streams = []
+      try { streams = (JSON.parse(String(stdout)).streams) || [] } catch (e) { streams = [] }
+      const ok = streams.find((x) => x && x.codec_name && !/^(none|unknown)$/i.test(String(x.codec_name)))
+      resolve(ok ? { map: `0:${ok.index}`, codec: String(ok.codec_name) } : { map: null, codec: null })
+    })
+  })
+}
+
+function ffmpegRender(input, startSec, dur, vf, outPath, af, timeoutMs, audio = { map: '0:a:0?' }) {
   return new Promise((resolve, reject) => {
     execFile('ffmpeg', [
       '-hide_banner', '-loglevel', 'error', '-threads', '1',
@@ -659,9 +681,11 @@ function ffmpegRender(input, startSec, dur, vf, outPath, af, timeoutMs) {
       // window is limited on the INPUT side, or ffmpeg reads to the source's end.
       '-ss', String(startSec), ...(af ? ['-t', String(dur), '-i', input] : ['-i', input, '-t', String(dur)]),
       '-vf', vf,
+      // The picture and the one sound track ffmpeg can play (playableAudio).
+      '-map', '0:v:0', ...(audio && audio.map ? ['-map', audio.map] : ['-an']),
       // Cut silences keep every frame they select at its own time; without this
       // the encoder resamples to 25 fps and drops frames (tested: 102 of 122).
-      ...(af ? ['-af', af, '-fps_mode', 'passthrough'] : []),
+      ...(af && audio && audio.map ? ['-af', af] : []), ...(af ? ['-fps_mode', 'passthrough'] : []),
       // crf 20 + the "faster" preset give Instagram a sharper, higher-bitrate
       // source to re-encode from, which is where the visible quality lives once
       // the platform compresses again. Both cost some CPU on a short clip, not RAM.
@@ -860,7 +884,7 @@ function ffmpegRenderComplex(input, startSec, dur, filterComplex, audioMap, outP
       '-hide_banner', '-loglevel', 'error', '-threads', '1',
       '-ss', String(startSec), ...(inputLimited ? ['-t', String(dur), '-i', input] : ['-i', input, '-t', String(dur)]),
       '-filter_complex', filterComplex,
-      '-map', '[vout]', '-map', audioMap,
+      '-map', '[vout]', ...(audioMap ? ['-map', audioMap] : ['-an']),
       ...(inputLimited ? ['-fps_mode', 'passthrough'] : []),
       '-c:v', 'libx264', '-preset', 'faster', '-crf', '20', '-pix_fmt', 'yuv420p',
       '-x264-params', 'bframes=0:ref=1:rc-lookahead=10:sync-lookahead=0',
@@ -932,6 +956,7 @@ async function renderShortJob(body, opts) {
       await downloadToFile(url, srcTmp)
     }
     if (!fs.existsSync(srcTmp)) throw new Error('source download produced no file')
+    const audio = await playableAudio(srcTmp)
 
     const withCaptions = words.length > 0
     // The hook card opens the clip whether or not captions are on.
@@ -954,15 +979,16 @@ async function renderShortJob(body, opts) {
     if (reframeMode === 'split') {
       // Split-screen path — a -filter_complex graph (vstack of the two halves),
       // optionally burning captions. Audio passes through untouched.
+      const aIn = audio.map && !/\?$/.test(audio.map) ? `[${audio.map}]` : '[0:a]'
       const graph = trim
-        ? `[0:v]${trim.v}[vt];${reframeChain('[vt]', 'split', W, H, withAss ? assTmp : null, cropX)};[0:a]${trim.a}[aout]`
+        ? `[0:v]${trim.v}[vt];${reframeChain('[vt]', 'split', W, H, withAss ? assTmp : null, cropX)}${audio.map ? `;${aIn}${trim.a}[aout]` : ''}`
         : reframeChain('[0:v]', 'split', W, H, withAss ? assTmp : null, cropX)
-      await ffmpegRenderComplex(srcTmp, renderStart, dur, graph, trim ? '[aout]' : '0:a?', outTmp, !!trim, o.timeoutMs)
+      await ffmpegRenderComplex(srcTmp, renderStart, dur, graph, audio.map ? (trim ? '[aout]' : audio.map) : null, outTmp, !!trim, o.timeoutMs)
     } else {
       // Default path — the original simple -vf center-crop (unchanged, low-risk).
       const reframe = `scale=${W}:${H}:force_original_aspect_ratio=increase,crop=${W}:${H}${cropAt(cropX)}`
       const vf = `${trim ? `${trim.v},` : ''}${reframe}${withAss ? `,ass=${assTmp}` : ''}`
-      await ffmpegRender(srcTmp, renderStart, dur, vf, outTmp, trim ? trim.a : null, o.timeoutMs)
+      await ffmpegRender(srcTmp, renderStart, dur, vf, outTmp, trim ? trim.a : null, o.timeoutMs, audio)
     }
     if (!fs.existsSync(outTmp)) throw new Error('render produced no file')
     const key = `${userId || 'ingest'}/short-${Date.now()}.mp4`
@@ -1143,6 +1169,11 @@ app.post('/render-cta', async (req, res) => {
     await downloadToFile(url, srcTmp)
     if (!fs.existsSync(srcTmp)) throw new Error('source download produced no file')
 
+    // The one sound track ffmpeg can play: AAC is copied, anything else made AAC.
+    const audio = await playableAudio(srcTmp)
+    const audioArgs = audio.map
+      ? ['-map', audio.map, ...(audio.codec === 'aac' || audio.codec === null ? ['-c:a', 'copy'] : ['-c:a', 'aac', '-b:a', '192k'])]
+      : ['-an']
     if (sticker) {
       // Cool designed CTA box (PNG) overlaid on the video — the same gallery
       // Clip Factory burns, sized + placed + windowed. Re-encode to composite.
@@ -1161,10 +1192,10 @@ app.post('/render-cta', async (req, res) => {
       await new Promise((resolve, reject) => {
         execFile('ffmpeg', [
           '-hide_banner', '-loglevel', 'error', '-threads', '1',
-          '-i', srcTmp, '-i', pngTmp, '-filter_complex', fc, '-map', '[vout]', '-map', '0:a?',
+          '-i', srcTmp, '-i', pngTmp, '-filter_complex', fc, '-map', '[vout]', ...audioArgs,
           '-c:v', 'libx264', '-preset', 'faster', '-crf', '20', '-pix_fmt', 'yuv420p',
           '-x264-params', 'bframes=0:ref=1:rc-lookahead=10:sync-lookahead=0',
-          '-c:a', 'copy', '-movflags', '+faststart', '-y', outTmp,
+          '-movflags', '+faststart', '-y', outTmp,
         ], { maxBuffer: 1024 * 1024 * 64, timeout: 540_000, killSignal: 'SIGKILL' }, (err, _so, se) => {
           if (err) reject(new Error('ffmpeg: ' + (((se && se.trim()) || err.message || 'failed')).slice(0, 400)))
           else resolve()
@@ -1179,9 +1210,10 @@ app.post('/render-cta', async (req, res) => {
         execFile('ffmpeg', [
           '-hide_banner', '-loglevel', 'error', '-threads', '1',
           '-i', srcTmp, '-vf', reel ? `${REEL_VF},ass=${assTmp}` : `ass=${assTmp}`,
+          '-map', '0:v:0', ...audioArgs,
           '-c:v', 'libx264', '-preset', 'faster', '-crf', '20', '-pix_fmt', 'yuv420p',
           '-x264-params', 'bframes=0:ref=1:rc-lookahead=10:sync-lookahead=0',
-          '-c:a', 'copy', '-movflags', '+faststart', '-y', outTmp,
+          '-movflags', '+faststart', '-y', outTmp,
         ], { maxBuffer: 1024 * 1024 * 64, timeout: 540_000, killSignal: 'SIGKILL' }, (err, _so, se) => {
           if (err) reject(new Error('ffmpeg: ' + (((se && se.trim()) || err.message || 'failed')).slice(0, 400)))
           else resolve()

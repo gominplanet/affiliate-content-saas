@@ -644,6 +644,16 @@ export default function DropBoard() {
   }
 
   // ── what Launch would do, and what stops it ────────────────────────────────
+  // Try again on a video Liftoff could not send (the Liftoff board's own retry).
+  const retryLiftoff = async (id: string) => {
+    try {
+      const r = await fetch(`/api/launch/items/${id}/retry`, { method: 'POST', signal: AbortSignal.timeout(30_000) })
+      const j = await r.json().catch(() => ({})) as { error?: string }
+      if (!r.ok) { toast.error(j.error || 'MVP could not start it again. Try once more in a minute.'); return }
+      toast.success('Started again. Liftoff works on it in the background.')
+      await load()
+    } catch { toast.error('MVP did not answer. Try once more in a minute.') }
+  }
   const liOf = (v: Vid): Item | null => (v.launchItemId && draftBatch?.items.find((i) => i.id === v.launchItemId)) || null
   const sched = useMemo(() => {
     const b = draftBatch
@@ -933,7 +943,13 @@ export default function DropBoard() {
                         </p>
                       </div>
                     ) : li?.state === 'blocked' && li.reason ? (
-                      <p className="text-[11.5px] text-red-700 dark:text-red-300">{li.reason}</p>
+                      // A WAY BACK FROM HERE (Lisa, 2026-11-12: three videos stuck
+                      // on "Cannot go" with no button on Drop; Try again lived only
+                      // on the Liftoff board). The same retry, where she saw it.
+                      <p className="text-[11.5px] text-red-700 dark:text-red-300">
+                        {li.reason}{' '}
+                        <button type="button" onClick={() => void retryLiftoff(li.id)} className="ml-1 inline-flex items-center gap-1 rounded-md border px-2 py-0.5 font-semibold" style={{ borderColor: 'currentColor' }}><RotateCcw size={11} /> Try again</button>
+                      </p>
                     ) : (
                       <p className="text-[11.5px] text-emerald-700 dark:text-emerald-300">Uploaded to MVP</p>
                     )}
