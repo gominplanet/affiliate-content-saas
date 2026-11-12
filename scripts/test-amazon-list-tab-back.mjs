@@ -155,5 +155,31 @@ function world({ breakOn = [], kind = 'reload', flushed = false, unseen = false,
   check('with nothing to ask with, SCOUT asks Amazon for nothing and says it could not find the creator id', w.asked.every((a) => !a.url) && /could not find your creator id/.test(JSON.stringify(r)), r)
 }
 
+// J. A dropped connection to MVP is waited out (1.60.12; Seb's read stopped at
+// 6,800 of 7,963 on "could not reach MVP").
+{
+  const pushSrc = fnSource('pushVideoLibraryToMvp')
+  const waitsSrc = /const PUSH_WAITS_MS = \[[^\]]+\]/.exec(src)[0]
+  const realFetch = globalThis.fetch
+  const realTimeout = globalThis.setTimeout
+  const waited = []
+  globalThis.setTimeout = (f, ms) => { waited.push(ms); return realTimeout(f, 0) }
+  try {
+    let n = 0
+    globalThis.fetch = async () => { n++; if (n <= 4) throw new TypeError('Failed to fetch'); return { ok: true, status: 200, json: async () => ({ savedVideos: 400 }) } }
+    const push = new Function(`${waitsSrc}\n${pushSrc}\nreturn pushVideoLibraryToMvp`)()
+    const r = await push([{ aci: 'x' }], [], [])
+    check(`a dropped connection to MVP is waited out and the batch sent again (${n} tries, waits ${waited.join(',')})`, r.ok === true && r.savedVideos === 400 && waited.join(',') === '5000,15000')
+    waited.length = 0
+    globalThis.fetch = async () => { throw new TypeError('Failed to fetch') }
+    const gone = await push([{ aci: 'x' }], [], [])
+    check('one that stays down is said, after about two minutes of trying', gone.ok === false && /could not reach MVP, after trying for two minutes/.test(gone.error) && waited.join(',') === '5000,15000,30000,60000', gone)
+    waited.length = 0
+    globalThis.fetch = async () => ({ ok: false, status: 401, json: async () => ({ error: 'Sign in to MVP' }) })
+    const out = await push([{ aci: 'x' }], [], [])
+    check('a refusal (signed out) is said at once, never waited on', out.ok === false && out.error === 'Sign in to MVP' && waited.length === 0, out)
+  } finally { globalThis.fetch = realFetch; globalThis.setTimeout = realTimeout }
+}
+
 if (fails.length) { console.error(`❌ amazon-list-tab-back: ${fails.length} failure(s)\n${fails.map((f) => `   • ${f}`).join('\n')}`); process.exit(1) }
 console.log('✅ amazon-list-tab-back: the Amazon video list reads to the end when its tab reloads, closes or is thrown away, and says so when it keeps going')

@@ -21,6 +21,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Loader2, ExternalLink, Copy, Check, AlertTriangle, RefreshCw, Youtube, ShoppingBag, HelpCircle, CheckCircle2, Search, Square, ListChecks } from 'lucide-react'
 import { toast } from 'sonner'
 import { TealHeader } from '@/components/layout/teal-ui'
+import { isPassingTrouble, PASSING_WAITS_MS } from '@/lib/upstream-words'
 import { startCreatorHubVideosScan, getVideoScanStatus, getScoutStatus } from '@/lib/extension-frame'
 import { scoutAtLeast } from '@/lib/scout-version'
 import { readAllVideoProducts, readVideoProductsViaScout, type ProductReadProgress } from '@/lib/amazon-video-products-client'
@@ -39,11 +40,23 @@ const day = (s: string | null) => (s ? new Date(s).toLocaleDateString(undefined,
 const num = (n: number | null) => (n == null ? '' : n.toLocaleString())
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
+// A dropped connection or a gateway that did not answer is tried again after
+// a wait (lib/upstream-words), not the end of a run: Seb's run of 2026-11-12
+// stopped at "Failed to fetch" while MVP itself was fine a minute later.
 async function post(url: string, body: Record<string, unknown>, ms = 120_000): Promise<Record<string, unknown>> {
-  const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(ms) })
-  const j = await r.json().catch(() => ({}))
-  if (!r.ok) throw new Error(typeof j.error === 'string' ? j.error : `MVP answered ${r.status}`)
-  return j
+  for (let tryN = 0; ; tryN++) {
+    let status: number | null = null
+    let words = ''
+    try {
+      const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(ms) })
+      const j = await r.json().catch(() => ({}))
+      if (r.ok) return j
+      status = r.status
+      words = typeof j.error === 'string' ? j.error : `MVP answered ${r.status}`
+    } catch (e) { words = e instanceof Error ? e.message : 'MVP did not answer' }
+    if (tryN >= PASSING_WAITS_MS.length || !isPassingTrouble(status, words)) throw new Error(words)
+    await sleep(PASSING_WAITS_MS[tryN])
+  }
 }
 
 export default function YouTubeAmazonGaps() {
@@ -100,7 +113,12 @@ export default function YouTubeAmazonGaps() {
       // stayed "read Sep 30" and nothing on the page said why).
       let listWords = ''
       let listOk = false
-      const s = await startCreatorHubVideosScan()
+      // CARRY ON WHERE THE LAST READ STOPPED: a read that ended part way (a
+      // dropped connection to MVP at 6,800 of 7,963) starts from there, not
+      // from video one again.
+      const prev = await getVideoScanStatus().catch(() => null)
+      const resumeAt = prev && !prev.running && prev.offset > 0 && prev.total && prev.offset < prev.total && /^stopped: /.test(String(prev.stopped || '')) ? prev.offset : 0
+      const s = await startCreatorHubVideosScan(undefined, resumeAt || undefined)
       if (!s.ok) {
         listWords = `Your Amazon video list was not read again: ${s.error === 'not-installed' ? 'SCOUT is not installed in this Chrome' : s.error === 'needs-update' ? 'SCOUT needs updating' : s.error || 'SCOUT did not start'}.`
       } else {

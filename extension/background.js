@@ -5219,35 +5219,52 @@ function fetchContentListInPage(rec) {
 // videos, far more than a scripting result can carry back, so each batch is
 // posted from the page as it is read rather than accumulated and returned.
 // Both origins are tried because the creator may be signed in on either.
+// A DROPPED CONNECTION IS WAITED OUT (1.60.12). Seb's read of 7,963 videos
+// stopped at 6,800 on "could not reach MVP": one moment with no connection,
+// and the whole read ended. Each batch is now sent again after 5, 15, 30 and
+// 60 seconds when MVP could not be reached or was busy (502, 503, 504), and
+// each try has its own time limit so a hung connection is not a hung read.
+const PUSH_WAITS_MS = [5000, 15000, 30000, 60000]
+
 async function pushVideoLibraryToMvp(videos, products, aciDone) {
   const origins = ['https://mvpaffiliate.io', 'https://www.mvpaffiliate.io']
-  for (const origin of origins) {
-    try {
-      const res = await fetch(`${origin}/api/amazon-videos/ingest`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        redirect: 'follow',
-        body: JSON.stringify({
-          videos: videos || [],
-          products: products || [],
-          aciDone: aciDone || [],
-        }),
-      })
-      const body = await res.json().catch(() => null)
-      if (res.ok) {
-        return {
-          ok: true,
-          savedVideos: (body && body.savedVideos) || 0,
-          savedProducts: (body && body.savedProducts) || 0,
+  let last = 'could not reach MVP'
+  for (let tryN = 0; tryN <= PUSH_WAITS_MS.length; tryN++) {
+    if (tryN > 0) await new Promise((r) => setTimeout(r, PUSH_WAITS_MS[tryN - 1]))
+    let busy = false
+    for (const origin of origins) {
+      try {
+        const res = await fetch(`${origin}/api/amazon-videos/ingest`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          redirect: 'follow',
+          signal: AbortSignal.timeout(60000),
+          body: JSON.stringify({
+            videos: videos || [],
+            products: products || [],
+            aciDone: aciDone || [],
+          }),
+        })
+        const body = await res.json().catch(() => null)
+        if (res.ok) {
+          return {
+            ok: true,
+            savedVideos: (body && body.savedVideos) || 0,
+            savedProducts: (body && body.savedProducts) || 0,
+          }
         }
+        // Busy is waited out; any other answer (signed out, a refusal) is said.
+        if ([429, 502, 503, 504].includes(res.status)) { busy = true; last = `MVP was busy (HTTP ${res.status})`; break }
+        return { ok: false, error: (body && body.error) || `HTTP ${res.status}` }
+      } catch (e) {
+        // Wrong origin for this session, or the network blinked. Try the other one.
+        last = 'could not reach MVP'
       }
-      return { ok: false, error: (body && body.error) || `HTTP ${res.status}` }
-    } catch (e) {
-      // Wrong origin for this session, or the network blinked. Try the other one.
     }
+    if (!busy && last !== 'could not reach MVP') break
   }
-  return { ok: false, error: 'could not reach MVP' }
+  return { ok: false, error: `${last}, after trying for two minutes` }
 }
 
 // ── Which product does each video sell ──────────────────────────────────────
