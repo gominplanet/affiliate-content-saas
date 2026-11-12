@@ -174,12 +174,10 @@ export default function YouTubeAmazonGaps() {
       : gRead ? ` ${gRead.toLocaleString()} geni.us links read from your Geniuslink account.` : ''
     try {
       if (retryUnplaced) await post('/api/labs/yt-amazon', { action: 'unplaced' })
-      // Rounds while links are still being asked to wait and each round gets
-      // further (geni.us allows ten a minute without the Geniuslink account);
-      // three rounds with no progress end it, and the note says what is left.
-      let lastSlowed = Infinity
-      let stuck = 0
-      for (let round = 0; round < 300 && !stop.current; round++) {
+      // Two more rounds for links asked to wait, then the rest is handed to the
+      // background reader (app/api/cron/yt-amazon-links), which reads ten a
+      // minute, the pace geni.us allows, with this page open or not.
+      for (let round = 0; round < 3 && !stop.current; round++) {
         slowed = 0
         for (let i = 0; i < 400 && !stop.current; i++) {
           const j = await post('/api/labs/yt-amazon', { action: 'read' })
@@ -194,14 +192,11 @@ export default function YouTubeAmazonGaps() {
           setLine(`Reading the product link at the top of your YouTube descriptions: ${read.toLocaleString()} videos read, ${found.toLocaleString()} with a product${knownN ? ` (${knownN.toLocaleString()} already known to MVP)` : ''}, ${left.toLocaleString()} to go.${geniusWords()}`)
           if (!left || !Number(j.read)) break
         }
-        if (!slowed || stop.current) break
-        stuck = slowed >= lastSlowed ? stuck + 1 : 0
-        lastSlowed = slowed
-        if (stuck >= 3) break
+        if (!slowed || round === 2 || stop.current) break
         for (let w = 60; w > 0 && !stop.current; w -= 5) { setLine(`${slowed.toLocaleString()} links were asked to wait by the link service. Trying them again in ${w} seconds.${geniusWords()}`); await sleep(5000) }
         await post('/api/labs/yt-amazon', { action: 'unplaced' })
       }
-      note('links', !slowed && gState !== 'error', `${read.toLocaleString()} YouTube videos' links read this run, ${found.toLocaleString()} leading to a product${slowed ? `; ${slowed.toLocaleString()} links were still asked to wait, so press Find the products again later` : ''}${stop.current ? '. Stopped; press again to carry on' : ''}.${geniusWords()}`)
+      note('links', !slowed && gState !== 'error', `${read.toLocaleString()} YouTube videos' links read this run, ${found.toLocaleString()} leading to a product${slowed ? `; ${slowed.toLocaleString()} links are waiting on the link service, and MVP reads them in the background at ten a minute (about ${waitWords(slowed)}), with this page open or not` : ''}${stop.current ? '. Stopped; press again to carry on' : ''}.${geniusWords()}`)
       return true
     } catch (e) {
       note('links', false, `Following the links stopped after ${read.toLocaleString()} videos: ${e instanceof Error ? e.message : 'no answer'}`)
@@ -261,7 +256,7 @@ export default function YouTubeAmazonGaps() {
       <div className="rounded-2xl border p-4 mb-4 grid gap-3 sm:grid-cols-3 text-[13px]" style={{ borderColor: 'var(--border-2)', background: 'var(--surface)' }}>
         {([
           { s: 'youtube' as Step, title: 'Your YouTube uploads', what: c ? `${c.counts.youtube.toLocaleString()} public videos${report?.youtubeNewest ? `, newest ${day(report.youtubeNewest)}` : ''}.` : '', act: () => one(readYouTube), btn: 'Read again' },
-          { s: 'links' as Step, title: 'Products in your YouTube videos', what: c ? `Links read for ${c.counts.youtubeRead.toLocaleString()} of ${c.counts.youtube.toLocaleString()} videos; ${(c.counts.youtube + -c.counts.unknown).toLocaleString()} placed.` : '', act: () => one(() => readLinks(true)), btn: 'Find the products' },
+          { s: 'links' as Step, title: 'Products in your YouTube videos', what: c ? `Links read for ${c.counts.youtubeRead.toLocaleString()} of ${c.counts.youtube.toLocaleString()} videos; ${(c.counts.youtube + -c.counts.unknown).toLocaleString()} placed.${waitingN(c) ? ` ${waitingN(c).toLocaleString()} links are waiting on the link service and are read in the background, ten a minute (about ${waitWords(waitingN(c))}).` : ''}` : '', act: () => one(() => readLinks(true)), btn: 'Find the products' },
           { s: 'amazon' as Step, title: 'Your Amazon videos', what: c ? `${c.counts.amazon.toLocaleString()} videos${report?.amazonReadAt ? `, list read ${day(report.amazonReadAt)}` : ''}${c.counts.amazonUnread ? `; products not read yet for ${c.counts.amazonUnread.toLocaleString()}` : ''}.` : '', act: () => one(readAmazon), btn: 'Read again' },
         ]).map((x) => (
           <div key={x.s} className="min-w-0">
@@ -343,6 +338,17 @@ export default function YouTubeAmazonGaps() {
       )}
     </div>
   )
+}
+
+/** Videos whose link is waiting on a link service (read in the background). */
+function waitingN(c: Coverage): number {
+  return c.unknownWhy?.find((w) => /asked MVP to slow down/.test(w.why))?.videos ?? 0
+}
+
+/** How long ten a minute takes. */
+function waitWords(n: number): string {
+  const min = Math.ceil(n / 10)
+  return min < 90 ? `${min} minute${min === 1 ? '' : 's'}` : `${Math.round(min / 60)} hours`
 }
 
 const EMPTY: Record<Tab, string> = {

@@ -149,6 +149,10 @@
       "schedule": "* * * * *"
     },
     {
+      "path": "/api/cron/yt-amazon-links",
+      "schedule": "* * * * *"
+    },
+    {
       "path": "/api/cron/rehost-hotlinked",
       "schedule": "20 */2 * * *"
     },
