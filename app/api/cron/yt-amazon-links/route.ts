@@ -44,7 +44,13 @@ export async function GET(request: Request) {
       const { data: next } = await db.from('youtube_videos').select('youtube_video_id').eq('user_id', creator).like('products_why', `${READER}:rate-limited%`).order('products_read_at', { ascending: true }).limit(PER_CREATOR)
       const ids = ((next || []) as Array<{ youtube_video_id: string }>).map((r) => r.youtube_video_id)
       if (!ids.length) continue
-      await db.from('youtube_videos').update({ products_read_at: null }).eq('user_id', creator).in('youtube_video_id', ids)
+      // A failed requeue leaves nothing unread, so the batch below would read
+      // nothing and look exactly like a creator with nothing waiting. Say so.
+      const { error: requeueError } = await db.from('youtube_videos').update({ products_read_at: null }).eq('user_id', creator).in('youtube_video_id', ids)
+      if (requeueError) {
+        done.push({ creator: creator.slice(0, 8), read: 0, found: 0, slowed: 0, left: ids.length, error: `Could not put ${ids.length} waiting links back in line: ${requeueError.message}` })
+        continue
+      }
     }
     const b = await readLinkBatch(db, creator, { limit: PER_CREATOR, workers: 1, budgetMs: 40_000 })
     done.push({ creator: creator.slice(0, 8), read: b.read, found: b.found, slowed: b.slowed, left: b.left, ...(b.saveError ? { error: b.saveError } : {}) })
