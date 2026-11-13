@@ -18,6 +18,7 @@
 import { copiedSettings, nextForBatch, blogReady, blogTimeFor, isStale, settingsBody, type LastBatch, type DropSettings } from '@/lib/drop-plan'
 import { sendToTrybe, type SendDeps, type SendResult } from '@/lib/trybe-submit'
 import { runSend, type PlaceDeps } from '@/lib/drop-places'
+import { isStudioDraftRow, NOT_ON_YOUTUBE_RE } from '@/lib/studio-upload'
 
 export interface HttpAnswer { ok: boolean; status: number; json: Record<string, unknown> }
 export type Http = (url: string, init?: { method?: 'GET' | 'POST' | 'PATCH' | 'DELETE'; body?: unknown; timeoutMs?: number }) => Promise<HttpAnswer>
@@ -154,14 +155,14 @@ export async function addDraftVideo(batchId: string, v: { itemId: string; source
 
 // ── Launch when prepared, the blog posts, then every other place ─────────────
 
-interface SendRowFull { id: string; place: string; state: string; payload?: Record<string, unknown> | null; updated_at?: string | null }
+interface SendRowFull { id: string; place: string; state: string; detail?: string | null; payload?: Record<string, unknown> | null; updated_at?: string | null }
 interface DropItemFull {
-  id: string; to_blog: boolean; blog_state: string; launch_item_id: string | null; to_trybe: boolean; trybe_state: string; updated_at?: string | null
+  id: string; to_blog: boolean; blog_state: string; blog_detail?: string | null; launch_item_id: string | null; to_trybe: boolean; trybe_state: string; updated_at?: string | null
   file_name?: string | null; source_url?: string | null; duration_seconds?: number | null; asin?: string | null; title?: string | null
   sends?: SendRowFull[]
 }
 interface DropRow { id: string; state: string; note: string | null; batch_id: string | null; items: DropItemFull[] }
-interface BatchItem { id: string; state: string; video_id?: string | null; youtube_video_id?: string | null; publish_at?: string | null; title?: string | null }
+interface BatchItem { id: string; state: string; reason?: string | null; video_id?: string | null; youtube_video_id?: string | null; publish_at?: string | null; title?: string | null }
 
 export interface StepsResult { more: boolean; signature: string; launched: number; blogs: number; sent: number; failed: number; notes: string[] }
 
@@ -228,13 +229,30 @@ export async function dropSteps(http: Http, say: (t: string) => void = () => {},
       const li = items.find((x) => x.id === it.launch_item_id) ?? null
       const sends = it.sends ?? []
       const blogSends = sends.filter((x) => WITH_BLOG[x.place])
+      // A STUDIO DRAFT IS ON YOUTUBE, waiting for Save (lib/studio-upload).
+      const draft = isStudioDraftRow(li)
+
+      // ── stopped as "not on YouTube" while it was a draft: again, now ──────
+      // Lisa, 2026-11-12: her videos were on her channel as drafts, and the
+      // blog post, pin, Facebook post and clips had all stopped saying the
+      // video did not reach YouTube. Once it is out of draft they go again.
+      if (li && li.state !== 'blocked' && !draft) {
+        if (it.to_blog && it.blog_state === 'failed' && NOT_ON_YOUTUBE_RE.test(String(it.blog_detail ?? ''))) {
+          if ((await dropApi(http, { action: 'blog_again', itemId: it.id })).json.queued) it.blog_state = 'wanted'
+        }
+        for (const x of sends) {
+          if (x.state === 'failed' && NOT_ON_YOUTUBE_RE.test(String(x.detail ?? '')) && (await dropApi(http, { action: 'send_again', sendId: x.id })).json.queued) x.state = 'wanted'
+        }
+      }
 
       // ── the blog post, once YouTube has its video and time ──────────────
       // A post still being written is waited for; one quiet past STALE_MS
       // stopped with its page, and the board offers to write it again.
       if (it.to_blog && it.blog_state === 'writing' && !isStale(it.updated_at, nowMs())) open++
       if (it.to_blog && it.blog_state === 'wanted' && youtubeGoing) {
-        if (li?.state === 'blocked') {
+        // On the channel as a draft: the post waits for Save, it is not lost.
+        if (draft) open++
+        else if (li?.state === 'blocked') {
           if ((await dropApi(http, { action: 'blog_claim', itemId: it.id })).json.claimed) {
             await dropApi(http, { action: 'blog_done', itemId: it.id, ok: false, detail: 'The video did not reach YouTube, so there is nothing to write the post from.' })
             for (const x of blogSends) if ((await dropApi(http, { action: 'send_claim', sendId: x.id })).json.claimed) await sendDone(x.id, { state: 'failed', detail: 'It goes out with the blog post, and there is no post: the video did not reach YouTube.' })
@@ -274,7 +292,8 @@ export async function dropSteps(http: Http, say: (t: string) => void = () => {},
         if (x.state === 'sending') { if (!isStale(x.updated_at, nowMs())) open++; continue }
         if (x.state !== 'wanted') continue
         // Clips work from the YouTube video: nothing to claim until it exists.
-        if (x.place === 'clips' && !li?.video_id && li?.state !== 'blocked') { open++; continue }
+        // A draft's clips are cut from the file once MVP lists the video.
+        if (x.place === 'clips' && !li?.video_id && (li?.state !== 'blocked' || draft)) { open++; continue }
         const claim = await dropApi(http, { action: 'send_claim', sendId: x.id })
         if (!claim.json.claimed) continue
         say(`${x.place}: ${it.file_name || 'a video'}`)

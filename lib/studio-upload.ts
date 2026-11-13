@@ -196,3 +196,21 @@ export const DRAFT_REASON_PREFIX = 'On your channel ('
 export const STUDIO_DRAFT_SAVING = 'SCOUT is saving the draft in Studio now.'
 /** On a draft SCOUT tried and could not save: left for the creator. */
 export const STUDIO_DRAFT_FAILED = 'SCOUT could not save the draft in Studio.'
+
+/** ON THE CHANNEL AS A DRAFT, NOT LOST (Lisa, 2026-11-12: "They did get to my
+ *  channel"). A Liftoff video SCOUT uploaded that is still a draft in Studio:
+ *  stopped ('blocked') only until Save in Studio, by SCOUT or the creator.
+ *  The Drop's blog post, pin, Facebook post and clips wait for it instead of
+ *  saying the video did not reach YouTube. Pure. */
+export function isStudioDraftRow(li: { state?: string | null; reason?: string | null; youtube_video_id?: string | null } | null | undefined): boolean {
+  if (!li || li.state !== 'blocked' || !String(li.youtube_video_id ?? '').trim()) return false
+  const r = String(li.reason ?? '')
+  return r.startsWith(DRAFT_REASON_PREFIX) || r.startsWith(STUDIO_DRAFT_SAVING) || r.startsWith(STUDIO_DRAFT_FAILED)
+}
+
+/** What a Drop place says while its video is a Studio draft. */
+export const WAITS_FOR_DRAFT = 'Waits for the draft in YouTube Studio to be saved, then goes by itself.'
+
+/** The words a Drop place stopped with before 2026-11-13 when its video was a
+ *  Studio draft. Those places start again once the draft is saved. */
+export const NOT_ON_YOUTUBE_RE = /did not reach YouTube/

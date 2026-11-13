@@ -9173,7 +9173,7 @@ async function ytInjectDisclosures(videoId, opts, callerTabId) {
 // page once (window.__mvpKit) so the steps share one set of helpers.
 
 function studioKitInstallInPage() {
-  const KIT_VERSION = 22
+  const KIT_VERSION = 23
   if (window.__mvpKit && window.__mvpKit.v === KIT_VERSION) return true
   const K = { v: KIT_VERSION }
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
@@ -9471,6 +9471,70 @@ function studioKitInstallInPage() {
   }
   const buttonSample = (scope) => Array.from(new Set(all(scope).filter((el) => isBtn(el) && visible(el)).map((el) => (deepText(el) || attrLabel(el)).slice(0, 40)).filter(Boolean))).slice(0, 40)
 
+  // ── BACK TO DETAILS ──────────────────────────────────────────────────────
+  // A draft reopens on the page it was left on, and Studio can show Details
+  // first and jump there a moment later. Lisa, 2026-11-12, two drafts on her
+  // channel: "The draft opened on its visibility page and SCOUT could not get
+  // back to Details", and on the other "The draft's Details page is not open"
+  // straight after it had opened on Details. SCOUT looked once and clicked the
+  // Details tab once. Now it waits until the page holds still, tries each
+  // control that names Details, then Back a page at a time, and says which it
+  // tried when none of them worked.
+  const settledPage = async (dlg, holdMs, maxMs) => {
+    let last = page(dlg), since = Date.now()
+    const end = Date.now() + maxMs
+    while (Date.now() < end) {
+      await sleep(250)
+      const p = page(dlg)
+      if (p !== last) { last = p; since = Date.now(); continue }
+      if (p !== 'unknown' && Date.now() - since >= holdMs) return p
+    }
+    return last
+  }
+  const detailsTabs = (dlg) => {
+    const found = []
+    const add = (el) => { if (el && visible(el) && found.indexOf(el) < 0) found.push(el) }
+    add(byId('step-badge-0', dlg))
+    add(byId('step-title-0', dlg))
+    for (const el of all(dlg)) {
+      if (found.length >= 6) break
+      const role = el.getAttribute && el.getAttribute('role')
+      const stepish = /step/i.test(String(el.id || '') + ' ' + String(el.getAttribute && el.getAttribute('class') || ''))
+      if (!(isBtn(el) || role === 'tab' || stepish) || !visible(el)) continue
+      const t = deepText(el) || attrLabel(el)
+      if (t && t.length <= 30 && /\bdetails\b/i.test(t) && !/video details/i.test(t)) add(el)
+    }
+    return found
+  }
+  const backBtn = (dlg) => { const b = byId('back-button', dlg) || findBtn(/^back$/i, dlg); return b && !isDisabled(b) ? b : null }
+  const toDetails = async (dlg) => {
+    const tried = []
+    let p = await settledPage(dlg, 1500, 12000)
+    for (let round = 0; round < 2 && p !== 'details'; round++) {
+      for (const tab of detailsTabs(dlg)) {
+        click(tab)
+        tried.push('the Details tab')
+        await waitFor(() => (page(dlg) === 'details' ? true : null), 5000, 300)
+        p = await settledPage(dlg, 1500, 8000)
+        if (p === 'details') break
+      }
+      for (let i = 0; i < 7 && p !== 'details'; i++) {
+        const b = backBtn(dlg)
+        if (!b) break
+        const from = page(dlg)
+        click(b)
+        tried.push('Back')
+        // A Back that moves nothing is not pressed six more times.
+        const moved = await waitFor(() => (page(dlg) !== from ? true : null), 6000, 300)
+        p = await settledPage(dlg, 1200, 8000)
+        if (!moved) break
+      }
+    }
+    const said = Array.from(new Set(tried))
+    return { ok: p === 'details', page: p, tried: said, words: said.length ? said.join(' and ') : 'nothing: no Details tab or Back button was on the page' }
+  }
+  K.toDetails = toDetails
+
   const nextBtn = (dlg) => byId('next-button', dlg) || findBtn(/^next$/i, dlg)
   const next = async (dlg) => {
     const from = page(dlg)
@@ -9518,13 +9582,14 @@ function studioKitInstallInPage() {
       if (!opened) { out.detail = 'Pressed Edit draft, but the draft window did not open'; out.debug.buttons = buttonSample(document); out.debug.text = visibleText(document).slice(0, 300); return out }
     }
     // A draft somebody already clicked through reopens on the page they left
-    // it on. The steps start at Details, so go back there first.
+    // it on, sometimes a moment after showing Details. The steps start at
+    // Details, so SCOUT waits for the page to hold still and goes back there
+    // (step-badge-0 is Studio's Details tab; Back is the fallback).
     const dlg = mainDialog()
-    if (dlg && page(dlg) !== 'details') {
-      const tab = byId('step-badge-0', dlg) || findBtn(/^details$/i, dlg)
-      if (tab) click(tab)
-      await waitFor(() => (page(dlg) === 'details' ? true : null), 8000, 400)
-      if (page(dlg) !== 'details') { out.detail = 'The draft opened on its ' + page(dlg) + ' page and SCOUT could not get back to Details'; out.debug.buttons = buttonSample(dlg); return out }
+    if (dlg) {
+      const g = await toDetails(dlg)
+      out.debug.toDetails = g.tried
+      if (!g.ok) { out.detail = 'The draft opened on its ' + g.page + ' page and SCOUT could not get back to Details (it tried ' + g.words + ')'; out.debug.buttons = buttonSample(dlg); return out }
     }
     out.ok = true
     out.isDraft = true
@@ -9644,7 +9709,13 @@ function studioKitInstallInPage() {
   // Details: Show more, paid promotion YES, AI use NO, notify box = toggle.
   K.steps.details = async (out, o) => {
     const dlg = mainDialog()
-    if (!dlg || page(dlg) !== 'details') { out.detail = 'The draft’s Details page is not open'; return out }
+    if (!dlg) { out.detail = 'The draft window is not open'; return out }
+    // MOVED AWAY SINCE IT OPENED: back to Details before anything is answered.
+    if (page(dlg) !== 'details') {
+      const g = await toDetails(dlg)
+      out.debug.toDetails = g.tried
+      if (!g.ok) { out.detail = 'The draft’s Details page is not open: Studio is on its ' + g.page + ' page, and SCOUT could not get back (it tried ' + g.words + ')'; out.debug.buttons = buttonSample(dlg); return out }
+    }
     if (!(await expandDisclosures(dlg, out))) { out.detail = 'Pressed Show more, but the paid promotion question never appeared'; out.debug.buttons = buttonSample(dlg); return out }
     const checks = []
     if (o.paid) {

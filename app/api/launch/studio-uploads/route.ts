@@ -18,6 +18,7 @@ import { NextResponse } from 'next/server'
 import { genericTitleWhy } from '@/lib/youtube-title-guard'
 import { createServerClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { reopenDropAfterDraft } from '@/lib/drop-after-draft'
 import { normalizeStudioOptions, storeStudioRun, readStudioRun } from '@/lib/studio-finish'
 import { getChannelOAuthToken } from '@/lib/youtube-channels'
 import { YouTubeOAuthService } from '@/services/youtube'
@@ -252,7 +253,10 @@ export async function POST(req: Request) {
       }).eq('id', row.id)
       await sb.from('launch_items').update({ state: 'prepared', reason: STUDIO_UPLOAD_DONE, publish_tries: 0, updated_at: stamp })
         .eq('id', row.id).eq('state', 'blocked')
-      return NextResponse.json({ ok: true, state: 'prepared' })
+      // THE DROP CARRIES ON: its blog post, pin, Facebook post and clips that
+      // stopped as "did not reach YouTube" while this was a draft go again.
+      const reopened = await reopenDropAfterDraft(sb, user.id, row.id)
+      return NextResponse.json({ ok: true, state: 'prepared', dropPlacesAgain: reopened.places })
     }
     const why = studioStoppedAt(Array.isArray(dr.steps) ? dr.steps.filter((x) => x && typeof x.step === 'string').map((x) => ({ step: String(x.step), ok: x.ok === true, skipped: x.skipped === true, detail: String(x.detail || '') })) : [])
     await sb.from('launch_items').update({

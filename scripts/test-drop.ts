@@ -17,6 +17,8 @@ import { runSend, type SendJob, type SendItem } from '../lib/drop-places'
 import { placeFits, readPlans, READY_PLACES, PLACE_INFO, EXTRA_PLACES, settingsFromLast, readSettings, settingsBody, setupMissing, nextFreeSlots, daysLabel, liftoffLabel, setupStartOn } from '../lib/drop-plan'
 import { startDraftBatch, addDraftVideo } from '../lib/drop-run'
 import { tiktokBlocker, emptyTikTok } from '../components/labs/DropTikTok'
+import { isStudioDraftRow, WAITS_FOR_DRAFT, STUDIO_DRAFT_FAILED, DRAFT_REASON_PREFIX } from '../lib/studio-upload'
+import { reopenDropAfterDraft } from '../lib/drop-after-draft'
 import { canUsePreview, previewOpenToPro } from '../lib/labs-preview'
 
 const failures: string[] = []
@@ -198,6 +200,107 @@ void (async () => {
     const { http, calls } = fakeHttp((url) => (url === '/api/drop' ? { ok: false, status: 403, json: { error: 'Drop is part of Pro.' } } : undefined))
     const r = await dropSteps(http)
     check('an account without Drop does nothing and asks nothing back', calls.length === 1 && !r.more && r.signature === '')
+  }
+
+  // ── ON THE CHANNEL AS A STUDIO DRAFT IS NOT "DID NOT REACH YOUTUBE" ────────
+  // Lisa, 2026-11-12: two videos were on her channel as drafts SCOUT could not
+  // save, and the blog post, pin, Facebook post and clips all said the video
+  // did not reach YouTube.
+  const lisaReason = `${STUDIO_DRAFT_FAILED} It stopped at opening the upload: The draft opened on its visibility page and SCOUT could not get back to Details. Open it in Studio, press Edit draft, and save it on the Visibility page.`
+  const lisaDraft = { id: 'li1', state: 'blocked', reason: lisaReason, youtube_video_id: 'abcdefghijk' }
+  check('a video left as a Studio draft is known as one (failed, waiting or being saved), and a refused one is not',
+    isStudioDraftRow(lisaDraft) && isStudioDraftRow({ ...lisaDraft, reason: `${DRAFT_REASON_PREFIX}abcdefghijk) as a draft in Studio` })
+    && !isStudioDraftRow({ ...lisaDraft, youtube_video_id: null }) && !isStudioDraftRow({ state: 'blocked', reason: 'YouTube would not take this video after 3 tries', youtube_video_id: null })
+    && !isStudioDraftRow({ ...lisaDraft, state: 'scheduled' }))
+  {
+    const item = { id: 'i1', to_blog: true, blog_state: 'wanted', launch_item_id: 'li1', to_trybe: false, trybe_state: 'off',
+      sends: [{ id: 's-pin', place: 'pin', state: 'wanted' }, { id: 's-clips', place: 'clips', state: 'wanted' }] }
+    const { http, calls } = fakeHttp((url, _m, b) => {
+      if (url === '/api/drop' && !b) return ok(drop('launched', [item]))
+      if (url === '/api/launch/batches/b1') return ok({ ok: true, batch: { state: 'launched' }, launchBlocker: null, items: [lisaDraft] })
+      return ok({ ok: true, claimed: true })
+    })
+    const r = await dropSteps(http)
+    check('a Studio draft’s blog post, pin and clips wait for Save: nothing is failed, nothing is written yet, the drop stays open',
+      !calls.some((c) => c.body?.action === 'blog_claim' || c.body?.action === 'blog_done' || c.body?.action === 'send_claim' || c.body?.action === 'send_done')
+      && !calls.some((c) => c.body?.action === 'state' && c.body.state === 'done') && r.more && r.failed === 0)
+    const lines = placeLines({ ...row(), sends: [{ id: 's-pin', place: 'pin', state: 'wanted', detail: null, url: null }] }, lisaDraft as never, { dropState: 'launched' })
+    check('the board keeps the draft red with SCOUT’s words, and says the rest waits for the draft to be saved',
+      lines[0].tone === 'bad' && /could not get back to Details/.test(lines[0].text)
+      && lines.find((l) => l.place === 'Blog')!.text === WAITS_FOR_DRAFT && lines.find((l) => l.id === 'pin')!.text === WAITS_FOR_DRAFT)
+  }
+  {
+    // Out of draft now (saved, then scheduled): the places that stopped with
+    // the old words go again, and the post is written with its pin riding.
+    const item = { id: 'i1', to_blog: true, blog_state: 'failed', blog_detail: 'The video did not reach YouTube, so there is nothing to write the post from.', launch_item_id: 'li1', to_trybe: false, trybe_state: 'off',
+      sends: [{ id: 's-pin', place: 'pin', state: 'failed', detail: 'It goes out with the blog post, and there is no post: the video did not reach YouTube.' },
+        { id: 's-tt', place: 'tiktok', state: 'failed', detail: 'TikTok is not connected.' }] }
+    const { http, calls } = fakeHttp((url, _m, b) => {
+      if (url === '/api/drop' && !b) return ok(drop('launched', [item]))
+      if (url === '/api/launch/batches/b1') return ok({ ok: true, batch: { state: 'launched' }, launchBlocker: null, items: [{ id: 'li1', state: 'scheduled', video_id: 'vid-1', publish_at: '2030-01-01T15:00:00Z', youtube_video_id: 'abcdefghijk' }] })
+      if (b?.action === 'blog_again' || b?.action === 'send_again') return ok({ ok: true, queued: true })
+      if (b?.action === 'blog_claim' || b?.action === 'send_claim') return ok({ ok: true, claimed: true })
+      if (url === '/api/blog/schedule-publish') return ok({ ok: true, postId: 'post-1', wordpressUrl: 'https://blog/x' })
+      return undefined
+    })
+    await dropSteps(http)
+    const sp = calls.find((c) => c.url === '/api/blog/schedule-publish')
+    check('once the draft is saved, a post and pin stopped as "did not reach YouTube" go again, in the same pass',
+      calls.some((c) => c.body?.action === 'blog_again' && c.body.itemId === 'i1') && calls.some((c) => c.body?.action === 'send_again' && c.body.sendId === 's-pin')
+      && !!sp && sp.body.socials.some((x: { platform: string }) => x.platform === 'pinterest'))
+    check('a place that stopped for another reason is left for the creator', !calls.some((c) => c.body?.action === 'send_again' && c.body.sendId === 's-tt'))
+  }
+  {
+    // Still a draft: nothing is put back in line yet.
+    const item = { id: 'i1', to_blog: true, blog_state: 'failed', blog_detail: 'The video did not reach YouTube, so there is nothing to write the post from.', launch_item_id: 'li1', to_trybe: false, trybe_state: 'off' }
+    const { http, calls } = fakeHttp((url, _m, b) => {
+      if (url === '/api/drop' && !b) return ok(drop('launched', [item]))
+      if (url === '/api/launch/batches/b1') return ok({ ok: true, batch: { state: 'launched' }, launchBlocker: null, items: [lisaDraft] })
+      return undefined
+    })
+    await dropSteps(http)
+    check('while it is still a draft, a stopped post is not tried again', !calls.some((c) => c.body?.action === 'blog_again'))
+  }
+  {
+    // THE SAVE OPENS A CLOSED DROP. A tiny stand-in for the database.
+    type R = Record<string, unknown>
+    const tables: Record<string, R[]> = {
+      drop_items: [{ id: 'i1', drop_id: 'd1', user_id: 'u1', launch_item_id: 'li1', to_blog: true, blog_state: 'failed', blog_detail: 'The video did not reach YouTube, so there is nothing to write the post from.' },
+        { id: 'i2', drop_id: 'd2', user_id: 'u2', launch_item_id: 'li1', to_blog: true, blog_state: 'failed', blog_detail: 'The video did not reach YouTube, so there is nothing to write the post from.' }],
+      drop_sends: [{ id: 's1', drop_item_id: 'i1', user_id: 'u1', state: 'failed', detail: 'The video did not reach YouTube, so there is nothing to cut clips from.' },
+        { id: 's2', drop_item_id: 'i1', user_id: 'u1', state: 'failed', detail: 'Pinterest is not connected, so the blog post went without it.' }],
+      drops: [{ id: 'd1', user_id: 'u1', state: 'done' }, { id: 'd2', user_id: 'u2', state: 'done' }],
+    }
+    const db = {
+      from(t: string) {
+        const filters: Array<(r: R) => boolean> = []
+        let patch: R | null = null
+        const q = {
+          select() { return q }, limit() { return q },
+          update(p: R) { patch = p; return q },
+          eq(k: string, v: unknown) { filters.push((r) => r[k] === v); return q },
+          in(k: string, v: unknown[]) { filters.push((r) => v.includes(r[k])); return q },
+          then(res: (x: { data: R[]; error: null }) => unknown) {
+            const hit = tables[t].filter((r) => filters.every((f) => f(r)))
+            if (patch) for (const r of hit) Object.assign(r, patch)
+            return Promise.resolve(res({ data: hit.map((r) => ({ ...r })), error: null }))
+          },
+        }
+        return q
+      },
+    }
+    const out = await reopenDropAfterDraft(db, 'u1', 'li1')
+    check('a saved draft puts its stopped post and clips back in line and opens its closed drop, and touches nothing else',
+      out.places === 2 && out.drops === 1 && tables.drop_items[0].blog_state === 'wanted' && tables.drop_sends[0].state === 'wanted'
+      && tables.drop_sends[1].state === 'failed' && tables.drops[0].state === 'launched'
+      && tables.drop_items[1].blog_state === 'failed' && tables.drops[1].state === 'done')
+  }
+  {
+    const SU = read('app/api/launch/studio-uploads/route.ts')
+    const saved = SU.slice(SU.indexOf("if (dr.saved === true && visibility) {"), SU.indexOf("const why = studioStoppedAt("))
+    check('the drop opens again when SCOUT saves the draft', /await reopenDropAfterDraft\(sb, user\.id, row\.id\)/.test(saved))
+    const P = read('lib/drop-places.ts')
+    check('a draft’s clips wait for it rather than fail', /if \(!li\?\.video_id\) return isStudioDraftRow\(li\) \? \{ state: 'wanted', detail: WAITS_FOR_DRAFT \}/.test(P))
   }
 
   // ── TRYBE through SCOUT ────────────────────────────────────────────────────

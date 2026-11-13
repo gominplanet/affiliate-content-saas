@@ -26,6 +26,7 @@ import { composeClipDescription, CLIP_PLATFORM_RULES, stripHashtags, type ClipPl
 import { fitHashtags, TAG_RULES, type TagPlatform } from '@/lib/hashtag-engine'
 import { nextForBatch } from '@/lib/drop-plan'
 import type { Http, HttpAnswer } from '@/lib/drop-run'
+import { isStudioDraftRow, WAITS_FOR_DRAFT } from '@/lib/studio-upload'
 
 export interface SendJob {
   id: string
@@ -44,7 +45,7 @@ export interface SendItem {
 }
 
 /** The YouTube side of a long video, as Liftoff reports it. */
-export interface SendLaunchItem { state: string; video_id?: string | null; youtube_video_id?: string | null; publish_at?: string | null }
+export interface SendLaunchItem { state: string; reason?: string | null; video_id?: string | null; youtube_video_id?: string | null; publish_at?: string | null }
 
 export interface SendOutcome {
   state: 'done' | 'failed' | 'needs_you' | 'wanted'
@@ -234,7 +235,8 @@ async function amazon(job: SendJob, it: SendItem, d: PlaceDeps): Promise<SendOut
  *  then each one rendered. Clips over a minute render in the background, so
  *  this comes back for them. */
 async function clips(job: SendJob, it: SendItem, li: SendLaunchItem | null, d: PlaceDeps): Promise<SendOutcome> {
-  if (!li?.video_id) return li?.state === 'blocked' ? { state: 'failed', detail: 'The video did not reach YouTube, so there is nothing to cut clips from.' } : { state: 'wanted', detail: 'Starts once YouTube has the video' }
+  if (!li?.video_id) return isStudioDraftRow(li) ? { state: 'wanted', detail: WAITS_FOR_DRAFT }
+    : li?.state === 'blocked' ? { state: 'failed', detail: 'The video did not reach YouTube, so there is nothing to cut clips from.' } : { state: 'wanted', detail: 'Starts once YouTube has the video' }
   const videoId = li.video_id
   const url = `/clip-factory?video=${videoId}`
   let ids = Array.isArray(job.payload.shortIds) ? (job.payload.shortIds as unknown[]).map(String) : []

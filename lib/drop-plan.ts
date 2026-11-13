@@ -13,6 +13,7 @@
 
 import { normalizeSlots, parseSlot, todayIn, zonedTimeToInstant, cadenceLabel } from '@/lib/launch-schedule'
 import { itemProgressLabel, itemProgressTone, MAX_ITEMS, type ItemState } from '@/lib/launch-batch'
+import { isStudioDraftRow, WAITS_FOR_DRAFT } from '@/lib/studio-upload'
 
 /** A drop holds what one Liftoff batch holds. */
 export const DROP_MAX = MAX_ITEMS
@@ -442,6 +443,9 @@ const when = (iso: string | null | undefined) => {
 export function placeLines(it: DropItemRow, li: LaunchItemView | null, opts: { dropState: string; sendToYouTube?: boolean; now?: number }): PlaceLine[] {
   const out: PlaceLine[] = []
   const stale = isStale(it.updated_at, opts.now)
+  // On the channel as a draft in Studio: the places after YouTube wait for
+  // Save, and say so, rather than "once YouTube has the video".
+  const draft = isStudioDraftRow(li)
   if (it.to_liftoff) {
     if (!li) {
       out.push({ place: 'YouTube', id: 'liftoff', tone: opts.dropState === 'failed' ? 'bad' : opts.dropState === 'building' ? 'busy' : 'warn',
@@ -473,7 +477,7 @@ export function placeLines(it: DropItemRow, li: LaunchItemView | null, opts: { d
     out.push(b === 'scheduled' ? { place: 'Blog', id: 'blog', tone: 'good', text: `Scheduled${it.blog_at ? ` for ${when(it.blog_at)}` : ''}`, url: it.blog_url }
       : b === 'writing' ? (stale ? { place: 'Blog', id: 'blog', tone: 'warn', text: 'Stopped while it was being written. Check your blog for it before writing it again.' } : { place: 'Blog', id: 'blog', tone: 'busy', text: 'Being written' })
         : b === 'failed' ? { place: 'Blog', id: 'blog', tone: 'bad', text: `Not scheduled${it.blog_detail ? `: ${it.blog_detail}` : ''}` }
-          : { place: 'Blog', id: 'blog', tone: 'idle', text: 'Written once YouTube has the video and its time' })
+          : { place: 'Blog', id: 'blog', tone: 'idle', text: draft ? WAITS_FOR_DRAFT : 'Written once YouTube has the video and its time' })
   }
   if (it.to_trybe) {
     const s = it.trybe_state
@@ -493,7 +497,7 @@ export function placeLines(it: DropItemRow, li: LaunchItemView | null, opts: { d
       : x.state === 'failed' ? { place: info.label, id, tone: 'bad', text: `Not done${x.detail ? `: ${x.detail}` : ''}` }
         : x.state === 'needs_you' ? { place: info.label, id, tone: 'warn', text: x.detail || 'Needs a choice from you', url: x.url }
           : x.state === 'sending' ? (sStale ? { place: info.label, id, tone: 'warn', text: 'Stopped part way. Check it before trying again.' } : { place: info.label, id, tone: 'busy', text: x.detail || 'On its way' })
-            : { place: info.label, id, tone: 'idle', text: info.afterYouTube ? 'Starts once YouTube has the video' : 'Waiting its turn' })
+            : { place: info.label, id, tone: 'idle', text: info.afterYouTube ? (draft ? WAITS_FOR_DRAFT : 'Starts once YouTube has the video') : 'Waiting its turn' })
   }
   if (!it.to_liftoff && !it.to_blog && !it.to_trybe && !(it.sends ?? []).length) out.push({ place: it.kind === 'vertical' ? 'TRYBE' : 'YouTube', id: it.kind === 'vertical' ? 'trybe' : 'liftoff', tone: 'idle', text: 'Not sent anywhere: no place was picked' })
   return out
