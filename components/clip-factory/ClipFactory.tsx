@@ -37,7 +37,7 @@ import FeatureLockedCard from '@/components/ui/FeatureLockedCard'
 import { dispatchCapReached } from '@/components/CapReachedBanner'
 import { errText } from '@/lib/err-text'
 import { requestVideoTranscriptCues } from '@/lib/extension-frame'
-import { fileFromStudio } from '@/lib/studio-file-client'
+import { fileFromStudio, serverOrStudio } from '@/lib/studio-file-client'
 import { extractYouTubeVideoId } from '@/lib/youtube-url'
 import { buildYouTubeShortTitle } from '@/lib/youtube-title'
 import { buildYouTubeTags } from '@/lib/youtube-tags'
@@ -483,28 +483,20 @@ export default function ClipFactory({ facebookOnly = false }: { facebookOnly?: b
           body: JSON.stringify({ videoId: id, target: 'short' }),
         })
         const data = await res.json().catch(() => ({ error: `MVP did not answer (HTTP ${res.status}).` }))
-        if (!res.ok || !data.videoUrl) {
-          if (data.limitReached) {
-            dispatchCapReached(data.error || 'Clip Factory is a Pro feature.', { cap: data.cap || 'shorts_studio', currentTier: data.currentTier, upgrade: data.upgrade })
-            throw new Error(data.error || 'Clip Factory is a Pro feature.')
-          }
-          if (!data.needsUpload && !data.ingestDisabled) throw new Error(data.error || "We couldn't fetch this Short automatically.")
-          // YOUTUBE REFUSED MVP'S SERVER (Seb, 2026-11-14: "YouTube is refusing
-          // MVP's downloader right now"). It is the creator's own Short, and
-          // YouTube Studio gives every owner a download, so SCOUT brings it in
-          // from Studio in their own browser. The server's reason is kept for
-          // when that does not work either.
+        // YOUTUBE REFUSED MVP'S SERVER (Seb, 2026-11-14: "YouTube is refusing
+        // MVP's downloader right now"). It is the creator's own Short, and
+        // YouTube Studio gives every owner a download, so SCOUT brings it in
+        // from Studio in their own browser (lib/studio-file-client).
+        const got = await serverOrStudio(res.ok && !!data.videoUrl, data, async () => {
           setFetchVia('studio')
-          const st = await fileFromStudio(id, 'short', 'upload the MP4 instead')
-          if (!st.ok || !st.url) {
-            const server = data.ingestDisabled ? 'Automatic fetch is not available right now.' : String(data.error || '').replace(/\s*Upload the MP4 instead and we'll take it from there\.$/, '.')
-            throw new Error(`${server} SCOUT tried YouTube Studio too: ${st.ok ? 'the file did not attach.' : st.why}`)
-          }
-          videoUrl = st.url
-          toast.success('Brought in from YouTube Studio by SCOUT.')
-        } else {
-          videoUrl = data.videoUrl as string
+          return fileFromStudio(id, 'short', 'upload the MP4 instead')
+        })
+        if (!got.ok) {
+          if (got.limit) dispatchCapReached(got.error, { cap: data.cap || 'shorts_studio', currentTier: data.currentTier, upgrade: data.upgrade })
+          throw new Error(got.error)
         }
+        videoUrl = got.url
+        if (got.via === 'studio') toast.success('Brought in from YouTube Studio by SCOUT.')
         setShorts(prev => prev.map(x => (x.id === id ? { ...x, hasVideo: true } : x)))
       }
       if (!videoUrl) throw new Error('No video available for this Short.')

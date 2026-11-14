@@ -58,3 +58,32 @@ export async function fileFromStudio(videoId: string, target: StudioFileTarget, 
     return { ok: false, code: 'error', why: `MVP could not finish bringing it in from YouTube Studio (${e instanceof Error ? e.message : 'error'}).` }
   }
 }
+
+/** What MVP's server fetch answered (app/api/youtube/shorts/ingest). */
+export interface ServerFetchAnswer { videoUrl?: string; error?: string; needsUpload?: boolean; ingestDisabled?: boolean; limitReached?: boolean }
+
+export type FetchOutcome =
+  | { ok: true; url: string; via: 'server' | 'studio' }
+  | { ok: false; error: string; limit?: boolean }
+
+/** The server's own sentence without its "upload instead" ending, so the
+ *  combined reason does not say it twice. Pure. */
+export function serverReason(data: ServerFetchAnswer): string {
+  if (data.ingestDisabled) return 'Automatic fetch is not available right now.'
+  const said = String(data.error || 'MVP could not fetch the video.').replace(/\s*Upload the MP4 instead and we'll take it from there\.\s*$/, '').trim()
+  return /[.!?]$/.test(said) ? said : `${said}.`
+}
+
+/** After MVP's server tried (`ok`: it has the file). Only when YouTube refused
+ *  it (the route's needsUpload) or automatic fetch is off is SCOUT asked for
+ *  the creator's own file from YouTube Studio. A plan limit, or a reason Studio
+ *  cannot help with (a video over ten minutes, no YouTube id), never asks
+ *  SCOUT. When neither worked, both reasons are given. */
+export async function serverOrStudio(ok: boolean, data: ServerFetchAnswer, studio: () => Promise<StudioFileResult>): Promise<FetchOutcome> {
+  if (ok) return { ok: true, url: String(data.videoUrl || ''), via: 'server' }
+  if (data.limitReached) return { ok: false, error: String(data.error || 'This is part of Pro.'), limit: true }
+  if (!data.needsUpload && !data.ingestDisabled) return { ok: false, error: String(data.error || 'MVP could not fetch the video.') }
+  const st = await studio()
+  if (st.ok && st.url) return { ok: true, url: st.url, via: 'studio' }
+  return { ok: false, error: `${serverReason(data)} SCOUT tried YouTube Studio too: ${st.ok ? 'the file did not attach.' : st.why}` }
+}

@@ -17,7 +17,7 @@ const check = (name: string, ok: boolean | undefined, detail?: unknown) => { if 
 const read = (p: string) => readFileSync(p, 'utf8')
 
 ;(async () => {
-  const { studioFileWords, fileFromStudio } = await import('../lib/studio-file-client')
+  const { studioFileWords, fileFromStudio, serverOrStudio } = await import('../lib/studio-file-client')
 
   // ── The words ──────────────────────────────────────────────────────────────
   const codes = ['not-installed', 'needs-update', 'signed-out', 'not-your-video', 'no-download-url', 'too-large', 'timeout', 'studio-http-403', '']
@@ -37,18 +37,48 @@ const read = (p: string) => readFileSync(p, 'utf8')
   const r = await fileFromStudio('v1', 'short', 'upload the MP4 instead')
   check('without SCOUT it says so, and nothing is attached', !r.ok && r.code === 'not-installed' && calls.length === 1 && calls[0].body.target === 'short', { r, calls })
 
+  // ── The decision, run on every answer the server fetch gives ──────────────
+  // Lisa's and Seb's case: YouTube refused MVP's server.
+  const refused = { error: "We couldn't fetch this video automatically: YouTube is refusing MVP\u2019s downloader right now (it asks it to sign in). Upload the MP4 instead and we'll take it from there.", needsUpload: true }
+  let asked = 0
+  const studioOk = async () => { asked++; return { ok: true as const, url: 'https://storage.example/u1/ingest-studio-1.mp4' } }
+  const studioNo = async () => { asked++; return { ok: false as const, code: 'not-installed', why: studioFileWords('not-installed', 'upload the MP4 instead') } }
+  const a = await serverOrStudio(false, refused, studioOk)
+  check('YouTube refused the server: the file comes from YouTube Studio, and says so', a.ok && a.via === 'studio' && a.url.endsWith('ingest-studio-1.mp4') && asked === 1, a)
+  asked = 0
+  const b = await serverOrStudio(false, refused, studioNo)
+  check('neither worked: both reasons, the server’s "upload instead" said once, never as success',
+    !b.ok && b.error === "We couldn't fetch this video automatically: YouTube is refusing MVP\u2019s downloader right now (it asks it to sign in). SCOUT tried YouTube Studio too: SCOUT is not installed in this browser. With it, MVP brings your own videos in from YouTube Studio. Or upload the MP4 instead." && asked === 1, b)
+  asked = 0
+  const c = await serverOrStudio(true, { videoUrl: 'https://storage.example/server.mp4' }, studioOk)
+  check('the server had it: SCOUT is not asked', c.ok && c.via === 'server' && c.url === 'https://storage.example/server.mp4' && asked === 0, c)
+  const d = await serverOrStudio(false, { error: 'Clip Factory is a Pro feature.', limitReached: true }, studioOk)
+  check('a plan limit stops there, as a limit, without asking SCOUT', !d.ok && d.limit === true && asked === 0, d)
+  const e = await serverOrStudio(false, { error: 'Clip Factory works on videos up to 10 minutes long. Pick a shorter video, or trim this one first.' }, studioOk)
+  check('a reason Studio cannot help with (over ten minutes) is said as it is, without asking SCOUT', !e.ok && /up to 10 minutes/.test(e.error) && asked === 0, e)
+  const f = await serverOrStudio(false, { error: 'Automatic video fetch is not configured.', ingestDisabled: true }, studioOk)
+  check('automatic fetch switched off: SCOUT brings it from Studio', f.ok && f.via === 'studio' && asked === 1, f)
+  asked = 0
+  const g = await serverOrStudio(false, { error: 'Automatic video fetch is not configured.', ingestDisabled: true }, studioNo)
+  check('switched off and no SCOUT: says fetch is off, then SCOUT’s reason', !g.ok && /^Automatic fetch is not available right now\. SCOUT tried YouTube Studio too: SCOUT is not installed/.test(g.error), g)
+  const h = await serverOrStudio(false, refused, async () => ({ ok: true as const, url: null }))
+  check('SCOUT sent it but nothing attached is a failure, not a video', !h.ok && /SCOUT tried YouTube Studio too: the file did not attach\./.test(h.error), h)
+
   // ── Where it is used ───────────────────────────────────────────────────────
   const CF = read('components/clip-factory/ClipFactory.tsx')
   const load = CF.slice(CF.indexOf('const loadShortById = useCallback'), CF.indexOf('const pickShort = useCallback'))
-  check('Tap to fetch asks MVP’s server first, then SCOUT in YouTube Studio when YouTube refused it',
-    load.indexOf("fetch('/api/youtube/shorts/ingest'") > 0 && /if \(!data\.needsUpload && !data\.ingestDisabled\) throw/.test(load)
-    && /await fileFromStudio\(id, 'short', 'upload the MP4 instead'\)/.test(load) && load.indexOf("fetch('/api/youtube/shorts/ingest'") < load.indexOf('fileFromStudio('))
-  check('a Short brought in from Studio says so, and both reasons show when neither worked',
-    /toast\.success\('Brought in from YouTube Studio by SCOUT\.'\)/.test(load) && /SCOUT tried YouTube Studio too: /.test(load))
+  check('Tap to fetch asks MVP’s server first, then goes through the decision above with SCOUT for a Short',
+    load.indexOf("fetch('/api/youtube/shorts/ingest'") > 0 && load.indexOf("fetch('/api/youtube/shorts/ingest'") < load.indexOf('serverOrStudio(')
+    && /await serverOrStudio\(res\.ok && !!data\.videoUrl, data, async \(\) => \{\s*setFetchVia\('studio'\)\s*return fileFromStudio\(id, 'short', 'upload the MP4 instead'\)/.test(load))
+  check('a Short brought in from Studio says so; a failure shows the decision’s words', /if \(got\.via === 'studio'\) toast\.success\('Brought in from YouTube Studio by SCOUT\.'\)/.test(load) && /throw new Error\(got\.error\)/.test(load))
   check('the card says SCOUT is bringing it in while it does', /fetchVia === 'studio' \? 'SCOUT is bringing it in from YouTube Studio…' : 'Fetching…'/.test(CF))
-  check('a plan limit still stops before SCOUT is asked', load.indexOf('if (data.limitReached)') < load.indexOf('fileFromStudio('))
+  check('a plan limit still opens the upgrade prompt', /if \(got\.limit\) dispatchCapReached\(got\.error/.test(load))
   const SS = read('components/content/ShortsStudioModal.tsx')
-  check('Shorts Studio falls back to YouTube Studio the same way', /await fileFromStudio\(videoId, 'source', 'upload the MP4 instead'\)/.test(SS) && /Brought in from YouTube Studio by SCOUT\./.test(SS))
+  const fa = SS.slice(SS.indexOf('const fetchAutomatically = useCallback'), SS.indexOf('const renderClip = useCallback'))
+  check('Shorts Studio goes through the same decision, for the long video’s source', /await serverOrStudio\(res\.ok, data, async \(\) => \{/.test(fa) && /return fileFromStudio\(videoId, 'source', 'upload the MP4 instead'\)/.test(fa)
+    && /toast\.success\(got\.via === 'studio' \? 'Brought in from YouTube Studio by SCOUT\.' : 'Video ready'\)/.test(fa) && /await findShorts\(\)/.test(fa))
+  const fs = SS.slice(SS.indexOf('const findShorts = useCallback'), SS.indexOf('const fetchAutomatically = useCallback'))
+  check('Shorts Studio’s find step is untouched by it', !/serverOrStudio|fileFromStudio/.test(fs) && /\/api\/youtube\/shorts\/plan/.test(fs))
   const SP = read('components/vertical/ShortsCreatePanel.tsx')
   check('the find moments panel uses the same helper, with its own box in the words', /await fileFromStudio\(videoId, 'source', 'drop the file in the box'\)/.test(SP) && !/requestStudioVideoFile/.test(SP))
 

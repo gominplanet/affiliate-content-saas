@@ -22,7 +22,7 @@ import { ShortVideoUpload } from '@/components/ShortVideoUpload'
 import { dispatchCapReached } from '@/components/CapReachedBanner'
 import { ShortsQuotaBadge, notifyShortsUsageChanged } from '@/components/vertical/ShortsQuotaBadge'
 import { errText } from '@/lib/err-text'
-import { fileFromStudio } from '@/lib/studio-file-client'
+import { fileFromStudio, serverOrStudio } from '@/lib/studio-file-client'
 import { ensureDisclaimer } from '@/lib/social-disclaimer'
 import { buildYouTubeShortTitle } from '@/lib/youtube-title'
 import { buildYouTubeTags } from '@/lib/youtube-tags'
@@ -187,27 +187,19 @@ export function ShortsStudioModal({
         body: JSON.stringify({ videoId }),
       })
       const data = await res.json().catch(() => ({ error: `The server did not answer (HTTP ${res.status}). Try again in a moment.` }))
-      if (!res.ok) {
-        if (data.limitReached) {
-          dispatchCapReached(data.error || 'Shorts Studio is a Pro feature.', { cap: data.cap || 'shorts_studio', currentTier: data.currentTier, upgrade: data.upgrade })
-          throw new Error(data.error || 'Shorts Studio is a Pro feature.')
-        }
-        if (!data.needsUpload && !data.ingestDisabled) throw new Error(data.error || 'Could not fetch the video automatically.')
-        // YOUTUBE REFUSED MVP'S SERVER: the creator's own video, from YouTube
-        // Studio, through SCOUT in their browser (lib/studio-file-client).
+      // YOUTUBE REFUSED MVP'S SERVER: the creator's own video, from YouTube
+      // Studio, through SCOUT in their browser (lib/studio-file-client).
+      const got = await serverOrStudio(res.ok, data, async () => {
         toast('YouTube refused MVP’s server. SCOUT is bringing your video in from YouTube Studio.')
-        const st = youtubeVideoId ? await fileFromStudio(videoId, 'source', 'upload the MP4 instead') : null
-        if (!st || !st.ok) {
-          if (data.ingestDisabled) setIngestEnabled(false)
-          const server = data.ingestDisabled ? 'Automatic fetch is not available right now.' : String(data.error || '').replace(/\s*Upload the MP4 instead and we'll take it from there\.$/, '.')
-          throw new Error(`${server}${st ? ` SCOUT tried YouTube Studio too: ${st.why}` : ' Upload the MP4 instead.'}`)
-        }
-        setHasSource(true)
-        toast.success('Brought in from YouTube Studio by SCOUT.')
-      } else {
-        setHasSource(true)
-        toast.success('Video ready')
+        return fileFromStudio(videoId, 'source', 'upload the MP4 instead')
+      })
+      if (!got.ok) {
+        if (got.limit) dispatchCapReached(got.error, { cap: data.cap || 'shorts_studio', currentTier: data.currentTier, upgrade: data.upgrade })
+        if (data.ingestDisabled) setIngestEnabled(false)
+        throw new Error(got.error)
       }
+      setHasSource(true)
+      toast.success(got.via === 'studio' ? 'Brought in from YouTube Studio by SCOUT.' : 'Video ready')
       await findShorts()
     } catch (e) {
       setError(errText(e))
@@ -215,7 +207,7 @@ export function ShortsStudioModal({
     } finally {
       setPreparing(false)
     }
-  }, [videoId, youtubeVideoId, findShorts])
+  }, [videoId, findShorts])
 
   const renderClip = useCallback(async (clip: ShortRow) => {
     if (!hasSource) { toast.error('Upload the source video first.'); return }
