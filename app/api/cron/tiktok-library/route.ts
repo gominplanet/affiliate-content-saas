@@ -45,7 +45,7 @@ export async function GET(request: Request) {
     if (handle !== lib.handle) continue
     const token = await getValidTikTokToken(sb, lib.user_id)
     if (!token) { done.push({ user: lib.user_id, read: 0, fresh: 0, error: 'no token' }); continue }
-    const { data: latest } = await sb.from('tiktok_videos').select('video_id').eq('user_id', lib.user_id).order('posted_at', { ascending: false }).limit(60)
+    const { data: latest } = await sb.from('tiktok_videos').select('video_id').eq('user_id', lib.user_id).order('posted_at', { ascending: false, nullsFirst: false }).limit(60)
     const known = new Set(((latest || []) as Array<{ video_id: string }>).map((r) => r.video_id))
     const read = await readVideoList(token, handle, { deadline: Math.min(started + BUDGET_MS, Date.now() + 15_000), maxPages: 3, known })
     const saved = await saveVideos(sb, lib.user_id, handle, read.videos, 'tiktok')
