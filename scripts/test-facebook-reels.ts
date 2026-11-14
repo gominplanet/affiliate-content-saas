@@ -100,11 +100,14 @@ check('the clean-up never deletes a kept original', /const isKept = kept\.has\(r
 check('Clip Factory renders from the kept original, checked to exist first',
   /from\('video_masters'\)\.select\('file_url'\)/.test(SHORTS_GET) && /method: 'HEAD'/.test(SHORTS_GET) && /if \(head\?\.ok\)/.test(SHORTS_GET))
 check('a Studio upload lands only in the creator\'s own folder, under the name MVP issued',
-  /\$\{o\.user\.id\}\/source-\$\{crypto\.randomUUID\(\)\}\.mp4/.test(SF) && /\^\$\{o\.user\.id\}\/source-\[0-9a-f-\]\{36\}/.test(SF))
-check('it is attached only after the file is really in storage', SF.indexOf("method: 'HEAD'") < SF.indexOf("update({ source_video_url: pub.publicUrl"))
+  /\$\{o\.user\.id\}\/\$\{body\.target === 'short' \? 'ingest-studio' : 'source'\}-\$\{crypto\.randomUUID\(\)\}\.mp4/.test(SF) && /\^\$\{o\.user\.id\}\/\$\{asShort \? 'ingest-studio' : 'source'\}-\[0-9a-f-\]\{36\}/.test(SF))
+check('it is attached only after the file is really in storage', SF.indexOf("method: 'HEAD'") > 0 && SF.indexOf("method: 'HEAD'") < SF.indexOf(".update(asShort ? { instagram_video_url: pub.publicUrl } : { source_video_url: pub.publicUrl"))
 check('SCOUT fetches it in the creator\'s Studio session and never hands the download link back',
   /msg\.type === 'MVP_STUDIO_VIDEO_FILE'/.test(BGJ) && /get_creator_videos/.test(BGJ) && /delete r\.dl/.test(BGJ))
-check('the button says what went wrong in words', /YouTube Studio did not offer a download for this video/.test(PANEL) && /Update SCOUT to 1\.21\.22/.test(PANEL))
+// The words moved to lib/studio-file-client (2026-11-14), shared by the
+// panel, the Shorts cards and Shorts Studio.
+const SFC = readFileSync('lib/studio-file-client.ts', 'utf8')
+check('the button says what went wrong in words', /YouTube Studio did not offer a download for this video/.test(SFC) && /Update SCOUT to 1\.21\.22/.test(SFC) && /fileFromStudio\(videoId, 'source'/.test(PANEL))
 
 check('Clip Factory lists only videos that are out, and counts the scheduled ones',
   /new Date\(v\.published_at\)\.getTime\(\) <= nowMs/.test(PAGE) && /setScheduledCount\(all\.length - live\.length\)/.test(PAGE) && /scheduled video\{scheduledCount === 1/.test(PAGE))

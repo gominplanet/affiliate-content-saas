@@ -19,7 +19,8 @@ import { InfoTip } from '@/components/ui/InfoTip'
 import { dispatchCapReached } from '@/components/CapReachedBanner'
 import { ShortsQuotaBadge, notifyShortsUsageChanged } from '@/components/vertical/ShortsQuotaBadge'
 import { errText } from '@/lib/err-text'
-import { requestVideoTranscriptCues, requestStudioVideoFile } from '@/lib/extension-frame'
+import { requestVideoTranscriptCues } from '@/lib/extension-frame'
+import { fileFromStudio } from '@/lib/studio-file-client'
 import { SUBTITLE_STYLES, type SubtitleStyle, type ShortRow } from '@/lib/shorts-types'
 import { renderingInBackground, waitForBackgroundRender } from '@/lib/background-render'
 
@@ -172,25 +173,8 @@ export function ShortsCreatePanel({
     if (!youtubeVideoId) return false
     setFromStudio('working'); setStudioError(null)
     try {
-      const a = await fetch('/api/youtube/shorts/studio-file', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ videoId }) })
-      const aj = await safeJson(a)
-      if (!a.ok || !aj.uploadUrl) throw new Error(aj.error || 'MVP could not open an upload for the file.')
-      const r = await requestStudioVideoFile(youtubeVideoId, aj.uploadUrl, aj.maxBytes)
-      if (!r.ok) {
-        const e = r.error || ''
-        throw new Error(
-          e === 'not-installed' ? 'SCOUT is not installed in this browser.'
-          : e === 'needs-update' ? 'Update SCOUT to 1.21.22 or later, then try again.'
-          : e === 'signed-out' ? 'YouTube Studio is signed out in this browser. Sign in at studio.youtube.com, then try again.'
-          : e === 'not-your-video' ? 'YouTube Studio does not list this video for the account signed in here. Sign in to the channel that owns it.'
-          : e === 'no-download-url' ? 'YouTube Studio did not offer a download for this video. Download it in Studio (the ⋮ menu, then Download) and drop it in the box.'
-          : e === 'too-large' ? 'The video is over 2 GB, too big for Clip Factory. Upload a smaller export of it.'
-          : e === 'timeout' ? 'It took too long. A long video can; try again, or drop the file in the box.'
-          : `SCOUT could not bring the file in (${e || 'unknown'}). Drop the file in the box instead.`)
-      }
-      const at = await fetch('/api/youtube/shorts/studio-file', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ videoId, path: aj.path }) })
-      const atj = await safeJson(at)
-      if (!at.ok || !atj.ok) throw new Error(atj.error || 'The file did not attach.')
+      const st = await fileFromStudio(videoId, 'source', 'drop the file in the box')
+      if (!st.ok) throw new Error(st.why)
       setHasSource(true); setNeedsUpload(false); setFromStudio('done')
       toast.success('Your video is in, from YouTube Studio.')
       return true

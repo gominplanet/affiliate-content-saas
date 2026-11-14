@@ -4,11 +4,14 @@
 // by SCOUT from YouTube Studio (MVP_STUDIO_VIDEO_FILE), so Clip Factory never
 // has to download from YouTube on MVP's server.
 //
-// POST { videoId }            a one-time upload address for this video's file
-// PUT  { videoId, path }      after SCOUT uploaded: attach it as the source
+// POST { videoId, target? }   a one-time upload address for this video's file
+// PUT  { videoId, path, target? }  after SCOUT uploaded: attach it as the
+//                             clip source, or (target 'short') as a Short's own file
 //
-// The file lives with the other Clip Factory sources (source-*, cleared after
-// a day by purge-shorts-sources), in the creator's own folder.
+// A long video's file lives with the other Clip Factory sources (source-*,
+// cleared after a day by purge-shorts-sources), in the creator's own folder.
+// A Short's own file is kept, like the server's own fetches (ingest-*): the
+// Shorts cards read it again whenever the Short is picked.
 
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
@@ -37,22 +40,26 @@ async function owned(videoId: string) {
 }
 
 export async function POST(req: Request) {
-  const body = await req.json().catch(() => ({})) as { videoId?: string }
+  const body = await req.json().catch(() => ({})) as { videoId?: string; target?: string }
   const o = await owned(String(body.videoId || ''))
   if ('error' in o) return o.error
-  const path = `${o.user.id}/source-${crypto.randomUUID()}.mp4`
+  const path = `${o.user.id}/${body.target === 'short' ? 'ingest-studio' : 'source'}-${crypto.randomUUID()}.mp4`
   const { data, error } = await createAdminClient().storage.from(BUCKET).createSignedUploadUrl(path)
   if (error || !data?.signedUrl) return NextResponse.json({ error: `MVP could not open an upload for the file: ${error?.message || 'no address'}` }, { status: 500 })
   return NextResponse.json({ ok: true, uploadUrl: data.signedUrl, path, youtubeVideoId: o.video.youtube_video_id, maxBytes: MAX_BYTES })
 }
 
 export async function PUT(req: Request) {
-  const body = await req.json().catch(() => ({})) as { videoId?: string; path?: string }
+  const body = await req.json().catch(() => ({})) as { videoId?: string; path?: string; target?: string }
   const o = await owned(String(body.videoId || ''))
   if ('error' in o) return o.error
   const path = String(body.path || '')
+  // A SHORT'S OWN FILE is where Clip Factory's Shorts cards read it
+  // (instagram_video_url, app/api/instagram/burn/source); a long video's is
+  // its clip source.
+  const asShort = body.target === 'short'
   // Only a file in this creator's own folder, of the name this route issued.
-  if (!new RegExp(`^${o.user.id}/source-[0-9a-f-]{36}\\.mp4$`).test(path)) return NextResponse.json({ error: 'That is not the upload MVP issued.' }, { status: 400 })
+  if (!new RegExp(`^${o.user.id}/${asShort ? 'ingest-studio' : 'source'}-[0-9a-f-]{36}\\.mp4$`).test(path)) return NextResponse.json({ error: 'That is not the upload MVP issued.' }, { status: 400 })
   const admin = createAdminClient()
   const { data: pub } = admin.storage.from(BUCKET).getPublicUrl(path)
   // WHAT ARRIVED, NOT WHAT WAS MEANT TO, asked of storage itself. A HEAD on the
@@ -74,8 +81,8 @@ export async function PUT(req: Request) {
   if (!size) return NextResponse.json({ error: 'SCOUT sent the file, but MVP storage does not have it, so nothing was attached. Drop the file in the box instead.' }, { status: 422 })
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { error } = await (o.supabase as any).from('youtube_videos')
-    .update({ source_video_url: pub.publicUrl, source_video_uploaded_at: new Date().toISOString() })
+    .update(asShort ? { instagram_video_url: pub.publicUrl } : { source_video_url: pub.publicUrl, source_video_uploaded_at: new Date().toISOString() })
     .eq('id', o.video.id).eq('user_id', o.user.id)
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-  return NextResponse.json({ ok: true, bytes: size > 0 ? size : null })
+  return NextResponse.json({ ok: true, bytes: size > 0 ? size : null, url: pub.publicUrl })
 }

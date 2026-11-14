@@ -37,6 +37,7 @@ import FeatureLockedCard from '@/components/ui/FeatureLockedCard'
 import { dispatchCapReached } from '@/components/CapReachedBanner'
 import { errText } from '@/lib/err-text'
 import { requestVideoTranscriptCues } from '@/lib/extension-frame'
+import { fileFromStudio } from '@/lib/studio-file-client'
 import { extractYouTubeVideoId } from '@/lib/youtube-url'
 import { buildYouTubeShortTitle } from '@/lib/youtube-title'
 import { buildYouTubeTags } from '@/lib/youtube-tags'
@@ -223,6 +224,8 @@ export default function ClipFactory({ facebookOnly = false }: { facebookOnly?: b
   const [shortQuery, setShortQuery] = useState('')
   const [uploading, setUploading] = useState(false)
   const [fetchingShortId, setFetchingShortId] = useState<string | null>(null)
+  // Where the file is coming from right now: MVP's server, or YouTube Studio through SCOUT.
+  const [fetchVia, setFetchVia] = useState<'server' | 'studio'>('server')
   const fileRef = useRef<HTMLInputElement>(null)
   // A horizontal upload can't drop straight into Enhance (the burn would crop off
   // its sides), so we park it here and let the creator pick a 9:16 reframe first.
@@ -474,17 +477,34 @@ export default function ClipFactory({ facebookOnly = false }: { facebookOnly?: b
       // the creator to YouTube Studio to download + re-upload.
       if (!videoUrl) {
         setFetchingShortId(id)
+        setFetchVia('server')
         const res = await fetch('/api/youtube/shorts/ingest', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ videoId: id, target: 'short' }),
         })
-        const data = await res.json()
+        const data = await res.json().catch(() => ({ error: `MVP did not answer (HTTP ${res.status}).` }))
         if (!res.ok || !data.videoUrl) {
-          if (data.ingestDisabled) throw new Error("Automatic fetch isn’t available right now. Please upload the clip instead.")
-          if (data.limitReached) dispatchCapReached(data.error || 'Clip Factory is a Pro feature.', { cap: data.cap || 'shorts_studio', currentTier: data.currentTier, upgrade: data.upgrade })
-          throw new Error(data.error || "We couldn't fetch this Short automatically.")
+          if (data.limitReached) {
+            dispatchCapReached(data.error || 'Clip Factory is a Pro feature.', { cap: data.cap || 'shorts_studio', currentTier: data.currentTier, upgrade: data.upgrade })
+            throw new Error(data.error || 'Clip Factory is a Pro feature.')
+          }
+          if (!data.needsUpload && !data.ingestDisabled) throw new Error(data.error || "We couldn't fetch this Short automatically.")
+          // YOUTUBE REFUSED MVP'S SERVER (Seb, 2026-11-14: "YouTube is refusing
+          // MVP's downloader right now"). It is the creator's own Short, and
+          // YouTube Studio gives every owner a download, so SCOUT brings it in
+          // from Studio in their own browser. The server's reason is kept for
+          // when that does not work either.
+          setFetchVia('studio')
+          const st = await fileFromStudio(id, 'short', 'upload the MP4 instead')
+          if (!st.ok || !st.url) {
+            const server = data.ingestDisabled ? 'Automatic fetch is not available right now.' : String(data.error || '').replace(/\s*Upload the MP4 instead and we'll take it from there\.$/, '.')
+            throw new Error(`${server} SCOUT tried YouTube Studio too: ${st.ok ? 'the file did not attach.' : st.why}`)
+          }
+          videoUrl = st.url
+          toast.success('Brought in from YouTube Studio by SCOUT.')
+        } else {
+          videoUrl = data.videoUrl as string
         }
-        videoUrl = data.videoUrl as string
         setShorts(prev => prev.map(x => (x.id === id ? { ...x, hasVideo: true } : x)))
       }
       if (!videoUrl) throw new Error('No video available for this Short.')
@@ -1169,7 +1189,7 @@ export default function ClipFactory({ facebookOnly = false }: { facebookOnly?: b
                           {s.thumbnailUrl ? <img src={s.thumbnailUrl} alt="" className="w-full h-full object-cover" /> : <Video size={22} className="absolute inset-0 m-auto text-[#c7c7cc]" />}
                           {s.posted && <span className="absolute top-1.5 left-1.5 text-[9px] font-semibold rounded-full bg-[#34c759] text-white px-1.5 py-0.5">Posted</span>}
                           {!s.hasVideo && !fetching && <span className="absolute bottom-1.5 left-1.5 right-1.5 inline-flex items-center justify-center gap-1 text-[9px] text-white bg-black/70 rounded px-1 py-0.5"><Download size={10} /> Tap to fetch</span>}
-                          {fetching && <span className="absolute inset-0 flex items-center justify-center bg-black/50 text-white text-[10px] font-medium gap-1"><Loader2 size={14} className="animate-spin" /> Fetching…</span>}
+                          {fetching && <span className="absolute inset-0 flex items-center justify-center bg-black/50 text-white text-[10px] font-medium gap-1 text-center px-2"><Loader2 size={14} className="animate-spin shrink-0" /> {fetchVia === 'studio' ? 'SCOUT is bringing it in from YouTube Studio…' : 'Fetching…'}</span>}
                         </div>
                         <p className="text-[11px] font-medium text-[#1d1d1f] dark:text-[#f5f5f7] p-2 line-clamp-2">{s.title}</p>
                       </button>
