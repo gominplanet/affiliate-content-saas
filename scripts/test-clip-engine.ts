@@ -86,7 +86,7 @@ for (const f of ['components/vertical/ShortsCreatePanel.tsx', 'components/conten
   check(`${f.split('/').pop()}: the toast says when silences were or were not cut`, /without trimming silences/.test(src) && /of silence cut/.test(src))
 }
 const server = read('ingest-service/server.js')
-check('the render service burns the hook and cuts the silences', /buildAss\(words, \{ hook \}\)/.test(server) && /keepSegments\(body\?\.segments, dur\)/.test(server) && /trimFilters\(segs\)/.test(server))
+check('the render service burns the hook (with the creator\'s caption look) and cuts the silences', /buildAss\(words, \{ hook, style: /.test(server) && /keepSegments\(body\?\.segments, dur\)/.test(server) && /trimFilters\(segs\)/.test(server))
 check('a trimmed render keeps every frame', /'-fps_mode', 'passthrough'/.test(server))
 check('the Docker image ships the caption code', /COPY server\.js render-filters\.js/.test(read('ingest-service/Dockerfile')))
 

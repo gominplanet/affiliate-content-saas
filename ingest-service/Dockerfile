@@ -19,6 +19,8 @@ RUN apt-get update \
   # the font. Non-fatal (|| true): if GitHub rate-limits the raw fetch during a
   # build, captions fall back to a default font rather than failing the deploy.
   && (curl -fSL https://raw.githubusercontent.com/google/fonts/main/ofl/anton/Anton-Regular.ttf -o /usr/share/fonts/truetype/caption/Anton-Regular.ttf || echo "WARN: Anton font fetch failed; captions will use a fallback font") \
+  # Poppins ExtraBold: the Outline and Brand caption looks (render-filters LOOKS).
+  && (curl -fSL https://raw.githubusercontent.com/google/fonts/main/ofl/poppins/Poppins-ExtraBold.ttf -o /usr/share/fonts/truetype/caption/Poppins-ExtraBold.ttf || echo "WARN: Poppins font fetch failed; Outline and Brand captions will use a fallback font") \
   && fc-cache -f \
   && rm -rf /var/lib/apt/lists/*
 

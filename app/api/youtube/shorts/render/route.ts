@@ -97,8 +97,17 @@ export async function POST(request: Request) {
     const style: SubtitleStyle = SUBTITLE_STYLES.includes(body.subtitleStyle as SubtitleStyle)
       ? (body.subtitleStyle as SubtitleStyle) : 'bold-white'
     // Layout (ingest service handles it; older builds ignore it).
-    const renderOpts: { reframe: 'split' | 'center'; hook?: string; segments?: Array<[number, number]>; background?: { callbackUrl: string; job: string } } = {
+    const renderOpts: { reframe: 'split' | 'center'; hook?: string; segments?: Array<[number, number]>; background?: { callbackUrl: string; job: string }; brandColor?: string } = {
       reframe: body.reframe === 'split' ? 'split' as const : 'center' as const,
+    }
+    // THE BRAND LOOK IN THE CREATOR'S OWN COLOUR: the primary colour on their
+    // Brand page; the render server uses MVP's violet when none is saved.
+    if (style === 'brand') {
+      try {
+        const { data: bp } = await createAdminClient().from('brand_profiles').select('primary_color').eq('user_id', user.id).maybeSingle()
+        const hex = String((bp as { primary_color?: string | null } | null)?.primary_color || '').trim()
+        if (/^#?[0-9a-f]{6}$/i.test(hex)) renderOpts.brandColor = hex.startsWith('#') ? hex : `#${hex}`
+      } catch { /* MVP's violet */ }
     }
     // THE HOOK CARD IS THE CREATOR'S CHOICE (Seb, 2026-10-10): off unless
     // ticked, with the words they picked or wrote (components/clips/HookPicker).

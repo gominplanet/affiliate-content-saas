@@ -102,15 +102,70 @@ function hookEvent(hook) {
   return `Dialogue: 1,${assTime(0)},${assTime(HOOK_SEC)},Hook,,0,0,0,,{\\fad(120,250)}${t}`
 }
 
+// ── THE FIVE CAPTION LOOKS (Seb, 2026-11-14) ────────────────────────────────
+// Clip Factory offers Bold white, Yellow pop, Outline, Hype and Brand, and the
+// choice never reached this server: every clip came out Bold white, and only
+// the Cloudinary backup (switched off) ever drew the others. Each look is a
+// libass style. Bold white is the look every clip has had, unchanged.
+//   font      Anton (heavy, condensed) or Poppins ExtraBold (clean, rounded);
+//             both are installed by the Dockerfile, DejaVu Sans if one is missing
+//   box       an opaque box behind the line (libass BorderStyle 3)
+//   upper     the words in capitals
+//   active    the spoken word: its colour (null keeps the fill) and pop size
+//   dim       the words not yet or no longer spoken, see-through (brand)
+//   power     numbers, money and emphasis, coloured (null: not coloured)
+//   margin    room left and right of the line (120 unless set: the wider
+//             Poppins needs more of the width for three words)
+const LOOKS = {
+  'bold-white': { font: 'Anton', size: 108, fill: '#FFFFFF', edge: '#000000', edgeW: 8, shadow: 4, box: false, upper: true, words: 3, active: { color: '#FFFF00', pop: 118 }, power: '#33FF66', spacing: 2 },
+  'yellow-pop': { font: 'Anton', size: 100, fill: '#FFD400', edge: '#111111', edgeW: 20, shadow: 0, box: true, upper: true, words: 3, active: { color: '#FFFFFF', pop: 114 }, power: '#33FF66', spacing: 2 },
+  'outline': { font: 'Poppins ExtraBold', size: 98, fill: '#FFFFFF', edge: '#000000', edgeW: 9, shadow: 0, box: false, upper: false, words: 3, active: { color: null, pop: 112 }, power: null, spacing: 0, margin: 70 },
+  'hype': { font: 'Anton', size: 128, fill: '#FFD400', edge: '#000000', edgeW: 10, shadow: 6, box: false, upper: true, words: 2, active: { color: '#FFFFFF', pop: 130 }, power: '#FF3B3B', spacing: 3 },
+  'brand': { font: 'Poppins ExtraBold', size: 94, fill: null, edge: null, edgeW: 20, shadow: 0, box: true, upper: false, words: 3, active: { color: null, pop: 112 }, power: null, dim: true, spacing: 0, margin: 70 },
+}
+const DEFAULT_BRAND = '#7C3AED' // MVP's violet, when the creator saved no brand colour
+
+/** '#RRGGBB' as libass writes it, &HAABBGGRR. */
+function assColour(hex, alpha) {
+  const m = /^#?([0-9a-f]{6})$/i.exec(String(hex || '').trim())
+  const h = (m ? m[1] : 'FFFFFF').toUpperCase()
+  return `&H${alpha || '00'}${h.slice(4, 6)}${h.slice(2, 4)}${h.slice(0, 2)}`
+}
+/** A clean '#RRGGBB', or null. */
+function cleanHex(hex) {
+  const m = /^#?([0-9a-f]{6})$/i.exec(String(hex || '').trim())
+  return m ? `#${m[1].toUpperCase()}` : null
+}
+/** Dark text on a light box, white text on a dark one. */
+function textOn(hex) {
+  const h = cleanHex(hex) || DEFAULT_BRAND
+  const [r, g, b] = [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16) / 255)
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b > 0.6 ? '#111111' : '#FFFFFF'
+}
+
+/** The look for a style name, with the creator's brand colour for Brand. */
+function lookFor(style, brandColor) {
+  const base = LOOKS[style] || LOOKS['bold-white']
+  if (style !== 'brand') return base
+  const box = cleanHex(brandColor) || DEFAULT_BRAND
+  return { ...base, fill: textOn(box), edge: box }
+}
+
 function buildAss(cues, opts) {
   const o = opts || {}
+  const L = lookFor(o.style, o.brandColor)
   const words = toWords(cues)
-  const lines = groupLines(words, 3, 0.6)
-  const HIGHLIGHT = '&H0000FFFF&' // yellow, ASS is &HBBGGRR
-  // Power words (numbers, money, emphasis) the render route flags with hl, in
-  // green, so they stand out before and after they are spoken. The flag used
-  // to be sent and never read.
-  const POWER = '&H0066FF33&'
+  const lines = groupLines(words, L.words, 0.6)
+  const ACTIVE = L.active.color ? `${assColour(L.active.color)}&` : null
+  const POWER = L.power ? `${assColour(L.power)}&` : null
+  const brand = o.style === 'brand'
+  // BorderStyle 1 is an outline round the letters; 3 is an opaque box, whose
+  // colour libass takes from OutlineColour and whose padding is the Outline.
+  const capStyle = `Style: Cap,${L.font},${L.size},${assColour(L.fill)},&H000000FF,${assColour(L.edge)},&H90000000,0,0,0,0,100,100,${L.spacing},0,${L.box ? 3 : 1},${L.edgeW},${L.shadow},2,${L.margin || 120},${L.margin || 120},520,1`
+  // The hook card: black on yellow, or for Brand the creator's own colour.
+  const hookStyle = brand
+    ? `Style: Hook,${L.font},84,${assColour(L.fill)},&H000000FF,${assColour(L.edge)},&H00000000,0,0,0,0,100,100,0,0,3,22,0,8,90,90,300,1`
+    : 'Style: Hook,Anton,92,&H00000000,&H000000FF,&H0000FFFF,&H00000000,0,0,0,0,100,100,1,0,3,22,0,8,90,90,300,1'
 
   const header = [
     '[Script Info]',
@@ -122,10 +177,8 @@ function buildAss(cues, opts) {
     '',
     '[V4+ Styles]',
     'Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding',
-    // Anton 108, white fill, black outline 8 + shadow 4, bottom-center, MarginV 520.
-    'Style: Cap,Anton,108,&H00FFFFFF,&H000000FF,&H00000000,&H90000000,0,0,0,0,100,100,2,0,1,8,4,2,120,120,520,1',
-    // Hook: black Anton on an opaque yellow box (BorderStyle 3), top centre.
-    'Style: Hook,Anton,92,&H00000000,&H000000FF,&H0000FFFF,&H00000000,0,0,0,0,100,100,1,0,3,22,0,8,90,90,300,1',
+    capStyle,
+    hookStyle,
     '',
     '[Events]',
     'Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text',
@@ -141,6 +194,7 @@ function buildAss(cues, opts) {
   for (const line of lines) for (let i = 0; i < line.length; i++) seq.push({ line, i, start: line[i].start, end: line[i].end })
   seq.sort((a, b) => a.start - b.start)
 
+  const pop = (n) => `\\fscx${n}\\fscy${n}\\t(0,90,\\fscx100\\fscy100)`
   const events = []
   for (let k = 0; k < seq.length; k++) {
     const cur = seq[k]
@@ -148,9 +202,10 @@ function buildAss(cues, opts) {
     const next = seq[k + 1]
     const end = Math.max(start + 0.05, next ? next.start : cur.end)
     const text = cur.line.map((w, j) => {
-      const up = w.text.toUpperCase()
-      if (j === cur.i) return `{\\c${HIGHLIGHT}\\fscx118\\fscy118\\t(0,90,\\fscx100\\fscy100)}${up}{\\r}`
-      return w.hl ? `{\\c${POWER}}${up}{\\r}` : up
+      const t = L.upper ? w.text.toUpperCase() : w.text
+      if (j === cur.i) return `{${ACTIVE ? `\\c${ACTIVE}` : ''}${pop(L.active.pop)}}${t}{\\r}`
+      if (L.dim) return `{\\1a&H60&}${t}{\\r}`
+      return w.hl && POWER ? `{\\c${POWER}}${t}{\\r}` : t
     }).join(' ')
     events.push(`Dialogue: 0,${assTime(start)},${assTime(end)},Cap,,0,0,0,,${text}`)
   }
@@ -193,4 +248,4 @@ function trimFilters(segments) {
   }
 }
 
-module.exports = { reframeChain, cropAt, buildAss, assTime, assEscape, toWords, keepSegments, trimFilters, HOOK_SEC }
+module.exports = { reframeChain, cropAt, buildAss, assTime, assEscape, toWords, keepSegments, trimFilters, HOOK_SEC, LOOKS, lookFor, assColour }

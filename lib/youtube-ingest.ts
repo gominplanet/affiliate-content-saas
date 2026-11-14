@@ -338,6 +338,8 @@ export interface RenderShortOpts {
   /** Render in the background: the service answers at once and posts the
    *  outcome to callbackUrl with this job token (lib/render-job). */
   background?: { callbackUrl: string; job: string }
+  /** The Brand caption look's box colour: the creator's brand colour. */
+  brandColor?: string
 }
 
 export async function renderShort(
@@ -409,6 +411,10 @@ async function renderShortReq(
           ...source, startSec, endSec, words: words || [],
           ...(userId ? { userId } : {}),
           ...(opts?.reframe ? { reframe: opts.reframe } : {}),
+          // THE CAPTION LOOK THE CREATOR PICKED (Seb, 2026-11-14): it was
+          // never sent, so every clip came out Bold white.
+          ...(captionTheme ? { style: captionTheme } : {}),
+          ...(opts?.brandColor ? { brandColor: opts.brandColor } : {}),
           ...(opts?.hook ? { hook: opts.hook } : {}),
           ...(opts?.segments?.length ? { segments: opts.segments } : {}),
           ...(opts?.background ? { async: true, callbackUrl: opts.background.callbackUrl, job: opts.background.job } : {}),

@@ -51,5 +51,10 @@ check('when YouTube refused MVP, Render has SCOUT bring the video in from YouTub
   && /if \(await getFromStudioRef\.current\(\)\) \{ res = await send\(\); data = await safeJson\(res\) \}/.test(rc)
   && rc.indexOf('getFromStudioRef.current()') < rc.indexOf("if (data.needsUpload) { setHasSource(false); setNeedsUpload(true);"))
 
+// ── The caption look reaches the render server (Seb, 2026-11-14: yes) ───────
+const YI = read('lib/youtube-ingest.ts')
+check('the look the creator picked is sent to the render server, with the brand colour', /\.\.\.\(captionTheme \? \{ style: captionTheme \} : \{\}\)/.test(YI) && /\.\.\.\(opts\?\.brandColor \? \{ brandColor: opts\.brandColor \} : \{\}\)/.test(YI))
+check('the route reads the creator’s brand colour for the Brand look only', /if \(style === 'brand'\) \{[\s\S]{0,300}from\('brand_profiles'\)\.select\('primary_color'\)/.test(R) && /renderShort\(sourceUrl, startSec, endSec, withCaptions \? cuesWithHl : \[\], user\.id, style, renderOpts\)/.test(R))
+
 if (fails.length) { console.error(`❌ clip-render-failure: ${fails.length} failure(s)\n${fails.map((f) => `   • ${f}`).join('\n')}`); process.exit(1) }
 console.log('✅ clip-render-failure: Render brings the video in from YouTube Studio when YouTube refused MVP, and a failed render says the render server’s own reason, never a switched-off backup’s')

@@ -962,7 +962,8 @@ async function renderShortJob(body, opts) {
     // The hook card opens the clip whether or not captions are on.
     const hook = typeof body?.hook === 'string' ? body.hook.slice(0, 90) : ''
     const withAss = withCaptions || !!assEscape(hook)
-    if (withAss) fs.writeFileSync(assTmp, buildAss(words, { hook }))
+    // The caption look the creator picked, and their brand colour for Brand.
+    if (withAss) fs.writeFileSync(assTmp, buildAss(words, { hook, style: typeof body?.style === 'string' ? body.style : undefined, brandColor: typeof body?.brandColor === 'string' ? body.brandColor : undefined }))
     // Trim silences: only the keep-segments the route worked out are rendered.
     const segs = keepSegments(body?.segments, dur)
     const trim = segs ? trimFilters(segs) : null

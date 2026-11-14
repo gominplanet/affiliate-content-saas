@@ -84,6 +84,48 @@ ok('a power word is coloured when it is not the spoken word', () => {
   assert.ok(a.includes('{\\c&H0066FF33&}$40{\\r}'), 'green $40 while "costs" is spoken')
 })
 
+console.log('caption looks: the one the creator picked')
+{
+  const { LOOKS, lookFor, assColour } = require('./render-filters')
+  const capOf = (a) => (a.match(/^Style: Cap,.*$/m) || [''])[0]
+  ok('the five looks Clip Factory offers each draw their own caption style', () => {
+    assert.deepStrictEqual(Object.keys(LOOKS).sort(), ['bold-white', 'brand', 'hype', 'outline', 'yellow-pop'])
+    const caps = Object.keys(LOOKS).map((st) => capOf(buildAss(W3, { style: st, brandColor: '#0E7C66' })))
+    assert.strictEqual(new Set(caps).size, 5, caps.join('\n'))
+  })
+  ok('Bold white is the look every clip had, exactly, and an unknown or missing style is Bold white', () => {
+    const was = 'Style: Cap,Anton,108,&H00FFFFFF,&H000000FF,&H00000000,&H90000000,0,0,0,0,100,100,2,0,1,8,4,2,120,120,520,1'
+    assert.strictEqual(capOf(buildAss(W3)), was)
+    assert.strictEqual(buildAss(W3, { style: 'bold-white' }), buildAss(W3))
+    assert.strictEqual(buildAss(W3, { style: 'nope' }), buildAss(W3))
+  })
+  ok('Yellow pop is yellow on a dark box', () => { assert.ok(/^Style: Cap,Anton,100,&H0000D4FF,&H000000FF,&H00111111,&H90000000,(\d+,){8}3,/m.test(buildAss(W3, { style: 'yellow-pop' }))) })
+  ok('Outline is white with a black outline in Poppins, as spoken (not capitals), power words not coloured', () => {
+    const a = buildAss(W3, { style: 'outline' })
+    assert.ok(/^Style: Cap,Poppins ExtraBold,98,&H00FFFFFF,&H000000FF,&H00000000,/m.test(a) && /,costs\{\\r\}|\}costs\{\\r\}/.test(a) && !a.includes('&H0066FF33&'))
+  })
+  ok('Hype is big yellow capitals, two words a line, the spoken word white', () => {
+    const a = buildAss(W3, { style: 'hype' })
+    assert.ok(/^Style: Cap,Anton,128,&H0000D4FF,/m.test(a) && a.includes('\\c&H00FFFFFF&\\fscx130') && LOOKS.hype.words === 2)
+  })
+  ok('Brand is a box in the creator’s brand colour, text that reads on it, and the hook card in it too', () => {
+    const a = buildAss(W3, { style: 'brand', brandColor: '#0E7C66', hook: 'hi' })
+    assert.ok(/^Style: Cap,Poppins ExtraBold,94,&H00FFFFFF,&H000000FF,&H00667C0E,/m.test(a), capOf(a))
+    assert.ok(/^Style: Hook,Poppins ExtraBold,84,&H00FFFFFF,&H000000FF,&H00667C0E,/m.test(a))
+    assert.ok(a.includes('{\\1a&H60&}'), 'words not being spoken are see-through')
+    assert.strictEqual(lookFor('brand', '#FFE14D').fill, '#111111', 'dark text on a light brand colour')
+    assert.strictEqual(lookFor('brand', null).edge, '#7C3AED', 'MVP violet with no brand colour saved')
+    assert.strictEqual(lookFor('brand', 'red').edge, '#7C3AED', 'anything but a colour is not used')
+    assert.strictEqual(assColour('#0E7C66'), '&H00667C0E')
+  })
+  const S = require('fs').readFileSync(require('path').join(__dirname, 'server.js'), 'utf8')
+  ok('the clip render passes the creator’s look and brand colour to the captions', () => {
+    assert.ok(/buildAss\(words, \{ hook, style: typeof body\?\.style === 'string' \? body\.style : undefined, brandColor: typeof body\?\.brandColor === 'string' \? body\.brandColor : undefined \}\)/.test(S))
+  })
+  const DF = require('fs').readFileSync(require('path').join(__dirname, 'Dockerfile'), 'utf8')
+  ok('the server image installs both caption fonts', () => { assert.ok(/Anton-Regular\.ttf/.test(DF) && /Poppins-ExtraBold\.ttf/.test(DF)) })
+}
+
 console.log('trim silences: keep-segments')
 ok('clean ordered segments pass, one segment is nothing to cut', () => {
   assert.deepStrictEqual(keepSegments([[0, 1.5], [2, 4]], 10), [[0, 1.5], [2, 4]])
