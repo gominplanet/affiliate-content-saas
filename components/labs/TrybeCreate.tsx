@@ -18,6 +18,7 @@ import { readBrandStats, byBrandName, type MyBrand } from '@/lib/trybe-mybrands'
 import { brandPageUrl } from '@/lib/trybe-brand-page'
 import TrybeVideoIdeas, { loadBrandPage, type BrandPage } from '@/components/labs/TrybeVideoIdeas'
 import TrybeSavedScripts from '@/components/labs/TrybeSavedScripts'
+import TrybeBatchScripts from '@/components/labs/TrybeBatchScripts'
 import { AmazonLine, ProductAmazon, AmazonFilmedList } from '@/components/labs/TrybeFinderControls'
 import { useTrybeAmazon } from '@/components/labs/useTrybeAmazon'
 import { shrinkPicture } from '@/lib/buyer-read-client'
@@ -148,6 +149,8 @@ export default function TrybeCreate({ canRead, isAdmin, onFind, start, onStarted
       <div className="space-y-4">
         <div className={card} style={cardStyle}><p className="text-[15px] font-semibold">Make videos needs SCOUT on TRYBE</p><p className="text-[13.5px] mt-1" style={soft}>Install SCOUT, allow it on TRYBE and sign in to TRYBE in this Chrome. MVP then shows the brands you work with and the products they want videos of.</p></div>
         <TrybeSavedScripts />
+        {/* Batch scripts need no SCOUT either: the brief is pasted or uploaded. Labs first (admin). */}
+        {isAdmin && <TrybeBatchScripts />}
       </div>
     )
   }
@@ -160,6 +163,8 @@ export default function TrybeCreate({ canRead, isAdmin, onFind, start, onStarted
 
       {/* YOUR SAVED SCRIPTS: every set written, kept until you clear it. */}
       {step === 1 && <TrybeSavedScripts />}
+      {/* BATCH SCRIPTS: 50 to 300 for one brand challenge. Labs first (admin). */}
+      {step === 1 && isAdmin && <TrybeBatchScripts />}
 
       {/* 1. The brand */}
       {step === 1 && (

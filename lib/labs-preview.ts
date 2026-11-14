@@ -9,7 +9,7 @@
 import { normalizeTier } from '@/lib/tier'
 import { canSeeNav } from '@/lib/feature-access'
 
-export type PreviewFeature = 'on_sale' | 'amazon_live' | 'comparison' | 'shorts_mode' | 'first_comment' | 'brand_recap' | 'deal_aftercare' | 'post_refresh' | 'facebook_reels' | 'whole_video' | 'sold_campaigns' | 'liftoff_split' | 'earnings' | 'live_followup' | 'video_plan' | 'studio_upload' | 'facebook_setup' | 'group_queue' | 'trybe_outreach' | 'hashtag_trends' | 'drop' | 'video_qr' | 'deals_import' | 'product_scripts' | 'review_edit' | 'creator_look' | 'new_look' | 'trybe_v2' | 'section_nav' | 'trybe_layout' | 'menu_v2'
+export type PreviewFeature = 'on_sale' | 'amazon_live' | 'comparison' | 'shorts_mode' | 'first_comment' | 'brand_recap' | 'deal_aftercare' | 'post_refresh' | 'facebook_reels' | 'whole_video' | 'sold_campaigns' | 'liftoff_split' | 'earnings' | 'live_followup' | 'video_plan' | 'studio_upload' | 'facebook_setup' | 'group_queue' | 'trybe_outreach' | 'hashtag_trends' | 'drop' | 'video_qr' | 'deals_import' | 'product_scripts' | 'review_edit' | 'creator_look' | 'new_look' | 'trybe_v2' | 'section_nav' | 'trybe_layout' | 'menu_v2' | 'trybe_batch'
 
 /** Who may use each preview feature: 'admin' while testing, 'labs' once open to Pro. */
 const OPEN_TO: Record<PreviewFeature, 'admin' | 'labs'> = {
@@ -136,6 +136,12 @@ const OPEN_TO: Record<PreviewFeature, 'admin' | 'labs'> = {
   // on for every account on every plan 2026-11-08 (Seb: "turn it on for
   // everyone"), so the shell reads it with previewOpenToPro.
   section_nav: 'labs',
+  // BATCH SCRIPTS FOR A BRAND CHALLENGE (Seb, 2026-11-14: "we need to add a
+  // functionality into trybe scriptwriting so people can do batches of
+  // scripts"): a campaign set up once, 50 to 300 story-time scripts written
+  // in rounds, checked against the brief's rules, tracked to accepted, and a
+  // PDF to shoot from (lib/trybe-batch). Admin first.
+  trybe_batch: 'admin',
 }
 
 /** Every preview feature. A check can then ask which are still admin only
