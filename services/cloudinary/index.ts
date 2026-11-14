@@ -42,9 +42,16 @@ function ensureConfig(): boolean {
 // story image stops at once when it happens, so the first refusal emails the
 // team, at most once an hour per server, with what Cloudinary said.
 let lastDownAlert = 0
+// Until when this server leaves Cloudinary alone after it refused MVP's
+// account (a clip render fell back to it and its "cloud_name is disabled" hid
+// the real reason the render failed, Seb 2026-11-14).
+let accountDownUntil = 0
+/** Cloudinary refused MVP's account on this server within the last hour. */
+export function cloudinaryKnownDown(): boolean { return Date.now() < accountDownUntil }
 function noteCloudinaryError(text: string | null | undefined): void {
   if (!cloudinaryAccountDown(text)) return
   const now = Date.now()
+  accountDownUntil = now + 60 * 60 * 1000
   if (now - lastDownAlert < 60 * 60 * 1000) return
   lastDownAlert = now
   void alertOps('Cloudinary is refusing MVP\'s account', `Cloudinary answered: ${text}\n\nCloudinary is only MVP's backup now: overlay burns, deal pictures, deal Story images and video pin covers are made by MVP itself (lib/overlay-burn, lib/deal-images). This means MVP's own way failed first and the backup could not help either, so check the render server on Railway. Nothing needs paying for at Cloudinary.`)
@@ -680,7 +687,7 @@ export async function renderVerticalShort(opts: RenderShortOpts): Promise<Render
     // 3. Cloudinary renders derivations lazily (423 while processing) — poll
     //    until it serves real bytes. A trimmed+captioned clip is fast to render.
     const { ready, detail } = await waitForVideo(url, 180_000)
-    if (!ready) { lastShortError = detail; console.warn('[cloudinary] short not ready:', detail, '| url:', url); return null }
+    if (!ready) { lastShortError = detail; noteCloudinaryError(detail); console.warn('[cloudinary] short not ready:', detail, '| url:', url); return null }
     return { url, sourcePublicId }
   } catch (e) {
     lastShortError = errMessage(e)

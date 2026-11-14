@@ -207,7 +207,7 @@ export function ShortsCreatePanel({
     if (!canRender) { toast.error('Prepare the source video first.'); return }
     setRenderingId(clip.id)
     try {
-      const res = await fetch('/api/youtube/shorts/render', {
+      const send = () => fetch('/api/youtube/shorts/render', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           shortId: clip.id,
@@ -224,7 +224,18 @@ export function ShortsCreatePanel({
       // error — almost always the render (heavy video work) exceeding the function
       // time limit. Surface something actionable, never a raw "Unexpected token" JSON
       // parse error.
-      const data = await safeJson(res)
+      let res = await send()
+      let data = await safeJson(res)
+      // YOUTUBE REFUSED MVP'S SERVER (Seb, 2026-11-14: "YouTube would not let
+      // MVP download this video ... Upload the video file in the box above").
+      // It is the creator's own video, so SCOUT gets it from YouTube Studio in
+      // their browser, as Find Shorts already does, and the clip renders again,
+      // once. Only when that fails too is the upload box the way in, with
+      // SCOUT's own reason beside its button.
+      if (!res.ok && data.needsUpload && youtubeVideoId && getFromStudioRef.current) {
+        toast('YouTube would not let MVP download this video. SCOUT is getting it from YouTube Studio, then this clip renders…', { duration: 9000 })
+        if (await getFromStudioRef.current()) { res = await send(); data = await safeJson(res) }
+      }
       if (!res.ok) {
         if (data.needsUpload) { setHasSource(false); setNeedsUpload(true); throw new Error(data.error || 'Prepare the source video first.') }
         // Nothing was rendered and the clip it has is untouched, so the card

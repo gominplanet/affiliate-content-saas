@@ -17,7 +17,8 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { normalizeTier, billingWindow, type Tier } from '@/lib/tier'
-import { cloudinaryConfigured, renderVerticalShort, getLastShortError } from '@/services/cloudinary'
+import { cloudinaryConfigured, cloudinaryKnownDown, renderVerticalShort, getLastShortError } from '@/services/cloudinary'
+import { clipRenderFailureWords, clipRenderFailureRecord } from '@/lib/clip-render-failure'
 import { ingestConfigured, clipSegment, renderShort, renderShortSegment, ingestYouTubeVideo, getLastIngestError } from '@/lib/youtube-ingest'
 import { buildCaptionChunks, isPowerWord } from '@/lib/shorts-captions'
 import { recordUsage } from '@/lib/ai-usage'
@@ -238,10 +239,18 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: true, pending: true, short: waiting ? rowToShort(waiting) : null, trimmedSec, hook: !!renderOpts.hook })
     }
 
+    // WHY MVP'S OWN RENDER FAILED, kept before the backup runs: the backup's
+    // refusal ("cloud_name is disabled") used to replace it on screen (Seb,
+    // 2026-11-14), so the real reason was never seen.
+    const primaryWhy = !renderedUrl && ingestConfigured() ? getLastIngestError() : null
+    let backupTried = false
+
     // FALLBACK: Cloudinary (static captions) — only possible with a hosted
-    // source URL (no segment support). Skipped on the fetch/segment path.
-    if (!renderedUrl && hasSource) {
+    // source URL (no segment support). Skipped on the fetch/segment path, and
+    // while Cloudinary is refusing MVP's account (it is switched off).
+    if (!renderedUrl && hasSource && cloudinaryConfigured() && !cloudinaryKnownDown()) {
       engine = 'cloudinary'
+      backupTried = true
       const clip = ingestConfigured() ? await clipSegment(sourceUrl, startSec, endSec, user.id) : null
       const usingClip = !!clip
       const result = await renderVerticalShort({
@@ -260,13 +269,13 @@ export async function POST(request: Request) {
         if (p) { try { await supabase.storage.from('instagram-videos').remove([p]) } catch { /* non-fatal */ } }
       }
       if (!result) {
-        const detail = getLastShortError() || 'unknown error'
+        const backupWhy = getLastShortError() || 'unknown error'
         try {
           await sb.from('youtube_shorts')
-            .update({ status: 'failed', render_error: detail, updated_at: new Date().toISOString() })
+            .update({ status: 'failed', render_error: clipRenderFailureRecord(primaryWhy, backupWhy), updated_at: new Date().toISOString() })
             .eq('id', shortId).eq('user_id', user.id)
         } catch { /* non-fatal */ }
-        return NextResponse.json({ error: `Couldn't render the clip: ${detail}` }, { status: 500 })
+        return NextResponse.json({ error: clipRenderFailureWords(primaryWhy, backupWhy) }, { status: 500 })
       }
       renderedUrl = result.url
       // Cache the one-time Cloudinary source upload (full-source path only).
@@ -281,10 +290,11 @@ export async function POST(request: Request) {
 
     // Both engines failed → mark failed and surface the REAL reason.
     if (!renderedUrl) {
-      const detail = getLastIngestError() || getLastShortError() || 'the video fetch/render failed'
+      const primary = primaryWhy || getLastIngestError() || (ingestConfigured() ? 'the video fetch/render failed' : null)
+      const backup = backupTried ? getLastShortError() : null
       try {
         await sb.from('youtube_shorts')
-          .update({ status: 'failed', render_error: detail, updated_at: new Date().toISOString() })
+          .update({ status: 'failed', render_error: clipRenderFailureRecord(primary, backup), updated_at: new Date().toISOString() })
           .eq('id', shortId).eq('user_id', user.id)
       } catch { /* non-fatal */ }
       // The only path here was the YouTube segment fetch (no uploaded source), and
@@ -298,7 +308,7 @@ export async function POST(request: Request) {
           needsUpload: true, videoId: short.video_id,
         }, { status: 412 })
       }
-      return NextResponse.json({ error: `Couldn't render the clip: ${detail}` }, { status: 500 })
+      return NextResponse.json({ error: clipRenderFailureWords(primary, backup) }, { status: 500 })
     }
 
     const { data: updated } = await sb.from('youtube_shorts')
