@@ -7,8 +7,8 @@
 import { readFileSync } from 'node:fs'
 import {
   readCampaign, checkScript, planSlots, runRound, estimateSeconds, likeness, casedWords, parseScripts, suggestDeny,
-  rulesFromReply, paceWords, notReadyWords, writerSystem, writerPrompt, BATCH_ROUND, MAX_PER_CAMPAIGN,
-  type Script, type Campaign, type Slot,
+  rulesFromReply, paceWords, notReadyWords, writerSystem, writerPrompt, rulesInput, claimsFromReply, seedCampaign, BATCH_ROUND, MAX_PER_CAMPAIGN,
+  RULES_SYSTEM, type Script, type Campaign, type Slot,
 } from '../lib/trybe-batch'
 
 const fails: string[] = []
@@ -142,6 +142,34 @@ const fake = async (_system: string, user: string): Promise<string> => {
   check('pace: accepted of target, and a day count to the deadline', /0 accepted of 50\. You need 5 a day/.test(paceWords({ target: 50, deadline: '2026-11-24' }, [], new Date('2026-11-14T12:00:00Z')).line))
   check('a campaign says what it still needs', notReadyWords(readCampaign({})).length === 4 && notReadyWords(NOBL).length === 0)
   check('a campaign holds at most 300 scripts', readCampaign({ target: 5000 }).target === MAX_PER_CAMPAIGN)
+
+  // ── Starting from TRYBE (Seb, 2026-11-15: "select the product and then MVP figure out the brief") ──
+  const seeded = seedCampaign({ brandId: 'nobl-123', brandName: 'NOBL', product: 'NOBL Air Tracker' }, { reality: NOBL.reality, creatorFacts: ['Lives in St. Maarten'], angles: NOBL.angles, hooks: NOBL.hooks })
+  check('a new campaign from TRYBE keeps the brand, its name and the product exactly as TRYBE spells it', seeded.brandId === 'nobl-123' && seeded.brandName === 'NOBL' && seeded.product.name === 'NOBL Air Tracker' && /NOBL Air Tracker/.test(seeded.name))
+  check('where you film, who is on camera and your facts come from your last campaign', seeded.reality.locations.length === NOBL.reality.locations.length && seeded.reality.cast.length === NOBL.reality.cast.length && seeded.creatorFacts[0] === 'Lives in St. Maarten')
+  check('the brand\'s rules start empty, for the reader to fill (never the last brand\'s claims)', seeded.rules.approvedClaims.length === 0 && seeded.rules.bannedTerms.length === 0 && seeded.product.neverSay.length === 0)
+  check('a first campaign starts with nothing of yours, and says what it needs', notReadyWords(seedCampaign({ product: 'X' }, null)).includes('who is on camera'))
+  check('the brand name survives a save and a reload', readCampaign(JSON.parse(JSON.stringify(seeded)), 'id1').brandName === 'NOBL')
+  const inp = rulesInput({ product: 'NOBL Air Tracker', brandName: 'NOBL', brief: 'Keep the product out of the first 15 seconds.', sent: 'From "Creator deck":\nArrival alerts.', pasted: '', brand: 'Smart luggage tracker.' })
+  check('the reader gets each source labelled, and none it does not have', /PRODUCT: NOBL Air Tracker \(by NOBL\)/.test(inp) && /THE BRIEF:\nKeep/.test(inp) && /WHAT THE BRAND SENT:\nFrom "Creator deck"/.test(inp) && /THE BRAND:\nSmart/.test(inp) && !/PASTED BY THE CREATOR/.test(inp))
+  check('a brief MVP could not open is said to the reader, not hidden', /ABOUT THE BRIEF: The brief on TRYBE is a link/.test(rulesInput({ product: 'X', briefNote: 'The brief on TRYBE is a link MVP could not read.' })))
+  check('where the claims came from is read from the reply', claimsFromReply('{"claimsFrom":"brand","approvedClaims":[]}') === 'brand' && claimsFromReply('{"claimsFrom":"sent"}') === 'sent' && claimsFromReply('{}') === null && claimsFromReply('{"claimsFrom":"website"}') === null)
+  const withObjects = rulesFromReply(JSON.stringify({ approvedClaims: [{ text: 'arrival alert' }], productDelaySec: 15, showDeny: ['suitcase', 'luggage'], mustSpell: ['NOBL'] }), seeded)
+  check('objects that give the product away are filled from the brief', withObjects.product.showDeny.includes('suitcase') && withObjects.product.mustSpell[0] === 'NOBL' && withObjects.rules.productDelaySec === 15)
+  check('the reader is told where claims may come from, and never to invent one', /Only when none of those states a feature of this product, take the features THE BRAND itself states/.test(RULES_SYSTEM) && /Never invent a claim/.test(RULES_SYSTEM) && /"claimsFrom"/.test(RULES_SYSTEM) && /"showDeny"/.test(RULES_SYSTEM))
+
+  // ── The screen and the server ──────────────────────────────────────────────
+  const ui = read('components/labs/TrybeBatchScripts.tsx')
+  const api = read('app/api/labs/trybe-batch/route.ts')
+  check('New campaign starts by picking the brand you work with on TRYBE, then its product', /view === 'pick' && <Picker/.test(ui) && /creator\/v2\/brands\/stats/.test(ui) && /loadBrandPage\(b\.id\)/.test(ui) && /Which \{brand\.name\} product is the challenge for\?/.test(ui))
+  check('picking the product reads the rules straight away, with TRYBE\'s brief', /startFromTrybe/.test(ui) && /call\('rules', \{ id: saved\.id, briefText: pasted, trybe \}/.test(ui))
+  check('without SCOUT the setup is still there, by hand', /if \(canRead\) \{ setErr\(null\); setView\('pick'\) \} else newByHand\(\)/.test(ui) && /set it up by hand/.test(ui))
+  check('the screen names each source as read or not read', /MVP read:/.test(ui) && /No documents from your messages with/.test(ui) && /has no brief on its TRYBE page/.test(ui) && /No product claims in any of it/.test(ui))
+  check('claims taken from the brand\'s own description are flagged to check', /come from \{brand\}&rsquo;s own description/.test(ui))
+  check('the server reads TRYBE\'s brief, what the brand sent and the brand\'s description', /body\.trybe/.test(api) && /msglinks:\$\{ownerId\}:\$\{key\}/.test(api) && /from\('trybe_brands'\)\.select\('name,about,site_summary,site_products'\)/.test(api) && /rulesInput\(/.test(api))
+  check('nothing to read is said with the reason, never a generic error', /has no brief on its TRYBE page/.test(api) && /nothingToRead: true/.test(api))
+  check('your places and cast carry to the next campaign', /const last = top\?\.setup/.test(api) && /seedCampaign\(\{ brandId: b\.id, brandName: b\.name, product \}, last/.test(ui))
+  check('the batch card knows SCOUT is on in Brand scripts', /<TrybeBatchScripts canRead \/>/.test(read('components/labs/TrybeCreate.tsx')))
 
   if (fails.length) { console.error(`❌ trybe-batch: ${fails.length} failure(s)\n${fails.map((f) => `   • ${f}`).join('\n')}`); process.exit(1) }
   console.log('✅ trybe-batch: every rule on the brief\'s fixtures, an even spread, and a whole round with rewrites and red flags')

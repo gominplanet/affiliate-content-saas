@@ -3,19 +3,29 @@
 //
 // BATCH SCRIPTS FOR A BRAND CHALLENGE (Seb, 2026-11-14: "we need to add a
 // functionality into trybe scriptwriting so people can do batches of
-// scripts"). Set a campaign up once (product, the brief's rules, where you
-// can film, who is on camera), then MVP writes 50 to 300 story-time scripts in
-// rounds of ten, checks each against the rules, and keeps them here to edit,
-// rewrite, track from draft to accepted, and download as a PDF or CSV.
+// scripts"). MVP writes 50 to 300 story-time scripts in rounds of ten, checks
+// each against the brand's rules, and keeps them here to edit, rewrite, track
+// from draft to accepted, and download as a PDF or CSV.
+//
+// STARTS FROM TRYBE (Seb, 2026-11-15: "we should have a way to be able to
+// select the product and then MVP figure out the brief and all that stuff"):
+// pick the brand and the product the way Brand scripts does, and MVP reads
+// the brand's brief on TRYBE, the documents the brand sent and its own
+// description into the rules. Where the creator films and who is on camera
+// come from their last campaign, so they are asked once, not every time.
+// Every source is named on screen as read or not read.
 // lib/trybe-batch is the engine; app/api/labs/trybe-batch the server.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Loader2, Plus, Trash2, ChevronLeft, ChevronRight, Wand2, Download, FileText, RefreshCw, Star, Pencil, Check, X, Square, Play, AlertTriangle } from 'lucide-react'
+import { Loader2, Plus, Trash2, ChevronLeft, ChevronRight, Wand2, Download, FileText, RefreshCw, Star, Pencil, Check, X, Square, Play, AlertTriangle, Search, ArrowLeft } from 'lucide-react'
 import {
-  readCampaign, paceWords, notReadyWords, suggestDeny, storySeconds, SCRIPT_STATUSES, MAX_PER_CAMPAIGN, DEFAULT_ANGLES, DEFAULT_HOOKS,
+  readCampaign, seedCampaign, paceWords, notReadyWords, suggestDeny, storySeconds, SCRIPT_STATUSES, MAX_PER_CAMPAIGN, DEFAULT_ANGLES, DEFAULT_HOOKS,
   type Campaign, type Script, type ScriptStatus,
 } from '@/lib/trybe-batch'
 import { addBrandPdf } from '@/lib/trybe-brand-pdf-client'
+import { requestTrybeApi } from '@/lib/extension-frame'
+import { readBrandStats, byBrandName, type MyBrand } from '@/lib/trybe-mybrands'
+import { loadBrandPage, type BrandPage } from '@/components/labs/TrybeVideoIdeas'
 
 const ACCENT = 'var(--accent)'
 const GREEN = '#16A34A'
@@ -33,6 +43,14 @@ const btnSoft = { border: '1px solid var(--border)', color: 'var(--text)' }
 type Allowance = { used: number; limit: number | null; left: number | null; resetLabel: string; introNote: string | null }
 type Listed = { id: string; name: string; target: number; scripts: number; accepted: number; updatedAt: string }
 type Answer = Record<string, unknown> & { error?: string }
+/** What TRYBE's page gave for the brief, sent to the rules reader. */
+type TrybeBrief = { brief: string | null; state: BrandPage['state']; why: string | null; brandName: string }
+/** What the rules reader read, as the server reports it. */
+type Read = {
+  trybe: { words: number } | { state: string; why: string | null } | null
+  sent: string[]; pasted: number; brand: boolean; claims: number
+  claimsFrom: 'brief' | 'sent' | 'pasted' | 'brand' | 'none' | null
+} | { error: string }
 
 async function call(action: string, payload: Record<string, unknown> = {}, ms = 60_000): Promise<Answer> {
   try {
@@ -61,35 +79,40 @@ const Toggle = ({ on, onChange, children }: { on: boolean; onChange: (v: boolean
 const FILTER_WORDS: Record<string, string> = { green: 'Passes every rule', amber: 'Has a warning', red: 'Breaks a rule', yes: 'Real stories only', no: 'Stories anyone can tell' }
 const statusLabel = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
 const stateColour = (s: Script['checks']['state']) => (s === 'red' ? RED : s === 'amber' ? AMBER : GREEN)
-const STEPS = ['Product', 'Brief', 'Filming reality', 'Cast and you', 'Angles and hooks', 'Write']
+const STEPS = ['Rules', 'Where you film', 'Angles and hooks', 'Write']
+const trybeOf = (p: BrandPage | null, brandName: string): TrybeBrief => ({ brief: p?.brief || null, state: p?.state || 'unread', why: p?.briefWhy || null, brandName })
 
-export default function TrybeBatchScripts() {
+export default function TrybeBatchScripts({ canRead = false }: { canRead?: boolean }) {
   const [open, setOpen] = useState(false)
   const [list, setList] = useState<Listed[] | null>(null)
+  const [last, setLast] = useState<Record<string, unknown> | null>(null)
   const [allowance, setAllowance] = useState<Allowance | null>(null)
   const [err, setErr] = useState<string | null>(null)
   const [c, setC] = useState<Campaign | null>(null)
   const [scripts, setScripts] = useState<Script[]>([])
-  const [view, setView] = useState<'list' | 'setup' | 'scripts'>('list')
+  const [view, setView] = useState<'list' | 'pick' | 'reading' | 'setup' | 'scripts'>('list')
   const [step, setStep] = useState(0)
   const [busy, setBusy] = useState<string | null>(null)
+  const [read, setRead] = useState<Read | null>(null)
+  const [reading, setReading] = useState('')
+  // TRYBE's brief for each brand picked this visit, so Read again needs no second trip.
+  const briefs = useRef(new Map<string, TrybeBrief>())
 
   const loadList = useCallback(async () => {
     const r = await call('list')
     if (r.error) { setErr(r.error); setList([]); return }
-    setList((r.campaigns as Listed[]) || []); setAllowance((r.allowance as Allowance) || null); setErr(null)
+    setList((r.campaigns as Listed[]) || []); setLast((r.last as Record<string, unknown>) || null); setAllowance((r.allowance as Allowance) || null); setErr(null)
   }, [])
   useEffect(() => { if (open && list === null) void loadList() }, [open, list, loadList])
 
   const openCampaign = async (id: string) => {
-    setBusy('open'); setErr(null)
+    setBusy('open'); setErr(null); setRead(null)
     const r = await call('get', { id })
     setBusy(null)
     if (r.error) { setErr(r.error); return }
     setC(r.campaign as Campaign); setScripts((r.scripts as Script[]) || []); setAllowance((r.allowance as Allowance) || null)
     setView((r.scripts as Script[])?.length ? 'scripts' : 'setup'); setStep(0)
   }
-  const newCampaign = () => { setC(readCampaign({ name: 'New challenge' })); setScripts([]); setView('setup'); setStep(0); setErr(null) }
   const save = async (next: Campaign = c!): Promise<Campaign | null> => {
     setBusy('save')
     const r = await call('save', { id: next.id || undefined, campaign: next })
@@ -98,6 +121,38 @@ export default function TrybeBatchScripts() {
     const saved = r.campaign as Campaign
     setC(saved); setErr(null)
     return saved
+  }
+  // Without SCOUT on TRYBE: the same setup, typed and pasted.
+  const newByHand = () => {
+    setC(seedCampaign({ product: '' }, last as Parameters<typeof seedCampaign>[1])); setScripts([]); setRead(null); setView('setup'); setStep(0); setErr(null)
+  }
+  const newCampaign = () => { if (canRead) { setErr(null); setView('pick') } else newByHand() }
+
+  /** The rules read from everything MVP has for the brand. */
+  const readRules = async (saved: Campaign, trybe: TrybeBrief | null, pasted = '') => {
+    const r = await call('rules', { id: saved.id, briefText: pasted, trybe }, 120_000)
+    if (r.error) { setRead({ error: r.error }); return }
+    setC(r.campaign as Campaign); setRead(r.read as Read)
+  }
+  /** The brief on TRYBE for this campaign's brand: kept from the pick, or read again. */
+  const briefFor = async (k: Campaign): Promise<TrybeBrief | null> => {
+    if (!k.brandId || !canRead) return null
+    const had = briefs.current.get(k.brandId)
+    if (had) return had
+    const got = trybeOf(await loadBrandPage(k.brandId).catch(() => null), '')
+    briefs.current.set(k.brandId, got)
+    return got
+  }
+  const startFromTrybe = async (b: { id: string; name: string }, product: string, page: BrandPage | null) => {
+    setErr(null); setRead(null); setScripts([])
+    setReading(`Reading ${b.name}'s brief on TRYBE, what ${b.name} sent you, and how ${b.name} describes ${product}`)
+    setView('reading')
+    const saved = await save(seedCampaign({ brandId: b.id, brandName: b.name, product }, last as Parameters<typeof seedCampaign>[1]))
+    if (!saved) { setView('pick'); return }
+    const trybe = trybeOf(page, b.name)
+    briefs.current.set(b.id, trybe)
+    await readRules(saved, trybe)
+    setView('setup'); setStep(0)
   }
   const remove = async (id: string, name: string) => {
     if (!window.confirm(`Delete "${name}" and every script in it? This cannot be undone.`)) return
@@ -110,7 +165,7 @@ export default function TrybeBatchScripts() {
         <div className="flex flex-wrap items-center gap-3">
           <div className="flex-1 min-w-[220px]">
             <p className="text-[16px] font-bold">Batch scripts for a challenge</p>
-            <p className="text-[13px]" style={soft}>When a brand needs many approved videos: set the campaign up once and MVP writes 50 to {MAX_PER_CAMPAIGN} story-time scripts, each checked against the brief.</p>
+            <p className="text-[13px]" style={soft}>When a brand needs many approved videos: pick the brand and product, and MVP reads the brief and writes 50 to {MAX_PER_CAMPAIGN} story-time scripts, each checked against it.</p>
           </div>
           <button className={btn} style={btnMain} onClick={() => setOpen(true)}>Open batch scripts</button>
         </div>
@@ -121,8 +176,8 @@ export default function TrybeBatchScripts() {
   return (
     <section className={card} style={cardStyle}>
       <div className="flex flex-wrap items-center gap-2 mb-4">
-        {view !== 'list' && <button className={btn} style={btnSoft} onClick={() => { setView('list'); setC(null); void loadList() }}><ChevronLeft size={15} /> Campaigns</button>}
-        <p className="text-[18px] font-bold flex-1">{view === 'list' ? 'Batch scripts' : c?.name}</p>
+        {view !== 'list' && <button className={btn} style={btnSoft} onClick={() => { setView('list'); setC(null); setRead(null); void loadList() }}><ChevronLeft size={15} /> Campaigns</button>}
+        <p className="text-[18px] font-bold flex-1">{view === 'list' ? 'Batch scripts' : view === 'pick' ? 'New campaign' : c?.name}</p>
         {allowance && <p className="text-[12.5px]" style={soft}>{allowance.limit === null ? `${allowance.used} written this month` : `${allowance.used} of ${allowance.limit} this month${allowance.resetLabel ? `, more on ${allowance.resetLabel}` : ''}`}</p>}
       </div>
       {err && <p className="text-[13px] mb-3 inline-flex items-start gap-1.5" style={{ color: RED }}><AlertTriangle size={14} className="mt-0.5 shrink-0" /> {err}</p>}
@@ -144,16 +199,140 @@ export default function TrybeBatchScripts() {
         </div>
       )}
 
-      {view === 'setup' && c && <Setup c={c} setC={setC} step={step} setStep={setStep} save={save} busy={busy} onWrite={() => setView('scripts')} />}
+      {view === 'pick' && <Picker onPick={(b, product, page) => void startFromTrybe(b, product, page)} onByHand={newByHand} />}
+      {view === 'reading' && <p className="text-[14px] inline-flex items-center gap-2 py-6" style={soft}><Loader2 size={16} className="animate-spin" /> {reading}...</p>}
+      {view === 'setup' && c && <Setup c={c} setC={setC} step={step} setStep={setStep} save={save} busy={busy} read={read}
+        readRules={async (pasted) => { const s = await save(c); if (s) await readRules(s, await briefFor(s), pasted) }}
+        onWrite={() => setView('scripts')} />}
       {view === 'scripts' && c && <Scripts c={c} scripts={scripts} setScripts={setScripts} setAllowance={setAllowance} onSetup={() => { setView('setup'); setStep(0) }} />}
     </section>
   )
 }
 
+// ── Pick the brand and the product, from TRYBE ───────────────────────────────
+
+function Picker({ onPick, onByHand }: { onPick: (b: { id: string; name: string }, product: string, page: BrandPage | null) => void; onByHand: () => void }) {
+  const [brands, setBrands] = useState<MyBrand[] | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [q, setQ] = useState('')
+  const [brand, setBrand] = useState<MyBrand | null>(null)
+  const [page, setPage] = useState<BrandPage | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [typed, setTyped] = useState('')
+  useEffect(() => {
+    requestTrybeApi('GET', '/backend/api/creator/v2/brands/stats?period=all').then((r) => {
+      if (!r.ok) { setError(r.error === 'not-allowed' ? 'This needs SCOUT 1.46.0 or newer.' : `TRYBE did not answer${r.status ? ` (${r.status})` : ''}. Are you signed in to TRYBE in this Chrome?`); return }
+      setBrands(readBrandStats(r.json))
+    }).catch((e) => setError(e instanceof Error ? e.message : 'SCOUT did not answer.'))
+  }, [])
+  // Only the brand still picked gets its page (a slow page never lands under another brand).
+  const picking = useRef<string | null>(null)
+  const pickBrand = async (b: MyBrand) => {
+    picking.current = b.id; setBrand(b); setPage(null); setTyped(''); setLoading(true)
+    try { const p = await loadBrandPage(b.id); if (picking.current === b.id) setPage(p) } finally { if (picking.current === b.id) setLoading(false) }
+  }
+  const shown = useMemo(() => (brands || []).filter((b) => !q.trim() || b.name.toLowerCase().includes(q.trim().toLowerCase())).sort(byBrandName), [brands, q])
+  const go = (name: string) => { if (brand && name.trim()) onPick({ id: brand.id, name: brand.name }, name.trim(), page) }
+
+  if (!brand) {
+    return (
+      <div>
+        <div className="flex flex-wrap items-center gap-3 mb-3">
+          <p className="text-[16px] font-bold flex-1">Which brand is the challenge for?</p>
+          {(brands?.length ?? 0) > 8 && (
+            <label className="relative">
+              <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2" style={soft} />
+              <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Find a brand" className="rounded-xl border bg-transparent pl-8 pr-3 py-1.5 text-[13.5px]" style={inputStyle} />
+            </label>
+          )}
+        </div>
+        {error ? <p className="text-[13.5px] inline-flex items-start gap-1.5" style={{ color: AMBER }}><AlertTriangle size={14} className="mt-0.5 shrink-0" /> {error}</p>
+          : !brands ? <p className="text-[13.5px] inline-flex items-center gap-1.5" style={soft}><Loader2 size={14} className="animate-spin" /> Reading the brands you work with on TRYBE</p>
+          : brands.length === 0 ? <p className="text-[13.5px]" style={soft}>No brand has accepted you on TRYBE yet.</p>
+          : (
+            <div className="grid gap-2 grid-cols-[repeat(auto-fill,minmax(140px,1fr))]">
+              {shown.map((b) => (
+                <button key={b.id} onClick={() => void pickBrand(b)} className="rounded-xl border p-2.5 flex items-center gap-2 text-left hover:shadow-sm" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
+                  {b.logo
+                    // eslint-disable-next-line @next/next/no-img-element
+                    ? <img src={b.logo} alt="" className="w-9 h-9 rounded-lg object-contain border shrink-0 bg-white" style={{ borderColor: 'var(--border)' }} />
+                    : <span className="w-9 h-9 rounded-lg inline-flex items-center justify-center text-[15px] font-bold shrink-0" style={{ background: 'rgb(var(--brand-rgb) / 0.10)', color: ACCENT }}>{b.name.slice(0, 1).toUpperCase()}</span>}
+                  <span className="text-[13.5px] font-semibold leading-tight">{b.name}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        <button className="mt-4 text-[12.5px] font-semibold" style={{ color: ACCENT }} onClick={onByHand}>The brand is not on TRYBE: set it up by hand</button>
+      </div>
+    )
+  }
+
+  return (
+    <div>
+      <button onClick={() => { picking.current = null; setBrand(null); setPage(null) }} className="mb-2 inline-flex items-center gap-1 text-[13px] font-semibold" style={{ color: ACCENT }}><ArrowLeft size={13} /> Another brand</button>
+      <p className="text-[16px] font-bold">Which {brand.name} product is the challenge for?</p>
+      {loading ? (
+        <p className="mt-3 text-[13.5px] inline-flex items-center gap-1.5" style={soft}><Loader2 size={14} className="animate-spin" /> Reading {brand.name}&rsquo;s page on TRYBE: its products and its creative brief</p>
+      ) : (<>
+        {page && page.products.length > 0 ? (
+          <div className="mt-3 grid gap-2 grid-cols-[repeat(auto-fill,minmax(220px,1fr))]">
+            {page.products.map((p) => (
+              <button key={p.id || p.name} onClick={() => go(p.name)} className="rounded-xl border p-2.5 flex items-center gap-3 text-left hover:shadow-sm"
+                style={{ borderColor: p.sample ? 'rgba(22,163,74,0.45)' : 'var(--border)', background: 'var(--surface)' }}>
+                {p.image
+                  // eslint-disable-next-line @next/next/no-img-element
+                  ? <img src={p.image} alt="" className="w-14 h-14 rounded-lg object-contain border shrink-0 bg-white" style={{ borderColor: 'var(--border)' }} />
+                  : <span className="w-14 h-14 rounded-lg shrink-0" style={{ background: 'rgb(var(--brand-rgb) / 0.08)' }} />}
+                <span className="min-w-0">
+                  <span className="block text-[13.5px] font-semibold leading-snug">{p.name}</span>
+                  {p.sample && <span className="inline-block mt-1 text-[11px] font-bold rounded-full px-2 py-0.5" style={{ background: 'rgba(22,163,74,0.10)', color: GREEN }}>Your sample: {p.sample.status.replace(/_/g, ' ')}</span>}
+                  {!p.sample && p.promoted && <span className="inline-block mt-1 text-[11px] font-bold rounded-full px-2 py-0.5" style={{ background: 'rgb(var(--brand-rgb) / 0.10)', color: ACCENT }}>TRYBE asks for this</span>}
+                </span>
+              </button>
+            ))}
+          </div>
+        ) : <p className="mt-3 text-[13.5px]" style={soft}>{page ? `TRYBE lists no products for ${brand.name}.` : `MVP could not read ${brand.name}'s page on TRYBE.`} Type the product below.</p>}
+        <div className="mt-3 flex flex-wrap gap-2">
+          <input className="rounded-xl border bg-transparent px-3 py-2 text-[13.5px] flex-1 min-w-[200px]" style={inputStyle} placeholder="Or type the product, as the brand spells it" value={typed} onChange={(e) => setTyped(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') go(typed) }} />
+          <button className={btn} style={btnMain} disabled={!typed.trim()} onClick={() => go(typed)}>Use this product</button>
+        </div>
+        {page && <p className="mt-3 text-[12.5px]" style={soft}>{page.state === 'text' ? `${brand.name} has a creative brief on TRYBE; MVP reads it next.` : page.state === 'link_only' ? `${brand.name}'s brief on TRYBE is a link MVP could not open${page.briefWhy ? ` (${page.briefWhy})` : ''}; you can add it as a PDF next.` : page.state === 'none' ? `${brand.name} has no creative brief on TRYBE; MVP reads what it sent you instead.` : ''}</p>}
+      </>)}
+    </div>
+  )
+}
+
+/** What the rules reader read, each source named as read or not (CLAUDE.md:
+ *  report what happened, so "nothing found" never looks like "not looked"). */
+function ReadReport({ read, brand }: { read: Read; brand: string }) {
+  if ('error' in read) return <p className="text-[13px] inline-flex items-start gap-1.5" style={{ color: AMBER }}><AlertTriangle size={14} className="mt-0.5 shrink-0" /> {read.error}</p>
+  const got: string[] = []
+  const missed: string[] = []
+  if (read.trybe && 'words' in read.trybe) got.push(`${brand}'s brief on TRYBE (${read.trybe.words} words)`)
+  else if (read.trybe && read.trybe.state === 'link_only') missed.push(`The brief on TRYBE is a link MVP could not open${read.trybe.why ? ` (${read.trybe.why})` : ''}. Add it as a PDF below.`)
+  else if (read.trybe && read.trybe.state === 'none') missed.push(`${brand} has no brief on its TRYBE page.`)
+  else if (read.trybe && read.trybe.state === 'unread') missed.push(`MVP could not read ${brand}'s page on TRYBE.`)
+  if (read.sent.length) got.push(`${read.sent.length === 1 ? 'a document' : `${read.sent.length} documents`} ${brand} sent you (${read.sent.join(', ')})`)
+  else missed.push(`No documents from your messages with ${brand}. If they sent a deck or doc, open their chat in Messages and press Read them for me, or add the PDF below.`)
+  if (read.brand) got.push(`how ${brand} describes itself`)
+  if (read.pasted) got.push(`what you pasted (${read.pasted} words)`)
+  const from = { brief: 'from the brief on TRYBE', sent: `from what ${brand} sent you`, pasted: 'from what you pasted', brand: '', none: '' }
+  return (
+    <div className="rounded-xl border p-3 space-y-1.5 text-[13px]" style={{ borderColor: 'var(--border)', background: 'rgb(var(--brand-rgb) / 0.04)' }}>
+      <p><span className="font-semibold">MVP read:</span> {got.length ? got.join('; ') : 'nothing it could use'}.</p>
+      {missed.map((m) => <p key={m} style={soft}>{m}</p>)}
+      {read.claims > 0 && read.claimsFrom !== 'brand' && <p className="inline-flex items-start gap-1.5" style={{ color: GREEN }}><Check size={14} className="mt-0.5 shrink-0" /> {read.claims} approved {read.claims === 1 ? 'claim' : 'claims'}{read.claimsFrom && from[read.claimsFrom] ? ` ${from[read.claimsFrom]}` : ''}. Check them below.</p>}
+      {read.claims > 0 && read.claimsFrom === 'brand' && <p className="inline-flex items-start gap-1.5" style={{ color: AMBER }}><AlertTriangle size={14} className="mt-0.5 shrink-0" /> The brief names no product features, so these {read.claims} come from {brand}&rsquo;s own description. Check each one before writing.</p>}
+      {read.claims === 0 && <p className="inline-flex items-start gap-1.5" style={{ color: AMBER }}><AlertTriangle size={14} className="mt-0.5 shrink-0" /> No product claims in any of it. Add the brief PDF below, or type the features {brand} allows.</p>}
+    </div>
+  )
+}
+
 // ── The setup, step by step ──────────────────────────────────────────────────
 
-function Setup({ c, setC, step, setStep, save, busy, onWrite }: {
-  c: Campaign; setC: (c: Campaign) => void; step: number; setStep: (n: number) => void; save: (c?: Campaign) => Promise<Campaign | null>; busy: string | null; onWrite: () => void
+function Setup({ c, setC, step, setStep, save, busy, read, readRules, onWrite }: {
+  c: Campaign; setC: (c: Campaign) => void; step: number; setStep: (n: number) => void; save: (c?: Campaign) => Promise<Campaign | null>; busy: string | null
+  read: Read | null; readRules: (pasted: string) => Promise<void>; onWrite: () => void
 }) {
   const set = (patch: Partial<Campaign>) => setC({ ...c, ...patch })
   const setProduct = (patch: Partial<Campaign['product']>) => set({ product: { ...c.product, ...patch } })
@@ -164,20 +343,13 @@ function Setup({ c, setC, step, setStep, save, busy, onWrite }: {
   const [readErr, setReadErr] = useState<string | null>(null)
   const pdfRef = useRef<HTMLInputElement>(null)
   const go = async (n: number) => { const s = await save(c); if (s) setStep(n) }
+  // More from the brief is open when MVP had nothing, or found no claims.
+  const needMore = !read || 'error' in read || read.claims === 0
 
-  // The brief is read on the saved campaign, so edits made on this page go first.
-  const readRulesOn = async (saved: Campaign) => {
-    setReading('Turning the brief into rules')
-    const r = await call('rules', { id: saved.id, briefText: brief }, 120_000)
+  const readAgain = async () => {
+    setReadErr(null); setReading('Reading the brief')
+    await readRules(brief)
     setReading(null)
-    if (r.error) { setReadErr(r.error); return }
-    setC(r.campaign as Campaign)
-  }
-  const readRules = async () => {
-    setReadErr(null); setReading('Saving the campaign')
-    const s = await save(c)
-    if (!s) { setReading(null); return }
-    await readRulesOn(s)
   }
   const addPdf = async (f: File) => {
     setReadErr(null); setReading('Saving the campaign')
@@ -185,7 +357,9 @@ function Setup({ c, setC, step, setStep, save, busy, onWrite }: {
     if (!s) { setReading(null); return }
     const r = await addBrandPdf(s.brandId || `batch-${s.id}`, s.name, f, (st) => setReading(st === 'uploading' ? 'Uploading the PDF' : 'Reading every page of the PDF'))
     if (r.error) { setReading(null); setReadErr(r.error); return }
-    await readRulesOn(s)
+    setReading('Turning it into rules')
+    await readRules(brief)
+    setReading(null)
   }
   const nextClaimId = () => { let i = c.rules.approvedClaims.length + 1; while (c.rules.approvedClaims.some((x) => x.id === `c${i}`)) i++; return `c${i}` }
 
@@ -199,30 +373,27 @@ function Setup({ c, setC, step, setStep, save, busy, onWrite }: {
       </div>
 
       {step === 0 && (
-        <div className="space-y-3 max-w-2xl">
-          <div><Label>Campaign name</Label><input className={input} style={inputStyle} value={c.name} onChange={(e) => set({ name: e.target.value })} /></div>
-          <div><Label hint="Exactly as the brand spells it, capitals included.">Product</Label><input className={input} style={inputStyle} placeholder="NOBL Air Tracker" value={c.product.name} onChange={(e) => setProduct({ name: e.target.value })} /></div>
-          <div><Label hint="Words that must always have these capitals, one a line. Left empty, MVP uses the name's all-capitals words.">Spelling to enforce</Label><Lines value={c.product.mustSpell} onChange={(v) => setProduct({ mustSpell: v })} rows={2} placeholder="NOBL" /></div>
-          <div><Label hint="Competitors or names never to use.">Never say</Label><Lines value={c.product.neverSay} onChange={(v) => setProduct({ neverSay: v })} rows={2} placeholder="AirTag" /></div>
-          <div><Label hint="Kept out of the story before the product enters.">Category words</Label><Lines value={c.product.categoryWords} onChange={(v) => setProduct({ categoryWords: v })} rows={2} placeholder="tracker" /></div>
-          <div><Label hint="Objects tied to the product, kept out of the story's shots.">Product-related objects</Label><Lines value={c.product.showDeny} onChange={(v) => setProduct({ showDeny: v })} rows={2} placeholder={'suitcase\nluggage'} /></div>
-        </div>
-      )}
-
-      {step === 1 && (
         <div className="space-y-4 max-w-3xl">
-          <div>
-            <Label hint="Paste the brief's text, add its PDF, or both. MVP reads it and fills in the rules below for you to check.">The brand's brief</Label>
-            <textarea rows={6} className={input} style={inputStyle} value={brief} onChange={(e) => setBrief(e.target.value)} placeholder="Paste the brief here" />
-            <div className="flex flex-wrap gap-2 mt-2">
-              <button className={btn} style={btnMain} disabled={!!reading} onClick={() => void readRules()}>{reading ? <Loader2 size={15} className="animate-spin" /> : <Wand2 size={15} />} {reading || 'Read the rules from the brief'}</button>
-              <button className={btn} style={btnSoft} disabled={!!reading} onClick={() => pdfRef.current?.click()}><FileText size={15} /> Add the brief PDF</button>
-              <input ref={pdfRef} type="file" accept="application/pdf" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) void addPdf(f) }} />
+          {read && <ReadReport read={read} brand={c.brandName || 'the brand'} />}
+          <details open={needMore} className="rounded-xl border p-3" style={{ borderColor: 'var(--border)' }}>
+            <summary className="text-[13.5px] font-semibold cursor-pointer">{read ? 'Add more from the brief' : 'The brand’s brief'}</summary>
+            <div className="mt-2 space-y-2">
+              <p className="text-[12.5px]" style={soft}>Paste a brief the brand sent outside TRYBE, or add its PDF. MVP reads it with everything else and fills in the rules.</p>
+              <textarea rows={5} className={input} style={inputStyle} value={brief} onChange={(e) => setBrief(e.target.value)} placeholder="Paste the brief here" />
+              <div className="flex flex-wrap gap-2">
+                <button className={btn} style={btnMain} disabled={!!reading} onClick={() => void readAgain()}>{reading ? <Loader2 size={15} className="animate-spin" /> : <Wand2 size={15} />} {reading || (read ? 'Read everything again' : 'Read the rules from the brief')}</button>
+                <button className={btn} style={btnSoft} disabled={!!reading} onClick={() => pdfRef.current?.click()}><FileText size={15} /> Add the brief PDF</button>
+                <input ref={pdfRef} type="file" accept="application/pdf" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) void addPdf(f) }} />
+              </div>
+              {readErr && <p className="text-[13px]" style={{ color: RED }}>{readErr}</p>}
             </div>
-            {readErr && <p className="text-[13px] mt-2" style={{ color: RED }}>{readErr}</p>}
+          </details>
+          <div className="grid sm:grid-cols-2 gap-3">
+            <div><Label hint="Exactly as the brand spells it.">Product</Label><input className={input} style={inputStyle} placeholder="e.g. NOBL Air Tracker" value={c.product.name} onChange={(e) => setProduct({ name: e.target.value })} /></div>
+            <div><Label hint="Words that must keep these capitals. Empty: the name's all-capitals words.">Spelling to enforce</Label><Lines value={c.product.mustSpell} onChange={(v) => setProduct({ mustSpell: v })} rows={1} placeholder="e.g. NOBL" /></div>
           </div>
           <div>
-            <Label hint="The only features and claims a script may state. Every product beat is tagged with the ones it uses.">Approved claims</Label>
+            <Label hint="The only features and claims a script may state. Every product line is tagged with the ones it uses.">Approved claims</Label>
             <div className="space-y-1.5">
               {c.rules.approvedClaims.map((x, i) => (
                 <div key={x.id} className="flex items-center gap-2">
@@ -235,33 +406,46 @@ function Setup({ c, setC, step, setStep, save, busy, onWrite }: {
             </div>
           </div>
           <div className="grid sm:grid-cols-2 gap-3">
-            <div><Label hint="Never said or shown, any case.">Banned words</Label><Lines value={c.rules.bannedTerms} onChange={(v) => setRules({ bannedTerms: v })} rows={4} placeholder={'free\nBlack Friday'} /></div>
-            <div className="space-y-2">
-              <Toggle on={c.rules.noPrices} onChange={(v) => setRules({ noPrices: v })}>No prices or money amounts</Toggle>
-              <Toggle on={c.rules.noPercentOff} onChange={(v) => setRules({ noPercentOff: v })}>No percentages</Toggle>
-              <div><Label>Sale language</Label><input className={input} style={inputStyle} value={c.rules.saleLanguageRule} placeholder="Generic sale words only in the last 10 seconds" onChange={(e) => setRules({ saleLanguageRule: e.target.value })} /></div>
-            </div>
+            <div><Label hint="Never said or shown, any case.">Banned words</Label><Lines value={c.rules.bannedTerms} onChange={(v) => setRules({ bannedTerms: v })} rows={3} placeholder="e.g. free" /></div>
+            <div><Label hint="Competitors or names never to use.">Never say</Label><Lines value={c.product.neverSay} onChange={(v) => setProduct({ neverSay: v })} rows={3} placeholder="e.g. a competitor's name" /></div>
           </div>
           <div className="grid sm:grid-cols-3 gap-3">
-            <div><Label hint="Seconds before the product, brand or category may be seen or said. 0 lets it in anywhere.">Product delay</Label><input type="number" min={0} max={30} className={input} style={inputStyle} value={c.rules.productDelaySec} onChange={(e) => setRules({ productDelaySec: Math.max(0, Math.min(30, Number(e.target.value) || 0)) })} /></div>
+            <div><Label hint="Seconds before the product, brand or category is seen or said. 0: anywhere.">Product delay</Label><input type="number" min={0} max={30} className={input} style={inputStyle} value={c.rules.productDelaySec} onChange={(e) => setRules({ productDelaySec: Math.max(0, Math.min(30, Number(e.target.value) || 0)) })} /></div>
             <div><Label>Shortest (seconds)</Label><input type="number" min={5} className={input} style={inputStyle} value={c.rules.targetLengthSec[0]} onChange={(e) => setRules({ targetLengthSec: [Number(e.target.value) || 25, c.rules.targetLengthSec[1]] })} /></div>
             <div><Label>Longest (seconds)</Label><input type="number" min={5} className={input} style={inputStyle} value={c.rules.targetLengthSec[1]} onChange={(e) => setRules({ targetLengthSec: [c.rules.targetLengthSec[0], Number(e.target.value) || 45] })} /></div>
           </div>
-          <div><Label>Framing and safe zones</Label><input className={input} style={inputStyle} value={c.rules.safeZoneNotes} placeholder="9:16, keep text out of the bottom 20%" onChange={(e) => setRules({ safeZoneNotes: e.target.value })} /></div>
+          <details className="rounded-xl border p-3" style={{ borderColor: 'var(--border)' }}>
+            <summary className="text-[13.5px] font-semibold cursor-pointer">More rules</summary>
+            <div className="mt-3 space-y-3">
+              <div className="grid sm:grid-cols-2 gap-3">
+                <div className="space-y-2">
+                  <Toggle on={c.rules.noPrices} onChange={(v) => setRules({ noPrices: v })}>No prices or money amounts</Toggle>
+                  <Toggle on={c.rules.noPercentOff} onChange={(v) => setRules({ noPercentOff: v })}>No percentages</Toggle>
+                </div>
+                <div><Label>Sale language</Label><input className={input} style={inputStyle} value={c.rules.saleLanguageRule} placeholder="e.g. sale words only in the last 10 seconds" onChange={(e) => setRules({ saleLanguageRule: e.target.value })} /></div>
+              </div>
+              <div className="grid sm:grid-cols-2 gap-3">
+                <div><Label hint="Kept out of the story before the product enters.">Category words</Label><Lines value={c.product.categoryWords} onChange={(v) => setProduct({ categoryWords: v })} rows={2} placeholder="e.g. tracker" /></div>
+                <div><Label hint="Objects that give the product away, kept out of the story's shots.">Product-related objects</Label><Lines value={c.product.showDeny} onChange={(v) => setProduct({ showDeny: v })} rows={2} placeholder="e.g. suitcase" /></div>
+              </div>
+              <div><Label>Framing and safe zones</Label><input className={input} style={inputStyle} value={c.rules.safeZoneNotes} placeholder="e.g. 9:16, keep text out of the bottom 20%" onChange={(e) => setRules({ safeZoneNotes: e.target.value })} /></div>
+            </div>
+          </details>
         </div>
       )}
 
-      {step === 2 && (
+      {step === 1 && (
         <div className="space-y-4 max-w-3xl">
+          <p className="text-[13px]" style={soft}>These are yours, not the brand&rsquo;s, so MVP keeps them for your next campaign.</p>
           <Label hint="Where you can really film, and what is not there. Every line has to make sense in the place it is shot.">Places</Label>
           {c.reality.locations.map((l, i) => (
             <div key={i} className="rounded-xl border p-3 space-y-2" style={{ borderColor: 'var(--border)' }}>
               <div className="flex gap-2">
-                <input className={input} style={inputStyle} placeholder="Airport (before security)" value={l.name} onChange={(e) => setReality({ locations: c.reality.locations.map((y, j) => (j === i ? { ...y, name: e.target.value } : y)) })} />
+                <input className={input} style={inputStyle} placeholder="e.g. Airport (before security)" value={l.name} onChange={(e) => setReality({ locations: c.reality.locations.map((y, j) => (j === i ? { ...y, name: e.target.value } : y)) })} />
                 <button aria-label="Remove place" onClick={() => setReality({ locations: c.reality.locations.filter((_, j) => j !== i) })} style={soft}><Trash2 size={15} /></button>
               </div>
-              <input className={input} style={inputStyle} placeholder="Access notes, e.g. before security only; no gates, no baggage claim" value={l.accessNotes} onChange={(e) => setReality({ locations: c.reality.locations.map((y, j) => (j === i ? { ...y, accessNotes: e.target.value } : y)) })} />
-              <Lines value={l.deny} rows={2} placeholder={'Not here, one a line: gate, duty free'} onChange={(v) => setReality({ locations: c.reality.locations.map((y, j) => (j === i ? { ...y, deny: v } : y)) })} />
+              <input className={input} style={inputStyle} placeholder="Access notes, e.g. before security only" value={l.accessNotes} onChange={(e) => setReality({ locations: c.reality.locations.map((y, j) => (j === i ? { ...y, accessNotes: e.target.value } : y)) })} />
+              <Lines value={l.deny} rows={2} placeholder={'Not there, one a line, e.g. gate'} onChange={(v) => setReality({ locations: c.reality.locations.map((y, j) => (j === i ? { ...y, deny: v } : y)) })} />
               {!l.deny.length && suggestDeny(l).length > 0 && <button className="text-[12.5px] font-semibold" style={{ color: ACCENT }} onClick={() => setReality({ locations: c.reality.locations.map((y, j) => (j === i ? { ...y, deny: suggestDeny(l) } : y)) })}>Add the usual: {suggestDeny(l).join(', ')}</button>}
             </div>
           ))}
@@ -271,11 +455,6 @@ function Setup({ c, setC, step, setStep, save, busy, onWrite }: {
             <Toggle on={c.reality.onePersonPerVideo} onChange={(v) => setReality({ onePersonPerVideo: v })}>One person on camera per video</Toggle>
             <Toggle on={c.reality.appFootageReuse} onChange={(v) => setReality({ appFootageReuse: v })}>App demo shots may reuse a screen recording from a past trip</Toggle>
           </div>
-        </div>
-      )}
-
-      {step === 3 && (
-        <div className="space-y-4 max-w-2xl">
           <Label hint="Each script has one host. Their phone shows in app demos.">Who is on camera</Label>
           {c.reality.cast.map((p, i) => (
             <div key={i} className="flex gap-2">
@@ -285,35 +464,37 @@ function Setup({ c, setC, step, setStep, save, busy, onWrite }: {
             </div>
           ))}
           <button className={btn} style={btnSoft} onClick={() => setReality({ cast: [...c.reality.cast, { name: '', phone: '' }] })}><Plus size={14} /> Add a person</button>
-          <div><Label hint="True, short facts the stories can use, one a line.">About you</Label><Lines value={c.creatorFacts} onChange={(v) => set({ creatorFacts: v })} rows={4} placeholder={'Lives in St. Maarten since 2010\nWorks in shipping'} /></div>
+          <div><Label hint="True, short facts the stories can use, one a line.">About you</Label><Lines value={c.creatorFacts} onChange={(v) => set({ creatorFacts: v })} rows={3} placeholder={'e.g. Lives on an island\nWorks in shipping'} /></div>
         </div>
       )}
 
-      {step === 4 && (
+      {step === 2 && (
         <div className="space-y-4 max-w-2xl">
+          <p className="text-[13px]" style={soft}>Optional. MVP has good defaults here.</p>
           <div><Label hint="Scripts rotate through these evenly.">Story angles</Label><Lines value={c.angles} onChange={(v) => set({ angles: v.length ? v : DEFAULT_ANGLES })} rows={4} /></div>
           <div><Label hint="Used sparingly: at most one script in four opens with one.">Signature hooks</Label><Lines value={c.hooks} onChange={(v) => set({ hooks: v })} rows={5} /><button className="text-[12.5px] font-semibold mt-1" style={{ color: ACCENT }} onClick={() => set({ hooks: DEFAULT_HOOKS })}>Use the ten proven openers</button></div>
-          <div><Label hint="Style only; never copied.">The brand's own starter scripts</Label><textarea rows={4} className={input} style={inputStyle} value={c.references} onChange={(e) => set({ references: e.target.value })} /></div>
-          <div><Label>Brand feedback</Label><input className={input} style={inputStyle} placeholder="Make it sound less like an ad, more like story time" value={c.feedback} onChange={(e) => set({ feedback: e.target.value })} /></div>
+          <div><Label hint="Style only; never copied.">The brand&rsquo;s own starter scripts</Label><textarea rows={4} className={input} style={inputStyle} value={c.references} onChange={(e) => set({ references: e.target.value })} /></div>
+          <div><Label>Brand feedback</Label><input className={input} style={inputStyle} placeholder="e.g. less like an ad, more like story time" value={c.feedback} onChange={(e) => set({ feedback: e.target.value })} /></div>
         </div>
       )}
 
-      {step === 5 && (
+      {step === 3 && (
         <div className="space-y-4 max-w-2xl">
+          <div><Label>Campaign name</Label><input className={input} style={inputStyle} value={c.name} onChange={(e) => set({ name: e.target.value })} /></div>
           <div className="grid sm:grid-cols-2 gap-3">
             <div><Label hint={`Up to ${MAX_PER_CAMPAIGN}.`}>Scripts to write</Label><input type="number" min={1} max={MAX_PER_CAMPAIGN} className={input} style={inputStyle} value={c.target} onChange={(e) => set({ target: Math.max(1, Math.min(MAX_PER_CAMPAIGN, Number(e.target.value) || 50)) })} /></div>
             <div><Label hint="For the pace you need.">Deadline</Label><input type="date" className={input} style={inputStyle} value={c.deadline || ''} onChange={(e) => set({ deadline: e.target.value || null })} /></div>
           </div>
           {notReadyWords(c).length > 0
             ? <p className="text-[13px]" style={{ color: AMBER }}>Before writing, add {notReadyWords(c).join(', ')}.</p>
-            : <p className="text-[13px]" style={soft}>MVP writes ten at a time and checks every one against your rules. Keep this page open while it writes; closing it pauses, and nothing written is lost.</p>}
+            : <p className="text-[13px]" style={soft}>MVP writes ten at a time and checks every one against the rules. Keep this page open while it writes; closing it pauses, and nothing written is lost.</p>}
           <button className={btn} style={btnMain} disabled={!!busy || notReadyWords(c).length > 0} onClick={async () => { const s = await save(c); if (s) onWrite() }}>{busy ? <Loader2 size={15} className="animate-spin" /> : <Play size={15} />} Save and go to the scripts</button>
         </div>
       )}
 
       <div className="flex gap-2 mt-5">
         {step > 0 && <button className={btn} style={btnSoft} disabled={!!busy} onClick={() => void go(step - 1)}><ChevronLeft size={15} /> Back</button>}
-        {step < STEPS.length - 1 && <button className={btn} style={btnMain} disabled={!!busy} onClick={() => void go(step + 1)}>{busy ? <Loader2 size={15} className="animate-spin" /> : null} Next <ChevronRight size={15} /></button>}
+        {step < STEPS.length - 1 && <button className={btn} style={btnMain} disabled={!!busy} onClick={() => void go(step + 1)}>{busy ? <Loader2 size={15} className="animate-spin" /> : null} {step === 0 ? 'Rules look right' : 'Next'} <ChevronRight size={15} /></button>}
       </div>
     </div>
   )

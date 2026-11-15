@@ -176,11 +176,13 @@ check('Make videos step 3 says when you already filmed the product on Amazon', /
 // whose Meta ads had not been counted yet. The Top 100 can only say yes.
 {
   const at = '2026-10-18T00:00:00Z'
+  // The clock pinned to the day after, so the four week freshness window never ages these out.
+  const now = Date.parse(at) + 86_400_000
   check('outside the Top 100 with no Meta count is not known, not a no',
-    spendingOf({ top100_hits: 0, top100_checked_at: at, meta_ads: null, meta_ads_checked_at: null }) === null)
-  check('in the Top 100 is spending', spendingOf({ top100_hits: 2, top100_checked_at: at }) === true)
-  check('Meta ads counted is spending', spendingOf({ meta_ads: 2100, meta_ads_checked_at: at, top100_hits: 0, top100_checked_at: at }) === true)
-  check('only a Meta read that found none is a no', spendingOf({ meta_ads: 0, meta_ads_checked_at: at, top100_hits: 0, top100_checked_at: at }) === false)
+    spendingOf({ top100_hits: 0, top100_checked_at: at, meta_ads: null, meta_ads_checked_at: null }, now) === null)
+  check('in the Top 100 is spending', spendingOf({ top100_hits: 2, top100_checked_at: at }, now) === true)
+  check('Meta ads counted is spending', spendingOf({ meta_ads: 2100, meta_ads_checked_at: at, top100_hits: 0, top100_checked_at: at }, now) === true)
+  check('only a Meta read that found none is a no', spendingOf({ meta_ads: 0, meta_ads_checked_at: at, top100_hits: 0, top100_checked_at: at }, now) === false)
   check('a count with no read date is not trusted', spendingOf({ meta_ads: 0, meta_ads_checked_at: null }) === null)
   check('nothing read is not known', spendingOf({}) === null)
   const R = read('app/api/labs/trybe/route.ts')

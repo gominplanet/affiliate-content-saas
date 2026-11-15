@@ -9,7 +9,10 @@
 //   get      { id }               one campaign: its setup and every script
 //   save     { id?, campaign }    create or update a campaign's setup
 //   delete   { id }               a campaign and its scripts
-//   rules    { id, briefText? }   the brief's rules read and folded onto the setup
+//   rules    { id, briefText?, trybe? }  the rules read from everything MVP has
+//                                 for the brand (TRYBE's brief, what the brand sent,
+//                                 its own description, anything pasted) and folded
+//                                 onto the setup; the answer says what was read
 //   write    { id }               the next round (up to 10): written, checked,
 //                                 broken ones rewritten up to twice, saved
 //   rewrite  { id, idx, note? }   one script written again, with the creator's note
@@ -34,7 +37,7 @@ import { introCap, introNote } from '@/lib/intro-allowance'
 import { docsForScripts, type LinksDigest } from '@/lib/trybe-message-links'
 import {
   readCampaign, runRound, checkScript, planSlots, parseScripts, writerSystem, writerPrompt, rulesFromReply, notReadyWords,
-  estimateSeconds, RULES_SYSTEM, BATCH_ROUND, MAX_PER_CAMPAIGN, SCRIPT_STATUSES,
+  estimateSeconds, rulesInput, claimsFromReply, RULES_SYSTEM, BATCH_ROUND, MAX_PER_CAMPAIGN, SCRIPT_STATUSES,
   type Campaign, type Script, type ScriptStatus, type Ask,
 } from '@/lib/trybe-batch'
 
@@ -98,7 +101,7 @@ async function loadScripts(db: Db, id: string): Promise<Script[]> {
   const { data } = await db.from('trybe_campaign_scripts').select('*').eq('campaign_id', id).order('idx', { ascending: true }).limit(MAX_PER_CAMPAIGN + 50)
   return ((data ?? []) as Record<string, unknown>[]).map(rowToScript)
 }
-const setupOf = (c: Campaign) => ({ product: c.product, rules: c.rules, reality: c.reality, creatorFacts: c.creatorFacts, angles: c.angles, hooks: c.hooks, references: c.references, feedback: c.feedback, target: c.target, deadline: c.deadline })
+const setupOf = (c: Campaign) => ({ brandName: c.brandName, product: c.product, rules: c.rules, reality: c.reality, creatorFacts: c.creatorFacts, angles: c.angles, hooks: c.hooks, references: c.references, feedback: c.feedback, target: c.target, deadline: c.deadline })
 
 /** The writer, recording what each call cost. */
 function writerAsk(userId: string, tier: string | null): Ask {
@@ -137,7 +140,11 @@ export async function POST(req: NextRequest) {
     const campaigns = ((data ?? []) as Array<{ id: string; name: string; brand_id: string | null; updated_at: string; setup: { target?: number } }>).map((r) => ({
       id: r.id, name: r.name, brandId: r.brand_id, updatedAt: r.updated_at, target: Number(r.setup?.target) || 0, scripts: counts.get(r.id)?.all ?? 0, accepted: counts.get(r.id)?.accepted ?? 0,
     }))
-    return NextResponse.json({ ok: true, campaigns, allowance: await allowance(db, ownerId, tier) })
+    // WHAT IS THE CREATOR'S, NOT THE BRAND'S: where they film, who is on
+    // camera, their facts and angles, carried into the next campaign.
+    const top = (data ?? [])[0] as { setup?: Record<string, unknown> } | undefined
+    const last = top?.setup ? { reality: top.setup.reality ?? null, creatorFacts: top.setup.creatorFacts ?? null, angles: top.setup.angles ?? null, hooks: top.setup.hooks ?? null } : null
+    return NextResponse.json({ ok: true, campaigns, last, allowance: await allowance(db, ownerId, tier) })
   }
 
   if (action === 'save') {
@@ -168,27 +175,59 @@ export async function POST(req: NextRequest) {
   }
 
   if (action === 'rules') {
-    // THE BRIEF: what the creator pasted, plus the brand's PDFs and links
-    // MVP already read for this campaign (or its TRYBE brand).
+    // EVERYTHING MVP HAS FOR THE BRAND (Seb, 2026-11-15: "we already have the
+    // information from tribe directly"): the creative brief on TRYBE, read by
+    // the page through SCOUT; the documents and PDFs from the brand's
+    // messages; the brand's own description; and whatever the creator pasted.
+    // The answer says which of them had words, so nothing read looks like
+    // nothing found.
     const pasted = String(body.briefText || '').slice(0, 40_000)
-    let docs = ''
+    const t = (body.trybe && typeof body.trybe === 'object' ? body.trybe : {}) as Record<string, unknown>
+    const trybeBrief = typeof t.brief === 'string' ? t.brief.trim().slice(0, 20_000) : ''
+    const briefState = ['text', 'link_only', 'none', 'unread'].includes(String(t.state)) ? String(t.state) : null
+    const briefWhy = typeof t.why === 'string' ? t.why.slice(0, 300) : ''
+    const brandName = (typeof t.brandName === 'string' && t.brandName.trim() ? t.brandName.slice(0, 120) : '') || c.brandName || ''
     const key = c.brandId || `batch-${id}`
+    let sent = { text: '', docs: [] as Array<{ title: string; whole: boolean }> }
     try {
       const { data: hit } = await db.from('trybe_directory_meta').select('value').eq('key', `msglinks:${ownerId}:${key}`).maybeSingle()
-      docs = docsForScripts((hit?.value ?? null) as LinksDigest | null).text
-    } catch { docs = '' }
-    const brief = [pasted, docs].filter(Boolean).join('\n\n').slice(0, 60_000)
-    if (!brief.trim()) return NextResponse.json({ error: 'Paste the brief, or add the brand\'s PDF first, so MVP has something to read.' }, { status: 400 })
+      sent = docsForScripts((hit?.value ?? null) as LinksDigest | null)
+    } catch { /* read without it, and say so below */ }
+    let brand = ''
+    if (c.brandId) {
+      try {
+        const { data: own } = await db.from('trybe_brands').select('name,about,site_summary,site_products').eq('user_id', ownerId).eq('brand_id', c.brandId).maybeSingle()
+        const { data: dir } = own ? { data: null } : await db.from('trybe_directory').select('name,about,site_summary,site_products').eq('brand_id', c.brandId).maybeSingle()
+        const row = (own || dir) as { about?: string | null; site_summary?: string | null; site_products?: unknown } | null
+        if (row) brand = [row.about, row.site_summary, Array.isArray(row.site_products) && row.site_products.length ? `Products: ${(row.site_products as unknown[]).map(String).slice(0, 15).join(', ')}` : ''].filter(Boolean).join('\n')
+      } catch { brand = '' }
+    }
+    const briefNote = !trybeBrief && briefState === 'link_only' ? `The brief on TRYBE is a link MVP could not read${briefWhy ? ` (${briefWhy})` : ''}.` : ''
+    if (!trybeBrief && !sent.text && !pasted.trim()) {
+      const who = brandName || c.product.name || 'this brand'
+      const why = briefState === 'link_only' ? `${who}'s brief on TRYBE is a link MVP could not open${briefWhy ? ` (${briefWhy})` : ''}`
+        : briefState === 'none' ? `${who} has no brief on its TRYBE page` : briefState === 'unread' ? `MVP could not read ${who}'s page on TRYBE` : 'There is no brief to read yet'
+      return NextResponse.json({ error: `${why}, and MVP has no documents from your messages with them. Paste the brief, or add the PDF they sent.`, nothingToRead: true }, { status: 400 })
+    }
     const spend = await spendGate(userId, tier)
     if (spend) return spend
     try {
-      const msg = await createAnthropicClient().messages.create({ model: READER, max_tokens: 3000, system: RULES_SYSTEM, messages: [{ role: 'user', content: `PRODUCT: ${c.product.name || 'not given'}\n\nTHE BRIEF:\n${brief}` }] })
+      const input = rulesInput({ product: c.product.name, brandName, brief: trybeBrief, briefNote, sent: sent.text, pasted, brand })
+      const msg = await createAnthropicClient().messages.create({ model: READER, max_tokens: 3000, system: RULES_SYSTEM, messages: [{ role: 'user', content: input }] })
       try { const u = usageFromAnthropic(msg); recordUsage({ userId, tier, feature: 'trybe_batch_rules', model: READER, input: u.input, output: u.output }) } catch { /* best-effort */ }
       const text = (msg.content as Array<{ type: string; text?: string }>).map((b) => (b.type === 'text' ? b.text || '' : '')).join('')
       const next = rulesFromReply(text, c)
       if (next === c) return NextResponse.json({ error: 'MVP read the brief but could not make rules from it. Try again, or type the claims in yourself.' }, { status: 502 })
       await db.from('trybe_campaigns').update({ setup: setupOf(next), updated_at: new Date().toISOString() }).eq('id', id).eq('user_id', ownerId)
-      return NextResponse.json({ ok: true, campaign: next, read: { pasted: pasted.length > 0, docs: docs.length > 0 } })
+      const words = (x: string) => (x.trim() ? x.trim().split(/\s+/).length : 0)
+      return NextResponse.json({ ok: true, campaign: next, read: {
+        trybe: trybeBrief ? { words: words(trybeBrief) } : briefState ? { state: briefState, why: briefWhy || null } : null,
+        sent: sent.docs.map((d) => d.title),
+        pasted: pasted.trim() ? words(pasted) : 0,
+        brand: brand.length > 0,
+        claimsFrom: claimsFromReply(text) || (next.rules.approvedClaims.length ? null : 'none'),
+        claims: next.rules.approvedClaims.length,
+      } })
     } catch (e) {
       return NextResponse.json({ error: `MVP could not read the brief: ${e instanceof Error ? e.message : 'no answer'}` }, { status: 502 })
     }

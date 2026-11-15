@@ -71,6 +71,8 @@ export interface Campaign {
   name: string
   /** A TRYBE brand id, or null for a campaign of its own. */
   brandId: string | null
+  /** The brand's name on TRYBE, for the words on screen; null when set up by hand. */
+  brandName: string | null
   product: Product
   rules: BriefRules
   reality: Reality
@@ -498,6 +500,7 @@ export function readCampaign(raw: unknown, id = ''): Campaign {
     id,
     name: clean(o.name, 80) || 'Batch scripts',
     brandId: typeof o.brandId === 'string' && /^[A-Za-z0-9_-]{4,80}$/.test(o.brandId) ? o.brandId : null,
+    brandName: clean(o.brandName, 120) || null,
     product: { name: clean(p.name, 80), mustSpell: list(p.mustSpell, 6, 40), neverSay: list(p.neverSay, 20, 60), categoryWords: list(p.categoryWords, 12, 40), showDeny: list(p.showDeny, 20, 40) },
     rules: {
       approvedClaims: claims,
@@ -555,10 +558,52 @@ export function suggestDeny(p: Pick<Place, 'name' | 'accessNotes'>): string[] {
 
 // ── The rules from a brief ───────────────────────────────────────────────────
 
-export const RULES_SYSTEM = `You read a brand's creator brief and pull out the rules a script writer must follow. Use only what the brief says; never invent a claim.
+export const RULES_SYSTEM = `You read what a brand gave creators for a video challenge and pull out the rules a script writer must follow. The sources are labelled: THE BRIEF (the brand's creative brief on TRYBE), WHAT THE BRAND SENT (documents and PDFs from the brand's messages), PASTED BY THE CREATOR, and THE BRAND (its own description and website).
+Approved claims come from THE BRIEF, WHAT THE BRAND SENT or PASTED BY THE CREATOR. Only when none of those states a feature of this product, take the features THE BRAND itself states about it. Never invent a claim, and keep each to the brand's meaning in plain words.
 Answer with JSON only:
-{"approvedClaims":[{"id":"c1","text":"one feature or claim scripts may state, in plain words"}],"bannedTerms":["words or names the brief forbids"],"noPrices":true,"noPercentOff":true,"saleLanguageRule":"when sale language is allowed, in the brief's words, or empty","targetLengthSec":[25,45],"safeZoneNotes":"aspect ratio, safe zones, captions, or empty","productDelaySec":0,"neverSay":["product names or competitors never to say"],"mustSpell":["brand words with required capitals"],"categoryWords":["the product's category words"]}
-productDelaySec: the seconds before the product, the brand or the category may appear, when the brief says so, else 0.`
+{"approvedClaims":[{"id":"c1","text":"one feature or claim scripts may state"}],"claimsFrom":"brief, sent, pasted, brand or none","bannedTerms":["words or names the brand forbids"],"noPrices":true,"noPercentOff":true,"saleLanguageRule":"when sale language is allowed, in the brand's words, or empty","targetLengthSec":[25,45],"safeZoneNotes":"aspect ratio, safe zones, captions, or empty","productDelaySec":0,"neverSay":["competitor or product names never to say"],"mustSpell":["brand words with required capitals, as the brand writes them"],"categoryWords":["the product's category words"],"showDeny":["objects that give the product away before it enters"]}
+productDelaySec: the seconds before the product, the brand or the category may appear, when the brand says so, else 0. showDeny only when productDelaySec is above 0: the few objects tied to this product that would give it away early (for a luggage tracker: suitcase, luggage), else empty.`
+
+/** The brand's words for the rules reader, each source labelled (RULES_SYSTEM
+ *  names the labels). Empty sources are left out. Pure. */
+export function rulesInput(x: { product: string; brandName?: string | null; brief?: string | null; briefNote?: string | null; sent?: string | null; pasted?: string | null; brand?: string | null }): string {
+  const part = (label: string, t?: string | null, max = 40_000) => (t && t.trim() ? `${label}:\n${t.trim().slice(0, max)}` : '')
+  return [
+    `PRODUCT: ${x.product || 'not given'}${x.brandName ? ` (by ${x.brandName})` : ''}`,
+    part('THE BRIEF', x.brief, 20_000),
+    x.briefNote ? `ABOUT THE BRIEF: ${x.briefNote}` : '',
+    part('WHAT THE BRAND SENT', x.sent, 40_000),
+    part('PASTED BY THE CREATOR', x.pasted, 40_000),
+    part('THE BRAND', x.brand, 6_000),
+  ].filter(Boolean).join('\n\n')
+}
+
+export type ClaimsFrom = 'brief' | 'sent' | 'pasted' | 'brand' | 'none'
+/** Where the reader says the claims came from, or null when it did not say. Pure. */
+export function claimsFromReply(text: string): ClaimsFrom | null {
+  const m = text.match(/"claimsFrom"\s*:\s*"([a-z]+)/i)
+  const v = m ? m[1].toLowerCase() : ''
+  return (['brief', 'sent', 'pasted', 'brand', 'none'] as const).find((k) => k === v) ?? null
+}
+
+/** A new campaign for a TRYBE brand's product, starting from the creator's
+ *  last campaign: where they film, who is on camera, their facts, angles and
+ *  hooks are theirs, not the brand's, so they are asked once (Seb,
+ *  2026-11-15: "it's just asking too much for information from the user").
+ *  The brand's rules start empty; the reader fills them. Pure. */
+export function seedCampaign(pick: { brandId?: string | null; brandName?: string | null; product: string }, last?: Partial<Pick<Campaign, 'reality' | 'creatorFacts' | 'angles' | 'hooks'>> | null): Campaign {
+  const product = pick.product.trim()
+  return readCampaign({
+    name: product ? `${product} challenge` : 'New challenge',
+    brandId: pick.brandId || null,
+    brandName: pick.brandName || null,
+    product: { name: product },
+    reality: last?.reality,
+    creatorFacts: last?.creatorFacts,
+    angles: last?.angles,
+    hooks: last?.hooks,
+  })
+}
 
 /** The rules a brief gave, as far as they read, folded onto what the creator
  *  already has (the creator's own entries are kept). Pure. */
@@ -574,6 +619,7 @@ export function rulesFromReply(text: string, had: Campaign): Campaign {
       neverSay: Array.from(new Set([...had.product.neverSay, ...list(j.neverSay, 20, 60)])),
       mustSpell: had.product.mustSpell.length ? had.product.mustSpell : list(j.mustSpell, 6, 40),
       categoryWords: Array.from(new Set([...had.product.categoryWords, ...list(j.categoryWords, 12, 40)])),
+      showDeny: Array.from(new Set([...had.product.showDeny, ...list(j.showDeny, 20, 40)])),
     },
     rules: {
       ...had.rules,

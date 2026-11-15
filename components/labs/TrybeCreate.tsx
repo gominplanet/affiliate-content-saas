@@ -164,7 +164,7 @@ export default function TrybeCreate({ canRead, isAdmin, onFind, start, onStarted
       {/* YOUR SAVED SCRIPTS: every set written, kept until you clear it. */}
       {step === 1 && <TrybeSavedScripts />}
       {/* BATCH SCRIPTS: 50 to 300 for one brand challenge. Labs first (admin). */}
-      {step === 1 && isAdmin && <TrybeBatchScripts />}
+      {step === 1 && isAdmin && <TrybeBatchScripts canRead />}
 
       {/* 1. The brand */}
       {step === 1 && (
