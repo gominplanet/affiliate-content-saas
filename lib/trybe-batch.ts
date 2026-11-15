@@ -636,6 +636,52 @@ export function rulesFromReply(text: string, had: Campaign): Campaign {
   return merged
 }
 
+// ── The plan, before writing (Seb, 2026-11-15: "A with a C plan card") ─────
+
+export interface PlanSummary {
+  /** Scripts still to write (the target less what is written). */
+  left: number
+  places: Array<{ name: string; n: number }>
+  cast: Array<{ name: string; n: number }>
+  angles: string[]
+  claims: number
+  delaySec: number
+  never: string[]
+  noPrices: boolean
+  lengthSec: [number, number]
+  /** Days to the due date (null without one) and scripts a day to get there. */
+  days: number | null
+  perDay: number | null
+  /** What must be added before writing, in words (empty: ready). */
+  missing: string[]
+}
+
+/** What MVP will write, said before it writes: how the scripts spread over
+ *  places, people and angles (the same planner the rounds use), the rules
+ *  they follow, and the pace to the due date. Pure. */
+export function planSummary(c: Campaign, existing: Array<Pick<Script, 'idx' | 'location' | 'host' | 'angle'>> = [], today: Date = new Date()): PlanSummary {
+  const left = Math.max(0, c.target - existing.length)
+  const missing = notReadyWords(c)
+  const slots = c.reality.locations.length && c.reality.cast.length ? planSlots(c, existing, left) : []
+  const tally = (key: 'location' | 'host', names: string[]) => names.map((name) => ({ name, n: slots.filter((x) => x[key] === name).length }))
+  let days: number | null = null
+  if (c.deadline) days = Math.ceil((Date.parse(`${c.deadline}T23:59:59Z`) - today.getTime()) / 86_400_000)
+  return {
+    left,
+    places: tally('location', c.reality.locations.map((l) => l.name)),
+    cast: tally('host', c.reality.cast.map((p) => p.name)),
+    angles: [...c.angles],
+    claims: c.rules.approvedClaims.length,
+    delaySec: c.rules.productDelaySec,
+    never: Array.from(new Set([...c.rules.bannedTerms, ...c.product.neverSay])).slice(0, 8),
+    noPrices: c.rules.noPrices,
+    lengthSec: c.rules.targetLengthSec,
+    days,
+    perDay: days !== null && days > 0 ? Math.ceil(c.target / days) : null,
+    missing,
+  }
+}
+
 // ── Pace ─────────────────────────────────────────────────────────────────────
 
 /** "X accepted of N" and the pace to the deadline. Pure. */

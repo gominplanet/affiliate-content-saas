@@ -56,7 +56,9 @@ export function ScriptDoneBar({ onShot, onDelete, busy }: { onShot: () => void; 
 
 const day = (t: string) => { const d = new Date(t); return Number.isNaN(d.getTime()) ? '' : d.toLocaleDateString([], { month: 'short', day: 'numeric' }) }
 
-export default function TrybeSavedScripts({ refreshKey = 0 }: { refreshKey?: number }) {
+export default function TrybeSavedScripts({ refreshKey = 0, brandId, brandName }: { refreshKey?: number
+  /** Brand scripts' brand page: only this brand's sets (Seb, 2026-11-15). */
+  brandId?: string; brandName?: string }) {
   const [sets, setSets] = useState<SavedSet[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [more, setMore] = useState(false)
@@ -126,25 +128,27 @@ export default function TrybeSavedScripts({ refreshKey = 0 }: { refreshKey?: num
   }
 
   const soft = { color: 'var(--text-soft)' }
-  const total = (sets || []).reduce((n, s) => n + (s.plan.videos?.length || 0), 0)
+  // One brand's sets on its page; every set where no brand is picked.
+  const shown = sets && brandId ? sets.filter((x) => x.brand_id === brandId) : sets
+  const total = (shown || []).reduce((n, s) => n + (s.plan.videos?.length || 0), 0)
 
   return (
     <section className="rounded-2xl border p-5" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
       <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-        <h2 className="text-[18px] font-bold inline-flex items-center gap-2"><Bookmark size={17} style={{ color: PURPLE }} /> Your saved scripts</h2>
-        {sets && sets.length > 0 && <span className="text-[13px]" style={soft}>{total} script{total === 1 ? '' : 's'} to shoot, in {sets.length} set{sets.length === 1 ? '' : 's'}</span>}
+        <h2 className="text-[18px] font-bold inline-flex items-center gap-2"><Bookmark size={17} style={{ color: PURPLE }} /> {brandId ? `Quick script sets${brandName ? ` for ${brandName}` : ''}` : 'Your saved scripts'}</h2>
+        {shown && shown.length > 0 && <span className="text-[13px]" style={soft}>{total} script{total === 1 ? '' : 's'} to shoot, in {shown.length} set{shown.length === 1 ? '' : 's'}</span>}
       </div>
       <p className="text-[13px] mt-1" style={soft}>Every set Brand scripts writes stays here, after a refresh too, until you clear it. Tick Shot it when you have filmed one, or Delete one you will not make.</p>
 
       {error ? (
         <p className="mt-3 text-[13px] inline-flex items-start gap-1.5" style={{ color: AMBER }}><AlertTriangle size={14} className="mt-0.5 shrink-0" /> MVP could not read your saved scripts: {error.replace(/[.\s]+$/, '')}. They are not lost. <button onClick={() => void load()} className="font-semibold underline" style={{ color: PURPLE }}>Try again</button></p>
-      ) : !sets ? (
+      ) : !shown ? (
         <p className="mt-3 text-[13px] inline-flex items-center gap-1.5" style={soft}><Loader2 size={13} className="animate-spin" /> Reading your saved scripts...</p>
-      ) : sets.length === 0 ? (
-        <p className="mt-3 text-[13px]" style={soft}>No saved scripts right now. Pick a brand below and MVP writes a set for the product you have; it stays here until you clear it.</p>
+      ) : shown.length === 0 ? (
+        <p className="mt-3 text-[13px]" style={soft}>{brandId ? `No quick sets for ${brandName || 'this brand'} yet. Press Write quick scripts above; each set stays here until you clear it.` : 'No saved scripts right now. Pick a brand below and MVP writes a set for the product you have; it stays here until you clear it.'}</p>
       ) : (
         <ul className="mt-3 flex flex-col gap-2">
-          {sets.map((s) => {
+          {shown.map((s) => {
             const on = open === s.id
             const n = s.plan.videos?.length || 0
             return (
@@ -181,7 +185,7 @@ export default function TrybeSavedScripts({ refreshKey = 0 }: { refreshKey?: num
       )}
       {more && <p className="mt-2 text-[12px]" style={soft}>Showing your newest sets. Clear some and the older ones show here.</p>}
       {filming && <TrybeFilmIt script={filming} onClose={() => setFilming(null)} />}
-      {sets && sets.length > 0 && <p className="mt-2 text-[12px] inline-flex items-center gap-1" style={soft}><Check size={12} style={{ color: GREEN }} /> Saved on MVP, so they are here on any computer you sign in on.</p>}
+      {shown && shown.length > 0 && <p className="mt-2 text-[12px] inline-flex items-center gap-1" style={soft}><Check size={12} style={{ color: GREEN }} /> Saved on MVP, so they are here on any computer you sign in on.</p>}
     </section>
   )
 }

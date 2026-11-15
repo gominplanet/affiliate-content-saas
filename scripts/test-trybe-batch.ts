@@ -7,7 +7,7 @@
 import { readFileSync } from 'node:fs'
 import {
   readCampaign, checkScript, planSlots, runRound, estimateSeconds, likeness, casedWords, parseScripts, suggestDeny,
-  rulesFromReply, paceWords, notReadyWords, writerSystem, writerPrompt, rulesInput, claimsFromReply, seedCampaign, BATCH_ROUND, MAX_PER_CAMPAIGN,
+  rulesFromReply, paceWords, notReadyWords, writerSystem, writerPrompt, rulesInput, claimsFromReply, seedCampaign, planSummary, BATCH_ROUND, MAX_PER_CAMPAIGN,
   RULES_SYSTEM, type Script, type Campaign, type Slot,
 } from '../lib/trybe-batch'
 
@@ -129,6 +129,7 @@ const fake = async (_system: string, user: string): Promise<string> => {
   const r2 = await runRound(NOBL, r.scripts, BATCH_ROUND, fake)
   check('the next round carries on the numbering and sees what was written', r2.scripts[0].idx === 11)
 
+  const runRoundFake = () => r.scripts.slice(0, 10)
   // ── The prompts and the reading ────────────────────────────────────────────
   const sys = writerSystem()
   check('the writer is told: story first, physical sense, one person, approved claims only, show what you say, real stories, soft CTA',
@@ -169,7 +170,28 @@ const fake = async (_system: string, user: string): Promise<string> => {
   check('the server reads TRYBE\'s brief, what the brand sent and the brand\'s description', /body\.trybe/.test(api) && /msglinks:\$\{ownerId\}:\$\{key\}/.test(api) && /from\('trybe_brands'\)\.select\('name,about,site_summary,site_products'\)/.test(api) && /rulesInput\(/.test(api))
   check('nothing to read is said with the reason, never a generic error', /has no brief on its TRYBE page/.test(api) && /nothingToRead: true/.test(api))
   check('your places and cast carry to the next campaign', /const last = top\?\.setup/.test(api) && /seedCampaign\(\{ brandId: b\.id, brandName: b\.name, product \}, last/.test(ui))
-  check('the batch card knows SCOUT is on in Brand scripts', /<TrybeBatchScripts canRead \/>/.test(read('components/labs/TrybeCreate.tsx')))
+
+  // ── Brand scripts, A with C's plan card (Seb, 2026-11-15) ─────────────────
+  const plan = planSummary({ ...NOBL, target: 50, deadline: '2026-12-05' }, [], new Date('2026-11-15T12:00:00Z'))
+  check('the plan spreads 50 evenly over the places and the people', plan.left === 50 && plan.places.every((x) => x.n >= 12 && x.n <= 13) && plan.places.reduce((n, x) => n + x.n, 0) === 50 && plan.cast.every((x) => x.n === 25), plan)
+  check('the plan says the rules and the pace to the due date', plan.claims === 6 && plan.delaySec === 15 && plan.never.includes('free') && plan.never.includes('AirTag') && plan.days === 21 && plan.perDay === 3, plan)
+  check('a plan with places missing says what to add, never a made-up spread', (() => { const q = planSummary(seedCampaign({ product: 'X' }, null)); return q.places.length === 0 && q.missing.includes('at least one place to film') && q.missing.includes('who is on camera') })())
+  const half = runRoundFake()
+  check('the plan for a batch half written covers only what is left, still even', (() => { const q = planSummary({ ...NOBL, target: 20 }, half); return q.left === 10 && q.places.reduce((n, x) => n + x.n, 0) === 10 })())
+  check('no due date is said as none, a past one as passed', planSummary(NOBL).perDay === null && planSummary({ ...NOBL, deadline: '2026-01-01' }, [], new Date('2026-11-15T12:00:00Z')).perDay === null)
+
+  const create = read('components/labs/TrybeCreate.tsx')
+  const batchUi = read('components/labs/TrybeBatchScripts.tsx')
+  check('the new Brand scripts: pick a brand, then one page with two doors (Labs first)', /const simple = isAdmin/.test(create) && /if \(simple\) \{/.test(create) && /\{!brand && brandGrid\(\)\}/.test(create) && /\{brand && door === 'home' && brandHome\(\)\}/.test(create))
+  check('door one: quick scripts, from the writer creators already use', /\{VIDEO_IDEAS\} quick scripts/.test(create) && /\{brand && door === 'quick' && quickSection\(\)\}/.test(create) && /<TrybeVideoIdeas key=/.test(create))
+  check('door two: a batch of any size up to 300, with a due date', /\[10, 25, 50, 100, 300\]\.map/.test(create) && /Plan \{batchCount\} scripts/.test(create) && /<BatchRun key=\{batchKey\}/.test(create))
+  check('the page says what MVP has from the brand: brief, documents, website', /What MVP has from \{brand\.name\}:/.test(create) && /brandDocs\(brand\.id\)/.test(create) && /No documents from your messages yet/.test(create) && /Add a PDF they sent/.test(create))
+  check('the product in your hands is picked first', /if \(simple && page && !product && page\.products\.length\) setProduct\(page\.products\[0\]\.name\)/.test(create))
+  check('every script for the brand sits on its page: batches and quick sets', /<BrandBatches brandId=\{brand\.id\}/.test(create) && /<TrybeSavedScripts brandId=\{brand\.id\} brandName=\{brand\.name\}/.test(create))
+  check('the old saved scripts box and batch card are not on the new page', !/if \(simple\) \{[\s\S]{0,1500}<TrybeBatchScripts/.test(create) && !/<TrybeBatchScripts canRead \/>/.test(create))
+  check('a batch shows MVP\'s plan before it writes, and writes only on Start writing', /view === 'plan' && c && <PlanCard/.test(batchUi) && /Here is my plan before I write anything\./.test(batchUi) && /onStart=\{async \(\) => \{ const s = await save\(c\); if \(s\) \{ setAuto\(true\); setView\('scripts'\) \} \}\}/.test(batchUi) && /autoStart = false/.test(batchUi))
+  check('the plan names what was read, what was not, and what is missing', /Following/.test(batchUi) && /src\.missed\.map/.test(batchUi) && /Before I write, add \{p\.missing\.join\(', '\)\}\./.test(batchUi) && /Add where you film/.test(batchUi))
+  check('the saved sets list can show one brand', /shown = sets && brandId \? sets\.filter\(\(x\) => x\.brand_id === brandId\) : sets/.test(read('components/labs/TrybeSavedScripts.tsx')))
 
   if (fails.length) { console.error(`❌ trybe-batch: ${fails.length} failure(s)\n${fails.map((f) => `   • ${f}`).join('\n')}`); process.exit(1) }
   console.log('✅ trybe-batch: every rule on the brief\'s fixtures, an even spread, and a whole round with rewrites and red flags')

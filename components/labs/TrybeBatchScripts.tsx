@@ -19,7 +19,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Loader2, Plus, Trash2, ChevronLeft, ChevronRight, Wand2, Download, FileText, RefreshCw, Star, Pencil, Check, X, Square, Play, AlertTriangle, Search, ArrowLeft } from 'lucide-react'
 import {
-  readCampaign, seedCampaign, paceWords, notReadyWords, suggestDeny, storySeconds, SCRIPT_STATUSES, MAX_PER_CAMPAIGN, DEFAULT_ANGLES, DEFAULT_HOOKS,
+  readCampaign, seedCampaign, planSummary, paceWords, notReadyWords, suggestDeny, storySeconds, SCRIPT_STATUSES, MAX_PER_CAMPAIGN, DEFAULT_ANGLES, DEFAULT_HOOKS,
   type Campaign, type Script, type ScriptStatus,
 } from '@/lib/trybe-batch'
 import { addBrandPdf } from '@/lib/trybe-brand-pdf-client'
@@ -40,19 +40,19 @@ const btn = 'inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-[13.5p
 const btnMain = { background: ACCENT, color: 'white' }
 const btnSoft = { border: '1px solid var(--border)', color: 'var(--text)' }
 
-type Allowance = { used: number; limit: number | null; left: number | null; resetLabel: string; introNote: string | null }
-type Listed = { id: string; name: string; target: number; scripts: number; accepted: number; updatedAt: string }
+export type Allowance = { used: number; limit: number | null; left: number | null; resetLabel: string; introNote: string | null }
+type Listed = { id: string; name: string; brandId?: string | null; target: number; scripts: number; accepted: number; updatedAt: string }
 type Answer = Record<string, unknown> & { error?: string }
 /** What TRYBE's page gave for the brief, sent to the rules reader. */
-type TrybeBrief = { brief: string | null; state: BrandPage['state']; why: string | null; brandName: string }
+export type TrybeBrief = { brief: string | null; state: BrandPage['state']; why: string | null; brandName: string }
 /** What the rules reader read, as the server reports it. */
-type Read = {
+export type Read = {
   trybe: { words: number } | { state: string; why: string | null } | null
   sent: string[]; pasted: number; brand: boolean; claims: number
   claimsFrom: 'brief' | 'sent' | 'pasted' | 'brand' | 'none' | null
 } | { error: string }
 
-async function call(action: string, payload: Record<string, unknown> = {}, ms = 60_000): Promise<Answer> {
+export async function call(action: string, payload: Record<string, unknown> = {}, ms = 60_000): Promise<Answer> {
   try {
     const r = await fetch('/api/labs/trybe-batch', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action, ...payload }), signal: AbortSignal.timeout(ms) })
     const j = await r.json().catch(() => ({})) as Answer
@@ -80,7 +80,7 @@ const FILTER_WORDS: Record<string, string> = { green: 'Passes every rule', amber
 const statusLabel = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
 const stateColour = (s: Script['checks']['state']) => (s === 'red' ? RED : s === 'amber' ? AMBER : GREEN)
 const STEPS = ['Rules', 'Where you film', 'Angles and hooks', 'Write']
-const trybeOf = (p: BrandPage | null, brandName: string): TrybeBrief => ({ brief: p?.brief || null, state: p?.state || 'unread', why: p?.briefWhy || null, brandName })
+export const trybeOf = (p: BrandPage | null, brandName: string): TrybeBrief => ({ brief: p?.brief || null, state: p?.state || 'unread', why: p?.briefWhy || null, brandName })
 
 export default function TrybeBatchScripts({ canRead = false }: { canRead?: boolean }) {
   const [open, setOpen] = useState(false)
@@ -303,20 +303,26 @@ function Picker({ onPick, onByHand }: { onPick: (b: { id: string; name: string }
   )
 }
 
-/** What the rules reader read, each source named as read or not (CLAUDE.md:
- *  report what happened, so "nothing found" never looks like "not looked"). */
-function ReadReport({ read, brand }: { read: Read; brand: string }) {
-  if ('error' in read) return <p className="text-[13px] inline-flex items-start gap-1.5" style={{ color: AMBER }}><AlertTriangle size={14} className="mt-0.5 shrink-0" /> {read.error}</p>
+/** What the rules reader read and did not, in words (CLAUDE.md: report what
+ *  happened, so "nothing found" never looks like "not looked"). */
+export function sourcesRead(read: Exclude<Read, { error: string }>, brand: string): { got: string[]; missed: string[] } {
   const got: string[] = []
   const missed: string[] = []
   if (read.trybe && 'words' in read.trybe) got.push(`${brand}'s brief on TRYBE (${read.trybe.words} words)`)
-  else if (read.trybe && read.trybe.state === 'link_only') missed.push(`The brief on TRYBE is a link MVP could not open${read.trybe.why ? ` (${read.trybe.why})` : ''}. Add it as a PDF below.`)
+  else if (read.trybe && read.trybe.state === 'link_only') missed.push(`The brief on TRYBE is a link MVP could not open${read.trybe.why ? ` (${read.trybe.why})` : ''}. Add it as a PDF.`)
   else if (read.trybe && read.trybe.state === 'none') missed.push(`${brand} has no brief on its TRYBE page.`)
   else if (read.trybe && read.trybe.state === 'unread') missed.push(`MVP could not read ${brand}'s page on TRYBE.`)
   if (read.sent.length) got.push(`${read.sent.length === 1 ? 'a document' : `${read.sent.length} documents`} ${brand} sent you (${read.sent.join(', ')})`)
-  else missed.push(`No documents from your messages with ${brand}. If they sent a deck or doc, open their chat in Messages and press Read them for me, or add the PDF below.`)
+  else missed.push(`No documents from your messages with ${brand}. If they sent a deck or doc, open their chat in Messages and press Read them for me, or add the PDF.`)
   if (read.brand) got.push(`how ${brand} describes itself`)
   if (read.pasted) got.push(`what you pasted (${read.pasted} words)`)
+  return { got, missed }
+}
+
+/** What the rules reader read, each source named as read or not. */
+export function ReadReport({ read, brand }: { read: Read; brand: string }) {
+  if ('error' in read) return <p className="text-[13px] inline-flex items-start gap-1.5" style={{ color: AMBER }}><AlertTriangle size={14} className="mt-0.5 shrink-0" /> {read.error}</p>
+  const { got, missed } = sourcesRead(read, brand)
   const from = { brief: 'from the brief on TRYBE', sent: `from what ${brand} sent you`, pasted: 'from what you pasted', brand: '', none: '' }
   return (
     <div className="rounded-xl border p-3 space-y-1.5 text-[13px]" style={{ borderColor: 'var(--border)', background: 'rgb(var(--brand-rgb) / 0.04)' }}>
@@ -331,9 +337,9 @@ function ReadReport({ read, brand }: { read: Read; brand: string }) {
 
 // ── The setup, step by step ──────────────────────────────────────────────────
 
-function Setup({ c, setC, step, setStep, save, busy, read, readRules, onWrite }: {
+export function Setup({ c, setC, step, setStep, save, busy, read, readRules, onWrite, writeLabel = 'Save and go to the scripts' }: {
   c: Campaign; setC: (c: Campaign) => void; step: number; setStep: (n: number) => void; save: (c?: Campaign) => Promise<Campaign | null>; busy: string | null
-  read: Read | null; readRules: (pasted: string) => Promise<void>; onWrite: () => void
+  read: Read | null; readRules: (pasted: string) => Promise<void>; onWrite: () => void; writeLabel?: string
 }) {
   const set = (patch: Partial<Campaign>) => setC({ ...c, ...patch })
   const setProduct = (patch: Partial<Campaign['product']>) => set({ product: { ...c.product, ...patch } })
@@ -489,7 +495,7 @@ function Setup({ c, setC, step, setStep, save, busy, read, readRules, onWrite }:
           {notReadyWords(c).length > 0
             ? <p className="text-[13px]" style={{ color: AMBER }}>Before writing, add {notReadyWords(c).join(', ')}.</p>
             : <p className="text-[13px]" style={soft}>MVP writes ten at a time and checks every one against the rules. Keep this page open while it writes; closing it pauses, and nothing written is lost.</p>}
-          <button className={btn} style={btnMain} disabled={!!busy || notReadyWords(c).length > 0} onClick={async () => { const s = await save(c); if (s) onWrite() }}>{busy ? <Loader2 size={15} className="animate-spin" /> : <Play size={15} />} Save and go to the scripts</button>
+          <button className={btn} style={btnMain} disabled={!!busy || notReadyWords(c).length > 0} onClick={async () => { const s = await save(c); if (s) onWrite() }}>{busy ? <Loader2 size={15} className="animate-spin" /> : <Play size={15} />} {writeLabel}</button>
         </div>
       )}
 
@@ -503,8 +509,10 @@ function Setup({ c, setC, step, setStep, save, busy, read, readRules, onWrite }:
 
 // ── The scripts ──────────────────────────────────────────────────────────────
 
-function Scripts({ c, scripts, setScripts, setAllowance, onSetup }: {
+export function Scripts({ c, scripts, setScripts, setAllowance, onSetup, autoStart = false, setupLabel = 'Setup' }: {
   c: Campaign; scripts: Script[]; setScripts: (f: (s: Script[]) => Script[]) => void; setAllowance: (a: Allowance) => void; onSetup: () => void
+  /** Start writing at once: the creator pressed Start writing on the plan. */
+  autoStart?: boolean; setupLabel?: string
 }) {
   const [running, setRunning] = useState(false)
   const [runNote, setRunNote] = useState<string | null>(null)
@@ -530,6 +538,14 @@ function Scripts({ c, scripts, setScripts, setAllowance, onSetup }: {
     }
     setRunning(false); setRunNote(null)
   }
+  // Once only, however often the list redraws.
+  const autoRan = useRef(false)
+  useEffect(() => {
+    if (!autoStart || autoRan.current || scripts.length >= c.target) return
+    autoRan.current = true
+    void writeAll()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoStart])
   const replace = (s: Script) => setScripts((all) => all.map((x) => (x.idx === s.idx ? s : x)))
   const rewrite = async (idx: number, note = '') => {
     const r = await call('rewrite', { id: c.id, idx, note }, 200_000)
@@ -591,7 +607,7 @@ function Scripts({ c, scripts, setScripts, setAllowance, onSetup }: {
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
         <p className="text-[14px] font-semibold w-full sm:w-auto sm:flex-1">{scripts.length} of {c.target} written. {pace.line}{reds ? ` ${reds} still ${reds === 1 ? 'breaks' : 'break'} a rule.` : ''}</p>
-        <button className={btn} style={btnSoft} onClick={onSetup}><Pencil size={14} /> Setup</button>
+        <button className={btn} style={btnSoft} onClick={onSetup}><Pencil size={14} /> {setupLabel}</button>
         <button className={btn} style={btnSoft} disabled={!scripts.length || !!making} onClick={() => void pdf()}>{making === 'pdf' ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />} PDF</button>
         <button className={btn} style={btnSoft} disabled={!scripts.length} onClick={() => void csv()}><Download size={14} /> CSV</button>
       </div>
@@ -687,6 +703,167 @@ function ScriptCard({ s, c, picked, onPick, rewrite, update, remove }: {
           {e && <p className="text-[12.5px]" style={{ color: RED }}>{e}</p>}
         </div>
       )}
+    </div>
+  )
+}
+
+// ── Inside Brand scripts: the plan card, a batch run, the brand's batches ────
+// (Seb, 2026-11-15: "I like A with a C plan card"). Brand scripts picks the
+// brand and the product; a batch is planned and said before anything is
+// written, then written in rounds with every script checked.
+
+const shortDate = (d: string) => new Date(`${d}T12:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })
+
+/** MVP's plan, said before it writes: what it read, how the scripts spread,
+ *  the rules, the pace. Writing waits for Start writing. */
+export function PlanCard({ c, read, scripts, onStart, onChange, onFix, busy }: {
+  c: Campaign; read: Read | null; scripts: Script[]; onStart: () => void; onChange: () => void; onFix: (step: number) => void; busy?: boolean
+}) {
+  const p = planSummary(c, scripts)
+  const brand = c.brandName || 'the brand'
+  const src = read && !('error' in read) ? sourcesRead(read, brand) : null
+  const needPlaces = !c.reality.locations.length || !c.reality.cast.length
+  const row = (label: string, body: React.ReactNode, warn = false) => (
+    <p className="text-[13.5px] leading-snug" style={warn ? { color: AMBER } : undefined}><span className="font-semibold" style={{ color: 'var(--text)' }}>{label}:</span> {body}</p>
+  )
+  return (
+    <div className="flex gap-3 items-start">
+      <span className="w-9 h-9 rounded-full inline-flex items-center justify-center text-[11px] font-bold shrink-0" style={{ background: ACCENT, color: 'white' }}>MVP</span>
+      <div className="flex-1 min-w-0 space-y-2">
+        <p className="text-[14.5px]">{scripts.length ? `Here is my plan for the next ${p.left}.` : 'Here is my plan before I write anything.'}</p>
+        <div className="rounded-2xl p-4 space-y-3" style={{ border: `2px solid ${ACCENT}` }}>
+          <p className="text-[18px] font-bold">{p.left} story-time {p.left === 1 ? 'script' : 'scripts'} for {c.product.name}</p>
+          {read && 'error' in read && <ReadReport read={read} brand={brand} />}
+          <div className="grid sm:grid-cols-2 gap-x-6 gap-y-2">
+            {row('Following', src && src.got.length ? src.got.join('; ') : 'nothing MVP could read yet', !src || !src.got.length)}
+            {row('Places', p.places.length ? p.places.map((x) => `${x.name} ${x.n}`).join(', ') : 'none yet', !p.places.length)}
+            {row('On camera', p.cast.length ? `${p.cast.map((x) => `${x.name} ${x.n}`).join(', ')}${c.reality.onePersonPerVideo ? ', one per video' : ''}` : 'nobody yet', !p.cast.length)}
+            {row('Angles', p.angles.join(', '))}
+            {row('Rules', [`${p.claims} approved ${p.claims === 1 ? 'claim' : 'claims'}`, p.delaySec ? `product after ${p.delaySec} seconds` : '', p.noPrices ? 'no prices' : '', p.never.length ? `never: ${p.never.join(', ')}` : ''].filter(Boolean).join(', '), !p.claims)}
+            {row('Length', `${p.lengthSec[0]} to ${p.lengthSec[1]} seconds`)}
+            {row('Pace', !c.deadline ? 'no due date' : p.perDay ? `due ${shortDate(c.deadline)}, about ${p.perDay} a day` : `the due date (${shortDate(c.deadline)}) has passed`, !!c.deadline && !p.perDay)}
+          </div>
+          {src && src.missed.length > 0 && <div className="space-y-1">{src.missed.map((m) => <p key={m} className="text-[12.5px]" style={soft}>{m}</p>)}</div>}
+          {read && !('error' in read) && read.claimsFrom === 'brand' && read.claims > 0 && <p className="text-[12.5px]" style={{ color: AMBER }}>The brief names no product features, so the claims come from {brand}&rsquo;s own description. Check them under Change something.</p>}
+          {p.missing.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2">
+              <p className="text-[13px] font-semibold" style={{ color: AMBER }}>Before I write, add {p.missing.join(', ')}.</p>
+              {needPlaces && <button className={btn} style={btnSoft} onClick={() => onFix(1)}>Add where you film</button>}
+              {!c.product.name || !c.rules.approvedClaims.length ? <button className={btn} style={btnSoft} onClick={() => onFix(0)}>Add the brief</button> : null}
+            </div>
+          )}
+          <div className="flex flex-wrap gap-2">
+            <button className={btn} style={btnMain} disabled={!!busy || p.missing.length > 0 || p.left === 0} onClick={onStart}>{busy ? <Loader2 size={15} className="animate-spin" /> : <Play size={15} />} Start writing</button>
+            <button className={btn} style={btnSoft} disabled={!!busy} onClick={onChange}><Pencil size={14} /> Change something</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/** One batch for one brand's product: set up and read, the plan, then the
+ *  rounds. `openId` opens a batch already started instead. */
+export function BatchRun({ brand, product, page, count, deadline, openId, onBack }: {
+  brand: { id: string; name: string }; product: string; page: BrandPage | null; count: number; deadline: string | null; openId?: string | null; onBack: () => void
+}) {
+  const [view, setView] = useState<'reading' | 'plan' | 'setup' | 'scripts'>('reading')
+  const [c, setC] = useState<Campaign | null>(null)
+  const [scripts, setScripts] = useState<Script[]>([])
+  const [read, setRead] = useState<Read | null>(null)
+  const [allowance, setAllowance] = useState<Allowance | null>(null)
+  const [err, setErr] = useState<string | null>(null)
+  const [busy, setBusy] = useState<string | null>(null)
+  const [step, setStep] = useState(0)
+  const [auto, setAuto] = useState(false)
+  const trybe = trybeOf(page, brand.name)
+  const save = async (next: Campaign): Promise<Campaign | null> => {
+    setBusy('save')
+    const r = await call('save', { id: next.id || undefined, campaign: next })
+    setBusy(null)
+    if (r.error) { setErr(r.error); return null }
+    setC(r.campaign as Campaign); setErr(null)
+    return r.campaign as Campaign
+  }
+  const readRules = async (saved: Campaign, pasted = '') => {
+    const r = await call('rules', { id: saved.id, briefText: pasted, trybe }, 120_000)
+    if (r.error) { setRead({ error: r.error }); return }
+    setC(r.campaign as Campaign); setRead(r.read as Read)
+  }
+  // Once, even when React mounts it twice.
+  const begun = useRef(false)
+  useEffect(() => {
+    if (begun.current) return
+    begun.current = true
+    void (async () => {
+      if (openId) {
+        const r = await call('get', { id: openId })
+        if (r.error) { setErr(r.error); return }
+        const got = (r.scripts as Script[]) || []
+        setC(r.campaign as Campaign); setScripts(got); setAllowance((r.allowance as Allowance) || null)
+        setView(got.length ? 'scripts' : 'plan')
+        return
+      }
+      const l = await call('list')
+      if (l.error) { setErr(l.error); return }
+      setAllowance((l.allowance as Allowance) || null)
+      const seeded = { ...seedCampaign({ brandId: brand.id, brandName: brand.name, product }, l.last as Parameters<typeof seedCampaign>[1]), target: count, deadline, name: `${product}: ${count} scripts` }
+      const saved = await save(seeded)
+      if (!saved) return
+      await readRules(saved)
+      setView('plan')
+    })()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center gap-2">
+        <button className={btn} style={btnSoft} onClick={onBack}><ChevronLeft size={15} /> Back to {brand.name}</button>
+        <p className="text-[18px] font-bold flex-1">{c?.name || `${product}: ${count} scripts`}</p>
+        {allowance && <p className="text-[12.5px]" style={soft}>{allowance.limit === null ? `${allowance.used} batch scripts written this month` : `${allowance.used} of ${allowance.limit} this month${allowance.resetLabel ? `, more on ${allowance.resetLabel}` : ''}`}</p>}
+      </div>
+      {err && <p className="text-[13px] inline-flex items-start gap-1.5" style={{ color: RED }}><AlertTriangle size={14} className="mt-0.5 shrink-0" /> {err}</p>}
+      {view === 'reading' && !err && <p className="text-[14px] inline-flex items-center gap-2 py-4" style={soft}><Loader2 size={16} className="animate-spin" /> Reading {brand.name}&rsquo;s brief on TRYBE, what {brand.name} sent you, and how {brand.name} describes {product}...</p>}
+      {view === 'plan' && c && <PlanCard c={c} read={read} scripts={scripts} busy={!!busy}
+        onStart={async () => { const s = await save(c); if (s) { setAuto(true); setView('scripts') } }}
+        onChange={() => { setStep(0); setView('setup') }} onFix={(n) => { setStep(n); setView('setup') }} />}
+      {view === 'setup' && c && <Setup c={c} setC={setC} step={step} setStep={setStep} save={(k) => save(k || c)} busy={busy} read={read}
+        readRules={async (pasted) => { const s = await save(c); if (s) await readRules(s, pasted) }}
+        onWrite={() => setView('plan')} writeLabel="Save and see the plan" />}
+      {view === 'scripts' && c && <Scripts c={c} scripts={scripts} setScripts={setScripts} setAllowance={setAllowance} autoStart={auto} setupLabel="The plan" onSetup={() => { setAuto(false); setView('plan') }} />}
+    </div>
+  )
+}
+
+/** This brand's batches, to open again. */
+export function BrandBatches({ brandId, brandName, onOpen, refreshKey = 0 }: { brandId: string; brandName: string; onOpen: (id: string) => void; refreshKey?: number }) {
+  const [rows, setRows] = useState<Listed[] | null>(null)
+  const [err, setErr] = useState<string | null>(null)
+  useEffect(() => {
+    let live = true
+    setRows(null)
+    void call('list').then((r) => {
+      if (!live) return
+      if (r.error) { setErr(r.error); setRows([]); return }
+      setErr(null); setRows(((r.campaigns as Listed[]) || []).filter((x) => x.brandId === brandId))
+    })
+    return () => { live = false }
+  }, [brandId, refreshKey])
+  if (rows === null) return <p className="text-[13px] inline-flex items-center gap-2" style={soft}><Loader2 size={13} className="animate-spin" /> Reading your {brandName} batches</p>
+  if (err) return <p className="text-[13px] inline-flex items-start gap-1.5" style={{ color: AMBER }}><AlertTriangle size={14} className="mt-0.5 shrink-0" /> MVP could not read your batches: {err}</p>
+  if (!rows.length) return <p className="text-[13px]" style={soft}>No batches for {brandName} yet.</p>
+  return (
+    <div className="space-y-2">
+      {rows.map((x) => (
+        <div key={x.id} className="flex flex-wrap items-center gap-3 rounded-xl border px-3 py-2.5" style={{ borderColor: 'var(--border)' }}>
+          <div className="flex-1 min-w-[200px]">
+            <p className="text-[14px] font-semibold">{x.name}</p>
+            <p className="text-[12.5px]" style={soft}>{x.scripts} of {x.target} written, {x.accepted} accepted</p>
+          </div>
+          <button className={btn} style={btnSoft} onClick={() => onOpen(x.id)}>Open</button>
+        </div>
+      ))}
     </div>
   )
 }
