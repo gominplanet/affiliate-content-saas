@@ -170,7 +170,8 @@ export async function POST(req: NextRequest) {
   }
 
   if (action === 'delete') {
-    await db.from('trybe_campaigns').delete().eq('id', id).eq('user_id', ownerId)
+    const { error } = await db.from('trybe_campaigns').delete().eq('id', id).eq('user_id', ownerId)
+    if (error) return NextResponse.json({ error: `The campaign was not deleted: ${error.message}` }, { status: 500 })
     return NextResponse.json({ ok: true })
   }
 
@@ -218,7 +219,8 @@ export async function POST(req: NextRequest) {
       const text = (msg.content as Array<{ type: string; text?: string }>).map((b) => (b.type === 'text' ? b.text || '' : '')).join('')
       const next = rulesFromReply(text, c)
       if (next === c) return NextResponse.json({ error: 'MVP read the brief but could not make rules from it. Try again, or type the claims in yourself.' }, { status: 502 })
-      await db.from('trybe_campaigns').update({ setup: setupOf(next), updated_at: new Date().toISOString() }).eq('id', id).eq('user_id', ownerId)
+      const { error: saveErr } = await db.from('trybe_campaigns').update({ setup: setupOf(next), updated_at: new Date().toISOString() }).eq('id', id).eq('user_id', ownerId)
+      if (saveErr) return NextResponse.json({ error: `MVP read the brief, but the rules it made were not saved: ${saveErr.message}` }, { status: 500 })
       const words = (x: string) => (x.trim() ? x.trim().split(/\s+/).length : 0)
       return NextResponse.json({ ok: true, campaign: next, read: {
         trybe: trybeBrief ? { words: words(trybeBrief) } : briefState ? { state: briefState, why: briefWhy || null } : null,
@@ -262,14 +264,17 @@ export async function POST(req: NextRequest) {
   if (action === 'recheck') {
     // THE RULES CHANGED: every script checked again against them.
     let changed = 0
+    let unsaved = 0
     for (const s of scripts) {
       // In number order, so of two alike scripts the later one is flagged.
       const next = checkScript(s, c, scripts.filter((o) => o.idx !== s.idx), { skipLater: true })
       if (JSON.stringify(next) === JSON.stringify(s.checks)) continue
       s.checks = next
       changed++
-      await db.from('trybe_campaign_scripts').update({ checks: next, updated_at: new Date().toISOString() }).eq('campaign_id', id).eq('idx', s.idx)
+      const { error } = await db.from('trybe_campaign_scripts').update({ checks: next, updated_at: new Date().toISOString() }).eq('campaign_id', id).eq('idx', s.idx)
+      if (error) unsaved++
     }
+    if (unsaved) return NextResponse.json({ error: `${unsaved} of ${changed} new checks were not saved. Press Check all again to retry.` }, { status: 500 })
     return NextResponse.json({ ok: true, scripts, changed })
   }
 
@@ -299,7 +304,8 @@ export async function POST(req: NextRequest) {
       reasons = next.checks.reasons
     }
     if (!best) return NextResponse.json({ error: 'The writer answered in a shape MVP could not read. The script was left as it was.' }, { status: 502 })
-    await db.from('trybe_campaign_scripts').update({ ...scriptToRow(best), updated_at: new Date().toISOString() }).eq('campaign_id', id).eq('idx', idx)
+    const { error } = await db.from('trybe_campaign_scripts').update({ ...scriptToRow(best), updated_at: new Date().toISOString() }).eq('campaign_id', id).eq('idx', idx)
+    if (error) return NextResponse.json({ error: `The new version was written but not saved: ${error.message}` }, { status: 500 })
     return NextResponse.json({ ok: true, script: best })
   }
 
@@ -315,12 +321,14 @@ export async function POST(req: NextRequest) {
     if (typeof p.realStory === 'boolean') next.realStory = p.realStory
     next.estSeconds = estimateSeconds(next.story, next.body)
     next.checks = checkScript(next, c, others)
-    await db.from('trybe_campaign_scripts').update({ ...scriptToRow(next), updated_at: new Date().toISOString() }).eq('campaign_id', id).eq('idx', idx)
+    const { error } = await db.from('trybe_campaign_scripts').update({ ...scriptToRow(next), updated_at: new Date().toISOString() }).eq('campaign_id', id).eq('idx', idx)
+    if (error) return NextResponse.json({ error: `Your change was not saved: ${error.message}` }, { status: 500 })
     return NextResponse.json({ ok: true, script: next })
   }
 
   if (action === 'remove') {
-    await db.from('trybe_campaign_scripts').delete().eq('campaign_id', id).eq('idx', idx)
+    const { error } = await db.from('trybe_campaign_scripts').delete().eq('campaign_id', id).eq('idx', idx)
+    if (error) return NextResponse.json({ error: `The script was not removed: ${error.message}` }, { status: 500 })
     return NextResponse.json({ ok: true })
   }
 

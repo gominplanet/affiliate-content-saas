@@ -156,7 +156,8 @@ export default function TrybeBatchScripts({ canRead = false }: { canRead?: boole
   }
   const remove = async (id: string, name: string) => {
     if (!window.confirm(`Delete "${name}" and every script in it? This cannot be undone.`)) return
-    await call('delete', { id }); void loadList()
+    const r = await call('delete', { id }); if (r.error) { setErr(r.error); return }
+    void loadList()
   }
 
   if (!open) {
@@ -542,13 +543,15 @@ function Scripts({ c, scripts, setScripts, setAllowance, onSetup }: {
   }
   const removeOne = async (idx: number) => {
     if (!window.confirm(`Take script #${idx} out? It does not give back the month's allowance.`)) return
-    const r = await call('remove', { id: c.id, idx }); if (!r.error) setScripts((all) => all.filter((x) => x.idx !== idx))
+    const r = await call('remove', { id: c.id, idx }); if (r.error) { setRunErr(r.error); return }
+    setScripts((all) => all.filter((x) => x.idx !== idx))
   }
   const recheck = async () => {
     setBulk('Checking every script again')
     const r = await call('recheck', { id: c.id }, 120_000)
     setBulk(null)
-    if (!r.error && Array.isArray(r.scripts)) setScripts(() => r.scripts as Script[])
+    if (r.error) { setRunErr(r.error); return }
+    if (Array.isArray(r.scripts)) setScripts(() => r.scripts as Script[])
   }
   const rewritePicked = async () => {
     const ids = Array.from(picked)
