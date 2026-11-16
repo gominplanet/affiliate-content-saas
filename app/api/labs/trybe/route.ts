@@ -985,8 +985,8 @@ export async function POST(request: Request) {
     // of the four layouts). The board everyone shares, from the Top 100 MVP
     // saves every day, with where this creator stands with each brand. Fit is
     // MVP's own pick, read by the page through 'browse' by ids, the same as
-    // Find brands. Behind Labs until it is opened (lib/labs-preview).
-    if (!canUsePreview('trybe_top_board', tier)) return NextResponse.json({ error: 'The Top 100 board is still being tested by the MVP team.', code: 'tier_not_allowed' }, { status: 403 })
+    // Find brands. Open to Pro (lib/labs-preview).
+    if (!canUsePreview('trybe_top_board', tier)) return NextResponse.json({ error: 'The Top 100 board is part of MVP Pro.', code: 'tier_not_allowed' }, { status: 403 })
     const shared = await topBoardShared(admin)
     if ('error' in shared) return NextResponse.json({ error: shared.error }, { status: 500 })
     const ids = shared.board.brands.filter(b => shared.info[b.id]).map(b => b.id)

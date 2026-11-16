@@ -162,7 +162,8 @@ check('fit comes from MVP’s own pick, the same as Find brands', /action: 'brow
 check('a brand with no fit read says so', /Not read yet/.test(page))
 check('every brand opens its brand page', /<BrandName /.test(page))
 check('the TRYBE link names TRYBE', /TrybeLink/.test(page))
-check('the board is behind Labs until it is opened', /trybe_top_board: 'admin'|trybe_top_board: 'labs'/.test(read('lib/labs-preview.ts')))
+check('the board is open to Pro (Seb, 2026-11-16: "open it all to pro")', /trybe_top_board: 'labs'/.test(read('lib/labs-preview.ts')))
+check('a plan without the board is told it is Pro, not that it is being tested', /The Top 100 board is part of MVP Pro\./.test(route) && !/Top 100 board is still being tested/.test(route))
 const nav = read('components/labs/TrybeNav.tsx')
 check('the board has its own page under Find brands', /label: 'Top 100', icon: Trophy, tabs: \['top100'\]/.test(nav))
 

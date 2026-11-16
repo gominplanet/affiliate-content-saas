@@ -147,8 +147,9 @@ const OPEN_TO: Record<PreviewFeature, 'admin' | 'labs'> = {
   // should be really the place where people go"; of four layouts, "a little
   // mix of everything"): who is winning TRYBE's Top 100 and who is worth
   // contacting, from the Top 100 MVP saves every day (lib/trybe-topboard).
-  // Admin first, a page of its own under Find brands.
-  trybe_top_board: 'admin',
+  // A page of its own under Find brands. Admin first; open to Pro the same
+  // day, with each video kept day by day (Seb: "open it all to pro yes").
+  trybe_top_board: 'labs',
 }
 
 /** Every preview feature. A check can then ask which are still admin only
