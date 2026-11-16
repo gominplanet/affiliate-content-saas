@@ -255,6 +255,21 @@ export interface VideoPlan {
    *  which ones went in whole (2026-11-11). Said on screen. */
   fromMessages?: boolean
   brandDocs?: Array<{ title: string; whole: boolean }>
+  /** The creator's context the set was written around (2026-11-16). Said on screen. */
+  context?: string
+}
+
+/** THE CREATOR'S CONTEXT IN QUICK SCRIPTS (Seb, 2026-11-16: "add the context
+ *  box to quick scripts too"), with the tie-in technique from the script
+ *  craft playbook (docs/script-craft-playbook.md, section 4): each video
+ *  starts from a different detail of the context and one line bridges it to
+ *  the problem the product solves. Pure. */
+export function quickContextBlock(context: string): string {
+  const c = context.replace(/\s+\n/g, '\n').trim().slice(0, 2000)
+  if (!c) return ''
+  return `THE CREATOR'S CONTEXT (what these videos are about beyond the product, in the creator's own words):
+${c}
+Build every video on it with the tie-in technique. Each video starts from a different detail of the context (a habit, a trait, a moment, a person, a place) and one line bridges that detail to the problem the product solves, so the product answers the problem the bridge created; the ending may return to the context. Use the names in it. Never make the product do something with the context that the brand does not sell it for, and claim nothing the brand does not say (a luggage tracker is never put on the dog). A detail you add to the context for a story that may not be true is kept simple and marked in "forBrief" as "shoot only if true"; never invent numbers, quotes or comments.`
 }
 
 /** THE LAST LOOK BEFORE ANSWERING (Seb, 2026-11-06, on the first real Video

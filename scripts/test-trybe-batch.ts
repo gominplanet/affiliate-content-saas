@@ -10,6 +10,7 @@ import {
   rulesFromReply, paceWords, notReadyWords, writerSystem, writerPrompt, rulesInput, claimsFromReply, seedCampaign, planSummary, seedFor, contextFromReply, contextInput, contextStale, CONTEXT_SYSTEM, BATCH_ROUND, MAX_PER_CAMPAIGN,
   RULES_SYSTEM, REAL_PERSON, type Script, type Campaign, type Slot,
 } from '../lib/trybe-batch'
+import { quickContextBlock } from '../lib/trybe-playbook'
 
 const fails: string[] = []
 const check = (name: string, ok: boolean | undefined, detail?: unknown) => { if (!ok) fails.push(`${name}${detail !== undefined ? `: ${JSON.stringify(detail).slice(0, 500)}` : ''}`) }
@@ -236,7 +237,7 @@ const fake = async (_system: string, user: string): Promise<string> => {
   const ctxRoute = read('app/api/labs/trybe-batch/route.ts')
   const ctxUi = read('components/labs/TrybeBatchScripts.tsx')
   check('the server reads the context with the rules, and again when it changes', /if \(next\.context\) next\.contextPlan = await readContext\(next, userId, tier\)/.test(ctxRoute) && /contextStale\(c\) && c\.rules\.approvedClaims\.length/.test(ctxRoute) && /context: c\.context, contextPlan: c\.contextPlan/.test(ctxRoute) && /feature: 'trybe_batch_context'/.test(ctxRoute))
-  check('the brand page and the setup both take a context, and a batch carries it', /<span className="font-semibold">Context<\/span>/.test(read('components/labs/TrybeCreate.tsx')) && /context=\{batchContext\}/.test(read('components/labs/TrybeCreate.tsx')) && />Context \(optional\)<\/Label>/.test(ctxUi) && /context: context\.trim\(\)\.slice\(0, 2000\)/.test(ctxUi))
+  check('the brand page and the setup both take a context, and a batch carries it', /<span className="font-semibold">Context<\/span>/.test(read('components/labs/TrybeCreate.tsx')) && /context=\{context\} openId=\{openBatch\}/.test(read('components/labs/TrybeCreate.tsx')) && />Context \(optional\)<\/Label>/.test(ctxUi) && /context: context\.trim\(\)\.slice\(0, 2000\)/.test(ctxUi))
   check('the plan shows the story ideas from the context, what stays apart, and says so when it could not read them', /story ideas from it, one per script in turn/.test(ctxUi) && /Kept apart:/.test(ctxUi) && /MVP could not turn your context into story ideas this time/.test(ctxUi))
   check('the PDF\'s first page carries the context', /section\('The context'/.test(read('lib/trybe-batch-pdf.ts')))
 
@@ -289,6 +290,17 @@ const fake = async (_system: string, user: string): Promise<string> => {
   check('the plan card answers the four questions before writing: travelling, places, who is on camera', /row\('Shoot day'/.test(read('components/labs/TrybeBatchScripts.tsx')) && /row\('Places'/.test(read('components/labs/TrybeBatchScripts.tsx')) && /row\('On camera'/.test(read('components/labs/TrybeBatchScripts.tsx')))
   check('the playbook is kept in the repo', /The script formula/.test(read('docs/script-craft-playbook.md')) && /The tie-in technique/.test(read('docs/script-craft-playbook.md')))
   check('a campaign without a length from the brief aims for 35 to 50 seconds', readCampaign({}).rules.targetLengthSec.join() === '35,50')
+
+
+  // ── The context in quick scripts too (Seb, 2026-11-16: "add the context box to quick scripts too yes") ──
+  const qb = quickContextBlock(CTX)
+  check('the quick writer gets the context with the tie-in technique and the keep-apart rule', /THE CREATOR'S CONTEXT/.test(qb) && /Michelle films in the parked car/.test(qb) && /bridges that detail to the problem the product solves/.test(qb) && /never put on the dog/.test(qb) && /never invent numbers, quotes or comments/.test(qb) && quickContextBlock('   ') === '')
+  const trybeRoute = read('app/api/labs/trybe/route.ts')
+  check('the server puts the context in the quick writer\'s request and keeps it on the set', /const contextText = typeof body\.context === 'string' \? quickContextBlock\(body\.context\) : ''/.test(trybeRoute) && /\$\{contextText \? `\\n\\n\$\{contextText\}` : ''\}/.test(trybeRoute) && /\.\.\.\(contextText \? \{ context: contextWords \} : \{\}\)/.test(trybeRoute))
+  const ideasUi = read('components/labs/TrybeVideoIdeas.tsx')
+  check('the quick writer sends the context, writes a new set for it, and says it was used', /\.\.\.\(context\.trim\(\) \? \{ context: context\.trim\(\)\.slice\(0, 2000\) \} : \{\}\)/.test(ideasUi) && /if \(match && !context\.trim\(\)\)/.test(ideasUi) && /Written around your context:/.test(ideasUi))
+  const createUi = read('components/labs/TrybeCreate.tsx')
+  check('one context box on the brand page feeds both doors', (createUi.match(/<span className="font-semibold">Context<\/span>/g) || []).length === 1 && /buyerShot=\{buyerShot\} context=\{context\} \/>/.test(createUi) && /context=\{context\} openId=\{openBatch\}/.test(createUi) && /in quick scripts and in a batch/.test(createUi))
 
   if (fails.length) { console.error(`❌ trybe-batch: ${fails.length} failure(s)\n${fails.map((f) => `   • ${f}`).join('\n')}`); process.exit(1) }
   console.log('✅ trybe-batch: every rule on the brief\'s fixtures, an even spread, and a whole round with rewrites and red flags')

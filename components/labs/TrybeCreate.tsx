@@ -73,8 +73,10 @@ export default function TrybeCreate({ canRead, isAdmin, onFind, start, onStarted
   const [door, setDoor] = useState<'home' | 'quick' | 'batch'>('home')
   const [batchCount, setBatchCount] = useState(50)
   const [batchDue, setBatchDue] = useState('')
-  // What the stories are about beyond the place (Seb, 2026-11-16, the Walter scripts).
-  const [batchContext, setBatchContext] = useState('')
+  // THE CONTEXT (Seb, 2026-11-16, the Walter scripts; quick scripts too: "add
+  // the context box to quick scripts too"): what the scripts are about beyond
+  // the product, for both doors.
+  const [context, setContext] = useState('')
   const [openBatch, setOpenBatch] = useState<string | null>(null)
   const [batchKey, setBatchKey] = useState(0)
   const [listKey, setListKey] = useState(0)
@@ -224,7 +226,7 @@ export default function TrybeCreate({ canRead, isAdmin, onFind, start, onStarted
             // buyers' reviews are read from there unless you gave a link.
             const asin = amz.product(brand.name, product)?.products?.[0]?.asin
             const link = buyerLink.trim() || (asin ? `https://www.amazon.com/dp/${asin}` : '')
-            return <TrybeVideoIdeas key={`${brand.id}|${product}`} brandId={brand.id} name={brand.name} plan={null} canRead={canRead} isAdmin={isAdmin} product={product} page={page} auto emphasize buyerLink={link} buyerShot={buyerShot} />
+            return <TrybeVideoIdeas key={`${brand.id}|${product}`} brandId={brand.id} name={brand.name} plan={null} canRead={canRead} isAdmin={isAdmin} product={product} page={page} auto emphasize buyerLink={link} buyerShot={buyerShot} context={context} />
           })()}
         </section>
   ) : null
@@ -321,11 +323,21 @@ export default function TrybeCreate({ canRead, isAdmin, onFind, start, onStarted
     </section>
 
     {!pageLoading && (
+      <section className={card} style={cardStyle}>
+        <label className="block text-[13.5px]">
+          <span className="font-semibold">Context</span> <span style={soft}>(optional: who or what the scripts are about, beyond the product. MVP ties it to {product || 'the product'} in quick scripts and in a batch.)</span>
+          <textarea rows={2} value={context} onChange={(e) => setContext(e.target.value.slice(0, 2000))} className="mt-1.5 w-full rounded-xl border bg-transparent px-3 py-2 text-[13.5px]" style={{ borderColor: 'var(--border)' }}
+            placeholder="e.g. Michelle films in the parked car before or after walking Walter, our French bulldog. Use Walter in every story." />
+        </label>
+      </section>
+    )}
+
+    {!pageLoading && (
       <div className="grid gap-4 md:grid-cols-2">
         <section className={`${card} flex flex-col`} style={cardStyle}>
           <p className="text-[12px] font-bold uppercase tracking-wider" style={soft}>Film today</p>
           <h3 className="text-[19px] font-bold mt-1">{VIDEO_IDEAS} quick scripts</h3>
-          <p className="text-[13.5px] mt-1.5 flex-1" style={soft}>{VIDEO_IDEAS} different videos for {product || 'the product you pick'}, from the brief, what its buyers say and TRYBE&rsquo;s top videos. Each set is kept below until you clear it.</p>
+          <p className="text-[13.5px] mt-1.5 flex-1" style={soft}>{VIDEO_IDEAS} different videos for {product || 'the product you pick'}, from the brief, what its buyers say and TRYBE&rsquo;s top videos{context.trim() ? ', built around your context' : ''}. Each set is kept below until you clear it.</p>
           <button disabled={!product} onClick={() => setDoor('quick')} className="mt-4 self-start inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-[14px] font-semibold disabled:opacity-50" style={{ background: PURPLE, color: '#fff' }}><Wand2 size={15} /> Write quick scripts</button>
         </section>
         <section className="rounded-2xl p-5 flex flex-col" style={{ border: `2px solid ${PURPLE}`, background: 'var(--surface)' }}>
@@ -342,11 +354,6 @@ export default function TrybeCreate({ canRead, isAdmin, onFind, start, onStarted
           <label className="mt-3 flex flex-wrap items-center gap-2 text-[13.5px]">Due
             <input type="date" value={batchDue} onChange={(e) => setBatchDue(e.target.value)} className="rounded-xl border bg-transparent px-2.5 py-1.5 text-[13.5px]" style={{ borderColor: 'var(--border)' }} />
             <span style={soft}>{paceLine}</span>
-          </label>
-          <label className="mt-3 block text-[13.5px]">
-            <span className="font-semibold">Context</span> <span style={soft}>(optional: who or what the stories are about, beyond the place)</span>
-            <textarea rows={3} value={batchContext} onChange={(e) => setBatchContext(e.target.value.slice(0, 2000))} className="mt-1 w-full rounded-xl border bg-transparent px-3 py-2 text-[13.5px]" style={{ borderColor: 'var(--border)' }}
-              placeholder="e.g. Michelle films in the parked car before or after walking Walter, our French bulldog. Use Walter in every story." />
           </label>
           <button disabled={!product} onClick={() => startBatch(null)} className="mt-4 self-start inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-[14px] font-semibold disabled:opacity-50" style={{ background: PURPLE, color: '#fff' }}>Plan {batchCount} scripts</button>
         </section>
@@ -383,7 +390,7 @@ export default function TrybeCreate({ canRead, isAdmin, onFind, start, onStarted
       {brand && door === 'quick' && quickSection()}
       {brand && door === 'batch' && (product || openBatch) && (
         <section className={card} style={cardStyle}>
-          <BatchRun key={batchKey} brand={{ id: brand.id, name: brand.name }} product={product || ''} page={page} count={batchCount} deadline={batchDue || null} context={batchContext} openId={openBatch}
+          <BatchRun key={batchKey} brand={{ id: brand.id, name: brand.name }} product={product || ''} page={page} count={batchCount} deadline={batchDue || null} context={context} openId={openBatch}
             onBack={() => { setDoor('home'); setListKey((k) => k + 1) }} />
         </section>
       )}

@@ -181,7 +181,9 @@ async function api(body: Record<string, unknown>) {
   return d
 }
 
-export default function TrybeVideoIdeas({ brandId, name, plan: initial, canRead, isAdmin = false, emphasize = false, onPlan, sampleId, product: fixedProduct, page: givenPage, auto = false, buyerLink: givenLink = '', buyerShot: givenShot = null }: {
+export default function TrybeVideoIdeas({ brandId, name, plan: initial, canRead, isAdmin = false, emphasize = false, onPlan, sampleId, product: fixedProduct, page: givenPage, auto = false, buyerLink: givenLink = '', buyerShot: givenShot = null, context = '' }: {
+  /** The creator's context from the brand page: what the videos are about beyond the product. */
+  context?: string
   /** Where it sells and a screenshot of its reviews, given in the step before. */
   buyerLink?: string
   buyerShot?: string | null
@@ -281,7 +283,8 @@ export default function TrybeVideoIdeas({ brandId, name, plan: initial, canRead,
     if (!fixedProduct || autoDone.current || kept === null) return
     autoDone.current = true
     const match = kept.find((k) => sameProduct(k.product, fixedProduct))
-    if (match) { setPlan(match.plan); setPlanOpen(true); if (isSavedId(match.id)) { setSavedId(match.id); setSavedAt(match.created_at) } setPlanNote({ tone: 'ok', text: `Your saved ideas for ${fixedProduct}, from ${new Date(match.created_at).toLocaleDateString([], { month: 'short', day: 'numeric' })}. Press New scripts for a fresh set.` }) }
+    // A context typed on the brand page asks for a new set written around it.
+    if (match && !context.trim()) { setPlan(match.plan); setPlanOpen(true); if (isSavedId(match.id)) { setSavedId(match.id); setSavedAt(match.created_at) } setPlanNote({ tone: 'ok', text: `Your saved ideas for ${fixedProduct}, from ${new Date(match.created_at).toLocaleDateString([], { month: 'short', day: 'numeric' })}. Press New scripts for a fresh set.` }) }
     else if (auto) void makePlan(fixedProduct)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [kept, fixedProduct, auto])
@@ -330,7 +333,7 @@ export default function TrybeVideoIdeas({ brandId, name, plan: initial, canRead,
       setStep(`Writing ${VIDEO_IDEAS} scripts${product ? ` for ${product}` : ''} from ${b?.brief ? 'the brief, ' : ''}${got?.kind === 'amazon' || got?.kind === 'tiktok' ? 'what its buyers say, ' : ''}the brand and its website. This takes about a minute.`)
       // What TRYBE's own page says about the brand goes too, so a brand MVP's
       // directory has not collected yet is still planned, not refused.
-      const d = await api({ action: 'video_plan', brandId, brandName: name, ...(b?.website ? { website: b.website } : {}), ...(b?.products.length ? { knownProducts: b.products.slice(0, 15).map((x) => x.name) } : {}), ...(sampleId ? { sampleId } : {}), ...(product ? { product } : {}), winners: bestWords, ...(b?.brief ? { brief: b.brief } : state !== 'unread' ? { briefState: state } : {}) , ...buyerBits, ...(buyerShot ? { image: buyerShot } : {}) })
+      const d = await api({ action: 'video_plan', brandId, brandName: name, ...(b?.website ? { website: b.website } : {}), ...(b?.products.length ? { knownProducts: b.products.slice(0, 15).map((x) => x.name) } : {}), ...(sampleId ? { sampleId } : {}), ...(product ? { product } : {}), winners: bestWords, ...(b?.brief ? { brief: b.brief } : state !== 'unread' ? { briefState: state } : {}) , ...buyerBits, ...(buyerShot ? { image: buyerShot } : {}), ...(context.trim() ? { context: context.trim().slice(0, 2000) } : {}) })
       setPicking(false)
       const s0 = state as string
       const b0 = { state: s0 }
@@ -600,6 +603,7 @@ export default function TrybeVideoIdeas({ brandId, name, plan: initial, canRead,
           })()}
           {filming && <TrybeFilmIt script={filming} onClose={() => setFilming(null)} />}
           {/* WHO BUYS IT, as the script agent read the buyers, and what it read. */}
+          {plan.context && <p className="text-[12px]" style={{ color: GREEN }}>Written around your context: {plan.context.length > 160 ? `${plan.context.slice(0, 160)}...` : plan.context}</p>}
           {plan.buyerReport && <p className="text-[12px]" style={{ color: plan.buyerReport.reviews || plan.buyerReport.critical || plan.buyerReport.customersSay ? GREEN : AMBER }}>{buyerReportWords(plan.buyerReport, SCOUT_AMAZON_REVIEWS_MIN_VERSION)}</p>}
           {plan.buyers && <BuyersCard b={plan.buyers} fromReviews={!!(plan.buyerReport && (plan.buyerReport.reviews || plan.buyerReport.critical || plan.buyerReport.customersSay))} />}
           {savedId && plan.videos && plan.videos.length === 0 && <p className="text-[12.5px]" style={{ color: GREEN }}>Every script in this set is cleared. Press New scripts for a fresh set.</p>}
