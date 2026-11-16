@@ -48,7 +48,7 @@ check('each script has a Shot it tick and a Delete, and each set a Delete all', 
 check('a clear can be undone, putting back only that script', /action: \{ label: 'Undo', onClick: \(\) => void undoOne\(s, i, v\) \}/.test(ui) && /videos\.splice\(Math\.min\(i, videos\.length\), 0, v\)/.test(ui))
 check('a failed clear leaves the script and says so', /It is still on your list\./.test(ui))
 const create = read('components/labs/TrybeCreate.tsx')
-check('Brand scripts shows them first, and without SCOUT too', /\{step === 1 && <TrybeSavedScripts \/>\}/.test(create) && /if \(!canRead\) \{[\s\S]{0,600}?<TrybeSavedScripts \/>[\s\S]{0,300}?<\/div>\n\s*\)\n\s*\}/.test(create))
+check('Brand scripts shows them on each brand\'s page, and without SCOUT too', /<TrybeSavedScripts brandId=\{brand\.id\} brandName=\{brand\.name\}/.test(create) && /if \(!canRead\) \{[\s\S]{0,600}?<TrybeSavedScripts \/>[\s\S]{0,300}?<\/div>\n\s*\)\n\s*\}/.test(create))
 const ideasUi = read('components/labs/TrybeVideoIdeas.tsx')
 check('freshly written scripts get Shot it and Delete too, on their saved set', /setSavedId\(!sampleId && isSavedId\(d\.ideaId\) \? d\.ideaId : null\)/.test(ideasUi) && /\{savedId && <ScriptDoneBar busy=\{clearing === i\}/.test(ideasUi))
 check('a set cleared to the last script says so', /Every script in this set is cleared\./.test(ideasUi))

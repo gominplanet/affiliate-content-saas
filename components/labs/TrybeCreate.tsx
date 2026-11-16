@@ -1,18 +1,18 @@
 'use client'
 // © 2026 Gominplanet / MVP Affiliate — proprietary & confidential.
 //
-// MAKE VIDEOS (Seb, 2026-10-13: "pick a brand, then pick the product they want
-// to create from that brand, and then let MVP give them the copy to start
-// shooting videos. it has to be more streamlined and easy"). Three steps, one
-// at a time, each said in plain words:
+// BRAND SCRIPTS (Seb, 2026-10-13: "pick a brand, then pick the product they
+// want to create from that brand, and then let MVP give them the copy to start
+// shooting videos"; the brand page 2026-11-15: "A with a C plan card"):
 //   1. Pick a brand: the brands you work with on TRYBE, read through SCOUT.
-//   2. Pick the product you have: the brand's "Promote These", or type it.
-//      Its creative brief is read on the way (lib route action brief_read).
-//   3. Your shooting scripts: ten videos for that product, from the brief,
-//      saved per brand and product (TrybeVideoIdeas does the writing).
+//   2. The brand's page: the product (your sample first), what MVP has from
+//      the brand (its brief on TRYBE, documents it sent, its website), and two
+//      doors. Quick scripts: ten videos from TrybeVideoIdeas. A batch: any
+//      number up to 300, MVP's plan shown before it writes (TrybeBatchScripts).
+//      Below, every script you have for the brand.
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Loader2, ArrowLeft, Search, Check, FileText, ExternalLink, AlertTriangle, ImagePlus, X, Upload, Wand2 } from 'lucide-react'
+import { Loader2, ArrowLeft, Search, Check, ExternalLink, AlertTriangle, ImagePlus, X, Upload, Wand2 } from 'lucide-react'
 import { requestTrybeApi } from '@/lib/extension-frame'
 import { readBrandStats, byBrandName, type MyBrand } from '@/lib/trybe-mybrands'
 import { brandPageUrl } from '@/lib/trybe-brand-page'
@@ -67,9 +67,9 @@ export default function TrybeCreate({ canRead, isAdmin, onFind, start, onStarted
   const amz = useTrybeAmazon(amzBrands, amzProducts, amzBrands.length > 0)
   useEffect(() => { setOnHand('idle'); setOnHandErr(null) }, [product, brand])
 
-  // THE NEW BRAND SCRIPTS (Seb, 2026-11-15), Labs first: one brand page with
-  // two doors, quick scripts or a batch planned before it is written.
-  const simple = isAdmin
+  // THE BRAND PAGE (Seb, 2026-11-15; for everyone 2026-11-16: "make it
+  // available for everyone"): two doors, quick scripts or a batch planned
+  // before it is written.
   const [door, setDoor] = useState<'home' | 'quick' | 'batch'>('home')
   const [batchCount, setBatchCount] = useState(50)
   const [batchDue, setBatchDue] = useState('')
@@ -83,14 +83,14 @@ export default function TrybeCreate({ canRead, isAdmin, onFind, start, onStarted
   const pdfRef = useRef<HTMLInputElement>(null)
   const docTitles = (d: LinksDigest | null | undefined) => ({ titles: (d?.links || []).filter((l) => l.ok && l.text).map((l) => l.title || l.url) })
   useEffect(() => {
-    if (!simple || !brand) return
+    if (!brand) return
     let live = true
     setDocs(null); setPdfErr(null)
     void brandDocs(brand.id).then((r) => { if (live) setDocs(r.error ? 'failed' : docTitles(r.digest)) }).catch(() => { if (live) setDocs('failed') })
     return () => { live = false }
-  }, [simple, brand])
+  }, [brand])
   // The product in your hands first: your sample, else what TRYBE asks for.
-  useEffect(() => { if (simple && page && !product && page.products.length) setProduct(page.products[0].name) }, [simple, page, product])
+  useEffect(() => { if (page && !product && page.products.length) setProduct(page.products[0].name) }, [page, product])
   async function addPdf(f: File) {
     if (!brand) return
     setPdfErr(null)
@@ -150,34 +150,10 @@ export default function TrybeCreate({ canRead, isAdmin, onFind, start, onStarted
 
   // A to Z (Seb, 2026-10-22), whatever order TRYBE sends them in.
   const shown = useMemo(() => (brands || []).filter((b) => !q.trim() || b.name.toLowerCase().includes(q.trim().toLowerCase())).sort(byBrandName), [brands, q])
-  const step = !brand ? 1 : !product ? 2 : 3
   const soft = { color: 'var(--text-soft)' }
   const card = 'rounded-2xl border p-5'
   const cardStyle = { borderColor: 'var(--border)', background: 'var(--surface)' }
 
-  // A plain function, not a component made inside this one (that remounts).
-  const steps = () => (
-    <ol className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[13.5px] font-semibold">
-      {['Pick a brand', 'Pick the product you have', 'Your shooting scripts'].map((label, i) => {
-        const n = i + 1
-        const done = step > n
-        const on = step === n
-        return (
-          <li key={label} className="inline-flex items-center gap-2">
-            {i > 0 && <span aria-hidden style={soft}>&rsaquo;</span>}
-            <button disabled={!done} onClick={() => { if (n === 1) leaveBrand(); else if (n === 2) setProduct(null) }}
-              className="inline-flex items-center gap-1.5 disabled:cursor-default" style={on ? { color: PURPLE } : done ? { color: 'var(--text)' } : soft}>
-              <span className="w-6 h-6 rounded-full inline-flex items-center justify-center text-[12px] font-bold"
-                style={done ? { background: GREEN, color: '#fff' } : on ? { background: PURPLE, color: '#fff' } : { border: '1px solid var(--border)' }}>
-                {done ? <Check size={13} /> : n}
-              </span>
-              {label}{n === 1 && brand ? `: ${brand.name}` : n === 2 && product ? `: ${product}` : ''}
-            </button>
-          </li>
-        )
-      })}
-    </ol>
-  )
 
   // WHICH BRAND: the brands you work with on TRYBE (both looks).
   const brandGrid = () => (
@@ -216,7 +192,7 @@ export default function TrybeCreate({ canRead, isAdmin, onFind, start, onStarted
   // YOUR SHOOTING SCRIPTS for the product picked: the quick door (both looks).
   const quickSection = () => brand && product ? (
         <section className={card} style={cardStyle}>
-          <button onClick={() => (simple ? setDoor('home') : setProduct(null))} className="mb-2 inline-flex items-center gap-1 text-[13px] font-semibold" style={{ color: PURPLE }}><ArrowLeft size={13} /> {simple ? `Back to ${brand.name}` : 'Another product'}</button>
+          <button onClick={() => setDoor('home')} className="mb-2 inline-flex items-center gap-1 text-[13px] font-semibold" style={{ color: PURPLE }}><ArrowLeft size={13} /> Back to {brand.name}</button>
           <div className="flex flex-wrap items-start gap-3">
             <h2 className="text-[20px] font-bold flex-1 min-w-[14rem]">Your shooting scripts: {product}</h2>
             {/* ON HAND: the one tick the weekly planner reads (Received on the
@@ -300,6 +276,7 @@ export default function TrybeCreate({ canRead, isAdmin, onFind, start, onStarted
                   <span className="block text-[13.5px] font-semibold leading-snug">{p.name}</span>
                   {p.sample ? <span className="block text-[11.5px] font-semibold" style={{ color: GREEN }}>Your sample: {p.sample.status.replace(/_/g, ' ')}</span>
                     : p.promoted ? <span className="block text-[11.5px] font-semibold" style={{ color: PURPLE }}>TRYBE asks for this</span> : null}
+                  <ProductAmazon match={amz.product(brand.name, p.name)} links={false} />
                 </span>
               </button>
             )
@@ -384,118 +361,25 @@ export default function TrybeCreate({ canRead, isAdmin, onFind, start, onStarted
       <div className="space-y-4">
         <div className={card} style={cardStyle}><p className="text-[15px] font-semibold">Make videos needs SCOUT on TRYBE</p><p className="text-[13.5px] mt-1" style={soft}>Install SCOUT, allow it on TRYBE and sign in to TRYBE in this Chrome. MVP then shows the brands you work with and the products they want videos of.</p></div>
         <TrybeSavedScripts />
-        {/* Batch scripts need no SCOUT either: the brief is pasted or uploaded. Labs first (admin). */}
-        {isAdmin && <TrybeBatchScripts />}
-      </div>
-    )
-  }
-
-  if (simple) {
-    return (
-      <div className="space-y-4">
-        {amz.error && <p className="text-[12.5px] inline-flex items-start gap-1.5" style={{ color: AMBER }}><AlertTriangle size={13} className="mt-0.5 shrink-0" /> {amz.error.replace(/\.$/, '')}. The Amazon lines below may be missing.</p>}
-        {!brand && brandGrid()}
-        {brand && door === 'home' && brandHome()}
-        {brand && door === 'quick' && quickSection()}
-        {brand && door === 'batch' && (product || openBatch) && (
-          <section className={card} style={cardStyle}>
-            <BatchRun key={batchKey} brand={{ id: brand.id, name: brand.name }} product={product || ''} page={page} count={batchCount} deadline={batchDue || null} openId={openBatch}
-              onBack={() => { setDoor('home'); setListKey((k) => k + 1) }} />
-          </section>
-        )}
+        {/* Batch scripts need no SCOUT either: the brief is pasted or uploaded. */}
+        <TrybeBatchScripts />
       </div>
     )
   }
 
   return (
     <div className="space-y-4">
-      {steps()}
       {/* A failed Amazon match is said, so it never reads as "not on Amazon". */}
       {amz.error && <p className="text-[12.5px] inline-flex items-start gap-1.5" style={{ color: AMBER }}><AlertTriangle size={13} className="mt-0.5 shrink-0" /> {amz.error.replace(/\.$/, '')}. The Amazon lines below may be missing.</p>}
-
-      {/* YOUR SAVED SCRIPTS: every set written, kept until you clear it. */}
-      {step === 1 && <TrybeSavedScripts />}
-
-      {/* 1. The brand */}
-      {step === 1 && brandGrid()}
-
-      {/* 2. The product */}
-      {step === 2 && brand && (
+      {!brand && brandGrid()}
+      {brand && door === 'home' && brandHome()}
+      {brand && door === 'quick' && quickSection()}
+      {brand && door === 'batch' && (product || openBatch) && (
         <section className={card} style={cardStyle}>
-          <button onClick={leaveBrand} className="mb-2 inline-flex items-center gap-1 text-[13px] font-semibold" style={{ color: PURPLE }}><ArrowLeft size={13} /> Another brand</button>
-          <h2 className="text-[20px] font-bold">Which {brand.name} product do you have?</h2>
-          <AmazonLine amazon={amz.brand(brand.id)} />
-          <AmazonFilmedList products={amz.brand(brand.id)?.products} title={`Your Amazon videos of ${brand.name}`} />
-          <p className="text-[13.5px] mt-1.5" style={soft}>Every script is about the product you pick, so pick the one in your hands.</p>
-          {pageLoading ? (
-            <p className="mt-3 text-[13.5px] inline-flex items-center gap-1.5" style={soft}><Loader2 size={14} className="animate-spin" /> Reading {brand.name}&rsquo;s page on TRYBE: the products it promotes and its creative brief...</p>
-          ) : (<>
-            {page && page.products.length > 0 ? (() => {
-              const card = (p: (typeof page.products)[number]) => (
-                <button key={p.id || p.name} onClick={() => setProduct(p.name)} className="rounded-2xl border p-3 flex items-center gap-3 text-left hover:shadow-sm transition-shadow"
-                  style={{ borderColor: p.sample ? 'rgba(22,163,74,0.45)' : 'var(--border)', background: 'var(--surface)' }}>
-                  {p.image
-                    // eslint-disable-next-line @next/next/no-img-element
-                    ? <img src={p.image} alt="" className="w-20 h-20 rounded-xl object-contain border shrink-0 bg-white" style={{ borderColor: 'var(--border)' }} />
-                    : <span className="w-20 h-20 rounded-xl shrink-0" style={{ background: 'rgb(var(--brand-rgb) / 0.08)' }} />}
-                  <span className="min-w-0">
-                    <span className="block text-[14px] font-semibold leading-snug">{p.name}</span>
-                    {p.price && <span className="block text-[12.5px]" style={soft}>{p.price}</span>}
-                    {p.sample && <span className="inline-block mt-1 text-[11px] font-bold rounded-full px-2 py-0.5" style={{ background: 'rgba(22,163,74,0.10)', color: GREEN }}>Your sample: {p.sample.status.replace(/_/g, ' ')}{p.sample.at ? `, ${new Date(p.sample.at).toLocaleDateString([], { month: 'short', day: 'numeric' })}` : ''}</span>}
-                    {!p.sample && p.promoted && <span className="inline-block mt-1 text-[11px] font-bold rounded-full px-2 py-0.5" style={{ background: 'rgb(var(--brand-rgb) / 0.10)', color: PURPLE }}>TRYBE asks for this</span>}
-                    <ProductAmazon match={amz.product(brand.name, p.name)} links={false} />
-                  </span>
-                </button>
-              )
-              const mine = page.products.filter((p) => p.sample)
-              const rest = page.products.filter((p) => !p.sample)
-              const grid = 'mt-2 grid gap-3 grid-cols-[repeat(auto-fill,minmax(200px,1fr))]'
-              return (<>
-                {mine.length > 0 && (<>
-                  <p className="mt-3 text-[12px] font-bold uppercase tracking-wider" style={{ color: GREEN }}>Your samples from {brand.name}</p>
-                  <div className={grid}>{mine.map(card)}</div>
-                </>)}
-                {rest.length > 0 && (<>
-                  <p className="mt-4 text-[12px] font-bold uppercase tracking-wider" style={soft}>{mine.length ? `More from ${brand.name}` : `${brand.name}'s products on TRYBE`}</p>
-                  <div className={grid}>{rest.map(card)}</div>
-                </>)}
-                {page.samplesRead === 'old' && <p className="mt-2 text-[12px]" style={soft}>Update SCOUT to 1.46.5 and your own sample requests show here first.</p>}
-              </>)
-            })() : (
-              <p className="mt-3 text-[13.5px]" style={soft}>{page ? `TRYBE lists no products to promote for ${brand.name}${isAdmin && page.keys ? ` (TRYBE sent: ${page.keys})` : ''}.` : `MVP could not read ${brand.name}’s page on TRYBE.`} Type the product you have below.</p>
-            )}
-            <form onSubmit={(e) => { e.preventDefault(); if (typed.trim()) setProduct(typed.trim().slice(0, 140)) }} className="mt-3 flex flex-wrap gap-2">
-              <input value={typed} onChange={(e) => setTyped(e.target.value)} placeholder={page?.products.length ? 'Or type another product you have' : 'The product you have'} className="flex-1 min-w-[14rem] rounded-xl border bg-transparent px-3 py-2 text-[13.5px]" style={{ borderColor: 'var(--border)', color: 'var(--text)' }} />
-              <button type="submit" disabled={!typed.trim()} className="rounded-xl px-4 py-2 text-[13.5px] font-semibold disabled:opacity-50" style={{ background: PURPLE, color: '#fff' }}>Use this product</button>
-            </form>
-            {/* WHERE IT SELLS (optional): read for its buyers before writing. */}
-            <div className="mt-3 rounded-xl border px-3.5 py-3" style={{ borderColor: 'var(--border)' }}>
-              <p className="text-[13px] font-semibold">Where it sells <span className="font-normal" style={soft}>(optional, so the scripts start from what its buyers say)</span></p>
-              <div className="mt-1.5 flex flex-wrap gap-2">
-                <input value={buyerLink} onChange={(e) => setBuyerLink(e.target.value)} placeholder="Its Amazon or TikTok Shop link" className="flex-1 min-w-[14rem] rounded-xl border bg-transparent px-3 py-2 text-[13.5px]" style={{ borderColor: 'var(--border)' }} />
-                <button type="button" onClick={() => shotRef.current?.click()} className="inline-flex items-center gap-1.5 rounded-xl border px-3 py-2 text-[13px] font-semibold" style={{ borderColor: 'var(--border)' }}>
-                  <ImagePlus size={14} /> {buyerShot ? 'Screenshot added' : 'Screenshot of its reviews'}
-                </button>
-                {buyerShot && <button type="button" onClick={() => setBuyerShot(null)} className="inline-flex items-center gap-1 text-[12.5px]" style={soft}><X size={13} /> Remove</button>}
-                <input ref={shotRef} type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) void shrinkPicture(f).then(setBuyerShot, () => setBuyerShot(null)) }} />
-              </div>
-              <p className="mt-1 text-[12px]" style={soft}>Amazon reviews are read by SCOUT in this Chrome; TikTok Shop reviews by MVP. When you filmed this product on Amazon, MVP uses that listing by itself.</p>
-            </div>
-            {/* The brief, said in one line, with the way to open it. */}
-            <div className="mt-4 rounded-xl px-3.5 py-2.5 text-[13px] flex flex-wrap items-center gap-x-3 gap-y-1" style={{ background: page?.brief ? 'rgba(22,163,74,0.08)' : 'rgba(180,83,9,0.08)' }}>
-              <FileText size={14} style={{ color: page?.brief ? GREEN : AMBER }} />
-              <span style={{ color: page?.brief ? GREEN : AMBER }} className="font-semibold">
-                {page?.brief ? 'MVP read their creative brief: your scripts follow it.' : page?.state === 'link_only' ? `MVP could not read their brief${page.briefWhy ? `: ${page.briefWhy}` : '.'}` : page?.state === 'none' ? 'TRYBE shows no brief for this brand.' : 'MVP could not read their brief.'}
-              </span>
-              {page?.briefUrl && <a href={page.briefUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 font-semibold" style={{ color: PURPLE }}>Open the brief <ExternalLink size={11} /></a>}
-              <a href={brandPageUrl(brand.id)} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 font-semibold" style={{ color: PURPLE }}>{brand.name} on TRYBE <ExternalLink size={11} /></a>
-            </div>
-          </>)}
+          <BatchRun key={batchKey} brand={{ id: brand.id, name: brand.name }} product={product || ''} page={page} count={batchCount} deadline={batchDue || null} openId={openBatch}
+            onBack={() => { setDoor('home'); setListKey((k) => k + 1) }} />
         </section>
       )}
-
-      {/* 3. The scripts */}
-      {step === 3 && quickSection()}
     </div>
   )
 }

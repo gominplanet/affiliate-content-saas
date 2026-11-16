@@ -140,8 +140,9 @@ const OPEN_TO: Record<PreviewFeature, 'admin' | 'labs'> = {
   // functionality into trybe scriptwriting so people can do batches of
   // scripts"): a campaign set up once, 50 to 300 story-time scripts written
   // in rounds, checked against the brief's rules, tracked to accepted, and a
-  // PDF to shoot from (lib/trybe-batch). Admin first.
-  trybe_batch: 'admin',
+  // PDF to shoot from (lib/trybe-batch). Open to Pro 2026-11-16 with the new
+  // Brand scripts page (Seb: "make it available for everyone").
+  trybe_batch: 'labs',
 }
 
 /** Every preview feature. A check can then ask which are still admin only

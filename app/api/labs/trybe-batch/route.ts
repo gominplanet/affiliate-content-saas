@@ -2,7 +2,7 @@
 //
 // /api/labs/trybe-batch — BATCH SCRIPTS FOR A BRAND CHALLENGE (lib/trybe-batch;
 // Seb, 2026-11-14: "we need to add a functionality into trybe scriptwriting so
-// people can do batches of scripts"). Behind Labs first (trybe_batch).
+// people can do batches of scripts"). Pro (trybe_batch, open 2026-11-16).
 //
 // POST { action }:
 //   list                          the creator's campaigns, and the month's allowance
