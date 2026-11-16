@@ -995,7 +995,8 @@ export async function POST(request: Request) {
       const { data: mine } = await admin.from('trybe_brands').select('brand_id, status').eq('user_id', ownerId).in('brand_id', ids.slice(i, i + 200))
       for (const r of (mine || []) as Array<{ brand_id: string; status: string | null }>) if (r.status) status[r.brand_id] = r.status
     }
-    return NextResponse.json({ ok: true, ...shared.board, brands: shared.board.brands.filter(b => shared.info[b.id]), info: shared.info, status })
+    // Each brand's videos stay on its brand page; the board does not show them.
+    return NextResponse.json({ ok: true, ...shared.board, brands: shared.board.brands.filter(b => shared.info[b.id]).map(b => ({ ...b, clips: [] })), info: shared.info, status })
   }
 
   if (action === 'off_discover') {
@@ -3273,7 +3274,7 @@ Weigh posts pushed to social, and TRYBE brands they earned with or submitted to,
     return NextResponse.json({
       ok: true,
       metaPage: metaPage?.id ? { id: metaPage.id, name: metaPage.name } : null,
-      onBoard: 'error' in tb ? null : { days: tb.board.days, latest: tb.board.latest, notSaved: tb.board.notSaved, brand: tb.board.brands.find(b => b.id === brandId) ?? null },
+      onBoard: 'error' in tb ? null : { days: tb.board.days, latest: tb.board.latest, notSaved: tb.board.notSaved, clipDays: tb.board.clipDays, clipsSince: tb.board.clipsSince, brand: tb.board.brands.find(b => b.id === brandId) ?? null },
       brand: dir ? { id: brandId, name: dir.name, website: dir.website ?? null, categories: dir.categories || [], about: dir.about ?? null, firstSeen: dir.first_seen_at ?? null, lastSeen: dir.last_seen_at ?? null, left: !!dir.left_at } : null,
       pub,
       timeline: timelineOf(changes).slice(0, 40),

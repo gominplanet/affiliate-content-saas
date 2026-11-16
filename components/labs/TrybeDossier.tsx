@@ -26,7 +26,7 @@ import TrybeLink from '@/components/labs/TrybeLink'
 import { BrandProof, RetainerBadge } from '@/components/labs/TrybeFinderControls'
 import { BrandName } from '@/components/labs/trybe-dossier-context'
 import type { PeekActions } from '@/components/labs/TrybeBrandPeek'
-import { inTop, pointsFor, moveWords, placesWords, type BoardBrand } from '@/lib/trybe-topboard'
+import { inTop, pointsFor, moveWords, placesWords, type BoardBrand, type BoardClip } from '@/lib/trybe-topboard'
 
 /** What the brand page reads, from 'browse' by id (the listing) and 'dossier' (the rest). */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -44,7 +44,7 @@ interface DossierRead {
   replies: ReplyPool | null
   top: Array<{ id: string; creator: string | null; rank: number | null; seconds: number | null; hook: string | null; thumbnail: string | null; video: string | null }>
   /** Its days in TRYBE's Top 100, from the days MVP saved (lib/trybe-topboard). Null when they could not be read. */
-  onBoard?: { days: string[]; latest: string | null; notSaved: number; brand: BoardBrand | null } | null
+  onBoard?: { days: string[]; latest: string | null; notSaved: number; clipDays?: number; clipsSince?: string | null; brand: BoardBrand | null } | null
   similar?: Array<{ brand_id: string; name: string; website: string | null; pay: string | null; metaAds: number | null; rating: number | null; category: string | null }>
   you: { status: string | null; sentAt: string | null; repliedAt: string | null; draftedAt: string | null; fit: number | null; fitReason: string | null; samples: Array<{ product: string; requestedAt: string | null; receivedAt: string | null; filmedAt: string | null; submittedAt: string | null }> }
 }
@@ -351,7 +351,7 @@ export default function TrybeDossier({ brandId, name, onClose, actions, scout = 
           {/* ── ON THE BOARD (Seb, 2026-11-16, after TrybeDaily's brand drawer):
               its days in TRYBE's Top 100 from the days MVP saved, one square a
               saved day. A day not saved is not a square, never "out". ──── */}
-          {d && <OnTheBoard ob={d.onBoard} name={title} />}
+          {d && <OnTheBoard ob={d.onBoard} name={title} top={d.top} />}
 
           {/* ── TOP 100 VIDEOS ───────────────────────────────────────────── */}
           {d && d.top.length > 0 && (
@@ -369,6 +369,7 @@ export default function TrybeDossier({ brandId, name, onClose, actions, scout = 
                         {t.seconds && <span>{t.seconds}s</span>}
                       </div>
                       <p className="text-[13.5px] mt-0.5 leading-snug" style={ui.text}>{t.hook ? `“${t.hook}”` : 'Its words were not read.'}</p>
+                      {(() => { const c = d.onBoard?.brand?.clips?.find((x) => x.id === t.id); return c ? <p className="text-[11.5px] mt-1" style={ui.soft}>{clipWords(c)}</p> : null })()}
                     </div>
                     {t.video && <a href={t.video} target="_blank" rel="noopener noreferrer" className="text-[12px] font-semibold shrink-0 hover:underline" style={{ color: ui.accentText }}>Watch on TRYBE</a>}
                   </div>
@@ -464,7 +465,14 @@ function Logo({ src, name, website, small = false }: { src: string | null; name:
 
 /** ON THE BOARD: days in, #1 days, best and average place, longest run, and
  *  the saved days as squares, darker for a higher place. */
-function OnTheBoard({ ob, name }: { ob: DossierRead['onBoard']; name: string }) {
+/** "In 9 saved days, Nov 3 to Nov 16, best #14, #20 today". */
+function clipWords(c: BoardClip): string {
+  const dayOf = (d: string) => new Date(`${d}T12:00:00Z`).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+  const span = c.first === c.last ? `on ${dayOf(c.first)}` : `${dayOf(c.first)} to ${dayOf(c.last)}`
+  return `In ${c.days} saved day${c.days === 1 ? '' : 's'}, ${span}${c.best != null ? `, best #${c.best}` : ''}${c.today != null ? `, #${c.today} today` : ''}`
+}
+
+function OnTheBoard({ ob, name, top }: { ob: DossierRead['onBoard']; name: string; top: DossierRead['top'] }) {
   const dayOf = (d: string) => new Date(`${d}T12:00:00Z`).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
   if (ob === undefined) return null
   if (ob === null) return <Section title="On TRYBE&rsquo;s Top 100"><p className="text-[13px] rounded-2xl p-4" style={{ ...ui.card, ...ui.soft }}>MVP could not read the days it saved of the Top 100. Close this page and open it again.</p></Section>
@@ -496,6 +504,30 @@ function OnTheBoard({ ob, name }: { ob: DossierRead['onBoard']; name: string }) 
             {b.places.map((p, i) => <span key={ob.days[i]} title={`${dayOf(ob.days[i])}: ${inTop(p) ? `#${p}` : p != null ? `#${p}, past the Top 100` : 'not in the Top 100'}`} className="aspect-square rounded-[3px]" style={{ background: shade(p) }} />)}
           </div>
           <div className="flex justify-between mt-1 text-[11px]" style={ui.soft}><span>{dayOf(ob.days[0])}</span><span>Darker is a higher place</span><span>{dayOf(ob.days[saved - 1])}</span></div>
+        </div>
+        {/* ITS VIDEOS, DAY BY DAY (Seb, 2026-11-16: "start saving each video"):
+            only from the days MVP kept each video, and said so. A video whose
+            words MVP has shows them in Its videos in TRYBE's Top 100. */}
+        <div className="pt-3 border-t flex flex-col gap-1.5" style={{ borderColor: 'var(--border)' }}>
+          <span className="text-[11px] font-semibold uppercase" style={{ ...ui.soft, letterSpacing: '0.07em' }}>Its videos, day by day</span>
+          {!ob.clipDays ? (
+            <p className="text-[12.5px]" style={ui.soft}>MVP keeps each video in the Top 100 from the next daily read on. Then each of its videos shows how many days it was in, and when.</p>
+          ) : !b.clips?.length ? (
+            <p className="text-[12.5px]" style={ui.soft}>None of its videos was in the Top 100 on the {ob.clipDays} day{ob.clipDays === 1 ? '' : 's'} MVP kept each video{ob.clipsSince ? `, since ${dayOf(ob.clipsSince)}` : ''}.</p>
+          ) : (<>
+            <p className="text-[12.5px]" style={ui.soft}>{b.clips.length} of its videos on the {ob.clipDays} day{ob.clipDays === 1 ? '' : 's'} MVP kept each video{ob.clipsSince ? `, since ${dayOf(ob.clipsSince)}` : ''}:</p>
+            <ul className="flex flex-col gap-1">
+              {b.clips.slice(0, 8).map((c, i) => {
+                const known = top.find((t) => t.id === c.id)
+                return (
+                  <li key={c.id} className="text-[12.5px] leading-snug" style={ui.text}>
+                    <span className="font-semibold">{known?.hook ? `“${known.hook.length > 70 ? `${known.hook.slice(0, 70).replace(/\s+\S*$/, '')}...` : known.hook}”` : `Video ${i + 1}`}</span>
+                    <span style={ui.soft}> · {clipWords(c)}</span>
+                  </li>
+                )
+              })}
+            </ul>
+          </>)}
         </div>
       </div>
     </Section>

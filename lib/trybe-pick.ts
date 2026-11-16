@@ -262,7 +262,9 @@ type Obj = Record<string, unknown>
 const isObj = (v: unknown): v is Obj => !!v && typeof v === 'object' && !Array.isArray(v)
 const str = (v: unknown) => (typeof v === 'string' ? v.trim() : typeof v === 'number' ? String(v) : '')
 
-export interface TopEntry { brandId: string | null; brandName: string | null; rank: number | null }
+export interface TopEntry { brandId: string | null; brandName: string | null; rank: number | null
+  /** The video itself, the same id as lib/trybe-hooks readTopWords reads (for the day by day board). */
+  submissionId?: string | null }
 
 /** TRYBE's Top 100 (GET /backend/api/creator/v2/top-creatives), one entry per
  *  video. Field names seen only in TRYBE's page code (rank, submissionId), so
@@ -280,7 +282,9 @@ export function readTopCreatives(json: unknown): TopEntry[] {
     const brandName = str(raw.brandName ?? raw.brand_name ?? brand?.name ?? brand?.brandName) || null
     const rank = Number(raw.rank ?? raw.position)
     if (!brandId && !brandName) continue
-    out.push({ brandId, brandName, rank: Number.isFinite(rank) && rank > 0 ? rank : null })
+    const sub = isObj(raw.submission) ? raw.submission : null
+    const submissionId = str(raw.submissionId ?? raw.submission_id ?? sub?.id ?? raw.id).slice(0, 80) || null
+    out.push({ brandId, brandName, rank: Number.isFinite(rank) && rank > 0 ? rank : null, submissionId })
   }
   return out
 }

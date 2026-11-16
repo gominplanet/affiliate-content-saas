@@ -33,6 +33,21 @@ export const pointsFor = (b: number | null | undefined): number => (inTop(b) ? 1
 
 export type BoardKind = 'new' | 'back' | 'up' | 'down' | 'steady' | 'out'
 
+/** One of its videos over the saved days that kept videos. */
+export interface BoardClip {
+  id: string
+  /** Saved days it was in TRYBE's list, and the first and last of them. */
+  days: number
+  first: string
+  last: string
+  /** Its best place on those days, and its place on the latest saved day. */
+  best: number | null
+  today: number | null
+}
+
+/** Videos kept per brand on the board. */
+const CLIPS_KEEP = 12
+
 export interface BoardBrand {
   id: string
   /** Its best place on each saved day, oldest first; null when it was not on the list. */
@@ -65,6 +80,8 @@ export interface BoardBrand {
   lastIn: string | null
   /** Points so far on each saved day, oldest first: the race. */
   race: number[]
+  /** Its videos on the saved days that kept videos, most days first. */
+  clips: BoardClip[]
 }
 
 export interface Board {
@@ -77,6 +94,9 @@ export interface Board {
   notSaved: number
   /** Every brand in the Top 100 on a saved day, best score first. */
   brands: BoardBrand[]
+  /** Saved days that kept each video (from 2026-11-16), and the first of them. */
+  clipDays: number
+  clipsSince: string | null
 }
 
 const dayNum = (d: string) => Math.round(Date.parse(`${d.slice(0, 10)}T00:00:00Z`) / 86_400_000)
@@ -91,13 +111,15 @@ export function buildBoard(saved: SavedDay[]): Board {
     if (!had || String(s.day.at || '') >= String(had.at || '')) byDate.set(d, s.day)
   }
   const all = Array.from(byDate.keys()).sort()
-  if (!all.length) return { days: [], latest: null, weekDay: null, notSaved: 0, brands: [] }
+  if (!all.length) return { days: [], latest: null, weekDay: null, notSaved: 0, brands: [], clipDays: 0, clipsSince: null }
   const latest = all[all.length - 1]
   const last = dayNum(latest)
   const days = all.filter((d) => dayNum(d) > last - BOARD_DAYS)
   const span = Math.min(BOARD_DAYS, last - dayNum(days[0]) + 1)
   const weekIdx = (() => { for (let i = days.length - 1; i >= 0; i--) if (dayNum(days[i]) <= last - WEEK_DAYS) return i; return -1 })()
   const rows = days.map((d) => byDate.get(d)!.brands)
+  // The saved days that kept videos: only they count a video's days.
+  const clipIdx = days.map((d, i) => ((byDate.get(d)!.vids ?? 0) > 0 ? i : -1)).filter((i) => i >= 0)
   const ids = new Set<string>()
   for (const r of rows) for (const [id, b] of Object.entries(r)) if (b && typeof b.b === 'number') ids.add(id)
   const brands: BoardBrand[] = []
@@ -131,15 +153,29 @@ export function buildBoard(saved: SavedDay[]): Board {
     let sum = 0
     for (const p of places) { sum += pointsFor(p); race.push(sum) }
     const latestRow = rows[n - 1][id]
+    const seen = new Map<string, BoardClip>()
+    for (const i of clipIdx) {
+      for (const pair of rows[i][id]?.s || []) {
+        if (!Array.isArray(pair) || typeof pair[0] !== 'string') continue
+        const [vid, rank] = pair
+        const c = seen.get(vid) ?? { id: vid, days: 0, first: days[i], last: days[i], best: null, today: null }
+        c.days++
+        c.last = days[i]
+        if (typeof rank === 'number' && (c.best == null || rank < c.best)) c.best = rank
+        if (i === n - 1) c.today = typeof rank === 'number' ? rank : null
+        seen.set(vid, c)
+      }
+    }
+    const clips = Array.from(seen.values()).sort((a, b) => b.days - a.days || (a.best ?? 999) - (b.best ?? 999) || a.id.localeCompare(b.id)).slice(0, CLIPS_KEEP)
     brands.push({
       id, places, score: round1(sum / n), daysIn: ins.length, ones: ins.filter((p) => p === 1).length,
       best: ins.length ? Math.min(...ins) : null, avg: ins.length ? Math.round(ins.reduce((a, b) => a + b, 0) / ins.length) : null,
       run, runNow, today, videos: latestRow?.v ?? 0, top10: latestRow?.t10 ?? 0, then, move, back, gap, kind,
-      firstIn: firstIdx >= 0 ? days[firstIdx] : null, lastIn: lastIdx >= 0 ? days[lastIdx] : null, race,
+      firstIn: firstIdx >= 0 ? days[firstIdx] : null, lastIn: lastIdx >= 0 ? days[lastIdx] : null, race, clips,
     })
   }
   brands.sort((a, b) => b.score - a.score || b.daysIn - a.daysIn || (a.best ?? 999) - (b.best ?? 999) || a.id.localeCompare(b.id))
-  return { days, latest, weekDay: weekIdx >= 0 ? days[weekIdx] : null, notSaved: Math.max(0, span - days.length), brands }
+  return { days, latest, weekDay: weekIdx >= 0 ? days[weekIdx] : null, notSaved: Math.max(0, span - days.length), brands, clipDays: clipIdx.length, clipsSince: clipIdx.length ? days[clipIdx[0]] : null }
 }
 
 /** How far it fell since the week's day: off the list counts as #151. */

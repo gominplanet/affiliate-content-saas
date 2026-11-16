@@ -4,7 +4,8 @@
 // brands): every admin read of the Top 100 is also kept as that day's row.
 
 import { readFileSync } from 'node:fs'
-import { topDayKey, topDayOf, TOP_DAYS_KEEP } from '../lib/trybe-topdays'
+import { topDayKey, topDayOf, TOP_DAYS_KEEP, DAY_VIDEOS_KEEP } from '../lib/trybe-topdays'
+import { readTopCreatives } from '../lib/trybe-pick'
 
 const failures: string[] = []
 const check = (name: string, ok: boolean) => { if (!ok) failures.push(name) }
@@ -27,6 +28,24 @@ check('a video with no place counts as a video, with no best place', day.brands.
 check('a brand MVP cannot place is left out, not guessed', Object.keys(day.brands).length === 3)
 check('the row says how many videos the read had and when', day.entries === 6 && day.at === '2026-10-17T10:00:00.000Z')
 check('two months are kept', TOP_DAYS_KEEP >= 45)
+
+// 1b. Each video too (Seb, 2026-11-16: "start saving each video that are in it daily")
+const withIds = topDayOf([
+  { rank: 4, brandId: 'a', brandName: 'Alpha', submissionId: 'v2' },
+  { rank: 2, brandId: 'a', brandName: 'Alpha', submissionId: 'v1' },
+  { rank: 9, brandId: 'a', brandName: 'Alpha', submissionId: 'v1' },
+  { rank: 30, brandId: null, brandName: 'Beta Co', submissionId: 'v3' },
+  { rank: 50, brandId: 'c', brandName: 'Gamma', submissionId: null },
+], new Map([['beta co', 'b']]), '2026-11-17T10:00:00.000Z')
+check('each video is kept by its id with its place, best first', JSON.stringify(withIds.brands.a?.s) === JSON.stringify([['v1', 2], ['v2', 4]]))
+check('the same video twice keeps its better place, and counts as a video each time', withIds.brands.a?.v === 3 && withIds.brands.a?.s?.length === 2)
+check('a video placed by its brand name is kept too', JSON.stringify(withIds.brands.b?.s) === JSON.stringify([['v3', 30]]))
+check('a video with no id is counted, not kept', withIds.brands.c?.v === 1 && withIds.brands.c?.s === undefined)
+check('the day says how many videos carried an id', withIds.vids === 4)
+check('a day with no ids says nothing, so its videos read as not saved', day.vids === undefined)
+check('a brand keeps at most DAY_VIDEOS_KEEP videos a day', topDayOf(Array.from({ length: 40 }, (_, i) => ({ rank: i + 1, brandId: 'a', brandName: 'A', submissionId: `v${i}` })), new Map(), 'x').brands.a.s!.length === DAY_VIDEOS_KEEP)
+const read2 = readTopCreatives({ data: [{ rank: 3, submissionId: 's9', brandId: 'b-aaaaaa1' }, { rank: 5, submission: { id: 's10' }, brand: { id: 'b-aaaaaa1' } }, { rank: 7, brandName: 'X' }] })
+check('TRYBE\u2019s Top 100 is read with each video\u2019s id', read2[0].submissionId === 's9' && read2[1].submissionId === 's10' && read2[2].submissionId === null)
 
 // 2. The admin read keeps it
 const route = read('app/api/labs/trybe/route.ts')

@@ -131,6 +131,28 @@ check('under a week saved: nothing is called new', !short.brands.some((b) => b.k
 const old = buildBoard([dayOf(0, { a: 5 }), dayOf(40, { a: 4 })])
 check('days older than the window are left out', old.days.length === 1 && BOARD_DAYS === 30)
 
+// 8b. Each video, day by day (kept from 2026-11-16)
+const vday = (i: number, s: Record<string, Array<[string, number | null]>> | null): SavedDay => {
+  const brands: Record<string, TopDayBrand> = { a: { v: 2, b: 5, t10: 1 } }
+  if (s) for (const [id, list] of Object.entries(s)) brands[id] = { v: list.length, b: Math.min(...list.map((x) => x[1] ?? 999)), t10: 0, s: list }
+  return { date: date(i), day: { at: `${date(i)}T09:00:00.000Z`, entries: 100, brands, ...(s ? { vids: Object.values(s).flat().length } : {}) } }
+}
+const vb = buildBoard([
+  vday(0, null), vday(1, null),
+  vday(2, { a: [['x1', 5], ['x2', 40]] }),
+  vday(3, { a: [['x1', 3]] }),
+  vday(4, { a: [['x1', 8], ['x3', 60]] }),
+])
+const va = vb.brands.find((b) => b.id === 'a')!
+check('only days that kept videos count a video\u2019s days', vb.clipDays === 3 && vb.clipsSince === date(2))
+check('a video\u2019s days, first and last day, best place and place today', JSON.stringify(va.clips[0]) === JSON.stringify({ id: 'x1', days: 3, first: date(2), last: date(4), best: 3, today: 8 }))
+check('most days first', va.clips.map((c) => c.id).join() === 'x1,x2,x3' || va.clips.map((c) => c.id).join() === 'x1,x3,x2')
+check('a video not in today\u2019s list has no place today', va.clips.find((c) => c.id === 'x2')?.today === null)
+check('days saved before videos were kept have no clip days', buildBoard([vday(0, null)]).clipDays === 0 && buildBoard([vday(0, null)]).clipsSince === null)
+check('the board answer leaves videos to the brand page', /clips: \[\] \}\)\)/.test(read('app/api/labs/trybe/route.ts')))
+const dos = read('components/labs/TrybeDossier.tsx')
+check('the brand page shows each video\u2019s days, and says when none were kept yet', /Its videos, day by day/.test(dos) && /MVP keeps each video in the Top 100 from the next daily read on/.test(dos) && /clipWords\(c\)/.test(dos))
+
 // 9. Wiring
 const route = read('app/api/labs/trybe/route.ts')
 check('the route reads the saved days for the board', /action === 'top_board'/.test(route) && /like\('key', 'top:%'\)/.test(route))
