@@ -183,6 +183,8 @@ export interface VideoIdea {
   /** The model's own words for it, before MVP checks them. */
   inspiredBy?: string
   frame?: string
+  /** How it uses the creator's context, in the model's words (2026-11-16). */
+  contextUse?: string
 }
 
 /** A top video a script is built on: TRYBE's Top 100, a top video on the
@@ -257,19 +259,81 @@ export interface VideoPlan {
   brandDocs?: Array<{ title: string; whole: boolean }>
   /** The creator's context the set was written around (2026-11-16). Said on screen. */
   context?: string
+  /** How many videos follow it, checked one by one (the names every video
+   *  uses, where it is filmed); the ones that missed were rewritten once.
+   *  `checked` false: MVP had nothing to check against. Said on screen. */
+  contextCheck?: { checked: boolean; followed: number; of: number; missed: number[]; fixed: number }
 }
+
+/** THE CREATOR'S CONTEXT COMES NEXT (Seb, 2026-11-16: "only a few had the
+ *  context that I was looking for ... make sure that the context is being
+ *  actually listened to"). Said in the system, right after the brief, so the
+ *  styles, openers, winning frames and buyers' moments are told through the
+ *  context instead of crowding it out. */
+export const contextFirst = () => `THE CREATOR'S CONTEXT COMES NEXT, AND EVERY VIDEO FOLLOWS IT. THE CREATOR'S CONTEXT is given: all ${VIDEO_IDEAS} videos are built on it, not some of them. Each video starts from its own CONTEXT IDEA (video 1 from idea 1, video 2 from idea 2, and so on), uses the USE BY NAME words, and ties the context to the product with one natural bridge line. When the context says where the videos are filmed (WHERE YOU FILM), every shot, every B-roll line and "where" is in that place and makes sense there: nothing is filmed anywhere else. Everything else in these instructions (the styles, the openers, the winning ads, the buyers' moments) is told THROUGH the context: a style or a winning frame that cannot fit the context is dropped for one that can. Only the brief's rules come before the context. Say how each video uses it in "contextUse".`
+
+/** The ideas, names and places MVP read from a context (lib/trybe-batch
+ *  ContextPlan, the same reader batches use). */
+export interface QuickContextPlan { mention: string[]; seeds: string[]; keepApart: string[]; careful: string[]; places: string[] }
 
 /** THE CREATOR'S CONTEXT IN QUICK SCRIPTS (Seb, 2026-11-16: "add the context
  *  box to quick scripts too"), with the tie-in technique from the script
  *  craft playbook (docs/script-craft-playbook.md, section 4): each video
  *  starts from a different detail of the context and one line bridges it to
- *  the problem the product solves. Pure. */
-export function quickContextBlock(context: string): string {
+ *  the problem the product solves. With MVP's reading of it, each video gets
+ *  its own idea, and the names, places and what stays apart are spelled
+ *  out. Pure. */
+export function quickContextBlock(context: string, plan?: QuickContextPlan | null): string {
   const c = context.replace(/\s+\n/g, '\n').trim().slice(0, 2000)
   if (!c) return ''
-  return `THE CREATOR'S CONTEXT (what these videos are about beyond the product, in the creator's own words):
+  const ideas = plan?.seeds.length ? Array.from({ length: VIDEO_IDEAS }, (_, i) => `${i + 1}. ${plan.seeds[i % plan.seeds.length]}`) : []
+  return [`THE CREATOR'S CONTEXT (what every one of these videos is about beyond the product, in the creator's own words; it is not optional):
 ${c}
-Build every video on it with the tie-in technique. Each video starts from a different detail of the context (a habit, a trait, a moment, a person, a place) and one line bridges that detail to the problem the product solves, so the product answers the problem the bridge created; the ending may return to the context. Use the names in it. Never make the product do something with the context that the brand does not sell it for, and claim nothing the brand does not say (a luggage tracker is never put on the dog). A detail you add to the context for a story that may not be true is kept simple and marked in "forBrief" as "shoot only if true"; never invent numbers, quotes or comments.`
+Build every video on it with the tie-in technique. Each video starts from a different detail of the context (a habit, a trait, a moment, a person, a place) and one line bridges that detail to the problem the product solves, so the product answers the problem the bridge created; the ending may return to the context. Use the names in it. Never make the product do something with the context that the brand does not sell it for, and claim nothing the brand does not say (a luggage tracker is never put on the dog). A detail you add to the context for a story that may not be true is kept simple and marked in "forBrief" as "shoot only if true"; never invent numbers, quotes or comments.`,
+    ideas.length ? `CONTEXT IDEAS, one per video, in order:\n${ideas.join('\n')}` : '',
+    plan?.mention.length ? `USE BY NAME in every video: ${plan.mention.join(', ')}` : '',
+    plan?.places.length ? `WHERE YOU FILM: every shot of every video is filmed here: ${plan.places.join('; ')}` : '',
+    plan?.keepApart.length ? `KEEP APART (the brand does not sell it for these; never show or say them):\n${plan.keepApart.map((x) => `- ${x}`).join('\n')}` : '',
+    plan?.careful.length ? `SAY CAREFULLY:\n${plan.careful.map((x) => `- ${x}`).join('\n')}` : '',
+  ].filter(Boolean).join('\n\n')
+}
+
+/** Places a shot can be that are not the creator's, when their context names
+ *  where they film. */
+const OTHER_PLACES = ['kitchen', 'bathroom', 'bedroom', 'living room', 'car', 'driveway', 'garage', 'backyard', 'yard', 'park', 'beach', 'gym', 'office', 'street', 'sidewalk', 'store', 'supermarket', 'grocery', 'mall', 'airport', 'restaurant', 'cafe', 'coffee shop', 'outside', 'outdoors', 'hotel', 'pool', 'trail', 'school']
+
+/** Which videos did not follow the context, and why: a video that leaves out
+ *  the names every video uses, or films somewhere the context does not say.
+ *  `checked` is false when MVP had nothing to check against (no names and no
+ *  places read from the context), so nothing is claimed either way. Pure. */
+export function contextMisses(videos: VideoIdea[], plan: Pick<QuickContextPlan, 'mention' | 'places'> | null, context: string): { checked: boolean; misses: Array<{ index: number; why: string }> } {
+  const mention = plan?.mention || []
+  const places = plan?.places || []
+  if (!mention.length && !places.length) return { checked: false, misses: [] }
+  const ctx = `${context} ${places.join(' ')}`.toLowerCase()
+  const away = OTHER_PLACES.filter((w) => !new RegExp(`\\b${w}\\b`).test(ctx))
+  const has = (t: string, w: string) => new RegExp(`(^|[^a-z0-9])${w.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}($|[^a-z0-9])`).test(t.toLowerCase())
+  const misses: Array<{ index: number; why: string }> = []
+  videos.forEach((v, i) => {
+    const words = [v.hook, ...(v.say || v.beats), v.cta].join(' ')
+    const shots = [v.shot, ...(v.broll || []), v.where || ''].join(' ')
+    if (mention.length && !mention.some((m) => has(`${words} ${shots}`, m))) { misses.push({ index: i, why: `it leaves out ${mention.slice(0, 3).join(', ')}` }); return }
+    const off = places.length ? away.find((w) => has(shots, w)) : undefined
+    if (off) misses.push({ index: i, why: `it films in the ${off}, not where your context says (${places.join(', ')})` })
+  })
+  return { checked: true, misses }
+}
+
+/** The request to rewrite only the videos that missed the context. Pure. */
+export function contextFixPrompt(misses: Array<{ index: number; why: string }>): string {
+  return `These videos did not follow THE CREATOR'S CONTEXT:\n${misses.map((m) => `- video ${m.index + 1}: ${m.why}`).join('\n')}\nRewrite ONLY these, each from its CONTEXT IDEA, following every rule above, with the context in every line it fits and every shot where the context says. Answer with JSON only: {"videos":[...]} holding exactly these ${misses.length} ${misses.length === 1 ? 'video' : 'videos'}, in this order, in the same shape as before.`
+}
+
+/** The rewritten videos put back in their places. Pure. */
+export function withRewrites(videos: VideoIdea[], misses: Array<{ index: number }>, rewrites: VideoIdea[]): VideoIdea[] {
+  const out = [...videos]
+  misses.forEach((m, k) => { if (rewrites[k]) out[m.index] = rewrites[k] })
+  return out
 }
 
 /** THE LAST LOOK BEFORE ANSWERING (Seb, 2026-11-06, on the first real Video
@@ -339,6 +403,7 @@ export const videoJson = (o: { say: string; broll: string; cta: string; forBrief
     "objection": "the one doubt a buyer has about this product that this video answers (from \\"doubts\\"), in under 10 words",
     "inspiredBy": "the WINNING TRYBE AD (\\"Ad 3\\") or the brand's own best VIDEO (\\"Video 2\\") this video is built on, or \\"\\" when it is built on none",
     "frame": "what you kept from it, under 15 words (\\"opens on the mess, product at second 4, ends on a dare\\"), or \\"\\"",
+    "contextUse": "how this video uses THE CREATOR'S CONTEXT, under 15 words, or \\"\\" when none is given",
     "say": ["${o.say}"],
     "broll": ["${o.broll}"],
     "cta": "${o.cta}",
@@ -368,10 +433,10 @@ Never invent products, features, prices, discounts, ingredients, results or numb
 /** Ideas in a plan. */
 export const VIDEO_IDEAS = 10
 
-export const VIDEO_PLAN_SYSTEM = (bannedRule: string) => `You plan short UGC ad videos (20 to 40 seconds, vertical) a creator makes for a brand on TRYBE. The brand runs the winners as Meta and TikTok ads. A top TRYBE creator's method: keep ONE middle and call to action, swap many hooks, and give the brand several clearly different angles, because the hook and the angle decide whether the ad gets watched.
+export const VIDEO_PLAN_SYSTEM = (bannedRule: string, withContext = false) => `You plan short UGC ad videos (20 to 40 seconds, vertical) a creator makes for a brand on TRYBE. The brand runs the winners as Meta and TikTok ads. A top TRYBE creator's method: keep ONE middle and call to action, swap many hooks, and give the brand several clearly different angles, because the hook and the angle decide whether the ad gets watched.
 
 THE BRIEF COMES FIRST. When BRIEF is given, it is what the brand asked creators for: every idea must fit it (its product, its key messages, its must show and must say, its tone, its length), and nothing may break a rule it sets. When there is no BRIEF, plan from BRAND alone.
-
+${withContext ? `${contextFirst()}\n` : ''}
 ${readTheBuyers('BRAND, the BRIEF, THE PRODUCT ON AMAZON, the SCREENSHOT when one is attached, CUSTOMERS SAY, BUYER REVIEWS, CRITICAL REVIEWS, the BRAND\'S OWN META ADS and COMPETING BRANDS\' META ADS')}
 
 Return ONLY JSON, no markdown:
@@ -539,6 +604,7 @@ export function readVideoIdeas(raw: unknown, max = 12): VideoIdea[] {
       ...(say.length ? { say } : {}), ...(broll.length ? { broll } : {}),
       cta: s(x.cta, 140) || (say.length > 1 ? say[say.length - 1] : ''), forBrief: s(x.forBrief, 120),
       ...(s(x.inspiredBy, 20) ? { inspiredBy: s(x.inspiredBy, 20) } : {}), ...(s(x.frame, 140) ? { frame: s(x.frame, 140) } : {}),
+      ...(s(x.contextUse, 140) ? { contextUse: s(x.contextUse, 140) } : {}),
       ...five,
     }
   }).filter((v) => v.hook && (v.beats.length || v.say?.length)).slice(0, max)

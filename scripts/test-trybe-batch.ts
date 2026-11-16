@@ -10,7 +10,7 @@ import {
   rulesFromReply, paceWords, notReadyWords, writerSystem, writerPrompt, rulesInput, claimsFromReply, seedCampaign, planSummary, seedFor, contextFromReply, contextInput, contextStale, CONTEXT_SYSTEM, BATCH_ROUND, MAX_PER_CAMPAIGN,
   RULES_SYSTEM, REAL_PERSON, type Script, type Campaign, type Slot,
 } from '../lib/trybe-batch'
-import { quickContextBlock } from '../lib/trybe-playbook'
+import { quickContextBlock, contextMisses, contextFixPrompt, withRewrites, readVideoIdeas, VIDEO_PLAN_SYSTEM, VIDEO_IDEAS, type VideoIdea } from '../lib/trybe-playbook'
 
 const fails: string[] = []
 const check = (name: string, ok: boolean | undefined, detail?: unknown) => { if (!ok) fails.push(`${name}${detail !== undefined ? `: ${JSON.stringify(detail).slice(0, 500)}` : ''}`) }
@@ -296,11 +296,35 @@ const fake = async (_system: string, user: string): Promise<string> => {
   const qb = quickContextBlock(CTX)
   check('the quick writer gets the context with the tie-in technique and the keep-apart rule', /THE CREATOR'S CONTEXT/.test(qb) && /Michelle films in the parked car/.test(qb) && /bridges that detail to the problem the product solves/.test(qb) && /never put on the dog/.test(qb) && /never invent numbers, quotes or comments/.test(qb) && quickContextBlock('   ') === '')
   const trybeRoute = read('app/api/labs/trybe/route.ts')
-  check('the server puts the context in the quick writer\'s request and keeps it on the set', /const contextText = typeof body\.context === 'string' \? quickContextBlock\(body\.context\) : ''/.test(trybeRoute) && /\$\{contextText \? `\\n\\n\$\{contextText\}` : ''\}/.test(trybeRoute) && /\.\.\.\(contextText \? \{ context: contextWords \} : \{\}\)/.test(trybeRoute))
   const ideasUi = read('components/labs/TrybeVideoIdeas.tsx')
-  check('the quick writer sends the context, writes a new set for it, and says it was used', /\.\.\.\(context\.trim\(\) \? \{ context: context\.trim\(\)\.slice\(0, 2000\) \} : \{\}\)/.test(ideasUi) && /if \(match && !context\.trim\(\)\)/.test(ideasUi) && /Written around your context:/.test(ideasUi))
+  check('the quick writer sends the context, writes a new set for it, and says it was used', /\.\.\.\(context\.trim\(\) \? \{ context: context\.trim\(\)\.slice\(0, 2000\) \} : \{\}\)/.test(ideasUi) && /if \(match && !context\.trim\(\)\)/.test(ideasUi) && /follow your context/.test(ideasUi))
   const createUi = read('components/labs/TrybeCreate.tsx')
   check('one context box on the brand page feeds both doors', (createUi.match(/<span className="font-semibold">Context<\/span>/g) || []).length === 1 && /buyerShot=\{buyerShot\} context=\{context\} \/>/.test(createUi) && /context=\{context\} openId=\{openBatch\}/.test(createUi) && /in quick scripts and in a batch/.test(createUi))
+
+
+  // ── Every quick script follows the context (Seb, 2026-11-16: "only a few had the context ... make sure that the context is being actually listened to") ──
+  const qplan = { mention: ['Walter'], seeds: SEEDS, keepApart: ['the tracker never on Walter'], careful: [], places: ['Parked car', 'Morning walks with Walter'] }
+  const qbp = quickContextBlock(CTX, qplan)
+  check('the quick writer gets one context idea per video, in order, and the names and the place spelled out', /CONTEXT IDEAS, one per video, in order:\n1\. Walter's leash rule/.test(qbp) && new RegExp(`\\n${VIDEO_IDEAS}\\. `).test(qbp) && /USE BY NAME in every video: Walter/.test(qbp) && /WHERE YOU FILM: every shot of every video is filmed here: Parked car; Morning walks with Walter/.test(qbp) && /it is not optional/.test(qbp))
+  const sysCtx = VIDEO_PLAN_SYSTEM('', true)
+  check('with a context, the quick writer is told it comes right after the brief and binds every video', /THE CREATOR'S CONTEXT COMES NEXT, AND EVERY VIDEO FOLLOWS IT/.test(sysCtx) && new RegExp(`all ${VIDEO_IDEAS} videos are built on it, not some of them`).test(sysCtx) && /told THROUGH the context/.test(sysCtx) && sysCtx.indexOf('THE BRIEF COMES FIRST') < sysCtx.indexOf("THE CREATOR'S CONTEXT COMES NEXT") && !/CONTEXT COMES NEXT/.test(VIDEO_PLAN_SYSTEM('', false)))
+  const vid = (hook: string, broll: string[]): VideoIdea => ({ angle: 'a', style: 'problem', hook, shot: broll[0] || '', beats: [], say: [hook, 'Then the bag went missing.', 'So now there is a NOBL Air Tracker in it.', "It's linked below."], broll, cta: "It's linked below.", forBrief: '' })
+  const vids = [vid('Walter has one rule on our morning walk.', ['Parked car, Mich to camera', 'B-roll: Walter on the walk']), vid('Nobody tells you this about checked bags.', ['Parked car, Mich to camera']), vid('Walter steals socks when I pack.', ['Mich in the kitchen packing a bag'])]
+  const qm = contextMisses(vids, qplan, CTX)
+  check('a video that leaves out Walter is caught, and one filmed in the kitchen when the context says the car and the walks', qm.checked && qm.misses.length === 2 && qm.misses[0].index === 1 && /leaves out Walter/.test(qm.misses[0].why) && qm.misses[1].index === 2 && /films in the kitchen/.test(qm.misses[1].why), qm)
+  check('a video that follows the context passes', contextMisses([vids[0]], qplan, CTX).misses.length === 0)
+  check('a place the context itself names is never counted against it', contextMisses([vid('Walter in my kitchen again.', ['Mich in the kitchen'])], { ...qplan, places: ['kitchen studio'] }, 'I film in my kitchen studio with Walter.').misses.length === 0)
+  const studio = { mention: [], seeds: ['a'], keepApart: [], careful: [], places: ['My studio'] }
+  const sm = contextMisses([vid('Here is what nobody tells you about packing.', ['Studio, Seb at the desk with the product']), vid('I tested this for a week.', ['Seb in the kitchen holding it'])], studio, "I'm going to be shooting these videos in my studio.")
+  check('"shooting in my studio": a desk in the studio passes, the kitchen does not', sm.checked && sm.misses.length === 1 && sm.misses[0].index === 1 && /films in the kitchen, not where your context says \(My studio\)/.test(sm.misses[0].why), sm)
+  check('with nothing read from the context, nothing is claimed either way', contextMisses(vids, null, CTX).checked === false)
+  check('only the videos that missed are sent back, by number, and put back in their places', /video 2: it leaves out Walter[\s\S]*video 3: it films in the kitchen/.test(contextFixPrompt(qm.misses)) && /holding exactly these 2 videos/.test(contextFixPrompt(qm.misses)) && (() => { const fixed = withRewrites(vids, qm.misses, [vids[0], vids[0]]); return fixed[1] === vids[0] && fixed[2] === vids[0] && fixed[0] === vids[0] && fixed.length === 3 })())
+  check('each video says how it uses the context', readVideoIdeas([{ hook: 'h', say: ['h', 'x'], contextUse: "Walter's leash rule bridged to bags" }])[0].contextUse === "Walter's leash rule bridged to bags")
+  const tr = read('app/api/labs/trybe/route.ts')
+  check('the server reads the context into ideas first, puts it at the top of the request and reminds at the end', /system: CONTEXT_SYSTEM/.test(tr) && /ctxPlan = contextFromReply\(/.test(tr) && /quickContextBlock\(contextWords, ctxPlan\)/.test(tr) && /text: `\$\{contextText \? `\$\{contextText\}\\n\\n` : ''\}BRAND:/.test(tr) && /REMEMBER: every one of the \$\{VIDEO_IDEAS\} videos follows THE CREATOR'S CONTEXT/.test(tr) && /system: VIDEO_PLAN_SYSTEM\(BANNED_RULE, !!contextText\)/.test(tr))
+  check('the server checks every video, rewrites the misses once, and keeps the result on the set', /let r = contextMisses\(parsed\.videos, ctxPlan, contextWords\)/.test(tr) && /content: contextFixPrompt\(r\.misses\)/.test(tr) && /parsed\.videos = withRewrites\(parsed\.videos, r\.misses, rewrites\)/.test(tr) && /\.\.\.\(contextCheck \? \{ contextCheck \} : \{\}\)/.test(tr) && /\.\.\.\(contextText \? \{ context: contextWords \} : \{\}\)/.test(tr))
+  const iu = read('components/labs/TrybeVideoIdeas.tsx')
+  check('the screen says how many follow the context, which missed, and when it could not check', /All \{k\.of\} follow your context/.test(iu) && /\{k\.followed\} of \{k\.of\} follow your context/.test(iu) && /MVP could not check each video against it/.test(iu) && /AbortSignal\.timeout\(295_000\)/.test(iu) && /<b>Your context:<\/b> \{v\.contextUse\}/.test(read('components/labs/ScriptParts.tsx')))
 
   if (fails.length) { console.error(`❌ trybe-batch: ${fails.length} failure(s)\n${fails.map((f) => `   • ${f}`).join('\n')}`); process.exit(1) }
   console.log('✅ trybe-batch: every rule on the brief\'s fixtures, an even spread, and a whole round with rewrites and red flags')

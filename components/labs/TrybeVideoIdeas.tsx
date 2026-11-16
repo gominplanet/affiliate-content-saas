@@ -175,7 +175,7 @@ function printPlan(plan: VideoPlan, brand: string): boolean {
 }
 
 async function api(body: Record<string, unknown>) {
-  const r = await fetch('/api/labs/trybe', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(240_000) })
+  const r = await fetch('/api/labs/trybe', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(295_000) })
   const d = await r.json().catch(() => ({}))
   if (!r.ok) throw new Error(d.error || `Request failed (${r.status})`)
   return d
@@ -603,7 +603,14 @@ export default function TrybeVideoIdeas({ brandId, name, plan: initial, canRead,
           })()}
           {filming && <TrybeFilmIt script={filming} onClose={() => setFilming(null)} />}
           {/* WHO BUYS IT, as the script agent read the buyers, and what it read. */}
-          {plan.context && <p className="text-[12px]" style={{ color: GREEN }}>Written around your context: {plan.context.length > 160 ? `${plan.context.slice(0, 160)}...` : plan.context}</p>}
+          {plan.context && (() => {
+            // What came of the context, video by video (Seb, 2026-11-16: "make sure that the context is being actually listened to").
+            const k = plan.contextCheck
+            const ctx = plan.context.length > 140 ? `${plan.context.slice(0, 140)}...` : plan.context
+            if (!k || !k.checked) return <p className="text-[12px]" style={{ color: AMBER }}>Written around your context ({ctx}). MVP could not check each video against it, so read them before you film.</p>
+            if (!k.missed.length) return <p className="text-[12px]" style={{ color: GREEN }}>All {k.of} follow your context ({ctx}).{k.fixed ? ` MVP rewrote ${k.fixed} that missed it the first time.` : ''}</p>
+            return <p className="text-[12px]" style={{ color: AMBER }}>{k.followed} of {k.of} follow your context ({ctx}). {k.missed.length === 1 ? 'Video' : 'Videos'} {k.missed.join(', ')} still {k.missed.length === 1 ? 'misses' : 'miss'} it after a rewrite: skip {k.missed.length === 1 ? 'it' : 'them'}, or press New scripts for a fresh set.</p>
+          })()}
           {plan.buyerReport && <p className="text-[12px]" style={{ color: plan.buyerReport.reviews || plan.buyerReport.critical || plan.buyerReport.customersSay ? GREEN : AMBER }}>{buyerReportWords(plan.buyerReport, SCOUT_AMAZON_REVIEWS_MIN_VERSION)}</p>}
           {plan.buyers && <BuyersCard b={plan.buyers} fromReviews={!!(plan.buyerReport && (plan.buyerReport.reviews || plan.buyerReport.critical || plan.buyerReport.customersSay))} />}
           {savedId && plan.videos && plan.videos.length === 0 && <p className="text-[12.5px]" style={{ color: GREEN }}>Every script in this set is cleared. Press New scripts for a fresh set.</p>}

@@ -66,6 +66,7 @@ export function ScriptVideoCard({ v, n, copied, onCopy, onFilm, footer }: { v: V
             <p className="mt-1 text-[12.5px]"><Target size={12} className="inline -mt-0.5 mr-1" style={{ color: PURPLE }} /><b>For</b> {v.who || 'the buyer'}{v.when ? <>, <b>when</b> {v.when}</> : null}</p>
           )}
           {/* BUILT ON A WINNER: which top video, what was kept, and the video. */}
+          {v.contextUse && <p className="text-[12px]" style={{ color: 'var(--text-soft)' }}><b>Your context:</b> {v.contextUse}</p>}
           {v.inspired && (
             <p className="mt-1 text-[12.5px]">
               <Trophy size={12} className="inline -mt-0.5 mr-1" style={{ color: '#F59E0B' }} />

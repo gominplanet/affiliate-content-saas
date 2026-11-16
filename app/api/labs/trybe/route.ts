@@ -30,7 +30,8 @@ import { readTopWords, firstHook, keepHooks, readHooksBody, hooksBlock, type Top
 import { readRetainers } from '@/lib/trybe-retainer'
 import { amazonVideoPage } from '@/lib/brand-content'
 import { pickVoice, readVoiceBody, voiceBlock, VOICE_RULE, DRAFT_VOICE_RULE, type VoiceSample } from '@/lib/trybe-voice'
-import { KICKOFF_SYSTEM, FOLLOWUP_SYSTEM, kickoffUserPrompt, brandBlock, VIDEO_PLAN_SYSTEM, parseVideoPlan, honestCtas, linkInspired, quickContextBlock, type BuyerReport } from '@/lib/trybe-playbook'
+import { KICKOFF_SYSTEM, FOLLOWUP_SYSTEM, kickoffUserPrompt, brandBlock, VIDEO_PLAN_SYSTEM, parseVideoPlan, honestCtas, linkInspired, quickContextBlock, contextMisses, contextFixPrompt, withRewrites, readVideoIdeas, VIDEO_IDEAS, type BuyerReport, type QuickContextPlan } from '@/lib/trybe-playbook'
+import { CONTEXT_SYSTEM, contextInput, contextFromReply, readCampaign as readBatchCampaign } from '@/lib/trybe-batch'
 import { linkKind, cleanReviews, reviewsBlock, reviewCorpus } from '@/lib/product-scripts'
 import { followShort, readTikTok } from '@/lib/buyer-sources'
 import { winnersForPlan, winnersBlock, readScript } from '@/lib/trybe-mybrands'
@@ -1529,6 +1530,7 @@ export async function POST(request: Request) {
   }
 
   if (action === 'video_plan') {
+    const started = Date.now()
     // ONE BODY, MANY HOOKS (Cole: "the middle of the video is pretty much the
     // same"). The brand's real products and, read fresh, what is on sale on
     // its own store right now, so a sale call to action is only ever true.
@@ -1663,29 +1665,67 @@ export async function POST(request: Request) {
       why: !buyerBy && buyerLink.kind === 'amazon' && typeof body.reviewsWhy === 'string' && ['no-scout', 'old-scout', 'scout-failed', 'none-shown'].includes(body.reviewsWhy) ? body.reviewsWhy as BuyerReport['why'] : null,
       criticalWhy: buyerReviews.criticalWhy ?? null, screenshot: !!shot,
     } : null
-    // THE CREATOR'S CONTEXT (2026-11-16): what the videos are about beyond the product.
-    const contextText = typeof body.context === 'string' ? quickContextBlock(body.context) : ''
+    // THE CREATOR'S CONTEXT (2026-11-16; Seb: "make sure that the context is
+    // being actually listened to"): read first into one idea per video, the
+    // names every video uses and where the videos are filmed (the same reader
+    // batches use), so no video can drift off it.
     const contextWords = typeof body.context === 'string' ? body.context.replace(/\s+\n/g, '\n').trim().slice(0, 2000) : ''
+    let ctxPlan: QuickContextPlan | null = null
+    if (contextWords) {
+      try {
+        const camp = readBatchCampaign({ product: { name: product || String(row.name || '') }, context: contextWords })
+        const cm = await createAnthropicClient().messages.create({ model: MODEL, max_tokens: 2500, system: CONTEXT_SYSTEM, messages: [{ role: 'user', content: `${contextInput(camp)}${briefText ? `\n\nTHE BRAND'S BRIEF (what the product is sold for):\n${briefText.slice(0, 3000)}` : ''}` }] })
+        try { const u = usageFromAnthropic(cm); recordUsage({ userId, tier, feature: 'trybe_video_plan_context', model: MODEL, input: u.input, output: u.output }) } catch { /* best-effort */ }
+        ctxPlan = contextFromReply((cm.content as Array<{ type: string; text?: string }>).map((b) => (b.type === 'text' ? b.text || '' : '')).join(''), contextWords)
+      } catch { ctxPlan = null }
+    }
+    const contextText = contextWords ? quickContextBlock(contextWords, ctxPlan) : ''
     const trybeText = trybeProducts.length ? `PRODUCTS THE BRAND LISTS ON TRYBE (the ones creators can ask for as samples): ${trybeProducts.join('; ')}` : ''
     try {
+      const userContent = [
+          ...(shot ? [{ type: 'image' as const, source: { type: 'base64' as const, media_type: `image/${shot[1]}` as 'image/jpeg' | 'image/png' | 'image/webp', data: shot[2] } }] : []),
+          { type: 'text' as const, text: `${contextText ? `${contextText}\n\n` : ''}BRAND:\n${brandBlock({ name: row.name, categories: row.categories || [], about: row.about, siteSummary: summary, products, onSale, payText: row.pay_text })}${briefText ? `\n\nBRIEF (the brand's own creative brief on TRYBE):\n${briefText}` : ''}${sentText ? `\n\nWHAT THE BRAND SENT (its own documents: PDFs the creator added and documents linked in its messages, read by MVP). Follow every instruction in them exactly, like the brief: words to say or never say, claims, shots, length, format, music, on-screen text, disclosure. Where they differ from anything else here, they win:\n${sentText}` : ''}${product ? `\n\nTHE PRODUCT ON HAND: ${product}. The creator has this one in hand, so every video is about it and shows it.` : ''}${trybeText ? `\n\n${trybeText}` : ''}${amazonText ? `\n\n${amazonText}` : ''}${metaAdsText ? `\n\n${metaAdsText}` : ''}${rivalAdsText ? `\n\n${rivalAdsText}` : ''}${winners.length ? `\n\n${winnersBlock(winners)}` : ''}${examplesText ? `\n\n${examplesText}` : ''}${hooksText ? `\n\n${hooksText}` : ''}${shot ? '\n\nSCREENSHOT: attached above, of the product or its reviews. Read the product and anything buyers say in it.' : ''}${buyersText ? `\n\n${buyersText}` : ''}${contextText ? `\n\nREMEMBER: every one of the ${VIDEO_IDEAS} videos follows THE CREATOR'S CONTEXT at the top, each from its own CONTEXT IDEA${ctxPlan?.places.length ? `, every shot filmed where it says` : ''}.` : ''}` },
+      ]
       const msg = await createAnthropicClient().messages.create({
         // Room for ten scripts, their B-roll (2026-10-22) and why each hook
         // works (2026-11-06).
         model: MODEL, max_tokens: 14000,
-        system: VIDEO_PLAN_SYSTEM(BANNED_RULE),
-        messages: [{ role: 'user', content: [
-          ...(shot ? [{ type: 'image' as const, source: { type: 'base64' as const, media_type: `image/${shot[1]}` as 'image/jpeg' | 'image/png' | 'image/webp', data: shot[2] } }] : []),
-          { type: 'text' as const, text: `BRAND:\n${brandBlock({ name: row.name, categories: row.categories || [], about: row.about, siteSummary: summary, products, onSale, payText: row.pay_text })}${briefText ? `\n\nBRIEF (the brand's own creative brief on TRYBE):\n${briefText}` : ''}${sentText ? `\n\nWHAT THE BRAND SENT (its own documents: PDFs the creator added and documents linked in its messages, read by MVP). Follow every instruction in them exactly, like the brief: words to say or never say, claims, shots, length, format, music, on-screen text, disclosure. Where they differ from anything else here, they win:\n${sentText}` : ''}${product ? `\n\nTHE PRODUCT ON HAND: ${product}. The creator has this one in hand, so every video is about it and shows it.` : ''}${contextText ? `\n\n${contextText}` : ''}${trybeText ? `\n\n${trybeText}` : ''}${amazonText ? `\n\n${amazonText}` : ''}${metaAdsText ? `\n\n${metaAdsText}` : ''}${rivalAdsText ? `\n\n${rivalAdsText}` : ''}${winners.length ? `\n\n${winnersBlock(winners)}` : ''}${examplesText ? `\n\n${examplesText}` : ''}${hooksText ? `\n\n${hooksText}` : ''}${shot ? '\n\nSCREENSHOT: attached above, of the product or its reviews. Read the product and anything buyers say in it.' : ''}${buyersText ? `\n\n${buyersText}` : ''}` },
-        ] }],
+        system: VIDEO_PLAN_SYSTEM(BANNED_RULE, !!contextText),
+        messages: [{ role: 'user', content: userContent }],
       })
       try { const u = usageFromAnthropic(msg); recordUsage({ userId, tier, feature: 'trybe_video_plan', model: MODEL, input: u.input, output: u.output }) } catch { /* best-effort */ }
-      const parsed = parseVideoPlan((msg.content as Array<{ type: string; text?: string }>).map(b => b.type === 'text' ? b.text || '' : '').join(''), reviewCorpus(buyerReviews))
+      const answer = (msg.content as Array<{ type: string; text?: string }>).map(b => b.type === 'text' ? b.text || '' : '').join('')
+      const parsed = parseVideoPlan(answer, reviewCorpus(buyerReviews))
       if (!parsed) return NextResponse.json({ error: 'The plan came back in a shape MVP could not read. Try again.' }, { status: 502 })
+      // EVERY VIDEO FOLLOWS THE CONTEXT: each one checked (the names it must
+      // use, where it is filmed), and the ones that missed rewritten once. What
+      // came of it is kept on the set and said on screen.
+      let contextCheck: { checked: boolean; followed: number; of: number; missed: number[]; fixed: number } | null = null
+      if (contextText && parsed.videos?.length) {
+        let r = contextMisses(parsed.videos, ctxPlan, contextWords)
+        let fixed = 0
+        if (r.misses.length && Date.now() - started < 170_000) {
+          try {
+            const fx = await createAnthropicClient().messages.create({ model: MODEL, max_tokens: 8000, system: VIDEO_PLAN_SYSTEM(BANNED_RULE, true),
+              messages: [{ role: 'user', content: userContent }, { role: 'assistant', content: answer }, { role: 'user', content: contextFixPrompt(r.misses) }] })
+            try { const u = usageFromAnthropic(fx); recordUsage({ userId, tier, feature: 'trybe_video_plan_context', model: MODEL, input: u.input, output: u.output }) } catch { /* best-effort */ }
+            const fm = (fx.content as Array<{ type: string; text?: string }>).map(b => b.type === 'text' ? b.text || '' : '').join('').match(/\{[\s\S]*\}/)
+            const rewrites = fm ? readVideoIdeas((JSON.parse(fm[0]) as { videos?: unknown }).videos) : []
+            if (rewrites.length) {
+              const before = r.misses.length
+              parsed.videos = withRewrites(parsed.videos, r.misses, rewrites)
+              r = contextMisses(parsed.videos, ctxPlan, contextWords)
+              fixed = Math.max(0, before - r.misses.length)
+            }
+          } catch { /* the first set stands, and the screen says which missed */ }
+        }
+        contextCheck = { checked: r.checked, followed: parsed.videos.length - r.misses.length, of: parsed.videos.length, missed: r.misses.map((m) => m.index + 1), fixed }
+      }
       // BUILT ON A WINNER: each video's named top video, checked against the
       // ones given (lib/trybe-playbook linkInspired).
       if (parsed.videos) parsed.videos = linkInspired(parsed.videos, examples, winners.length)
       const builtOn = parsed.videos?.filter((v) => v.inspired).length ?? 0
-      const plan = { ...honestCtas(parsed, onSale), ...(briefState ? { brief: briefState } : {}), ...(sentText ? { fromMessages: true, brandDocs: sent.docs } : {}), ...(buyerReport ? { buyerReport } : {}), ...(contextText ? { context: contextWords } : {}) }
+      const plan = { ...honestCtas(parsed, onSale), ...(briefState ? { brief: briefState } : {}), ...(sentText ? { fromMessages: true, brandDocs: sent.docs } : {}), ...(buyerReport ? { buyerReport } : {}), ...(contextText ? { context: contextWords } : {}), ...(contextCheck ? { contextCheck } : {}) }
       // KEPT UNTIL YOU CLEAR IT (Seb, 2026-11-06: "make sure ... that we
       // actually save them, even if we refresh or leave"): every plan goes to
       // the saved ideas, a sample's too, so Your saved scripts lists it.
