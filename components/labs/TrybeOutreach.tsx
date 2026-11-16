@@ -25,7 +25,7 @@ import { useEffectiveTier } from '@/lib/useEffectiveTier'
 import { toast } from 'sonner'
 import { Loader2, Lock, Search, Sparkles, Send, Square, ExternalLink, Check, AlertTriangle, Globe, Star, Handshake, RotateCcw, X, Trash2, Tag,
   Dumbbell, Shirt, House, UtensilsCrossed, Baby, PawPrint, Gem, Cpu, Tent, Plane, BookOpen, Church, Palette, SprayCan, Moon, Pill, HeartPulse,
-  ScanSearch, Scissors, Droplet, Coffee, Leaf, Wand2, MessageCircle, Pencil, ChevronUp, Bell, Lightbulb, CalendarDays, Inbox, ArrowRight, Clapperboard, UploadCloud, BarChart3, Rocket, ListChecks, LayoutDashboard, SlidersHorizontal, type LucideIcon } from 'lucide-react'
+  ScanSearch, Scissors, Droplet, Coffee, Leaf, Wand2, MessageCircle, Pencil, ChevronUp, Bell, Lightbulb, CalendarDays, Inbox, ArrowRight, Clapperboard, UploadCloud, BarChart3, Rocket, Trophy, ListChecks, LayoutDashboard, SlidersHorizontal, type LucideIcon } from 'lucide-react'
 import { nameKey, trybeSearchPath, brandsNamed, TRYBE_SEARCH_PARAMS } from '@/lib/trybe-name-lookup'
 import { TOP100, META_ROUND, META_ROUNDS_MAX } from '@/lib/trybe-top100'
 import { ensureTrybeTab, requestTrybeTab, requestTrybeTabOpen, requestTrybeMorning, type TrybeMorning, requestTrybeApi, requestTrybeAccess, requestTrybeScan, requestTrybeSend, requestTrybeHarvest, requestTrybeRun, requestTrybeRunStatus, requestTrybeRunStop, type TrybeScanPass, type TrybeRun } from '@/lib/extension-frame'
@@ -33,6 +33,7 @@ import { readMetaAds, readMetaAdsAll, metaAdsWords, metaBrandOf, type MetaAdsRun
 import TrybeTabGate from '@/components/labs/TrybeTabGate'
 import TrybeStarBrands from '@/components/labs/TrybeStarBrands'
 import TrybeTikTokMatch from '@/components/labs/TrybeTikTokMatch'
+import TrybeTopBoard from '@/components/labs/TrybeTopBoard'
 import { TRYBE_OPEN_URL, TRYBE_NOT_OPEN, TRYBE_NOT_OPEN_WORDS, trybeTabWords, type TrybeTabState } from '@/lib/trybe-tab'
 import { nextGapMs, prefsKey, CATEGORY_SUGGESTIONS, DAILY_FIND, SCAN_READ, SHORT_RUN_UNDER, SHORT_GAP_MS, MAX_DAILY_CAP, termsHits, quoteHits } from '@/lib/trybe-outreach'
 import TrybeInbox, { fetchTrybeInbox, lastIsMine, type Conversation } from '@/components/labs/TrybeInbox'
@@ -135,7 +136,7 @@ type Access = 'checking' | 'granted' | 'not-granted' | 'no-scout' | 'old' | 'no-
 interface Directory { brands: number; listed?: number | null; firstCountAt?: string | null; joinedSinceFirst?: number | null; joinedStillListed?: number | null; withWebsite: number; websitesRead: number; lastCollectedAt: string | null; lastPartial?: { at: string; pages: number | null; totalPages: number | null } | null; categories: string[]; top100?: { at?: string; entries?: number; brands?: number; matched?: number } | null }
 /** The whole list is collected again after this long. */
 const RECOLLECT_MS = 20 * 3600_000
-export type Tab = 'home' | 'create' | 'upload' | 'find' | 'stars' | 'filmed' | 'queue' | 'sent' | 'inbox' | 'analytics' | 'submissions' | 'brands' | 'week' | 'changes' | 'working'
+export type Tab = 'home' | 'create' | 'upload' | 'find' | 'stars' | 'top100' | 'filmed' | 'queue' | 'sent' | 'inbox' | 'analytics' | 'submissions' | 'brands' | 'week' | 'changes' | 'working'
 /** One brand from MVP's copy of TRYBE, as the live list shows it. */
 interface LiveBrand {
   brand_id: string; name: string; website: string | null; categories: string[]; about: string | null
@@ -405,6 +406,8 @@ const TABS: Array<{ id: Tab; label: string; icon: LucideIcon; group: TabGroup; s
   // STAR BRANDS (Seb, 2026-10-21: "a fourth button that basically has a new
   // page ... find the next big opportunity, MVP's star brand of the week").
   { id: 'stars', label: 'Star brands', icon: Rocket, group: 'brands', says: 'The next big opportunity: top rated TRYBE brands running the most Meta ads per review, and how known each one is.' },
+  // THE TOP 100 BOARD (Seb, 2026-11-16, labs-preview trybe_top_board).
+  { id: 'top100', label: 'Top 100', icon: Trophy, group: 'brands', says: 'Who is winning TRYBE\u2019s Top 100 this month, who is climbing, and who is worth contacting, with why in one line.' },
   // MATCH MY TIKTOK (Seb, 2026-11-09): the TRYBE brands you already filmed.
   { id: 'filmed', label: 'Match my TikTok', icon: ScanSearch, group: 'brands', says: 'The TRYBE brands you already filmed: SCOUT reads your public TikTok videos and MVP matches each one, saying how it knows.' },
   { id: 'queue', label: 'Ready to send', icon: Send, group: 'brands', says: 'Messages written and waiting. SCOUT sends them slowly, under your daily limit.' },
@@ -567,7 +570,7 @@ function sentShows(r: { b: { name: string; status: string }; reply: string; rq?:
   return r.reply !== 'replied' && (WENT as string[]).includes(r.b.status)
 }
 
-export default function TrybeOutreach({ preview = false, v2 = false, layout = false }: { preview?: boolean; v2?: boolean; layout?: boolean } = {}) {
+export default function TrybeOutreach({ preview = false, v2 = false, layout = false, topBoard = false }: { preview?: boolean; v2?: boolean; layout?: boolean; topBoard?: boolean } = {}) {
   // THE NEW TRYBE (Seb, 2026-11-06): team only first (labs-preview
   // 'trybe_v2'), so members keep the page they know until it is opened to them.
   const [dossierOf, setDossierOf] = useState<{ id: string; name: string } | null>(null)
@@ -603,9 +606,11 @@ export default function TrybeOutreach({ preview = false, v2 = false, layout = fa
     if (!t || !TABS.some(x => x.id === t)) return
     // The home is the new TRYBE's: an address with it, opened without the switch, opens as before.
     if (t === 'home' && !v2) return
+    // The Top 100 board only where Labs opens it.
+    if (t === 'top100' && !topBoard) return
     if (preview) { if (t !== 'find') setLockedTab(t as Tab); else setLockedTab(null); return }
     setLockedTab(null); setTab(t as Tab)
-  }, [preview, v2])
+  }, [preview, v2, topBoard])
   // Switched off while on the home (View as a member): back to the page's usual first tab, never a blank page.
   useEffect(() => { if (!v2 && tab === 'home') setTab(preview ? 'find' : 'create') }, [v2, tab, preview])
   const [core, setCore] = useState('')
@@ -2526,7 +2531,7 @@ export default function TrybeOutreach({ preview = false, v2 = false, layout = fa
       )}
 
       {v2
-        ? <TrybeNav tab={tab} queue={queue.length} unread={navUnread} go={go} layout={layout} />
+        ? <TrybeNav tab={tab} queue={queue.length} unread={navUnread} go={go} layout={layout} topBoard={topBoard} />
         : <TrybeMenu tab={tab} lockedTab={lockedTab} preview={preview} queue={queue} history={history} unread={navUnread} changes={changes} go={go} />}
       {/* Where you are, and what it is for. */}
       {(() => {
@@ -2585,6 +2590,11 @@ export default function TrybeOutreach({ preview = false, v2 = false, layout = fa
         <TrybeTikTokMatch hasCore={!!core.trim()} onWrite={(ids) => draftPicked(ids)} scoutOpens={scoutOpens}
           onSend={peekActions ? (id) => peekActions.send(id) : undefined} sendBlocked={sendBlocked && !/Nothing drafted/.test(sendBlocked) ? sendBlocked : null}
           onScripts={(id, name, product) => { setScriptsFor({ id, name, product }); go('create') }} onOpenQueue={() => go('queue')} onOpenUpload={() => go('upload')} />
+      )}
+
+      {tab === 'top100' && topBoard && !lockedTab && (
+        <TrybeTopBoard scoutOpens={scoutOpens} actions={peekActions} cats={cats} kws={kws}
+          onScripts={(id, nm) => { setScriptsFor({ id, name: nm }); go('create') }} />
       )}
 
       {tab === 'stars' && !lockedTab && (

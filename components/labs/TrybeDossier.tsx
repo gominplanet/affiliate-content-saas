@@ -26,6 +26,7 @@ import TrybeLink from '@/components/labs/TrybeLink'
 import { BrandProof, RetainerBadge } from '@/components/labs/TrybeFinderControls'
 import { BrandName } from '@/components/labs/trybe-dossier-context'
 import type { PeekActions } from '@/components/labs/TrybeBrandPeek'
+import { inTop, pointsFor, moveWords, placesWords, type BoardBrand } from '@/lib/trybe-topboard'
 
 /** What the brand page reads, from 'browse' by id (the listing) and 'dossier' (the rest). */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -42,6 +43,8 @@ interface DossierRead {
   samples: SamplePool | null
   replies: ReplyPool | null
   top: Array<{ id: string; creator: string | null; rank: number | null; seconds: number | null; hook: string | null; thumbnail: string | null; video: string | null }>
+  /** Its days in TRYBE's Top 100, from the days MVP saved (lib/trybe-topboard). Null when they could not be read. */
+  onBoard?: { days: string[]; latest: string | null; notSaved: number; brand: BoardBrand | null } | null
   similar?: Array<{ brand_id: string; name: string; website: string | null; pay: string | null; metaAds: number | null; rating: number | null; category: string | null }>
   you: { status: string | null; sentAt: string | null; repliedAt: string | null; draftedAt: string | null; fit: number | null; fitReason: string | null; samples: Array<{ product: string; requestedAt: string | null; receivedAt: string | null; filmedAt: string | null; submittedAt: string | null }> }
 }
@@ -345,6 +348,11 @@ export default function TrybeDossier({ brandId, name, onClose, actions, scout = 
             </Section>
           )}
 
+          {/* ── ON THE BOARD (Seb, 2026-11-16, after TrybeDaily's brand drawer):
+              its days in TRYBE's Top 100 from the days MVP saved, one square a
+              saved day. A day not saved is not a square, never "out". ──── */}
+          {d && <OnTheBoard ob={d.onBoard} name={title} />}
+
           {/* ── TOP 100 VIDEOS ───────────────────────────────────────────── */}
           {d && d.top.length > 0 && (
             <Section title="Its videos in TRYBE&rsquo;s Top 100" aside="The openings that made its best ads">
@@ -452,4 +460,44 @@ function Logo({ src, name, website, small = false }: { src: string | null; name:
   if (!url) return <span className={`${box} flex items-center justify-center ${small ? 'text-[15px]' : 'text-[24px]'} font-bold`} style={{ background: 'rgb(var(--brand-rgb) / 0.12)', color: 'var(--accent-text, var(--accent))', ...ui.num }} aria-hidden="true">{(name.trim()[0] || '?').toUpperCase()}</span>
   // eslint-disable-next-line @next/next/no-img-element
   return <img src={url} alt="" onError={() => setBad((n) => n + 1)} className={`${box} object-contain p-1.5`} style={{ background: '#fff', border: '1px solid var(--border)' }} />
+}
+
+/** ON THE BOARD: days in, #1 days, best and average place, longest run, and
+ *  the saved days as squares, darker for a higher place. */
+function OnTheBoard({ ob, name }: { ob: DossierRead['onBoard']; name: string }) {
+  const dayOf = (d: string) => new Date(`${d}T12:00:00Z`).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+  if (ob === undefined) return null
+  if (ob === null) return <Section title="On TRYBE&rsquo;s Top 100"><p className="text-[13px] rounded-2xl p-4" style={{ ...ui.card, ...ui.soft }}>MVP could not read the days it saved of the Top 100. Close this page and open it again.</p></Section>
+  const saved = ob.days.length
+  if (!saved) return <Section title="On TRYBE&rsquo;s Top 100"><p className="text-[13px] rounded-2xl p-4" style={{ ...ui.card, ...ui.soft }}>MVP has not saved a day of TRYBE&rsquo;s Top 100 yet.</p></Section>
+  const b = ob.brand
+  const since = `${saved} saved day${saved === 1 ? '' : 's'} since ${dayOf(ob.days[0])}${ob.notSaved ? `, ${ob.notSaved} not saved` : ''}`
+  if (!b) return <Section title="On TRYBE&rsquo;s Top 100" aside={since}><p className="text-[13px] rounded-2xl p-4" style={{ ...ui.card, ...ui.soft }}>{name} was not in TRYBE&rsquo;s Top 100 on any of the {saved} days MVP saved.</p></Section>
+  const shade = (p: number | null) => (inTop(p) ? `rgb(var(--brand-rgb) / ${(0.18 + 0.82 * (pointsFor(p) / 100)).toFixed(2)})` : 'var(--surface-2)')
+  return (
+    <Section title="On TRYBE&rsquo;s Top 100" aside={since}>
+      <div className="rounded-2xl p-5 flex flex-col gap-4" style={ui.card}>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-[13.5px] font-semibold" style={ui.text}>{inTop(b.today) ? `#${b.today} today` : 'Not in it today'}</span>
+          {(b.move != null || b.kind === 'new') && <Tag tone={b.kind === 'new' ? 'accent' : (b.move ?? 0) > 0 ? 'good' : (b.move ?? 0) < 0 ? 'bad' : 'plain'}>{moveWords(b)} this week{b.kind !== 'new' && b.then != null ? ` (${placesWords(b)})` : ''}</Tag>}
+          {b.back && <Tag tone="warn" title={`Out of the Top 100 for ${b.gap} saved days, then back in this week`}>Back after a gap</Tag>}
+          <span className="text-[12.5px] ml-auto" style={ui.soft}>Score {b.score.toFixed(1)} of 100</span>
+        </div>
+        <div className="grid grid-cols-3 gap-x-6 gap-y-5">
+          <Figure label="Days in" value={`${b.daysIn}/${saved}`} sub="Saved days in the Top 100" />
+          <Figure label="#1 days" value={String(b.ones)} sub={b.ones ? 'At the very top' : 'Never #1 on a saved day'} />
+          <Figure label="Best place" value={b.best != null ? `#${b.best}` : 'None'} sub={b.lastIn ? `Last in it ${dayOf(b.lastIn)}` : undefined} />
+          <Figure label="Average place" value={b.avg != null ? `#${b.avg}` : 'None'} sub="On the days it was in" />
+          <Figure label="Longest run" value={`${b.run} day${b.run === 1 ? '' : 's'}`} sub={b.runNow ? `In it ${b.runNow} day${b.runNow === 1 ? '' : 's'} running now` : 'Saved days in a row'} />
+          <Figure label="Videos in it" value={String(b.videos)} sub={b.top10 ? `${b.top10} in the top 10` : `On ${dayOf(ob.latest || ob.days[saved - 1])}`} />
+        </div>
+        <div>
+          <div className="grid gap-[3px]" style={{ gridTemplateColumns: `repeat(${saved}, minmax(0, 1fr))` }} role="img" aria-label={`${name}: in TRYBE's Top 100 on ${b.daysIn} of ${saved} saved days`}>
+            {b.places.map((p, i) => <span key={ob.days[i]} title={`${dayOf(ob.days[i])}: ${inTop(p) ? `#${p}` : p != null ? `#${p}, past the Top 100` : 'not in the Top 100'}`} className="aspect-square rounded-[3px]" style={{ background: shade(p) }} />)}
+          </div>
+          <div className="flex justify-between mt-1 text-[11px]" style={ui.soft}><span>{dayOf(ob.days[0])}</span><span>Darker is a higher place</span><span>{dayOf(ob.days[saved - 1])}</span></div>
+        </div>
+      </div>
+    </Section>
+  )
 }

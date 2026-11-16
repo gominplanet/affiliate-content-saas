@@ -36,7 +36,8 @@ import { linkKind, cleanReviews, reviewsBlock, reviewCorpus } from '@/lib/produc
 import { followShort, readTikTok } from '@/lib/buyer-sources'
 import { winnersForPlan, winnersBlock, readScript } from '@/lib/trybe-mybrands'
 import { directoryChanges, adsChange, poolBrands, type Change, type MemberRow } from '@/lib/trybe-changes'
-import { topDayKey, topDayOf, TOP_DAYS_KEEP } from '@/lib/trybe-topdays'
+import { topDayKey, topDayOf, TOP_DAYS_KEEP, type TopDay } from '@/lib/trybe-topdays'
+import { buildBoard, BOARD_DAYS, type Board } from '@/lib/trybe-topboard'
 import { activeKeys, activeRows, activeBy, rankActive, categoryCounts, latestTierChanges, type ActiveBy, type ActiveRow } from '@/lib/trybe-active'
 import { GALLERY_KEY, readCardsBody, readAdCard, mergeGallery, type Gallery, type MetaAd, brandsWithAds, GALLERY_MAX, ownAd, HOOKS_KEY, withHooks, type AdHooks, brandAdsForPlan, brandAdsBlock, type PlanAd, competitorAdsForPlan, competitorAdsBlock } from '@/lib/trybe-adsgallery'
 import { hearMetaAds } from '@/lib/meta-ad-hear'
@@ -54,7 +55,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { readSampleCatalogs, refreshCatalogs } from '@/lib/trybe-catalog-refresh'
 import { payLinePass, popularityPass, sitesPass, socialsPass, directoryLeft } from '@/lib/trybe-directory-refresh'
 import { getAuthAndOwner } from '@/lib/agency-auth'
-import { trybeAccess, TRYBE_PREVIEW_ACTIONS } from '@/lib/labs-preview'
+import { trybeAccess, canUsePreview, TRYBE_PREVIEW_ACTIONS } from '@/lib/labs-preview'
 import { normalizeTier } from '@/lib/tier'
 import { spendGate } from '@/lib/ai-spend'
 import { createAnthropicClient } from '@/lib/anthropic'
@@ -546,6 +547,38 @@ async function activeBoard(admin: Db): Promise<ActiveBoardOut | { error: string 
   return board
 }
 
+/** THE TOP 100 BOARD (lib/trybe-topboard; Seb, 2026-11-16, layout D), worked
+ *  out from the Top 100 MVP saves every day, for everyone once in a while per
+ *  server, with each brand's name, pay and categories from MVP's copy of
+ *  TRYBE. A brand MVP's copy does not have is left out of the info, and the
+ *  page leaves it off the board rather than show an id. */
+interface TopBoardInfo { name: string; website: string | null; categories: string[]; pay_text: string | null; creators: number | null; earnings_bucket: string | null }
+interface TopBoardOut { board: Board; info: Record<string, TopBoardInfo> }
+let topBoardCache: { at: number; out: TopBoardOut } | null = null
+async function topBoardShared(admin: Db): Promise<TopBoardOut | { error: string }> {
+  if (topBoardCache && Date.now() - topBoardCache.at < 20 * 60_000) return topBoardCache.out
+  const since = topDayKey(new Date(Date.now() - (BOARD_DAYS + 3) * 86_400_000).toISOString())
+  const { data, error: e } = await admin.from('trybe_directory_meta').select('key, value').like('key', 'top:%').gte('key', since).order('key', { ascending: true }).limit(BOARD_DAYS + 6)
+  if (e) return { error: e.message }
+  const saved = ((data || []) as Array<{ key: string; value: unknown }>)
+    .map(r => ({ date: r.key.replace(/^top:/, ''), day: r.value as TopDay }))
+    .filter(x => /^\d{4}-\d{2}-\d{2}$/.test(x.date) && !!x.day && typeof x.day === 'object' && !!x.day.brands)
+  const board = buildBoard(saved)
+  const ids = board.brands.map(b => b.id)
+  const info: Record<string, TopBoardInfo> = {}
+  for (let i = 0; i < ids.length; i += 200) {
+    const { data: rows, error: iErr } = await admin.from('trybe_directory').select('brand_id, name, website, categories, pay_text, total_creators, earnings_bucket').in('brand_id', ids.slice(i, i + 200))
+    if (iErr) return { error: iErr.message }
+    for (const r of (rows || []) as Array<Record<string, any>>) { // eslint-disable-line @typescript-eslint/no-explicit-any
+      if (!r.name) continue
+      info[String(r.brand_id)] = { name: String(r.name), website: r.website ?? null, categories: Array.isArray(r.categories) ? (r.categories as string[]).slice(0, 4) : [], pay_text: r.pay_text ?? null, creators: typeof r.total_creators === 'number' ? r.total_creators : null, earnings_bucket: r.earnings_bucket ?? null }
+    }
+  }
+  const out: TopBoardOut = { board, info }
+  topBoardCache = { at: Date.now(), out }
+  return out
+}
+
 /** The hooks winning on TRYBE, as last kept (lib/trybe-hooks). */
 async function readTopHookList(admin: Db): Promise<{ at: string; hooks: TopHook[] } | null> {
   const { data } = await admin.from('trybe_directory_meta').select('value').eq('key', 'top100_hooks').maybeSingle()
@@ -946,6 +979,25 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: true, ...board, brands: board.brands.map(b => ({ ...b, status: statusBy.get(b.brand_id) ?? null })) })
   }
 
+  if (action === 'top_board') {
+    // THE TOP 100 BOARD (Seb, 2026-11-16: "MVP should be really the place
+    // where people go" for TRYBE's Top 100, and "a little mix of everything"
+    // of the four layouts). The board everyone shares, from the Top 100 MVP
+    // saves every day, with where this creator stands with each brand. Fit is
+    // MVP's own pick, read by the page through 'browse' by ids, the same as
+    // Find brands. Behind Labs until it is opened (lib/labs-preview).
+    if (!canUsePreview('trybe_top_board', tier)) return NextResponse.json({ error: 'The Top 100 board is still being tested by the MVP team.', code: 'tier_not_allowed' }, { status: 403 })
+    const shared = await topBoardShared(admin)
+    if ('error' in shared) return NextResponse.json({ error: shared.error }, { status: 500 })
+    const ids = shared.board.brands.filter(b => shared.info[b.id]).map(b => b.id)
+    const status: Record<string, string> = {}
+    for (let i = 0; i < ids.length; i += 200) {
+      const { data: mine } = await admin.from('trybe_brands').select('brand_id, status').eq('user_id', ownerId).in('brand_id', ids.slice(i, i + 200))
+      for (const r of (mine || []) as Array<{ brand_id: string; status: string | null }>) if (r.status) status[r.brand_id] = r.status
+    }
+    return NextResponse.json({ ok: true, ...shared.board, brands: shared.board.brands.filter(b => shared.info[b.id]), info: shared.info, status })
+  }
+
   if (action === 'off_discover') {
     // NOT ON TRYBE'S DISCOVER LIST (Seb, 2026-10-17: "do ... ten"): brands
     // MVP's last whole read of TRYBE's list did not have (left_at), and brands
@@ -1185,6 +1237,8 @@ export async function POST(request: Request) {
     try {
       await admin.from('trybe_directory_meta').upsert({ key: topDayKey(now), value: topDayOf(entries, nameIds, now), updated_at: now })
       await admin.from('trybe_directory_meta').delete().like('key', 'top:%').lt('key', topDayKey(new Date(Date.now() - TOP_DAYS_KEEP * 86_400_000).toISOString()))
+      // The board shows today's read on this server at once.
+      topBoardCache = null
     } catch { /* the Top 100 itself is saved */ }
     // HOOKS WINNING ON TRYBE (lib/trybe-hooks): the Top 100's own words when
     // it carries them; else the page reads each video's script through SCOUT
@@ -3212,9 +3266,14 @@ Weigh posts pushed to social, and TRYBE brands they earned with or submitted to,
     const mine = mineQ.data as Record<string, any> | null // eslint-disable-line @typescript-eslint/no-explicit-any
     // Its own Page on Meta, when SCOUT found it (SCOUT 1.57.0): the link opens that Page.
     const metaPage = (await metaPagesOf(admin, [brandId]).catch(() => new Map())).get(brandId)
+    // ON THE BOARD (lib/trybe-topboard): its days in TRYBE's Top 100 from the
+    // days MVP saved. Null when the saved days could not be read, which the
+    // page says, never "not in the Top 100".
+    const tb = await topBoardShared(admin).catch(() => ({ error: 'could not be read' }))
     return NextResponse.json({
       ok: true,
       metaPage: metaPage?.id ? { id: metaPage.id, name: metaPage.name } : null,
+      onBoard: 'error' in tb ? null : { days: tb.board.days, latest: tb.board.latest, notSaved: tb.board.notSaved, brand: tb.board.brands.find(b => b.id === brandId) ?? null },
       brand: dir ? { id: brandId, name: dir.name, website: dir.website ?? null, categories: dir.categories || [], about: dir.about ?? null, firstSeen: dir.first_seen_at ?? null, lastSeen: dir.last_seen_at ?? null, left: !!dir.left_at } : null,
       pub,
       timeline: timelineOf(changes).slice(0, 40),

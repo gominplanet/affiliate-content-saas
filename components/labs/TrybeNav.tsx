@@ -12,7 +12,7 @@
 // on a phone), each saying what waits in it, and the pages of the open job sit
 // under them as tabs that wrap. Nothing is hidden off the edge.
 
-import { LayoutDashboard, Search, Rocket, ScanSearch, Send, Inbox, Clapperboard, UploadCloud, CalendarDays, Lightbulb, BarChart3, ListChecks, Bell, Megaphone, ChevronRight, MessageCircle, Check, Star, type LucideIcon } from 'lucide-react'
+import { LayoutDashboard, Search, Rocket, ScanSearch, Send, Inbox, Clapperboard, UploadCloud, CalendarDays, Lightbulb, BarChart3, ListChecks, Bell, Megaphone, ChevronRight, MessageCircle, Check, Star, Trophy, type LucideIcon } from 'lucide-react'
 import type { Tab } from '@/components/labs/TrybeOutreach'
 
 type Item = { label: string; icon: LucideIcon; tabs: Tab[]; count?: 'queue' | 'unread' }
@@ -22,6 +22,7 @@ const GROUPS: Group[] = [
   { id: 'get', label: 'Get brands', icon: Megaphone, hint: 'Find, message, answer', items: [
     { label: 'Find brands', icon: Search, tabs: ['find'] },
     { label: 'Star brands', icon: Rocket, tabs: ['stars'] },
+    { label: 'Top 100', icon: Trophy, tabs: ['top100'] },
     { label: 'Match my TikTok', icon: ScanSearch, tabs: ['filmed'] },
     { label: 'Outreach', icon: Send, tabs: ['queue', 'sent'], count: 'queue' },
     { label: 'Inbox', icon: Inbox, tabs: ['inbox'], count: 'unread' },
@@ -64,6 +65,9 @@ export const GROUPS_V3: Group[] = [
   { id: 'find', label: 'Find brands', icon: Search, hint: 'Search TRYBE', items: [
     { label: 'Find brands', icon: Search, tabs: ['find'] },
     { label: 'Star brands', icon: Rocket, tabs: ['stars'] },
+    // THE TOP 100 BOARD (Seb, 2026-11-16): who is winning TRYBE's Top 100,
+    // and who is worth contacting (labs-preview trybe_top_board).
+    { label: 'Top 100', icon: Trophy, tabs: ['top100'] },
     // MATCH MY TIKTOK (Seb, 2026-11-09): the TRYBE brands you already filmed.
     { label: 'Match my TikTok', icon: ScanSearch, tabs: ['filmed'] },
   ] },
@@ -96,8 +100,9 @@ export function groupOf(tab: Tab, layout = false): string {
   return (groups.find((g) => g.items.some((it) => it.tabs.includes(tab))) ?? groups[0]).id
 }
 
-export default function TrybeNav({ tab, queue, unread, go, layout = false }: { tab: Tab; queue: number; unread: number; go: (t: Tab) => void; layout?: boolean }) {
-  const groups = layout ? GROUPS_V3 : GROUPS
+export default function TrybeNav({ tab, queue, unread, go, layout = false, topBoard = false }: { tab: Tab; queue: number; unread: number; go: (t: Tab) => void; layout?: boolean; topBoard?: boolean }) {
+  // The Top 100 board only where Labs opens it (labs-preview trybe_top_board).
+  const groups = (layout ? GROUPS_V3 : GROUPS).map((g) => ({ ...g, items: g.items.filter((it) => topBoard || !it.tabs.includes('top100')) }))
   const open = groupOf(tab, layout)
   const countOf = (it: Item) => (it.count === 'queue' ? queue : it.count === 'unread' ? unread : 0)
   const firstOf = (it: Item): Tab => (it.count === 'queue' && it.tabs.includes('sent') ? (queue ? 'queue' : 'sent') : it.tabs[0])

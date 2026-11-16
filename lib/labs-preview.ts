@@ -9,7 +9,7 @@
 import { normalizeTier } from '@/lib/tier'
 import { canSeeNav } from '@/lib/feature-access'
 
-export type PreviewFeature = 'on_sale' | 'amazon_live' | 'comparison' | 'shorts_mode' | 'first_comment' | 'brand_recap' | 'deal_aftercare' | 'post_refresh' | 'facebook_reels' | 'whole_video' | 'sold_campaigns' | 'liftoff_split' | 'earnings' | 'live_followup' | 'video_plan' | 'studio_upload' | 'facebook_setup' | 'group_queue' | 'trybe_outreach' | 'hashtag_trends' | 'drop' | 'video_qr' | 'deals_import' | 'product_scripts' | 'review_edit' | 'creator_look' | 'new_look' | 'trybe_v2' | 'section_nav' | 'trybe_layout' | 'menu_v2' | 'trybe_batch'
+export type PreviewFeature = 'on_sale' | 'amazon_live' | 'comparison' | 'shorts_mode' | 'first_comment' | 'brand_recap' | 'deal_aftercare' | 'post_refresh' | 'facebook_reels' | 'whole_video' | 'sold_campaigns' | 'liftoff_split' | 'earnings' | 'live_followup' | 'video_plan' | 'studio_upload' | 'facebook_setup' | 'group_queue' | 'trybe_outreach' | 'hashtag_trends' | 'drop' | 'video_qr' | 'deals_import' | 'product_scripts' | 'review_edit' | 'creator_look' | 'new_look' | 'trybe_v2' | 'section_nav' | 'trybe_layout' | 'menu_v2' | 'trybe_batch' | 'trybe_top_board'
 
 /** Who may use each preview feature: 'admin' while testing, 'labs' once open to Pro. */
 const OPEN_TO: Record<PreviewFeature, 'admin' | 'labs'> = {
@@ -143,6 +143,12 @@ const OPEN_TO: Record<PreviewFeature, 'admin' | 'labs'> = {
   // PDF to shoot from (lib/trybe-batch). Open to Pro 2026-11-16 with the new
   // Brand scripts page (Seb: "make it available for everyone").
   trybe_batch: 'labs',
+  // THE TOP 100 BOARD (Seb, 2026-11-16, after TrybeDaily's Top brands: "MVP
+  // should be really the place where people go"; of four layouts, "a little
+  // mix of everything"): who is winning TRYBE's Top 100 and who is worth
+  // contacting, from the Top 100 MVP saves every day (lib/trybe-topboard).
+  // Admin first, a page of its own under Find brands.
+  trybe_top_board: 'admin',
 }
 
 /** Every preview feature. A check can then ask which are still admin only
