@@ -159,7 +159,7 @@ export const TOO_ALIKE = 0.85
 export const MAX_REWRITES = 2
 
 export function emptyRules(): BriefRules {
-  return { approvedClaims: [], bannedTerms: [], noPrices: true, noPercentOff: true, saleLanguageRule: '', saleWords: [...DEFAULT_SALE_WORDS], targetLengthSec: [25, 45], safeZoneNotes: '', productDelaySec: 0 }
+  return { approvedClaims: [], bannedTerms: [], noPrices: true, noPercentOff: true, saleLanguageRule: '', saleWords: [...DEFAULT_SALE_WORDS], targetLengthSec: [35, 50], safeZoneNotes: '', productDelaySec: 0 }
 }
 
 // ── Small helpers ────────────────────────────────────────────────────────────
@@ -247,6 +247,26 @@ export function planSlots(c: Campaign, existing: Array<Pick<Script, 'idx' | 'loc
 
 // ── The rule checker ─────────────────────────────────────────────────────────
 
+// ── The script craft playbook (Seb, 2026-11-16; docs/script-craft-playbook.md) ──
+
+/** A product line that reads like an ad (playbook section 6: "never
+ *  'Introducing' or 'Check out'"). Looked for in the product half only, so a
+ *  signature opener like "You need this now..." in the story is not caught. */
+const AD_WORDS = /\b(introducing|check (it|this|them) out|the ultimate|game[- ]?changer|must[- ]have|revolutionary|life[- ]?changing|you need (this|one|it)|buy (it|one|now)|don'?t miss (out|this))\b/i
+/** A comparison no brief approves ("same price", "better than"). */
+const COMPARE = /\b(same price|cheaper than|better than|beats (the|an?|any|every)|works like an?|like an? \w+ but (better|cheaper)|vs\.?|versus)\b/i
+/** Putting the product on something (a collar, a harness, a person). */
+const ATTACH = /\b(on (his|her|its|their|the dog'?s?|the cat'?s?) (collar|harness|leash|neck|back)|collar|harness|clipped (on|to)|attached (to|on)|wears?|wearing|tied (to|on)|around (his|her|its) neck)\b/i
+/** Someone real in the story: shot only if true (playbook section 5, Truth). */
+export const REAL_PERSON = /\b(my (wife|husband|mom|mother|dad|father|sister|brother|son|daughter|kids?|grandma|grandmother|grandpa|grandfather|aunt|uncle|cousin|friend|best friend|neighbou?r|boss|in-laws?|mother-in-law|father-in-law|partner|girlfriend|boyfriend)|a follower|someone commented|one of you commented|in the comments)\b/i
+/** A shot that shows an approved feature working. */
+const DEMO_SHOT = /\b(screen|app|recording|phone|map|alert|timeline|pair(ing|ed)?|tab|close-?up|insert|notification|dot)\b/i
+/** The first two words of each approved claim that make a clear feature name
+ *  ("live map", "arrival alert"), to keep feature talk out of the story. */
+function claimKeys(R: BriefRules): string[] {
+  const stop = new Set(['works', 'with', 'in', 'on', 'about', 'the', 'a', 'an', 'of', 'your', 'and', 'it', 'its', 'you', 'to', 'for', 'is', 'can', 'see'])
+  return R.approvedClaims.map((x) => x.text.toLowerCase().replace(/[^a-z0-9 -]+/g, ' ').trim().split(/\s+/).slice(0, 2)).filter((w) => w.length === 2 && w.every((x) => x.length > 2 && !stop.has(x))).map((w) => w.join(' '))
+}
 const TRAVEL_NOW: RegExp[] = [
   /\bI['’]?m\s+(checking in|boarding|flying|landing|about to (board|fly|check in)|heading (to|for) (my|the) gate|going through security|catching (a|my) flight|taking off)\b/i,
   /\bI\s+am\s+(checking in|boarding|flying|landing|about to (board|fly))\b/i,
@@ -287,8 +307,13 @@ export function checkScript(s: Pick<Script, 'idx' | 'title' | 'angle' | 'host' |
     for (const w of named) if (wordRe(w).test(inSay)) { say(`The product enters too early: "${w}" is in the title or the story, before ${R.productDelaySec} seconds.`); break }
     const inShow = s.story.map((b) => b.show).join(' \n ')
     for (const w of [...P.showDeny, ...named]) if (wordRe(w).test(inShow)) { say(`The story's shots show "${w}", a product or product-related object, before ${R.productDelaySec} seconds.`); break }
-    const st = storySeconds(s.story)
-    if (st < R.productDelaySec - 1) say(`The story runs about ${st} seconds, so the product would enter before ${R.productDelaySec} seconds.`)
+    // Long enough to fill the delay: 2.3 words a second at the least (playbook section 2).
+    const words = s.story.reduce((n, b) => n + wordsIn(b.say), 0)
+    const need = Math.ceil(R.productDelaySec * 2.3)
+    if (words < need) say(`The story has ${words} words, so the product would enter before ${R.productDelaySec} seconds (it needs at least ${need}).`)
+    // No feature talk before the product enters either.
+    const feat = claimKeys(R).find((k) => wordRe(k).test(inSay))
+    if (feat) say(`The story talks about a feature ("${feat}") before ${R.productDelaySec} seconds.`)
   }
 
   // Banned words and names, and the product's spelling, anywhere.
@@ -333,6 +358,24 @@ export function checkScript(s: Pick<Script, 'idx' | 'title' | 'angle' | 'host' |
     }
   }
 
+  // KEEP APART (playbook section 4): the product never does something with the
+  // context that no claim covers, such as a luggage tracker on the dog.
+  const ctxNames = c.context ? c.contextPlan?.mention || [] : []
+  if (ctxNames.length) {
+    const prod = [P.name, ...casedWords(P), ...P.categoryWords].filter(Boolean)
+    for (const b of [...s.story, ...s.body]) for (const t of [b.say, b.show]) {
+      if (prod.some((w) => wordRe(w).test(t)) && ctxNames.some((n) => wordRe(n).test(t)) && ATTACH.test(t)) { say(`It puts the product on ${ctxNames.find((n) => wordRe(n).test(t))}, which no approved claim covers.`); break }
+    }
+  }
+  const product = s.body.map((b) => b.say).join(' \n ')
+  const cmp = product.match(COMPARE)
+  if (cmp) say(`It compares the product ("${cmp[0]}"), which the brief does not approve.`)
+  const ad = product.match(AD_WORDS)
+  if (ad) say(`The product part reads like an ad ("${ad[0]}"). Say it the way you would tell a friend.`)
+  // SHOW WHAT YOU SAY (playbook section 5, Demo consistency).
+  if (s.body.some((b) => b.claimIds.length && !DEMO_SHOT.test(b.show))) warnings.push('A feature line has no shot that shows the feature working.')
+  if (!c.reality.isTraveling && c.reality.appFootageReuse && s.body.some((b) => /\b(screen recording|live map|in the app|app screen)\b/i.test(b.show) && !/\b(last|past|previous|earlier) trip\b/i.test(b.show))) warnings.push('App footage should say it is a screen recording from your last trip, since you are not travelling.')
+
   // Claims: only approved ones.
   const ids = new Set(R.approvedClaims.map((x) => x.id))
   for (const b of s.body) for (const id of b.claimIds) if (!ids.has(id)) { say(`It uses a claim that is not in the approved list (${id}).`); break }
@@ -347,6 +390,22 @@ export function checkScript(s: Pick<Script, 'idx' | 'title' | 'angle' | 'host' |
     if (norm(bodyText(o)) && norm(bodyText(o)) === norm(bodyText(s))) { say(`Same product part as #${o.idx}.`); break }
     const near = Math.max(likeness(openText(o), openText(s)), likeness(bodyText(o), bodyText(s)))
     if (near > TOO_ALIKE) { say(`Too close to #${o.idx} (${Math.round(near * 100)}% alike).`); break }
+  }
+
+  // ROTATION ACROSS THE BATCH (playbook section 8): the same product line in no
+  // more than about 1 in 10 scripts, the sale line in no more than 1 in 10,
+  // signature openers in no more than 1 in 5.
+  const peers = others.filter((o) => o.idx !== s.idx && o.checks?.state !== 'red' && !(opts.skipLater && o.idx > s.idx))
+  const size = peers.length + 1
+  if (size >= 10) {
+    const pivot = s.body[0]?.say || ''
+    const samePivot = pivot ? peers.filter((o) => o.body[0] && (norm(o.body[0].say) === norm(pivot) || likeness(o.body[0].say, pivot) > TOO_ALIKE)).length : 0
+    if (samePivot + 1 > Math.max(2, Math.ceil(size / 10))) warnings.push(`The product line is the same as in ${samePivot} other scripts; vary it.`)
+    const lastSale = (o: Pick<Script, 'body'>) => { const l = o.body[o.body.length - 1]; return !!l && sale.some((w) => wordRe(w).test(l.say)) }
+    if (sale.length && lastSale(s) && peers.filter(lastSale).length + 1 > Math.max(1, Math.ceil(size / 10))) warnings.push('More than 1 in 10 scripts close with a sale line.')
+    const hooks = c.hooks.map((h) => norm(h.replace(/\.+$/, ''))).filter(Boolean)
+    const opens = (o: Pick<Script, 'story'>) => !!o.story[0] && hooks.some((h) => norm(o.story[0].say).startsWith(h))
+    if (hooks.length && opens(s) && peers.filter(opens).length + 1 > Math.max(1, Math.ceil(size / 5))) warnings.push('More than 1 in 5 scripts open with a signature hook.')
   }
 
   // Length: a warning only.
@@ -368,17 +427,25 @@ export function writerSystem(): string {
   return `You write shoot-ready story-time UGC scripts for a creator's brand challenge: many unique short videos for one product, each one approved by the brand. Write like a friend telling a story, never like an ad.
 
 THE RULES, ALL OF THEM, IN EVERY SCRIPT:
-1. STORY FIRST. When PRODUCT DELAY is above 0, the story beats run at least that many seconds (about 2.5 spoken words a second) and never name the product, its brand or its category, and never show the product or anything tied to it (the listed objects). Open with a real moment, a travel moment or a problem told the way you would tell a friend.
+1. STORY FIRST, IN 4 BEATS, about 38 to 50 words: (1) the opener, a specific, visual, first-person or observational line that sets a scene; (2) the detail, a concrete, sensory, relatable specific; (3) the turn, a tension, irony or realization; (4) the stakes, why it matters, said plainly. When PRODUCT DELAY is above 0, the story runs at least that many seconds (about 2.5 spoken words a second) and never names the product, its brand or its category, never talks about its features, and never shows the product or anything tied to it (the listed objects). Other people's things in the background are fine.
 2. EVERY LINE MAKES PHYSICAL SENSE. Each place's access notes and banned words are the truth about what the creator can stand next to and film. When the creator is NOT TRAVELLING, nobody flies, checks in, boards or lands today: they are there dropping someone off, watching, remembering a past trip, or getting ready for one. A product demo then shows a past trip or a drop-off (for example the product paired to the creator's phone, in a family member's bag).
 3. ONE PERSON ON CAMERA when asked: only the host is ever in a shot. Others may be talked about, never filmed.
 4. ONLY APPROVED CLAIMS. State no feature or benefit that is not in APPROVED CLAIMS, and tag every product beat with the ids of the claims it uses (an empty list for a beat with none).
 5. SHOW WHAT YOU SAY. The "show" of every product claim demonstrates it (a live map line pairs with a live map screen recording). When app footage may be reused, say "screen recording from a past trip".
-6. REAL STORIES. Set "realStory": true whenever a script tells a specific past event or names a real person. Those are shot only if true.
-7. THE PRODUCT BEAT SOUNDS NATURAL ("Anyway, that's why I keep a ___ in my bag now") and the CTA is soft ("It's linked below"). Sale words, only when the brief allows them, go only in the last beat.
+6. TRUTH. Set "realStory": true whenever a script tells a specific past event or names a real person (a spouse, a parent, a friend, a follower's comment). Those are shot only if true. Never invent comments, quotes, numbers or statistics, and hedge any fact you are not given ("a lot of airlines", never "all airlines").
+7. THE PRODUCT HALF, IN 4 BEATS, about 45 to 60 words: (5) the pivot, casual, past tense, personal ("So now there's a ___ in every bag we check"), never "Introducing" or "Check out", and worded differently from the other scripts; (6) the first demo, one approved feature with a shot that shows it; (7) the second demo, another approved feature, or the payoff line that closes the story's loop ("No more look back. I just check my phone."); (8) the soft close ("It's linked below."). No comparisons ("same price", "better than"). Sale words, only when the brief allows them, go only in the close, and in no more than 1 in 10 scripts.
 8. SPELL THE PRODUCT EXACTLY as given, every time. Never use a NEVER SAY word. Never use a BANNED word.
-9. EVERY SCRIPT IS NEW: a different title, a different first line, a different story from every script listed under ALREADY WRITTEN and from each other. Signature hooks are used sparingly: at most one script in four opens with one.
+9. EVERY SCRIPT IS NEW: a different title, a different first line, a different story from every script listed under ALREADY WRITTEN and from each other. Signature hooks are used sparingly: at most one script in five opens with one.
 10. NO FLUFF. Every line hooks, sets the moment, moves the story, shows the product working, or asks. Keep the length asked.
 11. THE CONTEXT, when one is given, is what every story is about. Build the story from the slot's STORY SEED: one detail or moment of the context, told as a real moment. The last story beat or the product beat is a BRIDGE that turns that detail into the problem the product solves, in one natural line (a dog's leash rule becomes "no leash, no way to check on them" for bags handed to strangers). The close calls back to the context. Use the USE BY NAME words. The product never does anything with the context that no approved claim covers (see KEEP APART): the context is the story, the product stays what the brand sells it for. A personal detail of the context that may not be true sets "realStory": true. Say the SAY CAREFULLY facts as given ("a lot of airlines", never "all").
+
+12. SHOTS YOU CAN FILM IN ONE TAKE. Every beat gets its own shot: framing, action, emotion ("Mich mimes shuffling things, laughing"). Fresh footage for every video; never the same B-roll clip in two scripts. A talking-in-the-car shot is filmed parked, engine off: say parked.
+
+BEFORE YOU ANSWER, CHECK EVERY SCRIPT AND REWRITE ANY THAT FAILS: Could the host shoot this exactly as written at this place today? Does any line sound like an ad? Does the product enter only after the delay, with only approved claims, and only for what the brand sells it for? Is it different from every other script?
+
+TWO EXAMPLES OF THE SHAPE, for a luggage tracker (learn the shape; never reuse their words, details or titles):
+Observational, at an airport before security, not travelling. Story: "Stand in the check-in hall at SXM for five minutes and you'll see the same thing over and over." / "Someone hands their bag over, the agent prints a sticker, and it rolls away on the belt." / "Then they do this little look back over their shoulder." / "That's the last time they see it until the other end. No way to check on it in between." Product: "On our trips now, every bag we check has a NOBL Air Tracker inside." / "Last trip, I could open the NOBL app and see our bag on a live map the whole way." (show: screen recording from your last trip) / "No more look back. I just check my phone." / "Link's below if you check bags."
+A context tied in (a French bulldog on morning walks). Story: "On my walk with Walter this morning, I realized something kind of embarrassing." / "I would never let him off the leash somewhere new." / "But every time we fly, I hand our bags to total strangers and just walk away." / "No leash, no way to check on them. Until we land." Product: "So now our checked bag has a NOBL Air Tracker in it. Basically, a leash for the luggage." / live map / arrival alert / "It's linked below. Walter approves." The tracker is never on the dog: it is sold for luggage.
 
 Each script follows its SLOT exactly: its index, place, host and angle.
 
@@ -386,7 +453,7 @@ ${BANNED_RULE}
 
 Answer with JSON only, in this shape:
 {"scripts":[{"index":12,"title":"also the on-screen text for the first 2 seconds, under 9 words","angle":"from the slot","host":"from the slot","location":"from the slot","realStory":false,"realityReason":"why the host is at this place today, true to the travel rule","story":[{"say":"spoken words","show":"what the camera sees"}],"body":[{"say":"spoken words","show":"what the camera sees","claimIds":["c1"]}]}]}
-Story: 3 to 5 beats. Body: the product beat first, then demos, then the soft CTA.`
+Story: 4 beats (3 to 5 at most). Body: 4 beats, the pivot first, then the demos, then the soft close.`
 }
 
 function campaignBlock(c: Campaign): string {
@@ -456,7 +523,7 @@ export function parseScripts(text: string, slots: Slot[]): Array<Omit<Script, 's
     const body = (Array.isArray(r.body) ? r.body : []).slice(0, 8).map((b) => ({ say: clean((b as BodyBeat)?.say, 400), show: clean((b as BodyBeat)?.show, 300), claimIds: list((b as BodyBeat)?.claimIds, 6, 20) })).filter((b) => b.say || b.show)
     out.push({
       idx: slot.idx, title: clean(r.title, 90), angle: slot.angle, host: slot.host, location: slot.location,
-      realStory: r.realStory === true, realityReason: clean(r.realityReason, 240), story, body, estSeconds: estimateSeconds(story, body),
+      realStory: r.realStory === true || story.some((b) => REAL_PERSON.test(b.say)), realityReason: clean(r.realityReason, 240), story, body, estSeconds: estimateSeconds(story, body),
     })
   }
   return out

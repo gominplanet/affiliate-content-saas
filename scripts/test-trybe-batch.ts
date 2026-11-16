@@ -8,7 +8,7 @@ import { readFileSync } from 'node:fs'
 import {
   readCampaign, checkScript, planSlots, runRound, estimateSeconds, likeness, casedWords, parseScripts, suggestDeny,
   rulesFromReply, paceWords, notReadyWords, writerSystem, writerPrompt, rulesInput, claimsFromReply, seedCampaign, planSummary, seedFor, contextFromReply, contextInput, contextStale, CONTEXT_SYSTEM, BATCH_ROUND, MAX_PER_CAMPAIGN,
-  RULES_SYSTEM, type Script, type Campaign, type Slot,
+  RULES_SYSTEM, REAL_PERSON, type Script, type Campaign, type Slot,
 } from '../lib/trybe-batch'
 
 const fails: string[] = []
@@ -67,7 +67,7 @@ check('FAILS travelling: "I\'m checking in right now" when not travelling', trav
 // ── Every other rule ─────────────────────────────────────────────────────────
 check('the story shots may not show luggage before the product delay', reasons(base({ story: [STORY_OK[0], { say: STORY_OK[1].say, show: 'Close on my suitcase on the belt' }, STORY_OK[2]] })).reasons.some((r) => /shots show "suitcase"/.test(r)))
 check('a category word in the title is too early', reasons(base({ title: 'Why every mom needs a tracker' })).reasons.some((r) => /enters too early: "tracker"/.test(r)))
-check('a story shorter than the product delay is caught', reasons(base({ story: [{ say: 'Short story.', show: 'x' }, { say: 'Done.', show: 'y' }, { say: 'Ok.', show: 'z' }] })).reasons.some((r) => /story runs about/.test(r)))
+check('a story shorter than the product delay is caught', reasons(base({ story: [{ say: 'Short story.', show: 'x' }, { say: 'Done.', show: 'y' }, { say: 'Ok.', show: 'z' }] })).reasons.some((r) => /story has \d+ words, so the product would enter before 15 seconds \(it needs at least 35\)/.test(r)))
 check('a banned word anywhere is caught, whatever its case', reasons(base({ body: [BODY_OK[0], { ...BODY_OK[1], say: 'Grab it before BLACK FRIDAY ends.' }, BODY_OK[2]] })).reasons.some((r) => /"Black Friday"/.test(r)))
 check('a forbidden name is caught', reasons(base({ body: [{ ...BODY_OK[0], say: 'Better than an AirTag for this.' }, ...BODY_OK.slice(1)] })).reasons.some((r) => /"AirTag"/.test(r)))
 check('the required capitals: "Nobl" and "nobl" are refused', reasons(base({ body: [{ ...BODY_OK[0], say: 'That is why I use a Nobl Air Tracker now.' }, ...BODY_OK.slice(1)] })).reasons.some((r) => /"Nobl" is spelled with the wrong capitals/.test(r)) && casedWords(NOBL.product).join() === 'NOBL')
@@ -239,6 +239,56 @@ const fake = async (_system: string, user: string): Promise<string> => {
   check('the brand page and the setup both take a context, and a batch carries it', /<span className="font-semibold">Context<\/span>/.test(read('components/labs/TrybeCreate.tsx')) && /context=\{batchContext\}/.test(read('components/labs/TrybeCreate.tsx')) && />Context \(optional\)<\/Label>/.test(ctxUi) && /context: context\.trim\(\)\.slice\(0, 2000\)/.test(ctxUi))
   check('the plan shows the story ideas from the context, what stays apart, and says so when it could not read them', /story ideas from it, one per script in turn/.test(ctxUi) && /Kept apart:/.test(ctxUi) && /MVP could not turn your context into story ideas this time/.test(ctxUi))
   check('the PDF\'s first page carries the context', /section\('The context'/.test(read('lib/trybe-batch-pdf.ts')))
+
+
+  // ── The script craft playbook, section 7 (Seb, 2026-11-16; docs/script-craft-playbook.md) ──
+  const at = (o: Partial<Script>) => base({ realStory: false, ...o })
+  const obs = at({ title: 'The look back at check-in', angle: 'Thing nobody thinks of',
+    story: [{ say: "Stand in the check-in hall at SXM for five minutes and you'll see the same thing over and over.", show: 'Wide shot of the check-in hall, people queueing' },
+      { say: 'Someone hands their bag over, the agent prints a sticker, and it rolls away on the belt.', show: "Close on a stranger's bag rolling away on the belt" },
+      { say: 'Then they do this little look back over their shoulder.', show: 'A traveller glancing back, Seb watching from the side' },
+      { say: "That's the last time they see it until the other end. No way to check on it in between.", show: 'Seb to camera near the departures board' }],
+    body: [{ say: 'On our trips now, every bag we check has a NOBL Air Tracker inside.', show: 'Insert at home: Seb drops the NOBL Air Tracker into a bag', claimIds: [] },
+      { say: 'Last trip, I could open the NOBL app and see our bag on a live map the whole way.', show: 'Screen recording from your last trip: live map with the bag dot', claimIds: ['map'] },
+      { say: 'No more look back. I just check my phone.', show: 'Seb glancing at his phone, smiling', claimIds: [] },
+      { say: "Link's below if you check bags.", show: 'Seb pointing down', claimIds: [] }] })
+  const obsR = reasons(obs)
+  check('PLAYBOOK GOOD: the airport, not travelling, observational script passes clean', obsR.state === 'green', obsR)
+  const drop = at({ title: 'Less nervous this time', angle: 'Relief', realStory: true,
+    story: [{ say: 'I just dropped my mom off for her flight home.', show: 'Seb at the departures curb, waving at someone off camera' },
+      { say: "She has two connections, and she's not the type to sit on hold with an airline.", show: 'Seb to camera, half smiling' },
+      { say: "Every time she flies, I'm the one who gets the call when something goes wrong.", show: 'Seb holding up his phone' },
+      { say: "This time, I'm a lot less nervous, and here's why.", show: 'Seb walking back toward the parking lot' }],
+    body: [{ say: 'Last night I paired a NOBL Air Tracker to my phone and put it in her suitcase.', show: 'Insert at home the night before: pull tab, pairing screen, tracker into her suitcase', claimIds: ['pair'] },
+      { say: 'Right now I can see her bag on the live map in the NOBL app.', show: 'Phone at the curb: live map showing her bag at the airport', claimIds: ['map'] },
+      { say: 'And when she lands, I get an arrival alert before she even calls.', show: 'Close-up of the arrival alert on the phone', claimIds: ['arrive'] },
+      { say: "It's linked below.", show: 'Seb pointing down', claimIds: [] }] })
+  const dropR = reasons(drop)
+  check('PLAYBOOK GOOD: the drop-off script passes (the tracker paired and packed the night before, the map live at the curb)', dropR.state !== 'red', dropR)
+  check('PLAYBOOK GOOD: a story naming a real person (my mom) is marked to shoot only if true, whatever the writer said', REAL_PERSON.test(drop.story[0].say) && parseScripts(JSON.stringify({ scripts: [{ index: 1, title: 't', realStory: false, story: drop.story, body: drop.body }] }), [{ idx: 1, location: 'SXM airport (before security)', host: 'Seb', angle: 'Relief' }])[0].realStory === true)
+  const bad = (name: string, sc: Script, want: RegExp, camp: Campaign = NOBL) => { const r = checkScript(sc, camp, []); check(`PLAYBOOK BAD: ${name}`, r.state === 'red' && r.reasons.some((x) => want.test(x)), r) }
+  bad('the product as the opening line fails the product delay', at({ story: [{ say: 'I put my NOBL Air Tracker in my bag before every trip, and here is why.', show: 'Seb at the counter' }, ...obs.story.slice(1)], body: obs.body }), /enters too early/)
+  bad('"at the gate watching them load our plane" fails the place', at({ story: [{ say: "I'm at the gate watching them load our plane right now.", show: 'Seb near the window' }, ...obs.story.slice(1)], body: obs.body }), /no "gate"/)
+  bad('"I\'m checking in for my flight" fails when not travelling', at({ story: [{ say: "I'm checking in for my flight and I'm completely calm, here's why.", show: 'Seb at the counter' }, ...obs.story.slice(1)], body: obs.body }), /travelling right now/)
+  bad('"Seb and Mich arguing at the counter" fails one person on camera', at({ story: [obs.story[0], { ...obs.story[1], show: 'Seb and Mich arguing at the counter' }, ...obs.story.slice(2)], body: obs.body }), /on camera/)
+  bad('"an AirTag but better, and it\'s 30% off" fails the brand rules', at({ story: obs.story, body: [{ ...obs.body[0], say: "It's an AirTag but better, and it's 30% off." }, ...obs.body.slice(1)] }), /"AirTag"|percentage/)
+  bad('the luggage tracker on the dog\'s collar fails, no claim covers it', { ...leash, body: [{ ...leash.body[0], show: "Mich clips the NOBL Air Tracker on Walter's collar" }, ...leash.body.slice(1)] } as Script, /puts the product on Walter/, W)
+  bad('"Introducing the NOBL Air Tracker, the ultimate travel gadget you need!" reads like an ad', at({ story: obs.story, body: [{ ...obs.body[0], say: 'Introducing the NOBL Air Tracker, the ultimate travel gadget you need!' }, ...obs.body.slice(1)] }), /reads like an ad/)
+  bad('"same price" is a comparison no brief approves', at({ story: obs.story, body: [obs.body[0], { ...obs.body[1], say: 'Same price as a nice luggage tag, and I can see the live map.' }, ...obs.body.slice(2)] }), /compares the product \("Same price"\)/i)
+  bad('talking about a feature before the product enters fails the delay', at({ story: [obs.story[0], { ...obs.story[1], say: 'Someone hands their bag over, and I wish they had a live map of it the whole way.' }, ...obs.story.slice(2)], body: obs.body }), /talks about a feature \("live map"\)/)
+  bad('a story too short for the product delay fails (2.3 words a second)', at({ story: [{ say: 'Bags go missing.', show: 'x' }, { say: 'It happens a lot.', show: 'y' }, { say: 'Really, it does.', show: 'z' }], body: obs.body }), /needs at least 35/)
+  const noDemo = reasons(at({ story: obs.story, body: [obs.body[0], { ...obs.body[1], show: 'Seb smiling at the camera' }, ...obs.body.slice(2)] }))
+  check('a feature line with no shot of the feature is flagged', noDemo.warnings.some((w) => /no shot that shows the feature/.test(w)), noDemo)
+  const noLabel = reasons(at({ story: obs.story, body: [obs.body[0], { ...obs.body[1], show: 'Screen recording: live map with the bag dot' }, ...obs.body.slice(2)] }))
+  check('app footage not labelled as from your last trip is flagged when you are not travelling', noLabel.warnings.some((w) => /from your last trip/.test(w)), noLabel)
+  const tenSame = Array.from({ length: 10 }, (_, i) => ({ ...obs, idx: i + 2, title: `Title ${i}`, story: [{ ...obs.story[0], say: `${obs.story[0].say} ${i}` }, ...obs.story.slice(1)] }))
+  const rot = checkScript({ ...obs, idx: 20, title: 'Another one' }, NOBL, tenSame)
+  check('the same product line in more than 1 in 10 scripts is flagged', rot.warnings.some((w) => /product line is the same as in/.test(w)), rot)
+  const ws = writerSystem()
+  check('the writer gets the playbook: the 4 beat story and product halves, the pivot, the self-check, the two examples', /STORY FIRST, IN 4 BEATS, about 38 to 50 words/.test(ws) && /\(3\) the turn/.test(ws) && /THE PRODUCT HALF, IN 4 BEATS, about 45 to 60 words/.test(ws) && /\(5\) the pivot/.test(ws) && /never "Introducing" or "Check out"/.test(ws) && /BEFORE YOU ANSWER, CHECK EVERY SCRIPT/.test(ws) && /TWO EXAMPLES OF THE SHAPE/.test(ws) && /one script in five opens/.test(ws) && /filmed parked/.test(ws) && /Never invent comments, quotes, numbers or statistics/.test(ws))
+  check('the plan card answers the four questions before writing: travelling, places, who is on camera', /row\('Shoot day'/.test(read('components/labs/TrybeBatchScripts.tsx')) && /row\('Places'/.test(read('components/labs/TrybeBatchScripts.tsx')) && /row\('On camera'/.test(read('components/labs/TrybeBatchScripts.tsx')))
+  check('the playbook is kept in the repo', /The script formula/.test(read('docs/script-craft-playbook.md')) && /The tie-in technique/.test(read('docs/script-craft-playbook.md')))
+  check('a campaign without a length from the brief aims for 35 to 50 seconds', readCampaign({}).rules.targetLengthSec.join() === '35,50')
 
   if (fails.length) { console.error(`❌ trybe-batch: ${fails.length} failure(s)\n${fails.map((f) => `   • ${f}`).join('\n')}`); process.exit(1) }
   console.log('✅ trybe-batch: every rule on the brief\'s fixtures, an even spread, and a whole round with rewrites and red flags')

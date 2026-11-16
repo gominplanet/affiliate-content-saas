@@ -748,6 +748,7 @@ export function PlanCard({ c, read, scripts, onStart, onChange, onFix, onUsePlac
             {row('Places', p.places.length ? p.places.map((x) => `${x.name} ${x.n}`).join(', ') : 'none yet', !p.places.length)}
             {row('On camera', p.cast.length ? `${p.cast.map((x) => `${x.name} ${x.n}`).join(', ')}${c.reality.onePersonPerVideo ? ', one per video' : ''}` : 'nobody yet', !p.cast.length)}
             {row('Angles', p.angles.join(', '))}
+            {row('Shoot day', c.reality.isTraveling ? 'you are travelling in these' : 'not travelling: nobody flies, checks in or lands in these')}
             {row('Rules', [`${p.claims} approved ${p.claims === 1 ? 'claim' : 'claims'}`, p.delaySec ? `product after ${p.delaySec} seconds` : '', p.noPrices ? 'no prices' : '', p.never.length ? `never: ${p.never.join(', ')}` : ''].filter(Boolean).join(', '), !p.claims)}
             {row('Length', `${p.lengthSec[0]} to ${p.lengthSec[1]} seconds`)}
             {row('Pace', !c.deadline ? 'no due date' : p.perDay ? `due ${shortDate(c.deadline)}, about ${p.perDay} a day` : `the due date (${shortDate(c.deadline)}) has passed`, !!c.deadline && !p.perDay)}
