@@ -37,8 +37,8 @@ import { introCap, introNote } from '@/lib/intro-allowance'
 import { docsForScripts, type LinksDigest } from '@/lib/trybe-message-links'
 import {
   readCampaign, runRound, checkScript, planSlots, parseScripts, writerSystem, writerPrompt, rulesFromReply, notReadyWords,
-  estimateSeconds, rulesInput, claimsFromReply, RULES_SYSTEM, BATCH_ROUND, MAX_PER_CAMPAIGN, SCRIPT_STATUSES,
-  type Campaign, type Script, type ScriptStatus, type Ask,
+  estimateSeconds, rulesInput, claimsFromReply, contextFromReply, contextInput, contextStale, RULES_SYSTEM, CONTEXT_SYSTEM, BATCH_ROUND, MAX_PER_CAMPAIGN, SCRIPT_STATUSES,
+  type Campaign, type Script, type ScriptStatus, type Ask, type ContextPlan,
 } from '@/lib/trybe-batch'
 
 export const runtime = 'nodejs'
@@ -101,7 +101,21 @@ async function loadScripts(db: Db, id: string): Promise<Script[]> {
   const { data } = await db.from('trybe_campaign_scripts').select('*').eq('campaign_id', id).order('idx', { ascending: true }).limit(MAX_PER_CAMPAIGN + 50)
   return ((data ?? []) as Record<string, unknown>[]).map(rowToScript)
 }
-const setupOf = (c: Campaign) => ({ brandName: c.brandName, product: c.product, rules: c.rules, reality: c.reality, creatorFacts: c.creatorFacts, angles: c.angles, hooks: c.hooks, references: c.references, feedback: c.feedback, target: c.target, deadline: c.deadline })
+const setupOf = (c: Campaign) => ({ brandName: c.brandName, product: c.product, rules: c.rules, reality: c.reality, creatorFacts: c.creatorFacts, angles: c.angles, hooks: c.hooks, references: c.references, feedback: c.feedback, target: c.target, deadline: c.deadline, context: c.context, contextPlan: c.contextPlan })
+
+/** THE CONTEXT READ INTO STORY IDEAS (Seb, 2026-11-16, the Walter scripts):
+ *  the details a story can start from, each bridged to the product's
+ *  problem, what the product is never shown doing with it, and what to say
+ *  with care. null when the read failed; the context still goes to the
+ *  writer as the creator wrote it, and the plan says the ideas are missing. */
+async function readContext(c: Campaign, userId: string, tier: string | null): Promise<ContextPlan | null> {
+  if (!c.context) return null
+  try {
+    const msg = await createAnthropicClient().messages.create({ model: WRITER, max_tokens: 2500, system: CONTEXT_SYSTEM, messages: [{ role: 'user', content: contextInput(c) }] })
+    try { const u = usageFromAnthropic(msg); recordUsage({ userId, tier, feature: 'trybe_batch_context', model: WRITER, input: u.input, output: u.output }) } catch { /* best-effort */ }
+    return contextFromReply((msg.content as Array<{ type: string; text?: string }>).map((b) => (b.type === 'text' ? b.text || '' : '')).join(''), c.context)
+  } catch { return null }
+}
 
 /** The writer, recording what each call cost. */
 function writerAsk(userId: string, tier: string | null): Ask {
@@ -149,6 +163,10 @@ export async function POST(req: NextRequest) {
 
   if (action === 'save') {
     const c = readCampaign(body.campaign, id)
+    // A context that changed is read again before it is kept (once the brief
+    // gave claims; a campaign still being set up is read with the rules).
+    if (!c.context) c.contextPlan = null
+    else if (contextStale(c) && c.rules.approvedClaims.length && !(await spendGate(userId, tier))) c.contextPlan = await readContext(c, userId, tier)
     const row = { name: c.name, brand_id: c.brandId, setup: setupOf(c), updated_at: new Date().toISOString() }
     if (id) {
       const { data, error } = await db.from('trybe_campaigns').update(row).eq('id', id).eq('user_id', ownerId).select('id').maybeSingle()
@@ -219,6 +237,8 @@ export async function POST(req: NextRequest) {
       const text = (msg.content as Array<{ type: string; text?: string }>).map((b) => (b.type === 'text' ? b.text || '' : '')).join('')
       const next = rulesFromReply(text, c)
       if (next === c) return NextResponse.json({ error: 'MVP read the brief but could not make rules from it. Try again, or type the claims in yourself.' }, { status: 502 })
+      // The context read with the claims just found, so its story ideas bridge to what the brand allows.
+      if (next.context) next.contextPlan = await readContext(next, userId, tier)
       const { error: saveErr } = await db.from('trybe_campaigns').update({ setup: setupOf(next), updated_at: new Date().toISOString() }).eq('id', id).eq('user_id', ownerId)
       if (saveErr) return NextResponse.json({ error: `MVP read the brief, but the rules it made were not saved: ${saveErr.message}` }, { status: 500 })
       const words = (x: string) => (x.trim() ? x.trim().split(/\s+/).length : 0)
@@ -229,6 +249,7 @@ export async function POST(req: NextRequest) {
         brand: brand.length > 0,
         claimsFrom: claimsFromReply(text) || (next.rules.approvedClaims.length ? null : 'none'),
         claims: next.rules.approvedClaims.length,
+        context: next.context ? (next.contextPlan ? { ideas: next.contextPlan.seeds.length } : { failed: true }) : null,
       } })
     } catch (e) {
       return NextResponse.json({ error: `MVP could not read the brief: ${e instanceof Error ? e.message : 'no answer'}` }, { status: 502 })

@@ -73,6 +73,8 @@ export default function TrybeCreate({ canRead, isAdmin, onFind, start, onStarted
   const [door, setDoor] = useState<'home' | 'quick' | 'batch'>('home')
   const [batchCount, setBatchCount] = useState(50)
   const [batchDue, setBatchDue] = useState('')
+  // What the stories are about beyond the place (Seb, 2026-11-16, the Walter scripts).
+  const [batchContext, setBatchContext] = useState('')
   const [openBatch, setOpenBatch] = useState<string | null>(null)
   const [batchKey, setBatchKey] = useState(0)
   const [listKey, setListKey] = useState(0)
@@ -341,6 +343,11 @@ export default function TrybeCreate({ canRead, isAdmin, onFind, start, onStarted
             <input type="date" value={batchDue} onChange={(e) => setBatchDue(e.target.value)} className="rounded-xl border bg-transparent px-2.5 py-1.5 text-[13.5px]" style={{ borderColor: 'var(--border)' }} />
             <span style={soft}>{paceLine}</span>
           </label>
+          <label className="mt-3 block text-[13.5px]">
+            <span className="font-semibold">Context</span> <span style={soft}>(optional: who or what the stories are about, beyond the place)</span>
+            <textarea rows={3} value={batchContext} onChange={(e) => setBatchContext(e.target.value.slice(0, 2000))} className="mt-1 w-full rounded-xl border bg-transparent px-3 py-2 text-[13.5px]" style={{ borderColor: 'var(--border)' }}
+              placeholder="e.g. Michelle films in the parked car before or after walking Walter, our French bulldog. Use Walter in every story." />
+          </label>
           <button disabled={!product} onClick={() => startBatch(null)} className="mt-4 self-start inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-[14px] font-semibold disabled:opacity-50" style={{ background: PURPLE, color: '#fff' }}>Plan {batchCount} scripts</button>
         </section>
       </div>
@@ -376,7 +383,7 @@ export default function TrybeCreate({ canRead, isAdmin, onFind, start, onStarted
       {brand && door === 'quick' && quickSection()}
       {brand && door === 'batch' && (product || openBatch) && (
         <section className={card} style={cardStyle}>
-          <BatchRun key={batchKey} brand={{ id: brand.id, name: brand.name }} product={product || ''} page={page} count={batchCount} deadline={batchDue || null} openId={openBatch}
+          <BatchRun key={batchKey} brand={{ id: brand.id, name: brand.name }} product={product || ''} page={page} count={batchCount} deadline={batchDue || null} context={batchContext} openId={openBatch}
             onBack={() => { setDoor('home'); setListKey((k) => k + 1) }} />
         </section>
       )}

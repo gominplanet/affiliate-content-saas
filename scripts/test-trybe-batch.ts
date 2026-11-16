@@ -7,7 +7,7 @@
 import { readFileSync } from 'node:fs'
 import {
   readCampaign, checkScript, planSlots, runRound, estimateSeconds, likeness, casedWords, parseScripts, suggestDeny,
-  rulesFromReply, paceWords, notReadyWords, writerSystem, writerPrompt, rulesInput, claimsFromReply, seedCampaign, planSummary, BATCH_ROUND, MAX_PER_CAMPAIGN,
+  rulesFromReply, paceWords, notReadyWords, writerSystem, writerPrompt, rulesInput, claimsFromReply, seedCampaign, planSummary, seedFor, contextFromReply, contextInput, contextStale, CONTEXT_SYSTEM, BATCH_ROUND, MAX_PER_CAMPAIGN,
   RULES_SYSTEM, type Script, type Campaign, type Slot,
 } from '../lib/trybe-batch'
 
@@ -193,6 +193,52 @@ const fake = async (_system: string, user: string): Promise<string> => {
   check('a batch shows MVP\'s plan before it writes, and writes only on Start writing', /view === 'plan' && c && <PlanCard/.test(batchUi) && /Here is my plan before I write anything\./.test(batchUi) && /onStart=\{async \(\) => \{ const s = await save\(c\); if \(s\) \{ setAuto\(true\); setView\('scripts'\) \} \}\}/.test(batchUi) && /autoStart = false/.test(batchUi))
   check('the plan names what was read, what was not, and what is missing', /Following/.test(batchUi) && /src\.missed\.map/.test(batchUi) && /Before I write, add \{p\.missing\.join\(', '\)\}\./.test(batchUi) && /Add where you film/.test(batchUi))
   check('the saved sets list can show one brand', /shown = sets && brandId \? sets\.filter\(\(x\) => x\.brand_id === brandId\) : sets/.test(read('components/labs/TrybeSavedScripts.tsx')))
+
+
+  // ── The context (Seb, 2026-11-16: the Walter scripts, "any type of context and everything can be tied back in to a product") ──
+  const CTX = 'Michelle films in the parked car before or after walking Walter, our French bulldog, with B-roll of the morning walks. Use Walter in every story.'
+  const SEEDS = ["Walter's leash rule: never off the leash somewhere new, yet our bags go to strangers", 'Frenchies cannot fly cargo, so Walter stays home and all the worry goes to the bag',
+    "The sitter checklist: two pages for the dog, a paper sticker for the bag", "The 'we landed' text to Walter's sitter", 'Walter sulks when the suitcase comes out',
+    "Walter's nose finds anything; I cannot find my bag", 'Walter the sock thief, and things going missing while packing', 'Creature of habit: travel throws us both off',
+    'The first walk after a trip, without a minute of bag stress', 'Morning walks are thinking time, and the what-ifs show up']
+  const W = readCampaign({ ...NOBL, context: CTX, contextPlan: { from: CTX, mention: ['Walter'], seeds: SEEDS, keepApart: ['The NOBL Air Tracker is never on Walter or his collar: it is sold for luggage'], careful: ['Say a lot of airlines restrict snub-nosed breeds in cargo, never all'] },
+    reality: { locations: [{ name: 'Parked car, B-roll of walks with Walter', accessNotes: 'Engine off; story lines are car or B-roll', deny: [] }], isTraveling: false, cast: [{ name: 'Mich', phone: 'iPhone' }], onePersonPerVideo: true, appFootageReuse: true } }, 'w1')
+  check('a campaign keeps its context and MVP\'s reading of it', W.context === CTX && W.contextPlan?.seeds.length === 10 && W.contextPlan.mention[0] === 'Walter' && readCampaign(JSON.parse(JSON.stringify(W)), 'w1').contextPlan?.keepApart.length === 1)
+  const fifty = Array.from({ length: 50 }, (_, i) => seedFor(W, i + 1))
+  check('the story ideas spread over a batch: 50 scripts use each of 10 ideas five times, never twice in a row', SEEDS.every((x) => fifty.filter((y) => y === x).length === 5) && fifty.every((x, i) => i === 0 || x !== fifty[i - 1]))
+  check('no context, no story ideas', seedFor(NOBL, 3) === null)
+  const wp = writerPrompt(W, planSlots(W, [], 3), [])
+  check('the writer gets the context, the names to use, what stays apart and what is said with care', /CONTEXT \(what every story is about, beyond the place\):\nMichelle films/.test(wp) && /USE BY NAME: Walter/.test(wp) && /KEEP APART[\s\S]*never on Walter/.test(wp) && /SAY CAREFULLY[\s\S]*a lot of airlines/.test(wp))
+  check('each slot carries its own story idea', /- index 1: [^\n]*story seed "Walter's leash rule/.test(wp) && /- index 2: [^\n]*story seed "Frenchies cannot fly cargo/.test(wp))
+  check('the writer builds each story from its idea, bridges it to the product\'s problem and calls back at the close', /11\. THE CONTEXT/.test(writerSystem()) && /BRIDGE/.test(writerSystem()) && /calls back to the context/.test(writerSystem()) && /KEEP APART/.test(writerSystem()))
+  // Script #1 of Seb's Walter PDF, as the writer would answer it.
+  const leash = { idx: 1, title: "Walter's leash rule", angle: 'Aha moment', host: 'Mich', location: 'Parked car, B-roll of walks with Walter', realStory: false,
+    story: [{ say: 'On my walk with Walter this morning, I realized something kind of embarrassing.', show: 'B-roll: Walter trotting ahead on the leash, early morning light' },
+      { say: 'I would never let him off the leash somewhere new. Not for one second.', show: 'B-roll: close-up of the leash clipped on, Walter sniffing a wall' },
+      { say: 'But every time we fly, I hand our bags to total strangers and just walk away.', show: 'Mich in the parked car, talking to camera' },
+      { say: 'No leash, no way to check on them, nothing. Until we land.', show: 'Mich shrugs, half laughing' }],
+    body: [{ say: 'So now our checked bag has a NOBL Air Tracker in it. Basically, a leash for the luggage.', show: 'Insert at home: Mich tucks the NOBL Air Tracker into the suitcase lining pocket', claimIds: [] },
+      { say: 'On our last trip, I could see it on the live map in the NOBL app the whole way.', show: 'Screen recording from a past trip: live map with the bag dot', claimIds: ['map'] },
+      { say: 'And the app sent an alert when it landed.', show: 'Screen recording: arrival alert', claimIds: ['arrive'] },
+      { say: "It's linked below. Walter approves.", show: 'B-roll: Walter looking up at the camera, tongue out', claimIds: [] }], estSeconds: 0 }
+  leash.estSeconds = estimateSeconds(leash.story, leash.body)
+  const leashCheck = checkScript(leash, W, [])
+  check('script #1 of the Walter PDF passes: Walter in the story, NOBL after the story, approved claims only', leashCheck.state !== 'red' && !leashCheck.warnings.some((w) => /context/.test(w)), leashCheck)
+  const noWalter = checkScript({ ...leash, story: leash.story.map((b) => ({ say: b.say.replace(/Walter/g, 'my neighbor'), show: b.show.replace(/Walter/g, 'a cat') })) }, W, [])
+  check('a story that leaves the context out is flagged, by name', noWalter.warnings.some((w) => /leaves out your context \(Walter\)/.test(w)), noWalter)
+  check('a script in a campaign with no context is never flagged for it', !checkScript(leash, NOBL, []).warnings.some((w) => /context/.test(w)))
+  const reply = JSON.stringify({ mention: ['Walter'], seeds: SEEDS.slice(0, 3), keepApart: ['never on Walter'], careful: [] })
+  check('the reader\'s answer becomes the plan, read from this context', contextFromReply(reply, CTX)?.seeds.length === 3 && contextFromReply(reply, CTX)?.from === CTX && contextFromReply('no json', CTX) === null && contextFromReply('{"seeds":[]}', CTX) === null)
+  check('where the context says you film is picked up, to film there instead', contextFromReply(JSON.stringify({ seeds: ['a'], places: ['Parked car, B-roll of the morning walks'] }), CTX)?.places[0] === 'Parked car, B-roll of the morning walks' && /"places"/.test(CONTEXT_SYSTEM) && /Film in \{named\.length === 1 \? 'this' : 'these'\} instead/.test(read('components/labs/TrybeBatchScripts.tsx')))
+  check('an edited context is read again; an unchanged one is not', !contextStale(W) && contextStale({ ...W, context: CTX + ' He hates the vacuum.' }) && !contextStale({ ...W, context: '' }))
+  check('the reader gets the product, its claims and the context, and is told to keep the product to its claims', /APPROVED CLAIMS:\n- live map/.test(contextInput(W)) && /THE CREATOR'S CONTEXT:\nMichelle/.test(contextInput(W)) && /Never make the product do something the approved claims do not say/.test(CONTEXT_SYSTEM) && /bridge/.test(CONTEXT_SYSTEM))
+
+  const ctxRoute = read('app/api/labs/trybe-batch/route.ts')
+  const ctxUi = read('components/labs/TrybeBatchScripts.tsx')
+  check('the server reads the context with the rules, and again when it changes', /if \(next\.context\) next\.contextPlan = await readContext\(next, userId, tier\)/.test(ctxRoute) && /contextStale\(c\) && c\.rules\.approvedClaims\.length/.test(ctxRoute) && /context: c\.context, contextPlan: c\.contextPlan/.test(ctxRoute) && /feature: 'trybe_batch_context'/.test(ctxRoute))
+  check('the brand page and the setup both take a context, and a batch carries it', /<span className="font-semibold">Context<\/span>/.test(read('components/labs/TrybeCreate.tsx')) && /context=\{batchContext\}/.test(read('components/labs/TrybeCreate.tsx')) && />Context \(optional\)<\/Label>/.test(ctxUi) && /context: context\.trim\(\)\.slice\(0, 2000\)/.test(ctxUi))
+  check('the plan shows the story ideas from the context, what stays apart, and says so when it could not read them', /story ideas from it, one per script in turn/.test(ctxUi) && /Kept apart:/.test(ctxUi) && /MVP could not turn your context into story ideas this time/.test(ctxUi))
+  check('the PDF\'s first page carries the context', /section\('The context'/.test(read('lib/trybe-batch-pdf.ts')))
 
   if (fails.length) { console.error(`❌ trybe-batch: ${fails.length} failure(s)\n${fails.map((f) => `   • ${f}`).join('\n')}`); process.exit(1) }
   console.log('✅ trybe-batch: every rule on the brief\'s fixtures, an even spread, and a whole round with rewrites and red flags')

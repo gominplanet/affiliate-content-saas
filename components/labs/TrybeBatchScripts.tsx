@@ -50,6 +50,7 @@ export type Read = {
   trybe: { words: number } | { state: string; why: string | null } | null
   sent: string[]; pasted: number; brand: boolean; claims: number
   claimsFrom: 'brief' | 'sent' | 'pasted' | 'brand' | 'none' | null
+  context?: { ideas: number } | { failed: true } | null
 } | { error: string }
 
 export async function call(action: string, payload: Record<string, unknown> = {}, ms = 60_000): Promise<Answer> {
@@ -443,7 +444,12 @@ export function Setup({ c, setC, step, setStep, save, busy, read, readRules, onW
 
       {step === 1 && (
         <div className="space-y-4 max-w-3xl">
-          <p className="text-[13px]" style={soft}>These are yours, not the brand&rsquo;s, so MVP keeps them for your next campaign.</p>
+          <div>
+            <Label hint="Beyond the place: who or what is in your life or your videos, and how you film it. MVP builds every story from it and ties it back to the product.">Context (optional)</Label>
+            <textarea rows={3} className={input} style={inputStyle} value={c.context} onChange={(e) => set({ context: e.target.value.slice(0, 2000) })}
+              placeholder="e.g. Michelle films in the parked car before or after walking Walter, our French bulldog, with B-roll of the walks. Use Walter in every story." />
+          </div>
+          <p className="text-[13px]" style={soft}>The places and people below are yours, not the brand&rsquo;s, so MVP keeps them for your next campaign.</p>
           <Label hint="Where you can really film, and what is not there. Every line has to make sense in the place it is shot.">Places</Label>
           {c.reality.locations.map((l, i) => (
             <div key={i} className="rounded-xl border p-3 space-y-2" style={{ borderColor: 'var(--border)' }}>
@@ -716,8 +722,11 @@ const shortDate = (d: string) => new Date(`${d}T12:00:00Z`).toLocaleDateString('
 
 /** MVP's plan, said before it writes: what it read, how the scripts spread,
  *  the rules, the pace. Writing waits for Start writing. */
-export function PlanCard({ c, read, scripts, onStart, onChange, onFix, busy }: {
-  c: Campaign; read: Read | null; scripts: Script[]; onStart: () => void; onChange: () => void; onFix: (step: number) => void; busy?: boolean
+export function PlanCard({ c, read, scripts, onStart, onChange, onFix, onUsePlaces, busy }: {
+  c: Campaign; read: Read | null; scripts: Script[]; onStart: () => void; onChange: () => void; onFix: (step: number) => void
+  /** Film in the places the context names, in place of the ones carried over. */
+  onUsePlaces?: (names: string[]) => void
+  busy?: boolean
 }) {
   const p = planSummary(c, scripts)
   const brand = c.brandName || 'the brand'
@@ -743,6 +752,32 @@ export function PlanCard({ c, read, scripts, onStart, onChange, onFix, busy }: {
             {row('Length', `${p.lengthSec[0]} to ${p.lengthSec[1]} seconds`)}
             {row('Pace', !c.deadline ? 'no due date' : p.perDay ? `due ${shortDate(c.deadline)}, about ${p.perDay} a day` : `the due date (${shortDate(c.deadline)}) has passed`, !!c.deadline && !p.perDay)}
           </div>
+          {c.context && (
+            <div className="rounded-xl p-3 space-y-1.5" style={{ background: 'rgb(var(--brand-rgb) / 0.05)' }}>
+              {row('Context', c.context.length > 220 ? `${c.context.slice(0, 220)}...` : c.context)}
+              {c.contextPlan && c.contextPlan.from === c.context ? (<>
+                <p className="text-[13px] font-semibold">{c.contextPlan.seeds.length} story ideas from it, one per script in turn{p.left > c.contextPlan.seeds.length ? ` (each used about ${Math.ceil(p.left / c.contextPlan.seeds.length)} times, told differently)` : ''}:</p>
+                <ul className="text-[13px] list-disc pl-5 space-y-0.5">{c.contextPlan.seeds.slice(0, 6).map((x) => <li key={x}>{x}</li>)}</ul>
+                {c.contextPlan.seeds.length > 6 && <p className="text-[12.5px]" style={soft}>and {c.contextPlan.seeds.length - 6} more.</p>}
+                {(() => {
+                  // The context says where you film, and the places carried over from your last campaign differ.
+                  const named = c.contextPlan.places
+                  const have = c.reality.locations.map((l) => l.name.toLowerCase())
+                  if (!named.length || named.every((n) => have.includes(n.toLowerCase())) || !onUsePlaces) return null
+                  return (
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="text-[13px]" style={{ color: AMBER }}>Your context says you film in: {named.join(', ')}. The places above are from your last campaign.</p>
+                      <button className={btn} style={btnSoft} disabled={!!busy} onClick={() => onUsePlaces(named)}>Film in {named.length === 1 ? 'this' : 'these'} instead</button>
+                    </div>
+                  )
+                })()}
+                {c.contextPlan.keepApart.length > 0 && <p className="text-[13px]"><span className="font-semibold">Kept apart:</span> {c.contextPlan.keepApart.join('; ')}</p>}
+                {c.contextPlan.careful.length > 0 && <p className="text-[13px]"><span className="font-semibold">Said with care:</span> {c.contextPlan.careful.join('; ')}</p>}
+              </>) : (
+                <p className="text-[12.5px]" style={{ color: AMBER }}>{c.rules.approvedClaims.length ? 'MVP could not turn your context into story ideas this time. The writer still gets it as you wrote it; press Change something and save to try again.' : 'MVP turns your context into story ideas once the brief gives the approved claims.'}</p>
+              )}
+            </div>
+          )}
           {src && src.missed.length > 0 && <div className="space-y-1">{src.missed.map((m) => <p key={m} className="text-[12.5px]" style={soft}>{m}</p>)}</div>}
           {read && !('error' in read) && read.claimsFrom === 'brand' && read.claims > 0 && <p className="text-[12.5px]" style={{ color: AMBER }}>The brief names no product features, so the claims come from {brand}&rsquo;s own description. Check them under Change something.</p>}
           {p.missing.length > 0 && (
@@ -764,8 +799,11 @@ export function PlanCard({ c, read, scripts, onStart, onChange, onFix, busy }: {
 
 /** One batch for one brand's product: set up and read, the plan, then the
  *  rounds. `openId` opens a batch already started instead. */
-export function BatchRun({ brand, product, page, count, deadline, openId, onBack }: {
-  brand: { id: string; name: string }; product: string; page: BrandPage | null; count: number; deadline: string | null; openId?: string | null; onBack: () => void
+export function BatchRun({ brand, product, page, count, deadline, context = '', openId, onBack }: {
+  brand: { id: string; name: string }; product: string; page: BrandPage | null; count: number; deadline: string | null
+  /** What the stories are about beyond the place, typed on the brand page. */
+  context?: string
+  openId?: string | null; onBack: () => void
 }) {
   const [view, setView] = useState<'reading' | 'plan' | 'setup' | 'scripts'>('reading')
   const [c, setC] = useState<Campaign | null>(null)
@@ -779,7 +817,7 @@ export function BatchRun({ brand, product, page, count, deadline, openId, onBack
   const trybe = trybeOf(page, brand.name)
   const save = async (next: Campaign): Promise<Campaign | null> => {
     setBusy('save')
-    const r = await call('save', { id: next.id || undefined, campaign: next })
+    const r = await call('save', { id: next.id || undefined, campaign: next }, 120_000)
     setBusy(null)
     if (r.error) { setErr(r.error); return null }
     setC(r.campaign as Campaign); setErr(null)
@@ -807,7 +845,7 @@ export function BatchRun({ brand, product, page, count, deadline, openId, onBack
       const l = await call('list')
       if (l.error) { setErr(l.error); return }
       setAllowance((l.allowance as Allowance) || null)
-      const seeded = { ...seedCampaign({ brandId: brand.id, brandName: brand.name, product }, l.last as Parameters<typeof seedCampaign>[1]), target: count, deadline, name: `${product}: ${count} scripts` }
+      const seeded = { ...seedCampaign({ brandId: brand.id, brandName: brand.name, product }, l.last as Parameters<typeof seedCampaign>[1]), target: count, deadline, name: `${product}: ${count} scripts`, context: context.trim().slice(0, 2000) }
       const saved = await save(seeded)
       if (!saved) return
       await readRules(saved)
@@ -824,10 +862,11 @@ export function BatchRun({ brand, product, page, count, deadline, openId, onBack
         {allowance && <p className="text-[12.5px]" style={soft}>{allowance.limit === null ? `${allowance.used} batch scripts written this month` : `${allowance.used} of ${allowance.limit} this month${allowance.resetLabel ? `, more on ${allowance.resetLabel}` : ''}`}</p>}
       </div>
       {err && <p className="text-[13px] inline-flex items-start gap-1.5" style={{ color: RED }}><AlertTriangle size={14} className="mt-0.5 shrink-0" /> {err}</p>}
-      {view === 'reading' && !err && <p className="text-[14px] inline-flex items-center gap-2 py-4" style={soft}><Loader2 size={16} className="animate-spin" /> Reading {brand.name}&rsquo;s brief on TRYBE, what {brand.name} sent you, and how {brand.name} describes {product}...</p>}
+      {view === 'reading' && !err && <p className="text-[14px] inline-flex items-center gap-2 py-4" style={soft}><Loader2 size={16} className="animate-spin" /> Reading {brand.name}&rsquo;s brief on TRYBE, what {brand.name} sent you, and how {brand.name} describes {product}{context.trim() ? ', then turning your context into story ideas' : ''}...</p>}
       {view === 'plan' && c && <PlanCard c={c} read={read} scripts={scripts} busy={!!busy}
         onStart={async () => { const s = await save(c); if (s) { setAuto(true); setView('scripts') } }}
-        onChange={() => { setStep(0); setView('setup') }} onFix={(n) => { setStep(n); setView('setup') }} />}
+        onChange={() => { setStep(0); setView('setup') }} onFix={(n) => { setStep(n); setView('setup') }}
+        onUsePlaces={(names) => void save({ ...c, reality: { ...c.reality, locations: names.map((name) => ({ name, accessNotes: '', deny: [] })) } })} />}
       {view === 'setup' && c && <Setup c={c} setC={setC} step={step} setStep={setStep} save={(k) => save(k || c)} busy={busy} read={read}
         readRules={async (pasted) => { const s = await save(c); if (s) await readRules(s, pasted) }}
         onWrite={() => setView('plan')} writeLabel="Save and see the plan" />}

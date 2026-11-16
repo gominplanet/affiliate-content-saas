@@ -111,7 +111,13 @@ export async function renderBatchPdf(c: Campaign, scripts: Script[], assets: Bra
   section('Where you film', X.locations.map((l) => `${l.name}${l.accessNotes ? `: ${l.accessNotes}` : ''}${l.deny.length ? `. Not here: ${l.deny.join(', ')}` : ''}.`))
   section('On camera', [X.isTraveling ? 'You may be travelling in these.' : 'You are NOT travelling: never say you are flying, checking in, boarding or landing today. You are dropping someone off, watching, remembering a past trip, or getting ready for one.',
     ...(X.onePersonPerVideo ? ['One person on camera per video.'] : []), ...(X.appFootageReuse ? ['App demo shots may be a screen recording from a past trip; label them so.'] : [])])
-  section('Real stories', ['Scripts marked with a star tell a specific event or name a real person. Shoot them only if they are true.'])
+  // THE CONTEXT (the Walter scripts' "How these work"): what every story is
+  // about, what the product never does with it, and what is said with care.
+  if (c.context) {
+    const P = c.contextPlan && c.contextPlan.from === c.context ? c.contextPlan : null
+    section('The context', [c.context, ...(P?.keepApart.length ? P.keepApart.map((x) => `Kept apart: ${x}.`) : []), ...(P?.careful.length ? P.careful.map((x) => `Said with care: ${x}.`) : [])])
+  }
+  section('Real stories', ['Scripts marked with a star tell a specific event, name a real person, or use a detail of your context that may not be true. Shoot them only if they are true.'])
 
   // ── Index ───────────────────────────────────────────────────────────────
   doc.addPage(); drawHeader(k, 'Index', `${scripts.length} scripts`)

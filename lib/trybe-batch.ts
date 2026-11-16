@@ -87,6 +87,32 @@ export interface Campaign {
   /** Scripts the creator needs, and by when. */
   target: number
   deadline: string | null
+  /** THE CONTEXT (Seb, 2026-11-16, the Walter scripts: "any type of context
+   *  and everything can be tied back in to a product"): what the stories are
+   *  about beyond the place, in the creator's words ("Michelle films in the
+   *  car before or after walking Walter, our French bulldog"). */
+  context: string
+  /** MVP's reading of it, made before writing; null until read. */
+  contextPlan: ContextPlan | null
+}
+
+/** How a context becomes many different stories that all lead to the product. */
+export interface ContextPlan {
+  /** The context it was read from, so an edited context is read again. */
+  from: string
+  /** Names or words every story uses ("Walter"). */
+  mention: string[]
+  /** One story idea each: one detail of the context, bridged to the problem
+   *  the product solves. Each slot gets the next one, so a batch spreads. */
+  seeds: string[]
+  /** What the product is never shown doing with the context, because no
+   *  approved claim covers it ("the tracker never on Walter"). */
+  keepApart: string[]
+  /** Facts in these stories to say with care, and how. */
+  careful: string[]
+  /** Where the context says the videos are filmed, as place names ("Parked
+   *  car, B-roll of the morning walks"); empty when it does not say. */
+  places: string[]
 }
 
 // ── A script ─────────────────────────────────────────────────────────────────
@@ -187,6 +213,13 @@ const openText = (s: Pick<Script, 'title' | 'story'>) => `${s.title} ${s.story.m
 // ── The even spread (plain code, not the model) ──────────────────────────────
 
 export interface Slot { idx: number; location: string; host: string; angle: string }
+
+/** The story idea from the context for script number `idx`, in turn, so 50
+ *  scripts over 25 ideas use each one twice and no two in a row. Pure. */
+export function seedFor(c: Pick<Campaign, 'contextPlan'>, idx: number): string | null {
+  const seeds = c.contextPlan?.seeds || []
+  return seeds.length ? seeds[(Math.max(1, idx) - 1) % seeds.length] : null
+}
 
 /** The next `count` scripts' place, host and angle, each the least used so
  *  far (ties in the campaign's own order), so a batch spreads evenly. Pure. */
@@ -319,6 +352,12 @@ export function checkScript(s: Pick<Script, 'idx' | 'title' | 'angle' | 'host' |
   // Length: a warning only.
   const [lo, hi] = R.targetLengthSec
   if (s.estSeconds && (s.estSeconds < lo || s.estSeconds > hi)) warnings.push(`About ${s.estSeconds} seconds, outside ${lo} to ${hi}.`)
+  // THE CONTEXT USED: the story names what the creator asked every story to be about.
+  const mention = c.context ? c.contextPlan?.mention || [] : []
+  if (mention.length && s.story.length) {
+    const told = s.story.map((b) => `${b.say} ${b.show}`).join(' ')
+    if (!mention.some((m) => wordRe(m).test(told))) warnings.push(`The story leaves out your context (${mention.slice(0, 3).join(', ')}).`)
+  }
 
   return { state: reasons.length ? 'red' : warnings.length ? 'amber' : 'green', reasons: Array.from(new Set(reasons)), warnings }
 }
@@ -339,6 +378,7 @@ THE RULES, ALL OF THEM, IN EVERY SCRIPT:
 8. SPELL THE PRODUCT EXACTLY as given, every time. Never use a NEVER SAY word. Never use a BANNED word.
 9. EVERY SCRIPT IS NEW: a different title, a different first line, a different story from every script listed under ALREADY WRITTEN and from each other. Signature hooks are used sparingly: at most one script in four opens with one.
 10. NO FLUFF. Every line hooks, sets the moment, moves the story, shows the product working, or asks. Keep the length asked.
+11. THE CONTEXT, when one is given, is what every story is about. Build the story from the slot's STORY SEED: one detail or moment of the context, told as a real moment. The last story beat or the product beat is a BRIDGE that turns that detail into the problem the product solves, in one natural line (a dog's leash rule becomes "no leash, no way to check on them" for bags handed to strangers). The close calls back to the context. Use the USE BY NAME words. The product never does anything with the context that no approved claim covers (see KEEP APART): the context is the story, the product stays what the brand sells it for. A personal detail of the context that may not be true sets "realStory": true. Say the SAY CAREFULLY facts as given ("a lot of airlines", never "all").
 
 Each script follows its SLOT exactly: its index, place, host and angle.
 
@@ -373,6 +413,10 @@ function campaignBlock(c: Campaign): string {
     c.hooks.length ? `SIGNATURE HOOKS (sparingly): ${c.hooks.join(' | ')}` : '',
     c.references ? `THE BRAND'S OWN STARTER SCRIPTS (style only, never copied):\n${c.references.slice(0, 6000)}` : '',
     c.feedback ? `BRAND FEEDBACK: ${c.feedback.slice(0, 1500)}` : '',
+    c.context ? `CONTEXT (what every story is about, beyond the place):\n${c.context}` : '',
+    c.context && c.contextPlan?.mention.length ? `USE BY NAME: ${c.contextPlan.mention.join(', ')}` : '',
+    c.context && c.contextPlan?.keepApart.length ? `KEEP APART (no approved claim covers these; never show or say them):\n${c.contextPlan.keepApart.map((x) => `- ${x}`).join('\n')}` : '',
+    c.context && c.contextPlan?.careful.length ? `SAY CAREFULLY:\n${c.contextPlan.careful.map((x) => `- ${x}`).join('\n')}` : '',
   ].filter(Boolean).join('\n\n')
 }
 
@@ -389,7 +433,8 @@ export function writerPrompt(c: Campaign, slots: Slot[], written: Array<Pick<Scr
     `SLOTS (write one script for each):\n${slots.map((s) => {
       const f = fixFor.get(s.idx)
       const fix = f ? `\n  REWRITE: the last version broke these rules: ${f.reasons.join(' ')}${f.instruction ? `\n  CREATOR'S NOTE: ${f.instruction}` : ''}${f.previous ? `\n  LAST VERSION'S TITLE: ${f.previous.title}` : ''}` : ''
-      return `- index ${s.idx}: place "${s.location}", host "${s.host}", angle "${s.angle}"${fix}`
+      const seed = c.context ? seedFor(c, s.idx) : null
+      return `- index ${s.idx}: place "${s.location}", host "${s.host}", angle "${s.angle}"${seed ? `, story seed "${seed}"` : ''}${fix}`
     }).join('\n')}`,
   ].filter(Boolean).join('\n\n')
 }
@@ -533,7 +578,18 @@ export function readCampaign(raw: unknown, id = ''): Campaign {
     feedback: clean(o.feedback, 1500),
     target: Math.max(1, Math.min(MAX_PER_CAMPAIGN, Math.round(Number(o.target) || DEFAULT_TARGET))),
     deadline: typeof o.deadline === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(o.deadline) ? o.deadline : null,
+    context: String(o.context ?? '').replace(/\s+\n/g, '\n').trim().slice(0, 2000),
+    contextPlan: readContextPlan(o.contextPlan),
   }
+}
+
+/** A stored context plan, cleaned; null when there is none worth using. Pure. */
+export function readContextPlan(raw: unknown): ContextPlan | null {
+  if (!raw || typeof raw !== 'object') return null
+  const o = raw as Record<string, unknown>
+  const seeds = list(o.seeds, 40, 220)
+  if (!seeds.length) return null
+  return { from: String(o.from ?? '').slice(0, 2000), mention: list(o.mention, 8, 40), seeds, keepApart: list(o.keepApart, 10, 200), careful: list(o.careful, 10, 200), places: list(o.places, 4, 60) }
 }
 
 /** What a campaign still needs before it can write, in words (empty: ready). Pure. */
@@ -635,6 +691,34 @@ export function rulesFromReply(text: string, had: Campaign): Campaign {
   }, had.id)
   return merged
 }
+
+// ── The context, read into story ideas ───────────────────────────────────────
+
+export const CONTEXT_SYSTEM = `You help a creator tie their own context into many story-time videos for one product. You get the PRODUCT, its APPROVED CLAIMS and the CREATOR'S CONTEXT (who or what is in their life or their videos, where they film, what happens there).
+Find the details in the context a story can start from (a habit, a trait, a moment, a person, a place, a feeling) and, for each, the bridge from that detail to the problem the product solves. Example for a luggage tracker and a context of a French bulldog on morning walks: "Walter's leash rule: never off the leash somewhere new, yet our bags go to strangers with no way to check on them".
+Answer with JSON only:
+{"mention":["names or words every story should use, such as the dog's name"],"seeds":["one story idea each, under 30 words: the detail, then the bridge to the product's problem"],"keepApart":["ways the product must never be shown or described with the context, because no approved claim covers them, such as the tracker on the dog when it is sold for luggage"],"careful":["facts these stories touch that must be said with care, and the careful wording"],"places":["where the context says the videos are filmed, as short place names, or none when it does not say"]}
+Give 12 to 30 seeds, each from a different detail, none repeating another. Never make the product do something the approved claims do not say. Never invent facts about the creator beyond the context; a detail you imagine for a story (a habit, a past event) is fine as a seed, the writer marks it to shoot only if true.`
+
+/** The context plan from the reader's reply, or null when it gave none. Pure. */
+export function contextFromReply(text: string, context: string): ContextPlan | null {
+  const m = text.match(/\{[\s\S]*\}/)
+  if (!m) return null
+  try { return readContextPlan({ ...JSON.parse(m[0]), from: context }) } catch { return null }
+}
+
+/** The reader's question: the product, its claims, the context. Pure. */
+export function contextInput(c: Pick<Campaign, 'product' | 'rules' | 'context' | 'creatorFacts'>): string {
+  return [
+    `PRODUCT: ${c.product.name || 'not given'}`,
+    `APPROVED CLAIMS:\n${c.rules.approvedClaims.map((x) => `- ${x.text}`).join('\n') || '- none given yet'}`,
+    c.creatorFacts.length ? `ABOUT THE CREATOR:\n${c.creatorFacts.map((f) => `- ${f}`).join('\n')}` : '',
+    `THE CREATOR'S CONTEXT:\n${c.context}`,
+  ].filter(Boolean).join('\n\n')
+}
+
+/** Whether the context needs reading (set, and not read as it now stands). Pure. */
+export const contextStale = (c: Pick<Campaign, 'context' | 'contextPlan'>) => !!c.context && (!c.contextPlan || c.contextPlan.from !== c.context)
 
 // ── The plan, before writing (Seb, 2026-11-15: "A with a C plan card") ─────
 
