@@ -59,6 +59,9 @@ const NEEDS_SQL = 'The review editor needs migration 459 in Supabase first.'
 /** A step still going after this long is stuck, and can be started again. */
 const STUCK_AFTER_MS = 20 * 60_000
 const missing = (m?: string) => !!m && /review_edits/.test(m) && /does not exist|schema cache/i.test(m)
+/** TRYBE ads edited from a batch need their columns (migration 468). */
+const TRYBE_SQL = 'Editing from a TRYBE batch needs migration 468 in Supabase first.'
+const trybeMissing = (m?: string) => !!m && /trybe_campaign_id|trybe_script_idx|trybe_check/.test(m)
 
 async function gate() {
   const supabase = await createServerClient()
@@ -122,6 +125,9 @@ function view(r: EditRow, server?: ServerView | null, dropAsin?: string | null, 
     placed: r.info?.placed ?? null,
     /** The B-roll checked against the talk: a different product is said. */
     brollCheck: r.info?.brollCheck ?? null,
+    /** A TRYBE ad from a batch (migration 468): its batch, its script once
+     *  known, and the finished video checked against the brief. */
+    trybe: r.trybe_campaign_id ? { campaignId: r.trybe_campaign_id, idx: r.trybe_script_idx ?? null, check: r.trybe_check ?? null } : null,
     onServer,
   }
 }
@@ -137,11 +143,20 @@ async function pictureLibrary(db: ReturnType<typeof editDb>, userId: string): Pr
     .map((f) => db.storage.from(EDIT_BUCKET).getPublicUrl(`${userId}/${f.name}`).data.publicUrl)
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   const g = await gate()
   if ('error' in g) return g.error
   const db = editDb()
-  const { data, error } = await db.from('review_edits').select('*').eq('user_id', g.userId).order('created_at', { ascending: false }).limit(40)
+  // ONE TRYBE BATCH'S VIDEOS (?campaign=, migration 468): all of them, for its tracker.
+  const asked = new URL(request.url).searchParams.get('campaign')
+  const forBatch = asked && /^[0-9a-f-]{36}$/i.test(asked) ? asked : null
+  const listQ = () => {
+    let q = db.from('review_edits').select('*').eq('user_id', g.userId)
+    if (forBatch) q = q.eq('trybe_campaign_id', forBatch)
+    return q.order('created_at', { ascending: false }).limit(forBatch ? 300 : 40)
+  }
+  const { data, error } = await listQ()
+  if (error && forBatch && trybeMissing(error.message)) return NextResponse.json({ error: TRYBE_SQL, needsSql: true }, { status: 503 })
   if (error) return NextResponse.json({ error: missing(error.message) ? NEEDS_SQL : error.message, needsSql: missing(error.message) }, { status: missing(error.message) ? 503 : 500 })
   // The settings a new video starts from: the creator's saved look, else the
   // last ones used. lookSaved says which, so the page never calls a borrowed
@@ -157,7 +172,7 @@ export async function GET() {
   if (server) {
     const heard = rows.filter((r) => r.status === 'making' && server.done[`edit-${r.id}`] && Date.parse(server.done[`edit-${r.id}`].at) >= Date.parse(r.updated_at))
     for (const r of heard) await finishMaking(db, r.id, r.user_id, { ...server.done[`edit-${r.id}`] })
-    if (heard.length) rows = ((await db.from('review_edits').select('*').eq('user_id', g.userId).order('created_at', { ascending: false }).limit(40)).data ?? rows) as EditRow[]
+    if (heard.length) rows = ((await listQ()).data ?? rows) as EditRow[]
   }
   // An ASIN set on a finished video in Drop names its download too.
   const outs = rows.flatMap((r) => Object.values(r.outputs || {}).map((o) => o.url)).filter(Boolean)
@@ -181,6 +196,8 @@ export async function GET() {
     edits: rows.map((r: EditRow) => view(r, server, asinOf(r), turns[r.id] ?? null)),
     /** The month's edited videos (100 a month on Pro, 25 in the first week). */
     allowance: await editAllowance(db, g.userId, g.tier),
+    /** TRYBE ads, on their own (200 a month on Pro, 50 in the first week). */
+    trybeAllowance: await editAllowance(db, g.userId, g.tier, 'trybe'),
     defaults: lookRow ? cleanSettings(lookRow.settings) : last ? cleanSettings(last.settings) : DEFAULT_SETTINGS,
     lookSaved: !!lookRow, lookNeedsSql: lookMissing,
     pictures: await pictureLibrary(db, g.userId),
@@ -241,7 +258,22 @@ export async function POST(request: Request) {
   if (action === 'add') {
     // THE MONTH'S EDITED VIDEOS (lib/review-edit-server editAllowance): none
     // added past what is left, said in words with when more come.
-    const allowance = await editAllowance(db, g.userId, g.tier)
+    // The look first: what kind of video it is says which allowance it uses.
+    const settings = cleanSettings(body.settings)
+    // A TRYBE AD FROM A BATCH (migration 468): the batch must be this
+    // creator's own; its script is given, or found from what is said.
+    let trybe: { campaignId: string; idx: number | null } | null = null
+    if (body.trybe && typeof body.trybe === 'object') {
+      if (!canUsePreview('trybe_edit', g.tier)) return NextResponse.json({ error: 'Editing from a TRYBE batch is still being tested by the MVP team.', code: 'tier_not_allowed' }, { status: 403 })
+      const t = body.trybe as { campaignId?: unknown; idx?: unknown }
+      const cid = typeof t.campaignId === 'string' && /^[0-9a-f-]{36}$/i.test(t.campaignId) ? t.campaignId : ''
+      const { data: camp } = cid ? await db.from('trybe_campaigns').select('id').eq('id', cid).eq('user_id', g.userId).maybeSingle() : { data: null }
+      if (!camp) return NextResponse.json({ error: 'That batch is not one of yours.' }, { status: 400 })
+      const idx = Number(t.idx)
+      trybe = { campaignId: cid, idx: Number.isInteger(idx) && idx > 0 ? idx : null }
+      settings.kind = 'trybe'
+    }
+    const allowance = await editAllowance(db, g.userId, g.tier, settings.kind)
     if (allowance.left !== null && allowance.left <= 0) return NextResponse.json({ error: allowanceFullWords(allowance), allowanceFull: true, allowance }, { status: 429 })
     // A take picked in Google Drive is checked with Google first: MVP can
     // open it, and it is a video. An upload must be in this creator's folder.
@@ -297,13 +329,14 @@ export async function POST(request: Request) {
     const broll = body.broll ? await src(body.broll) : null
     if (body.broll && !broll) return NextResponse.json({ error: 'That B-roll file is not one of your uploads in MVP. Add it again.' }, { status: 400 })
     if (broll && 'error' in broll) return NextResponse.json({ error: `The B-roll take: ${broll.error}` }, { status: 400 })
-    const settings = cleanSettings(body.settings)
     if (settings.logo && !own(settings.logo.url)) settings.logo = null
     settings.pictures = settings.pictures.filter((p) => own(p.url))
     const { data, error } = await db.from('review_edits').insert({
       user_id: g.userId, name: String(body.name || review.name || 'Review').slice(0, 120), status: 'queued', note: 'In line to be read',
       review_src: review, broll_src: broll, product: typeof body.product === 'string' ? body.product.trim().slice(0, 300) || null : null, settings,
+      ...(trybe ? { trybe_campaign_id: trybe.campaignId, trybe_script_idx: trybe.idx } : {}),
     }).select('*').single()
+    if (error && trybe && trybeMissing(error.message)) return NextResponse.json({ error: TRYBE_SQL, needsSql: true }, { status: 503 })
     if (error || !data) return NextResponse.json({ error: missing(error?.message) ? NEEDS_SQL : error?.message || 'Not saved.' }, { status: missing(error?.message) ? 503 : 500 })
     // Start now; the cron carries on with anything this does not finish.
     after(async () => { try { await moveQueue(db, { userId: g.userId, readBudget: 1 }) } catch { /* the cron picks it up */ } })
@@ -318,6 +351,22 @@ export async function POST(request: Request) {
   // The product or its ASIN, said after the video was added (Seb, 2026-11-03:
   // the ASIN in the downloaded file's name). Only the name changes: the edit
   // is not touched, nor when its step began.
+  // WHICH SCRIPT A TRYBE AD IS (migration 468), said by the creator when MVP
+  // could not tell from the take, or put right when it guessed wrong. The
+  // video is read again with that script.
+  if (action === 'script') {
+    if (!row.trybe_campaign_id) return NextResponse.json({ error: 'This video is not from a TRYBE batch.' }, { status: 400 })
+    const idx = Number(body.idx)
+    if (!Number.isInteger(idx) || idx < 1) return NextResponse.json({ error: 'Pick one of the batch\u2019s scripts.' }, { status: 400 })
+    const { data: has } = await db.from('trybe_campaign_scripts').select('idx').eq('campaign_id', row.trybe_campaign_id).eq('idx', idx).maybeSingle()
+    if (!has) return NextResponse.json({ error: 'That script is not in this batch.' }, { status: 400 })
+    if (row.status === 'making') return NextResponse.json({ error: 'It is being made right now. Pick its script once it is done.' }, { status: 409 })
+    const { error } = await db.from('review_edits').update({ trybe_script_idx: idx, status: 'queued', note: 'In line to be read again with its script', trybe_check: null, updated_at: new Date().toISOString() }).eq('id', row.id)
+    if (error) return NextResponse.json({ error: trybeMissing(error.message) ? TRYBE_SQL : error.message }, { status: 500 })
+    after(async () => { try { await moveQueue(db, { userId: g.userId, readBudget: 1 }) } catch { /* the cron picks it up */ } })
+    return NextResponse.json({ ok: true })
+  }
+
   if (action === 'product') {
     const product = typeof body.product === 'string' ? body.product.trim().slice(0, 300) || null : null
     const { error } = await db.from('review_edits').update({ product }).eq('id', row.id)

@@ -570,7 +570,7 @@ function sentShows(r: { b: { name: string; status: string }; reply: string; rq?:
   return r.reply !== 'replied' && (WENT as string[]).includes(r.b.status)
 }
 
-export default function TrybeOutreach({ preview = false, v2 = false, layout = false, topBoard = false }: { preview?: boolean; v2?: boolean; layout?: boolean; topBoard?: boolean } = {}) {
+export default function TrybeOutreach({ preview = false, v2 = false, layout = false, topBoard = false, trybeEdit = false }: { preview?: boolean; v2?: boolean; layout?: boolean; topBoard?: boolean; trybeEdit?: boolean } = {}) {
   // THE NEW TRYBE (Seb, 2026-11-06): team only first (labs-preview
   // 'trybe_v2'), so members keep the page they know until it is opened to them.
   const [dossierOf, setDossierOf] = useState<{ id: string; name: string } | null>(null)
@@ -2582,7 +2582,7 @@ export default function TrybeOutreach({ preview = false, v2 = false, layout = fa
         forYou={(live?.brands || []).filter(b => !b.status || b.status === 'new').slice().sort((a, b) => (b.pick ?? -1) - (a.pick ?? -1)).slice(0, 6)}
         forYouWhy={[...cats, ...kws].slice(0, 4).join(', ')} canMoney={canMyBrands}
         yours={(changes?.changes || []).filter(c => c.yours).slice().sort((a, b) => Date.parse(b.at) - Date.parse(a.at))} />}
-      {tab === 'create' && <TrybeCreate canRead={canMyBrands} isAdmin={isAdmin} onFind={() => setTab('find')} start={scriptsFor} onStarted={() => setScriptsFor(null)} />}
+      {tab === 'create' && <TrybeCreate canRead={canMyBrands} isAdmin={isAdmin} canEdit={trybeEdit} onFind={() => setTab('find')} start={scriptsFor} onStarted={() => setScriptsFor(null)} />}
 
       {tab === 'upload' && <TrybeUpload inbox={inbox} canChat={canInbox} onOpenChat={(id) => { setOpenChat(o => ({ id, n: (o?.n ?? 0) + 1 })); setTab('inbox') }} />}
 

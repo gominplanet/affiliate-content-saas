@@ -26,6 +26,7 @@ import { addBrandPdf } from '@/lib/trybe-brand-pdf-client'
 import { requestTrybeApi } from '@/lib/extension-frame'
 import { readBrandStats, byBrandName, type MyBrand } from '@/lib/trybe-mybrands'
 import { loadBrandPage, type BrandPage } from '@/components/labs/TrybeVideoIdeas'
+import TrybeBatchEdits, { editStage, type BatchEdit } from '@/components/labs/TrybeBatchEdits'
 
 const ACCENT = 'var(--accent)'
 const GREEN = '#16A34A'
@@ -515,11 +516,21 @@ export function Setup({ c, setC, step, setStep, save, busy, read, readRules, onW
 
 // ── The scripts ──────────────────────────────────────────────────────────────
 
-export function Scripts({ c, scripts, setScripts, setAllowance, onSetup, autoStart = false, setupLabel = 'Setup' }: {
+export function Scripts({ c, scripts, setScripts, setAllowance, onSetup, autoStart = false, setupLabel = 'Setup', canEdit = false }: {
   c: Campaign; scripts: Script[]; setScripts: (f: (s: Script[]) => Script[]) => void; setAllowance: (a: Allowance) => void; onSetup: () => void
   /** Start writing at once: the creator pressed Start writing on the plan. */
   autoStart?: boolean; setupLabel?: string
+  /** Film and edit inside the batch (labs-preview trybe_edit). */
+  canEdit?: boolean
 }) {
+  // THE BATCH'S VIDEOS (components/labs/TrybeBatchEdits): each script shows
+  // where its latest video stands.
+  const [edits, setEdits] = useState<BatchEdit[]>([])
+  const editOf = useMemo(() => {
+    const m = new Map<number, BatchEdit>()
+    for (const e of edits) if (e.trybe?.idx && !m.has(e.trybe.idx)) m.set(e.trybe.idx, e)
+    return m
+  }, [edits])
   const [running, setRunning] = useState(false)
   const [runNote, setRunNote] = useState<string | null>(null)
   const [runErr, setRunErr] = useState<string | null>(null)
@@ -627,6 +638,7 @@ export function Scripts({ c, scripts, setScripts, setAllowance, onSetup, autoSta
       </div>
       {(runNote || bulk) && <p className="text-[13px] inline-flex items-center gap-2" style={soft}><Loader2 size={14} className="animate-spin" /> {runNote || bulk}</p>}
       {runErr && <p className="text-[13px]" style={{ color: RED }}>{runErr}</p>}
+      {canEdit && scripts.length > 0 && <TrybeBatchEdits c={c} scripts={scripts} onEdits={setEdits} />}
 
       {scripts.length > 0 && (
         <div className="flex flex-wrap gap-2">
@@ -640,14 +652,16 @@ export function Scripts({ c, scripts, setScripts, setAllowance, onSetup, autoSta
         </div>
       )}
       <div className="space-y-2">
-        {shown.map((s) => <ScriptCard key={s.idx} s={s} c={c} picked={picked.has(s.idx)} onPick={(v) => setPicked((p) => { const n = new Set(p); if (v) n.add(s.idx); else n.delete(s.idx); return n })} rewrite={rewrite} update={update} remove={removeOne} />)}
+        {shown.map((s) => <ScriptCard key={s.idx} s={s} c={c} video={editOf.get(s.idx) ?? null} picked={picked.has(s.idx)} onPick={(v) => setPicked((p) => { const n = new Set(p); if (v) n.add(s.idx); else n.delete(s.idx); return n })} rewrite={rewrite} update={update} remove={removeOne} />)}
       </div>
     </div>
   )
 }
 
-function ScriptCard({ s, c, picked, onPick, rewrite, update, remove }: {
+function ScriptCard({ s, c, video = null, picked, onPick, rewrite, update, remove }: {
   s: Script; c: Campaign; picked: boolean; onPick: (v: boolean) => void
+  /** Its latest video, when one was edited in the batch. */
+  video?: BatchEdit | null
   rewrite: (idx: number, note?: string) => Promise<string | null>; update: (idx: number, patch: Record<string, unknown>) => Promise<string | null>; remove: (idx: number) => Promise<void>
 }) {
   const [open, setOpen] = useState(false)
@@ -680,6 +694,11 @@ function ScriptCard({ s, c, picked, onPick, rewrite, update, remove }: {
           <p className="text-[14px] font-semibold">#{s.idx} {s.title}</p>
           <p className="text-[12.5px]" style={soft}>{s.angle} | {s.host} | {s.location} | about {s.estSeconds}s{s.realStory && <span style={{ color: '#E8604C' }}> | <Star size={11} className="inline -mt-0.5" /> Real story: shoot only if true</span>}</p>
           {s.checks.state === 'red' && <p className="text-[12.5px] mt-0.5" style={{ color: RED }}>{s.checks.reasons.join(' ')}</p>}
+          {video && (() => {
+            const st = editStage(video)
+            const bad = video.trybe?.check?.items.find((i) => i.tone === 'bad')
+            return <p className="text-[12.5px] mt-0.5 font-semibold" style={{ color: st.tone === 'ok' ? '#16A34A' : st.tone === 'bad' ? RED : st.tone === 'warn' ? AMBER : 'var(--text-3)' }}>Video: {st.word}{bad ? `. ${bad.text}` : ''}</p>
+          })()}
         </button>
         <select className="rounded-lg border bg-transparent px-2 py-1 text-[12.5px]" style={inputStyle} value={s.status} onChange={async (ev) => setE(await update(s.idx, { status: ev.target.value as ScriptStatus }))}>
           {SCRIPT_STATUSES.map((x) => <option key={x} value={x}>{statusLabel(x)}</option>)}
@@ -800,8 +819,10 @@ export function PlanCard({ c, read, scripts, onStart, onChange, onFix, onUsePlac
 
 /** One batch for one brand's product: set up and read, the plan, then the
  *  rounds. `openId` opens a batch already started instead. */
-export function BatchRun({ brand, product, page, count, deadline, context = '', openId, onBack }: {
+export function BatchRun({ brand, product, page, count, deadline, context = '', openId, onBack, canEdit = false }: {
   brand: { id: string; name: string }; product: string; page: BrandPage | null; count: number; deadline: string | null
+  /** Film and edit inside the batch (labs-preview trybe_edit). */
+  canEdit?: boolean
   /** What the stories are about beyond the place, typed on the brand page. */
   context?: string
   openId?: string | null; onBack: () => void
@@ -871,7 +892,7 @@ export function BatchRun({ brand, product, page, count, deadline, context = '', 
       {view === 'setup' && c && <Setup c={c} setC={setC} step={step} setStep={setStep} save={(k) => save(k || c)} busy={busy} read={read}
         readRules={async (pasted) => { const s = await save(c); if (s) await readRules(s, pasted) }}
         onWrite={() => setView('plan')} writeLabel="Save and see the plan" />}
-      {view === 'scripts' && c && <Scripts c={c} scripts={scripts} setScripts={setScripts} setAllowance={setAllowance} autoStart={auto} setupLabel="The plan" onSetup={() => { setAuto(false); setView('plan') }} />}
+      {view === 'scripts' && c && <Scripts c={c} scripts={scripts} setScripts={setScripts} setAllowance={setAllowance} autoStart={auto} setupLabel="The plan" canEdit={canEdit} onSetup={() => { setAuto(false); setView('plan') }} />}
     </div>
   )
 }

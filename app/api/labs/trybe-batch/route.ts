@@ -37,7 +37,7 @@ import { introCap, introNote } from '@/lib/intro-allowance'
 import { docsForScripts, type LinksDigest } from '@/lib/trybe-message-links'
 import {
   readCampaign, runRound, checkScript, planSlots, parseScripts, writerSystem, writerPrompt, rulesFromReply, notReadyWords,
-  estimateSeconds, rulesInput, claimsFromReply, contextFromReply, contextInput, contextStale, RULES_SYSTEM, CONTEXT_SYSTEM, BATCH_ROUND, MAX_PER_CAMPAIGN, SCRIPT_STATUSES,
+  estimateSeconds, rulesInput, claimsFromReply, contextFromReply, contextInput, contextStale, RULES_SYSTEM, CONTEXT_SYSTEM, BATCH_ROUND, MAX_PER_CAMPAIGN, SCRIPT_STATUSES, scriptFromRow,
   type Campaign, type Script, type ScriptStatus, type Ask, type ContextPlan,
 } from '@/lib/trybe-batch'
 
@@ -77,15 +77,8 @@ async function allowance(db: Db, ownerId: string, tier: string | null) {
   return { used, limit, left: limit === null ? null : Math.max(0, limit - used), resetLabel: w.resetLabel, introNote: limit === null ? null : introNote(subscribedAt) }
 }
 
-const rowToScript = (r: Record<string, unknown>): Script => ({
-  idx: Number(r.idx), title: String(r.title || ''), angle: String(r.angle || ''), host: String(r.host || ''), location: String(r.location || ''),
-  realStory: r.real_story === true, realityReason: String(r.reality_reason || ''),
-  story: Array.isArray(r.story) ? r.story as Script['story'] : [], body: Array.isArray(r.body) ? r.body as Script['body'] : [],
-  estSeconds: Number(r.est_seconds) || 0, status: (SCRIPT_STATUSES as string[]).includes(String(r.status)) ? r.status as ScriptStatus : 'draft',
-  link: (r.link as string | null) ?? null, notes: (r.notes as string | null) ?? null,
-  checks: r.checks && typeof r.checks === 'object' && (r.checks as { state?: string }).state ? r.checks as Script['checks'] : { state: 'green', reasons: [], warnings: [] },
-  tries: Number(r.tries) || 0,
-})
+// A script row, read the same way here and in the editor (lib/trybe-batch).
+const rowToScript = scriptFromRow
 const scriptToRow = (s: Script) => ({
   idx: s.idx, title: s.title, angle: s.angle, host: s.host, location: s.location, real_story: s.realStory, reality_reason: s.realityReason,
   story: s.story, body: s.body, est_seconds: s.estSeconds, status: s.status, link: s.link, notes: s.notes, checks: s.checks, tries: s.tries,

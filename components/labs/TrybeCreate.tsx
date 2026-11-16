@@ -30,7 +30,9 @@ const PURPLE = 'var(--accent)'
 const GREEN = '#16A34A'
 const AMBER = '#B45309'
 
-export default function TrybeCreate({ canRead, isAdmin, onFind, start, onStarted }: {
+export default function TrybeCreate({ canRead, isAdmin, canEdit = false, onFind, start, onStarted }: {
+  /** Film and edit inside a batch (labs-preview trybe_edit). */
+  canEdit?: boolean
   canRead: boolean; isAdmin: boolean; onFind: () => void
   /** Opened from a brand's page ("Make scripts for it"): start on that brand. */
   start?: { id: string; name: string; product?: string | null } | null
@@ -390,7 +392,7 @@ export default function TrybeCreate({ canRead, isAdmin, onFind, start, onStarted
       {brand && door === 'quick' && quickSection()}
       {brand && door === 'batch' && (product || openBatch) && (
         <section className={card} style={cardStyle}>
-          <BatchRun key={batchKey} brand={{ id: brand.id, name: brand.name }} product={product || ''} page={page} count={batchCount} deadline={batchDue || null} context={context} openId={openBatch}
+          <BatchRun key={batchKey} canEdit={canEdit} brand={{ id: brand.id, name: brand.name }} product={product || ''} page={page} count={batchCount} deadline={batchDue || null} context={context} openId={openBatch}
             onBack={() => { setDoor('home'); setListKey((k) => k + 1) }} />
         </section>
       )}

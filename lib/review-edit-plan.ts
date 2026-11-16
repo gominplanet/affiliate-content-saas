@@ -24,6 +24,11 @@ import { cleanSettings, clock, findWords, POSITIONS, TITLE_COLORS, TITLE_LOOKS, 
 const PLAN_MODEL = 'claude-opus-5-5'
 const WORDS_ONLY_MODEL = 'claude-sonnet-5'
 const QUICK_MODEL = 'claude-haiku-4-5-20251001'
+/** A TRYBE ad edited with its script (lib/trybe-edit): the script says what
+ *  the video is, so the plan only matches the take to its lines, and the
+ *  cheaper model does it (Seb, 2026-11-16, the cost talk: about $0.07 of the
+ *  $0.18 a video was the plan). */
+const SCRIPT_MODEL = 'claude-sonnet-5'
 const KINDS: CutKind[] = ['restart', 'mistake', 'repeat', 'chatter']
 
 type Who = { userId: string; tier: string }
@@ -218,6 +223,14 @@ const PLAN_SYSTEM = [
 
 // A TRYBE ad is not a review (Seb, 2026-10-30: "It's an ad"): a brand runs it
 // as a paid ad, so it is cut harder and opens on a hook.
+/** How a scripted TRYBE take is planned (lib/trybe-edit). */
+const SCRIPT_RULES = [
+  'Above is the script they were filming. Keep the lines that say what a script line says, in its order, even when the words differ a little. Cut restarts, stumbles and anything not in the script, unless it is a short true aside that helps the story.',
+  'Never cut a story line to get to the product sooner: the story comes first on purpose, and the product is not said before the script\'s product part.',
+  'The "title" is the script\'s opening idea as on-screen text, under 7 words. It never names the product, its brand or its kind, because it shows before the product may be said.',
+  'Place a B-roll shot where a script line\'s SHOW describes what the shot shows.',
+].join(' ')
+
 const TRYBE_SYSTEM = [
   'You edit a creator\'s TRYBE ad: an upright video a brand runs as a paid social ad. It is not a review. They filmed it in one take talking to the camera, so it has mistakes, restarts, filler and chatter in it. You see what they said, line by line, with the time of each line.',
   'Cut harder than for a review:',
@@ -279,7 +292,9 @@ export type Frame = { at: number; jpg: string }
 /** The plan for one take: a review, or a TRYBE ad. `frames` are pictures
  *  from its start and end (lib/review-edit edgeMoments), when the video
  *  server could take them. */
-export async function planEdit(o: { words: Word[]; lines: Line[]; shots: Shot[]; product?: string | null; kind?: VideoKind; frames?: Frame[]; who: Who }): Promise<Plan> {
+export async function planEdit(o: { words: Word[]; lines: Line[]; shots: Shot[]; product?: string | null; kind?: VideoKind; frames?: Frame[]; who: Who
+  /** The batch script this take was filmed from (lib/trybe-edit scriptText). */
+  script?: string | null }): Promise<Plan> {
   const said = o.lines.map((l) => `${l.i} [${clock(l.start)}] ${l.text}`).join('\n')
   // SEVERAL B-ROLL FILES (Seb, 2026-11-04: "use snippets of each in
   // context"): each shot says its file, and the good shots of every file are
@@ -289,8 +304,13 @@ export async function planEdit(o: { words: Word[]; lines: Line[]; shots: Shot[];
     ? `\n\nB-ROLL SHOTS:\n${o.shots.map((s) => `${s.n}: ${s.what} (${(s.end - s.start).toFixed(1)}s)${clipCount > 1 && s.clip !== undefined ? `, clip ${s.clip + 1}` : ''}`).join('\n')}`
       + (clipCount > 1 ? `\nThe B-roll is ${clipCount} separate clips. Use good shots from every clip where they fit what is said, spread through the video, rather than many from one clip. Still skip a shot that fits nothing.` : '')
     : '\n\nNo B-roll.'
-  const text = `${o.product ? `PRODUCT: ${o.product}\n\n` : ''}WHAT THEY SAID:\n${said}${shots}`
+  // THE SCRIPT THEY FILMED (a TRYBE batch): what to keep is what the script
+  // says; the title is its opening, never the product before the delay.
+  const scripted = o.kind === 'trybe' && !!o.script
+  const scriptPart = scripted ? `THE SCRIPT THEY WERE FILMING:\n${o.script}\n\n${SCRIPT_RULES}\n\n` : ''
+  const text = `${scriptPart}${o.product ? `PRODUCT: ${o.product}\n\n` : ''}WHAT THEY SAID:\n${said}${shots}`
   const system = o.kind === 'trybe' ? TRYBE_SYSTEM : PLAN_SYSTEM
+  const model = scripted ? SCRIPT_MODEL : PLAN_MODEL
   const frames = (o.frames ?? []).filter((f) => f && typeof f.jpg === 'string' && f.jpg && Number.isFinite(f.at))
   try {
     const content: Array<Record<string, unknown>> = [{ type: 'text', text }]
@@ -302,13 +322,13 @@ export async function planEdit(o: { words: Word[]; lines: Line[]; shots: Shot[];
       }
     }
     const msg = await createAnthropicClient().messages.create({
-      model: PLAN_MODEL, max_tokens: 16000, system,
+      model, max_tokens: 16000, system,
       output_config: { effort: 'medium', format: { type: 'json_schema', schema: PLAN_SCHEMA } },
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       messages: [{ role: 'user', content: content as any }],
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } as any, { timeout: 110_000, maxRetries: 0 })
-    recordAnthropicUsage(msg as never, { userId: o.who.userId, tier: o.who.tier, feature: 'review_edit_plan', model: PLAN_MODEL })
+    recordAnthropicUsage(msg as never, { userId: o.who.userId, tier: o.who.tier, feature: 'review_edit_plan', model })
     const raw = msg.stop_reason === 'refusal' || msg.stop_reason === 'max_tokens' ? null : jsonIn(textOf(msg as never))
     if (raw) return { ...cleanPlan(raw, o.lines, o.shots, o.words), read: frames.length ? 'pictures' : 'words' }
   } catch { /* the words-only planner below (a slow answer included: the reading has five minutes in all) */ }

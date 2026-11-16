@@ -20,14 +20,16 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { transcribeToCues, transcriptionConfigured } from '@/lib/shorts-transcribe'
 import { makeRenderJob } from '@/lib/render-job'
 import { drawTitle } from '@/lib/title-looks'
-import { cleanSettings, cleanWords, clock, edgeMoments, linesOf, renderSpec, tidyWordTimes, LOGO_WIDTH, PICTURE_WIDTH, type CalloutLook, type CalloutTime, type EditSettings, type PictureTime, type Plan, type Shot, type Spot, type Word } from '@/lib/review-edit'
+import { cleanSettings, cleanWords, clock, edgeMoments, linesOf, outputWords, renderSpec, tidyWordTimes, LOGO_WIDTH, PICTURE_WIDTH, type CalloutLook, type CalloutTime, type EditSettings, type PictureTime, type Plan, type Shot, type Spot, type VideoKind, type Word } from '@/lib/review-edit'
 import { brollFits, framesPerFile, planEdit, readShots } from '@/lib/review-edit-plan'
 import { driveAccessToken, driveMediaUrl } from '@/lib/google-drive'
 import { recordUsage } from '@/lib/ai-usage'
 import { fairOrder, lastServedBy } from '@/lib/review-edit-queue'
-import { checkUsageCap, PRIMARY_FEATURE, reviewEditCapFor } from '@/lib/usage-cap'
+import { checkUsageCap, PRIMARY_FEATURE, reviewEditCapFor, trybeEditCapFor } from '@/lib/usage-cap'
 import { introCap, introNote } from '@/lib/intro-allowance'
 import { normalizeTier } from '@/lib/tier'
+import { readCampaign, scriptFromRow, type Campaign, type Script } from '@/lib/trybe-batch'
+import { matchScript, scriptText, checkCut, type CutCheck } from '@/lib/trybe-edit'
 
 export const EDIT_BUCKET = 'instagram-videos'
 /** Videos on the video server at once, across everyone. */
@@ -105,6 +107,21 @@ export interface EditRow {
     counted?: boolean } | null
   words: Word[] | null; shots: Shot[] | null; plan: Plan | null; outputs: Record<string, { url: string; seconds: number }> | null
   attempts: number; made_at: string | null; raw_deleted_at: string | null; created_at: string; updated_at: string
+  /** A TRYBE ad from a batch (migration 468): its batch, its script once
+   *  known, and the finished video checked against the brief. */
+  trybe_campaign_id?: string | null; trybe_script_idx?: number | null; trybe_check?: CutCheck | null
+}
+
+/** A TRYBE ad's batch and scripts (migration 468), or null for any other video. */
+export async function trybeOf(db: Db, row: Pick<EditRow, 'user_id' | 'trybe_campaign_id'>): Promise<{ campaign: Campaign; scripts: Script[] } | null> {
+  if (!row.trybe_campaign_id) return null
+  const { data: c } = await db.from('trybe_campaigns').select('id,brand_id,name,setup').eq('id', row.trybe_campaign_id).eq('user_id', row.user_id).maybeSingle()
+  if (!c) return null
+  const { data: rows } = await db.from('trybe_campaign_scripts').select('*').eq('campaign_id', c.id).order('idx', { ascending: true }).limit(400)
+  return {
+    campaign: readCampaign({ ...((c.setup as object) || {}), name: c.name, brandId: c.brand_id }, String(c.id)),
+    scripts: ((rows ?? []) as Record<string, unknown>[]).map(scriptFromRow),
+  }
 }
 
 const now = () => new Date().toISOString()
@@ -265,14 +282,33 @@ export async function readTakes(db: Db, row: EditRow): Promise<void> {
     const check = shots.length ? await brollFits({ words, shots, product: row.product, who }) : null
     await set(db, row.id, { note: 'Watching how your take starts and ends' })
     const frames = await edgeFrames
+    // A TRYBE AD FROM A BATCH (migration 468, lib/trybe-edit): its script,
+    // found from what was said when the take did not say which. Unsure is
+    // said, and the take is cut from the words alone.
+    const tb = await trybeOf(db, row).catch(() => null)
+    let script: Script | null = null
+    let scriptNote = ''
+    if (tb) {
+      script = row.trybe_script_idx ? tb.scripts.find((s) => s.idx === row.trybe_script_idx) ?? null : null
+      if (!script) {
+        const m = matchScript(words, tb.scripts)
+        script = m ? tb.scripts.find((s) => s.idx === m.idx) ?? null : null
+        if (script && m) {
+          await db.from('review_edits').update({ trybe_script_idx: script.idx }).eq('id', row.id)
+          scriptNote = ` Matched to script ${script.idx}, "${script.title}": ${m.hit} of its ${m.of} words heard.`
+        } else scriptNote = ' MVP could not tell which script this take is, so it was cut from your words alone. Pick its script in your batch.'
+      }
+      // Filmed: the script moves along in the batch (never back from submitted).
+      if (script && (script.status === 'draft' || script.status === 'approved')) await db.from('trybe_campaign_scripts').update({ status: 'shot', updated_at: now() }).eq('campaign_id', tb.campaign.id).eq('idx', script.idx)
+    }
     await set(db, row.id, { note: 'Deciding the cuts' })
-    const plan = await planEdit({ words, lines, shots, product: row.product, kind: kindNow, frames, who })
+    const plan = await planEdit({ words, lines, shots, product: row.product || (tb ? tb.campaign.product.name : null), kind: kindNow, frames, who, script: script && tb ? scriptText(script, tb.campaign.rules.productDelaySec) : null })
     if (check && !check.fits) plan.placements = plan.placements.map((p) => ({ ...p, off: true }))
     const settings = cleanSettings(row.settings)
     if (!settings.title.text && plan.title) settings.title.text = plan.title
     const brollNote = (files.length > 1 ? ` ${files.length} files joined into one video.` : '')
       + (row.broll_src && !brollInfo ? ' MVP could not open your B-roll take, so this one has none.' : '')
-      + (check && !check.fits ? ' The B-roll looks like a different product, so it was left out: see below.' : '') + sideNote
+      + (check && !check.fits ? ' The B-roll looks like a different product, so it was left out: see below.' : '') + sideNote + scriptNote
       // SAID EITHER WAY, so a plan made without the pictures never looks like one made with them.
       + (plan.read === 'pictures' ? ' MVP watched how it starts and ends.' : ' MVP could not watch how it starts and ends this time, so it cut from your words alone.')
       // WHICH B-ROLL FILES WENT IN, and why any did not.
@@ -285,7 +321,8 @@ export async function readTakes(db: Db, row: EditRow): Promise<void> {
     // ONE OF THE MONTH'S EDITED VIDEOS, counted once: the first time it is
     // read. Try again and Make it again never count it twice; removing it
     // does not give it back (editAllowance).
-    if (!row.info?.counted) recordUsage({ userId: row.user_id, tier: who.tier, feature: PRIMARY_FEATURE.reviewEdit[0], model: 'counter', images: 0 })
+    // A TRYBE ad counts in its own allowance (TRYBE_EDITS_MONTHLY_CAP).
+    if (!row.info?.counted) recordUsage({ userId: row.user_id, tier: who.tier, feature: kindNow === 'trybe' ? PRIMARY_FEATURE.trybeEdit[0] : PRIMARY_FEATURE.reviewEdit[0], model: 'counter', images: 0 })
   } catch (e) {
     await fail(`MVP stopped while reading your takes: ${e instanceof Error ? e.message.slice(0, 200) : 'unknown'}.`)
   }
@@ -296,21 +333,26 @@ export async function readTakes(db: Db, row: EditRow): Promise<void> {
 // quarter in their first 7 days (lib/intro-allowance). Used: the videos
 // counted this month, plus the ones added and not read yet, so a batch never
 // adds more than is left. ────────────────────────────────────────────────────
-export interface EditAllowance { used: number; limit: number | null; left: number | null; resetLabel: string; introNote: string | null }
-export async function editAllowance(db: Db, userId: string, tier: unknown): Promise<EditAllowance> {
+// TWO ALLOWANCES (Seb, 2026-11-16: "go with 200 trybe edits a month"): a
+// review counts in the 100, a TRYBE ad in its own 200, each a quarter in the
+// first week. The kind is the video's own (settings.kind).
+export interface EditAllowance { used: number; limit: number | null; left: number | null; resetLabel: string; introNote: string | null; kind?: VideoKind }
+export async function editAllowance(db: Db, userId: string, tier: unknown, kind: VideoKind = 'review'): Promise<EditAllowance> {
   const { data: ig } = await db.from('integrations').select('*').eq('user_id', userId).maybeSingle()
   const t = normalizeTier(tier)
   const subscribedAt = (ig?.subscribed_at as string | null | undefined) ?? null
-  const limit = t === 'admin' ? null : introCap(reviewEditCapFor(t), subscribedAt)
-  const cap = await checkUsageCap(db, userId, PRIMARY_FEATURE.reviewEdit, limit, (ig?.subscription_period_start as string | null) ?? null, (ig?.subscription_period_end as string | null) ?? null)
-  const { count: pending } = await db.from('review_edits').select('id', { count: 'exact', head: true })
+  const limit = t === 'admin' ? null : introCap(kind === 'trybe' ? trybeEditCapFor(t) : reviewEditCapFor(t), subscribedAt)
+  const cap = await checkUsageCap(db, userId, kind === 'trybe' ? PRIMARY_FEATURE.trybeEdit : PRIMARY_FEATURE.reviewEdit, limit, (ig?.subscription_period_start as string | null) ?? null, (ig?.subscription_period_end as string | null) ?? null)
+  let pendingQ = db.from('review_edits').select('id', { count: 'exact', head: true })
     .eq('user_id', userId).in('status', ['queued', 'reading']).is('info->counted', null)
+  pendingQ = kind === 'trybe' ? pendingQ.eq('settings->>kind', 'trybe') : pendingQ.or('settings->>kind.is.null,settings->>kind.neq.trybe')
+  const { count: pending } = await pendingQ
   const used = (cap?.used ?? 0) + (pending ?? 0)
-  return { used, limit, left: limit === null ? null : Math.max(0, limit - used), resetLabel: cap?.resetLabel ?? '', introNote: limit === null ? null : introNote(subscribedAt) }
+  return { used, limit, left: limit === null ? null : Math.max(0, limit - used), resetLabel: cap?.resetLabel ?? '', introNote: limit === null ? null : introNote(subscribedAt), kind }
 }
 /** The words when the month's edited videos are used up. Pure. */
 export function allowanceFullWords(a: EditAllowance): string {
-  return `You have used all ${a.limit} edited videos for this month${a.resetLabel ? `. More on ${a.resetLabel}` : ''}.${a.introNote ? ` ${a.introNote}` : ''}`
+  return `You have used all ${a.limit} ${a.kind === 'trybe' ? 'TRYBE ad edits' : 'edited videos'} for this month${a.resetLabel ? `. More on ${a.resetLabel}` : ''}.${a.introNote ? ` ${a.introNote}` : ''}`
 }
 
 /** The order a line is worked through: turns between members (lib/review-edit-queue). */
@@ -408,6 +450,12 @@ export async function startMaking(db: Db, row: EditRow): Promise<void> {
   }
   const spec = renderSpec({ words, lines: linesOf(words), plan: row.plan, shots: row.shots || [], duration: row.info.review.duration, settings, hasBroll: !!row.broll_src, silences: silences ?? [] })
   if (spec.seconds < 3) return set(db, row.id, { status: 'failed', note: 'Almost everything was cut. Put some cuts back and make it again.' })
+  // THE FINISHED VIDEO AGAINST THE BRIEF (lib/trybe-edit checkCut): from the
+  // words that are in this cut and when they are heard, every time it is made.
+  if (row.trybe_campaign_id) {
+    const tb = await trybeOf(db, row).catch(() => null)
+    if (tb) await db.from('review_edits').update({ trybe_check: checkCut({ words: outputWords(words, spec.segments), seconds: spec.seconds, campaign: tb.campaign }) }).eq('id', row.id)
+  }
   const job = makeRenderJob({ shortId: `edit-${row.id}`, userId: row.user_id, reservationId: null })
   if (!job) return set(db, row.id, { status: 'failed', note: 'MVP’s video server is not set up for background work.' })
   const title = settings.title.on && settings.title.text ? await titleImage(db, row, settings.title) : null

@@ -81,13 +81,29 @@ type Step =
   | { state: 'failed'; why: string }
   | { state: 'skipped'; why: string }
 
-export default function ComputerBatch({ settings, onAdded, left = null }: {
+export default function ComputerBatch({ settings, onAdded, left = null, trybeLeft = null, trybe = null }: {
   /** The look chosen above (logo, zooms, colour...), used for every video. */
   settings: EditSettings
   onAdded: () => Promise<void>
-  /** Edited videos left this month, or null for no limit. */
+  /** Edited reviews left this month, or null for no limit. */
   left?: number | null
+  /** Edited TRYBE ads left this month, their own allowance, or null for no limit. */
+  trybeLeft?: number | null
+  /** A TRYBE batch these takes are for (lib/trybe-edit): every video is a
+   *  TRYBE ad, and MVP finds each one's script from what is said. */
+  trybe?: { campaignId: string } | null
 }) {
+  const kindOf = (v: BatchVideo) => (trybe ? 'trybe' as const : v.kind)
+  const capOf = (k: 'review' | 'trybe') => (k === 'trybe' ? trybeLeft : left)
+  /** More videos of a kind than its allowance has left: said before uploading. */
+  const overWords = (vs: BatchVideo[]): string | null => {
+    for (const k of ['review', 'trybe'] as const) {
+      const cap = capOf(k)
+      const n = vs.filter((v) => kindOf(v) === k).length
+      if (cap !== null && n > cap) return `You have ${cap} ${k === 'trybe' ? 'TRYBE ad edits' : `edited ${cap === 1 ? 'video' : 'videos'}`} left this month, so only the first ${cap} of these ${n} will be uploaded.`
+    }
+    return null
+  }
   const [supabase] = useState(() => createBrowserClient())
   /** The chosen files, by take id: only these are uploaded. */
   const files = useRef(new Map<string, File>())
@@ -166,7 +182,9 @@ export default function ComputerBatch({ settings, onAdded, left = null }: {
     setStopping(false); setRunning(true); setResult(null)
     setSteps(Object.fromEntries(list.map((v) => [v.a[0].id, { state: 'wait' } as Step])))
     const set = (key: string, s: Step) => setSteps((m) => ({ ...m, [key]: s }))
-    const room = left === null ? list.length : Math.max(0, left)
+    // Each kind against its own allowance: reviews the 100, TRYBE ads the 200.
+    const usedOf = { review: 0, trybe: 0 }
+    let full = 0
     const added = new Set<string>()
     let failed = 0
     let words: string | undefined
@@ -178,10 +196,12 @@ export default function ComputerBatch({ settings, onAdded, left = null }: {
         words = `Stopped. ${list.length - i} not uploaded; they are still here to add.`
         break
       }
-      if (i >= room) {
-        for (const rest of list.slice(i)) set(rest.a[0].id, { state: 'skipped', why: 'Not uploaded: no edited videos left this month.' })
-        words = `You had ${left} edited ${left === 1 ? 'video' : 'videos'} left this month, so ${list.length - i} were not uploaded.`
-        break
+      const k = kindOf(v)
+      const cap = capOf(k)
+      if (cap !== null && usedOf[k] >= Math.max(0, cap)) {
+        set(key, { state: 'skipped', why: `Not uploaded: no ${k === 'trybe' ? 'TRYBE ad edits' : 'edited videos'} left this month.` })
+        full++
+        continue
       }
       setAt(i)
       // 1. Its files, one after another.
@@ -207,14 +227,15 @@ export default function ComputerBatch({ settings, onAdded, left = null }: {
       try {
         // The look on every video. A title left empty is written by MVP for
         // each video; one typed (a disclosure) is the same on all of them.
-        const look = cleanSettings({ ...settings, kind: v.kind, callouts: v.callouts ?? [] }, settings)
+        const look = cleanSettings({ ...settings, kind: kindOf(v), callouts: v.callouts ?? [] }, settings)
         const r = await fetch('/api/review-edit', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'add', name: v.product || v.a[0].name.replace(/\.[^.]+$/, ''), review: take(v.a), ...(v.b.length ? { broll: take(v.b) } : {}), product: v.product, settings: look }),
+          body: JSON.stringify({ action: 'add', name: v.product || v.a[0].name.replace(/\.[^.]+$/, ''), review: take(v.a), ...(v.b.length ? { broll: take(v.b) } : {}), product: v.product, settings: look, ...(trybe ? { trybe: { campaignId: trybe.campaignId } } : {}) }),
         })
         const d = await r.json().catch(() => ({})) as { error?: string; allowanceFull?: boolean }
         if (r.ok) {
           added.add(key)
+          usedOf[k]++
           set(key, { state: 'added' })
           void onAdded()
         } else {
@@ -233,6 +254,7 @@ export default function ComputerBatch({ settings, onAdded, left = null }: {
         failed++
       }
     }
+    if (full && !words) words = `${full} ${full === 1 ? 'video was' : 'videos were'} not uploaded: no edits of that kind left this month.`
     setAt(null); setRunning(false); setStopping(false)
     setResult({ ok: added.size, failed, words })
     // What was added leaves the list; what was not stays, to try again.
@@ -320,9 +342,9 @@ export default function ComputerBatch({ settings, onAdded, left = null }: {
               </button>
             )}
           </div>
-          <p className="text-[12px] mt-1" style={blocked || (left !== null && videos.length > left) ? { color: AMBER } : soft}>
+          <p className="text-[12px] mt-1" style={blocked || overWords(videos) ? { color: AMBER } : soft}>
             {blocked ? `${blocked === 1 ? 'One video mixes' : `${blocked} videos mix`} upright and sideways files: fix that first.`
-              : left !== null && videos.length > left ? `You have ${left} edited ${left === 1 ? 'video' : 'videos'} left this month, so only the first ${left} will be uploaded.`
+              : overWords(videos) ? overWords(videos)
                 : running ? 'Keep this tab open until it finishes. Videos already added carry on if you leave.'
                   : `${size(total)} to upload. Keep this tab open while it uploads.`}
           </p>

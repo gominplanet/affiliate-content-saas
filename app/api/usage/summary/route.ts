@@ -28,7 +28,7 @@ import { NEWSLETTER_FOR_MEMBERS } from '@/lib/feature-flags'
 import {
   TIERS, billingWindow, effectivePostCap, effectiveCap, allowedNewsletterBroadcasts, normalizeTier, type Tier, type SteppedCap,
 } from '@/lib/tier'
-import { SHORTS_MONTHLY_CAP, X_MONTHLY_CAP, REVIEW_EDITS_MONTHLY_CAP, PRIMARY_FEATURE, shortsCapFor } from '@/lib/usage-cap'
+import { SHORTS_MONTHLY_CAP, X_MONTHLY_CAP, REVIEW_EDITS_MONTHLY_CAP, TRYBE_EDITS_MONTHLY_CAP, PRIMARY_FEATURE, shortsCapFor } from '@/lib/usage-cap'
 import { createServerClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getStripe } from '@/lib/stripe'
@@ -191,6 +191,8 @@ export async function GET() {
         // The review editor's month, once it is open to this member (Labs):
         // the same count and the same first-week quarter as the editor's gate.
         if (canUsePreview('review_edit', tier)) push('reviewEdits', 'Edited videos', await countFeatures(PRIMARY_FEATURE.reviewEdit), introCap(REVIEW_EDITS_MONTHLY_CAP, subscribedAt))
+        // TRYBE ads edited, their own allowance (Seb, 2026-11-16: 200 a month).
+        if (canUsePreview('review_edit', tier)) push('trybeEdits', 'Edited TRYBE ads', await countFeatures(PRIMARY_FEATURE.trybeEdit), introCap(TRYBE_EDITS_MONTHLY_CAP, subscribedAt))
       }
       // Amazon-style designed social graphics — now finite + metered on Studio
       // and Pro too, so show their bars (Amazon renders these in the branch

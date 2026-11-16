@@ -54,6 +54,10 @@ export const PRIMARY_FEATURE = {
   /** Review editor: one row per edited video, the first time it is read
    *  (lib/review-edit-server). Try again and Make it again never add one. */
   reviewEdit: ['review_edit_video'] as string[],
+  /** TRYBE ads the editor edits, counted apart from reviews (Seb,
+   *  2026-11-16: "go with 200 trybe edits a month to start and see where this
+   *  goes"): one row per TRYBE ad, the first time it is read. */
+  trybeEdit: ['review_edit_trybe'] as string[],
 }
 
 /** Videos the review editor edits per billing period (Seb, 2026-11-03: "go
@@ -64,6 +68,16 @@ export const PRIMARY_FEATURE = {
 export const REVIEW_EDITS_MONTHLY_CAP = 100
 export function reviewEditCapFor(tier: string): number | null {
   return tier === 'admin' ? null : REVIEW_EDITS_MONTHLY_CAP
+}
+
+/** TRYBE ads the editor edits per billing period, on their own (Seb,
+ *  2026-11-16: "go with 200 trybe edits a month to start"). Measured that day
+ *  at about $0.18 of AI each (Whisper as booked $0.10, the plan $0.07), so
+ *  200 is about $36, less once the plan works from the script. A quarter in
+ *  the first 7 days, 50 (lib/intro-allowance). Admin unlimited. */
+export const TRYBE_EDITS_MONTHLY_CAP = 200
+export function trybeEditCapFor(tier: string): number | null {
+  return tier === 'admin' ? null : TRYBE_EDITS_MONTHLY_CAP
 }
 
 /**

@@ -17,7 +17,7 @@ export default function TrybeOutreachPage() {
   const tier = useEffectiveTier()
 
   const access = tier !== null ? trybeAccess(tier) : null
-  if (access === 'full') return <TrybeOutreach v2={canUsePreview('trybe_v2', tier)} layout={canUsePreview('trybe_layout', tier)} topBoard={canUsePreview('trybe_top_board', tier)} />
+  if (access === 'full') return <TrybeOutreach v2={canUsePreview('trybe_v2', tier)} layout={canUsePreview('trybe_layout', tier)} topBoard={canUsePreview('trybe_top_board', tier)} trybeEdit={canUsePreview('trybe_edit', tier)} />
   // The Amazon plan: Find brands to browse, the rest shown as Pro (Seb, 2026-10-14).
   if (access === 'preview') return <TrybeOutreach preview />
   // Not on this plan: say so, never a silent bounce.

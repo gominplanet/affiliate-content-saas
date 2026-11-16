@@ -147,6 +147,20 @@ export interface Script {
   tries: number
 }
 
+/** A trybe_campaign_scripts row as a Script (the batch route and the
+ *  editor, lib/review-edit-server, read them the same way). Pure. */
+export function scriptFromRow(r: Record<string, unknown>): Script {
+  return {
+    idx: Number(r.idx), title: String(r.title || ''), angle: String(r.angle || ''), host: String(r.host || ''), location: String(r.location || ''),
+    realStory: r.real_story === true, realityReason: String(r.reality_reason || ''),
+    story: Array.isArray(r.story) ? r.story as Script['story'] : [], body: Array.isArray(r.body) ? r.body as Script['body'] : [],
+    estSeconds: Number(r.est_seconds) || 0, status: (SCRIPT_STATUSES as string[]).includes(String(r.status)) ? r.status as ScriptStatus : 'draft',
+    link: (r.link as string | null) ?? null, notes: (r.notes as string | null) ?? null,
+    checks: r.checks && typeof r.checks === 'object' && (r.checks as { state?: string }).state ? r.checks as Script['checks'] : { state: 'green', reasons: [], warnings: [] },
+    tries: Number(r.tries) || 0,
+  }
+}
+
 export const BATCH_ROUND = 10
 export const MAX_PER_CAMPAIGN = 300
 export const DEFAULT_TARGET = 50

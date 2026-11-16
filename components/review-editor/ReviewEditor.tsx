@@ -471,6 +471,8 @@ export default function ReviewEditor() {
   const [lookSaved, setLookSaved] = useState(false)
   /** The month's edited videos (100 a month on Pro, 25 in the first week). */
   const [allowance, setAllowance] = useState<{ used: number; limit: number | null; left: number | null; resetLabel: string; introNote: string | null } | null>(null)
+  /** TRYBE ads edited, their own allowance (200 a month on Pro, 50 in the first week). */
+  const [trybeAllowance, setTrybeAllowance] = useState<{ used: number; limit: number | null; left: number | null; resetLabel: string; introNote: string | null } | null>(null)
   const [lookNeedsSql, setLookNeedsSql] = useState(false)
   const [lookOpen, setLookOpen] = useState(false)
   const [savingLook, setSavingLook] = useState(false)
@@ -559,6 +561,7 @@ export default function ReviewEditor() {
       setLoadError(null); setNeedsSql(false)
       setEdits(d.edits || [])
       if (d.allowance) setAllowance(d.allowance)
+      if (d.trybeAllowance) setTrybeAllowance(d.trybeAllowance)
       if (Array.isArray(d.pictures)) setLibrary(d.pictures)
       setLookNeedsSql(!!d.lookNeedsSql)
       if (!seeded.current && d.defaults) { setSettings(d.defaults); setSavedLook(d.defaults); setLookSaved(!!d.lookSaved); seeded.current = true }
@@ -806,6 +809,12 @@ export default function ReviewEditor() {
                     {allowance.limit === null ? `${allowance.used} edited this month` : allowance.left === 0 ? `All ${allowance.limit} edits used this month` : `${allowance.used} of ${allowance.limit} edited this month`}
                   </span>
                 )}
+                {/* TRYBE ads count on their own (Seb, 2026-11-16: 200 a month). */}
+                {trybeAllowance && (
+                  <span className="rounded-full px-3 py-1 text-[12.5px] font-bold" style={trybeAllowance.left === 0 ? { background: 'var(--fix-bg)', color: 'var(--fix)' } : { background: 'rgb(var(--brand-rgb) / 0.12)', color: 'var(--accent-text)' }}>
+                    {trybeAllowance.limit === null ? `${trybeAllowance.used} TRYBE ads this month` : trybeAllowance.left === 0 ? `All ${trybeAllowance.limit} TRYBE ad edits used` : `${trybeAllowance.used} of ${trybeAllowance.limit} TRYBE ads this month`}
+                  </span>
+                )}
                 {drive?.connected && <span className="rounded-full px-3 py-1 text-[12.5px] font-bold" style={{ background: 'var(--surface-2)', color: 'var(--text-2)' }}>Takes stay in your Google Drive</span>}
               </div>
             </div>
@@ -894,8 +903,9 @@ export default function ReviewEditor() {
             {allowance && allowance.limit !== null && (
               <p className="text-[12px] mt-0.5" style={{ color: allowance.left === 0 ? AMBER : 'var(--text-3)' }}>
                 {allowance.left === 0
-                  ? `All ${allowance.limit} edited videos used this month${allowance.resetLabel ? `. More on ${allowance.resetLabel}` : ''}.`
-                  : `${allowance.used} of ${allowance.limit} edited videos used this month${allowance.resetLabel ? `, resets ${allowance.resetLabel}` : ''}.`}
+                  ? `All ${allowance.limit} edited reviews used this month${allowance.resetLabel ? `. More on ${allowance.resetLabel}` : ''}.`
+                  : `${allowance.used} of ${allowance.limit} edited reviews used this month${allowance.resetLabel ? `, resets ${allowance.resetLabel}` : ''}.`}
+                {trybeAllowance && trybeAllowance.limit !== null ? ` TRYBE ads count on their own: ${trybeAllowance.used} of ${trybeAllowance.limit}.` : ''}
                 {allowance.introNote ? ` ${allowance.introNote}` : ''}
               </p>
             )}
@@ -923,7 +933,7 @@ export default function ReviewEditor() {
                   {!drive.needsSql && <a href="/api/auth/google-drive" className="inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-[13px] font-semibold text-white" style={{ background: BLUE }}>Connect Google Drive</a>}
                 </div>
               ) : null}
-            {drive?.connected && <DriveBatch drive={drive} loadDrive={loadDrive} settings={settings} onAdded={load} left={allowance?.left ?? null} />}
+            {drive?.connected && <DriveBatch drive={drive} loadDrive={loadDrive} settings={settings} onAdded={load} left={allowance?.left ?? null} trybeLeft={trybeAllowance?.left ?? null} />}
             {drive?.connected && (
               <p className="text-[12px] mt-3" style={soft}>
                 Google Drive is connected{drive.email ? ` as ${drive.email}` : ''}. Your takes stay in your Drive.{' '}
@@ -935,7 +945,7 @@ export default function ReviewEditor() {
 
         {tab === 'computer' && (
           <div className="mt-4">
-            <ComputerBatch settings={settings} onAdded={load} left={allowance?.left ?? null} />
+            <ComputerBatch settings={settings} onAdded={load} left={allowance?.left ?? null} trybeLeft={trybeAllowance?.left ?? null} />
           </div>
         )}
 

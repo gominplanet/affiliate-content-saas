@@ -29,15 +29,31 @@ const PURPLE = 'var(--accent)'
 const BLUE = '#1a73e8'
 const soft = { color: 'var(--text-3)' }
 
-export default function DriveBatch({ drive, loadDrive, settings, onAdded, left = null }: {
+export default function DriveBatch({ drive, loadDrive, settings, onAdded, left = null, trybeLeft = null, trybe = null }: {
   drive: DriveState
   loadDrive: () => Promise<DriveState | null>
   /** The look chosen above (logo, zooms, colour...), used for every video. */
   settings: EditSettings
   onAdded: () => Promise<void>
-  /** Edited videos left this month, or null for no limit. */
+  /** Edited reviews left this month, or null for no limit. */
   left?: number | null
+  /** Edited TRYBE ads left this month, their own allowance, or null for no limit. */
+  trybeLeft?: number | null
+  /** A TRYBE batch these takes are for (lib/trybe-edit): every video is a
+   *  TRYBE ad, and MVP finds each one's script from what is said. */
+  trybe?: { campaignId: string } | null
 }) {
+  const kindOf = (v: BatchVideo) => (trybe ? 'trybe' as const : v.kind)
+  const capOf = (k: 'review' | 'trybe') => (k === 'trybe' ? trybeLeft : left)
+  /** More videos of a kind than its allowance has left: said before adding. */
+  const overWords = (vs: BatchVideo[]): string | null => {
+    for (const k of ['review', 'trybe'] as const) {
+      const cap = capOf(k)
+      const n = vs.filter((v) => kindOf(v) === k).length
+      if (cap !== null && n > cap) return `You have ${cap} ${k === 'trybe' ? 'TRYBE ad edits' : `edited ${cap === 1 ? 'video' : 'videos'}`} left this month, so only the first ${cap} of these ${n} will be added.`
+    }
+    return null
+  }
   const [busy, setBusy] = useState<string | null>(null)
   const [videos, setVideos] = useState<BatchVideo[] | null>(null)
   const [pool, setPool] = useState<DriveTake[]>([])
@@ -111,10 +127,10 @@ export default function DriveBatch({ drive, loadDrive, settings, onAdded, left =
       try {
         // The look on every video. A title left empty is written by MVP for
         // each video; one typed (a disclosure) is the same on all of them.
-        const look = cleanSettings({ ...settings, kind: v.kind, callouts: v.callouts ?? [] }, settings)
+        const look = cleanSettings({ ...settings, kind: kindOf(v), callouts: v.callouts ?? [] }, settings)
         const r = await fetch('/api/review-edit', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'add', name: v.product || v.a[0].name.replace(/\.[^.]+$/, ''), ...addBody(v), product: v.product, settings: look }),
+          body: JSON.stringify({ action: 'add', name: v.product || v.a[0].name.replace(/\.[^.]+$/, ''), ...addBody(v), product: v.product, settings: look, ...(trybe ? { trybe: { campaignId: trybe.campaignId } } : {}) }),
         })
         const d = await r.json().catch(() => ({}))
         if (r.ok) ok++
@@ -183,8 +199,8 @@ export default function DriveBatch({ drive, loadDrive, settings, onAdded, left =
             className="mt-3 inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-[13.5px] font-semibold text-white disabled:opacity-50" style={{ background: PURPLE }}>
             {busy?.startsWith('add') ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />} {busy?.startsWith('add:') ? `Adding ${busy.slice(4)} of ${videos.length}` : `Add all ${videos.length} to the queue`}
           </button>
-          <p className="text-[12px] mt-1" style={blocked || (left !== null && videos.length > left) ? { color: '#B45309' } : soft}>{blocked ? `${blocked === 1 ? 'One video mixes' : `${blocked} videos mix`} upright and sideways files: fix that first.`
-            : left !== null && videos.length > left ? `You have ${left} edited ${left === 1 ? 'video' : 'videos'} left this month, so only the first ${left} will be added.` : 'They use your look above.'}</p>
+          <p className="text-[12px] mt-1" style={blocked || overWords(videos) ? { color: '#B45309' } : soft}>{blocked ? `${blocked === 1 ? 'One video mixes' : `${blocked} videos mix`} upright and sideways files: fix that first.`
+            : overWords(videos) || 'They use your look above.'}</p>
         </div>
       )}
       {added && (
