@@ -22,6 +22,16 @@ check('only drive.file and the email address are asked for', DRIVE_SCOPES.length
 
 const S = read('app/api/auth/google-drive/route.ts')
 check('the connect is Labs only, offline, and never merges the YouTube grant', /canUsePreview\('review_edit'/.test(S) && /access_type', 'offline'/.test(S) && !/include_granted_scopes', 'true'/.test(S) && /\{ drive: true, rt: '\/review-editor' \}/.test(S))
+
+// GOOGLE REFUSES YOUTUBE AND DRIVE IN ONE REQUEST (Seb, 2026-11-16: "Access
+// blocked ... scopes that cannot be requested together: youtube.force-ssl,
+// drive.file", from Search Console's connect). include_granted_scopes makes
+// Google add every scope the account granted MVP before, so no Google
+// connect may send it.
+for (const f of ['app/api/auth/gsc/route.ts', 'app/api/auth/youtube/route.ts', 'app/api/auth/google-drive/route.ts']) {
+  check(`${f} never merges earlier Google grants`, !/searchParams\.set\('include_granted_scopes'/.test(readFileSync(f, 'utf8')))
+}
+check('the YouTube upload upgrade still names force-ssl itself', /'https:\/\/www\.googleapis\.com\/auth\/youtube\.force-ssl',\n/.test(readFileSync('app/api/auth/youtube/route.ts', 'utf8')))
 check('it comes back through the address registered with Google', /\$\{appUrl\}\/api\/auth\/youtube\/callback/.test(S))
 const C = read('app/api/auth/youtube/callback/route.ts')
 const stateCheck = C.indexOf('userId !== user.id')

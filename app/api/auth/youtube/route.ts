@@ -46,8 +46,8 @@ export async function GET(req: Request) {
   // Incremental authorization: `intent=upload` adds ONLY the sensitive
   // youtube.upload scope, on demand, when a creator opts into publishing Shorts
   // back to YouTube — so a normal YouTube connect never triggers the
-  // unverified-scope warning. include_granted_scopes merges it with what they
-  // already granted (we don't re-pick the account for an upgrade).
+  // unverified-scope warning. The upgrade asks for force-ssl and upload by
+  // name (we don't re-pick the account for an upgrade).
   const wantUpload = new URL(req.url).searchParams.get('intent') === 'upload'
   // `verified=1` forces a strictly verified-scope reconnect: request ONLY the
   // Google-verified force-ssl scope and never add the sensitive youtube.upload
@@ -98,15 +98,13 @@ export async function GET(req: Request) {
     ...(addUploadScope ? ['https://www.googleapis.com/auth/youtube.upload'] : []),
   ].join(' '))
   url.searchParams.set('access_type', 'offline')
-  // Incremental authorization ONLY for the on-demand upload upgrade: there we
-  // want to keep the scopes the user already granted and just add youtube.upload.
-  // For a NORMAL connect we deliberately DON'T send include_granted_scopes —
-  // otherwise Google re-merges any scope this account granted in the past (e.g.
-  // the old `youtube` / `youtube.upload` we've since dropped), and because those
-  // are no longer in our verified set the "Google hasn't verified this app"
-  // warning comes back even though we only request the verified force-ssl scope.
-  // Omitting it makes every reconnect request strictly the verified scope(s).
-  if (wantUpload) url.searchParams.set('include_granted_scopes', 'true')
+  // NEVER include_granted_scopes. On a normal connect Google would re-merge
+  // any scope this account granted in the past (the old `youtube` /
+  // `youtube.upload` we've since dropped) and bring back the "Google hasn't
+  // verified this app" warning. On the upload upgrade it merged the review
+  // editor's Drive grant too, and Google refuses youtube.force-ssl and
+  // drive.file in one request (Seb, 2026-11-16, "Access blocked", Error 400).
+  // The upgrade names force-ssl and upload itself, so nothing it needs is lost.
   // 'consent' forces a refresh token; 'select_account' shows the account/channel
   // chooser so a creator with multiple YouTube channels picks the right one. For
   // an upload-scope upgrade we skip the chooser — just add the scope to the

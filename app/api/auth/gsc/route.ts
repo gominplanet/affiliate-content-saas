@@ -54,7 +54,13 @@ export async function GET(req: Request) {
   ].join(' '))
   url.searchParams.set('access_type', 'offline')
   url.searchParams.set('prompt', 'consent') // force a refresh token
-  url.searchParams.set('include_granted_scopes', 'true')
+  // NEVER include_granted_scopes (Seb, 2026-11-16, Google's "Access blocked:
+  // This request contains scopes that cannot be requested together:
+  // youtube.force-ssl, drive.file", Error 400). It made Google add every
+  // scope this account ever granted MVP's client to this request: YouTube
+  // from the channel connect and Drive from the review editor, which Google
+  // refuses to ask for together. Search Console needs only its own two
+  // scopes, and keeps its own token (integrations.gsc_oauth_*).
   url.searchParams.set('state', state)
 
   return NextResponse.redirect(url.toString())
