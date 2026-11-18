@@ -131,8 +131,20 @@ export default function TrybeDossier({ brandId, name, onClose, actions, scout = 
   const title = d?.brand?.name || listing?.name || name || 'Brand'
   const website = d?.brand?.website || listing?.website || null
   const productsOpen = d?.pub?.read ? { open: d.pub.products.filter((p) => p.samples).length, total: d.pub.products.length } : null
+  // WHAT TRYBE SHOWS (lib/trybe-dossier TrybeFacts): MVP's copy of its list,
+  // then the brand's own page read through SCOUT when that is newer.
+  const liveNum = (id: string): number | null => { const v = live?.read?.numbers.find((x) => x.id === id)?.value; const n = v ? parseFloat(v.replace(/[^0-9.]/g, '')) : NaN; return Number.isFinite(n) ? n : null }
+  const trybeFacts = {
+    creators: liveNum('creators') ?? (typeof listing?.total_creators === 'number' ? listing.total_creators : null),
+    rating: typeof listing?.review_rating === 'number' ? listing.review_rating : liveNum('rating'),
+    reviews: typeof listing?.review_count === 'number' ? listing.review_count : null,
+    score: liveNum('score'),
+    approvedVideos: typeof listing?.stats?.videosApproved === 'number' ? listing.stats.videosApproved : null,
+  }
   const dims: Dimension[] = scorecard({
-    pay: { dollars: listing?.pay_est?.dollars ?? d?.pool?.payPerApproved ?? null, short: listing?.pay_est?.short ?? listing?.pay_text ?? null, basis: listing?.pay_est?.dollars != null ? listing?.pay_est?.basis ?? null : d?.pool?.payPerApproved != null ? 'members' : null },
+    pay: { dollars: listing?.pay_est?.dollars ?? d?.pool?.payPerApproved ?? null, short: listing?.pay_est?.short ?? listing?.pay_text ?? null, basis: listing?.pay_est?.dollars != null ? listing?.pay_est?.basis ?? null : d?.pool?.payPerApproved != null ? 'members' : null,
+      percent: listing?.pay_est?.percent ?? null, maxPer: listing?.pay_est?.maxPer ?? null, earned: listing?.earnings_bucket ?? null },
+    trybe: trybeFacts,
     meta: { count: typeof listing?.meta_ads === 'number' ? listing.meta_ads : null, own: listing?.meta_trust === 'own' || listing?.meta_trust === 'unchecked', fresh: !!listing?.meta_fresh, top100Hits: typeof listing?.top100_hits === 'number' ? listing.top100_hits : null },
     samples: { trybe: listing?.stats?.samples ?? null, products: productsOpen, pool: d?.samples ?? null },
     pool: d?.pool ? { approvalRate: d.pool.approvalRate, reviewDays: d.pool.reviewDays ?? listing?.review?.reviewDays ?? null, slowShare: d.pool.slowShare } : listing?.review ? { approvalRate: null, reviewDays: listing.review.reviewDays ?? null, slowShare: listing.review.slowShare ?? null } : null,
@@ -230,7 +242,9 @@ export default function TrybeDossier({ brandId, name, onClose, actions, scout = 
           {/* ── THE SIX ──────────────────────────────────────────────────── */}
           {(listing || d) && (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-              {dims.map((x) => (
+              {/* ONLY WHAT IS KNOWN GETS A BOX (Seb, 2026-11-18): the rest are
+                  named in one line under them, never a box of "not known". */}
+              {dims.filter((x) => x.score != null).map((x) => (
                 <div key={x.id} className="rounded-2xl p-4 flex flex-col gap-2" style={ui.card}>
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-[12.5px] font-semibold" style={ui.mid}>{x.label}</span>
@@ -242,6 +256,11 @@ export default function TrybeDossier({ brandId, name, onClose, actions, scout = 
                 </div>
               ))}
             </div>
+          )}
+          {(listing || d) && dims.some((x) => x.score == null) && (
+            <p className="text-[12px] -mt-2" style={ui.soft}>
+              Not scored yet: {dims.filter((x) => x.score == null).map((x) => `${x.label.toLowerCase()} (${x.source.replace(/[.\s]+$/, '')})`).join('; ')}.
+            </p>
           )}
 
           {/* ── HOW MVP KNOWS (Seb, 2026-11-09: "How do we know for sure? What is
@@ -311,7 +330,12 @@ export default function TrybeDossier({ brandId, name, onClose, actions, scout = 
           )}
 
           {/* ── MVP CREATORS WITH THIS BRAND ─────────────────────────────── */}
-          {d && (
+          {/* ONE LINE UNTIL THERE ARE RESULTS (Seb, 2026-11-18): four "Not yet"
+              figures said nothing; the section waits for real numbers. */}
+          {d && !(d.pool?.approvalRate != null || d.pool?.payPerApproved != null || d.samples?.shown || d.replies?.shown) && (
+            <p className="text-[12.5px] inline-flex items-center gap-1.5" style={ui.soft}><Users size={13} /> What MVP creators got back from it shows here once 5 of them have results, never one creator&rsquo;s own.</p>
+          )}
+          {d && (d.pool?.approvalRate != null || d.pool?.payPerApproved != null || d.samples?.shown || d.replies?.shown) && (
             <Section title="What MVP creators got back" aside={<span className="inline-flex items-center gap-1"><Users size={12} /> Only shown once 5 creators have results, never one creator&rsquo;s own</span>}>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-6 gap-y-5 rounded-2xl p-5" style={ui.card}>
                 <Figure label="Approved" value={d.pool?.approvalRate != null ? `${Math.round(d.pool.approvalRate * 100)}%` : 'Not yet'} sub={d.pool?.approvalRate != null ? 'of their videos' : d.pool?.why || 'No results yet'} />

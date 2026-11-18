@@ -515,7 +515,7 @@ export function PassButton({ passed, onClick, disabled }: { passed: boolean; onC
 
 // ── WHAT A VIDEO PAYS, HOW CROWDED, NEW, STATICS (Seb, 2026-10-14) ─────────
 
-export interface LivePayEst { dollars: number | null; basis: PayBasis; short: string; math: string[]; plus: string[]; capped: boolean; guaranteed: boolean }
+export interface LivePayEst { dollars: number | null; basis: PayBasis; short: string; math: string[]; plus: string[]; capped: boolean; guaranteed: boolean; percent?: number | null; maxPer?: number | null }
 
 const BASIS_WORDS: Record<PayBasis, string> = {
   yours: 'From your own results with it.',
@@ -540,9 +540,11 @@ export function PayChip({ est, payText }: { est: LivePayEst | null | undefined; 
       <button onClick={(e) => { e.preventDefault(); e.stopPropagation(); setOpen((o) => !o) }} aria-expanded={open}
         className="text-[11px] font-semibold rounded-md px-2 py-0.5 inline-flex items-center gap-1 text-left" style={style}
         title={`${BASIS_WORDS[est.basis]}${payText ? ` TRYBE says: ${payText}` : ''}`}>
-        <DollarSign size={11} />{est.short}{est.capped ? ' (capped)' : ''}{est.guaranteed && est.basis !== 'terms' ? ' · guaranteed part' : ''}
+        <DollarSign size={11} />{est.basis === 'variable' && est.percent ? `${est.percent}% of sales` : est.short}{est.capped ? ' (capped)' : ''}{est.guaranteed && est.basis !== 'terms' ? ' · guaranteed part' : ''}
         <span className="underline font-normal ml-0.5">{open ? 'hide' : 'how?'}</span>
       </button>
+      {/* THE CAP PER VIDEO, FLAGGED (Seb, 2026-11-18): its own red chip. */}
+      {est.maxPer != null && <MaxPerChip max={est.maxPer} />}
       {open && (
         <span className="block text-[11.5px] mt-1 rounded-md px-2 py-1.5 leading-snug" style={{ background: 'var(--surface-2)', color: 'var(--text-2)' }}>
           {est.math.map((m) => <span key={m} className="block">{m}</span>)}
@@ -554,6 +556,18 @@ export function PayChip({ est, payText }: { est: LivePayEst | null | undefined; 
     </span>
   )
 }
+
+/** A brand that caps what one video can earn: flagged in red, with why. */
+export function MaxPerChip({ max }: { max: number }) {
+  return (
+    <span className="mt-1 text-[11px] font-semibold rounded-md px-2 py-0.5 inline-flex items-center gap-1 w-fit" style={{ background: 'rgba(220,38,38,0.10)', color: '#DC2626' }}
+      title={`It stops paying past ${maxWords(max)} for one video, however well that video sells. The video that sells best is the one that pays, so a cap holds back your best work.`}>
+      Max {maxWords(max)} a video
+    </span>
+  )
+}
+/** "$5K", "$750", "$12.5K". Pure. */
+export const maxWords = (max: number) => `$${max >= 1000 ? `${(Math.round(max / 100) / 10).toLocaleString('en-US')}K` : Math.round(max)}`
 
 const CROWD_STYLE = {
   open: { background: 'rgba(22,163,74,0.14)', color: GREEN },

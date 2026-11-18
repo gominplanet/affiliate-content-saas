@@ -215,6 +215,13 @@ export interface PayEstimate {
   guaranteed: boolean
   /** The kinds of pay it has, for the pay filter. */
   kinds: TermKind[]
+  /** Its best % of sales, when it pays one. */
+  percent: number | null
+  /** THE CAP PER VIDEO (Seb, 2026-11-18: "some brands will actually write a
+   *  max, such as max $5,000 per submission ... a brand that maxes out their
+   *  commission per submission is not a good brand"): the most one video can
+   *  earn from its sales, ad spend or orders, in dollars; null when uncapped. */
+  maxPer: number | null
 }
 
 export const money = (n: number) => `$${n >= 100 ? Math.round(n).toLocaleString('en-US') : n.toFixed(2).replace(/\.00$/, '')}`
@@ -225,6 +232,10 @@ export const money = (n: number) => `$${n >= 100 ? Math.round(n).toLocaleString(
 export function estimatePay(input: { lines: string[]; yours?: { earnings: number; approved: number } | null; members?: number | null }): PayEstimate {
   const { terms, unread } = readTerms(input.lines)
   const kinds = Array.from(new Set(terms.map((t) => t.kind)))
+  const gmv = terms.filter((t) => t.kind === 'gmv').map((t) => t.amount)
+  const percent = gmv.length ? Math.max(...gmv) : null
+  const caps = terms.filter((t) => (t.kind === 'gmv' || t.kind === 'adSpend' || t.kind === 'perOrder') && t.cap != null).map((t) => t.cap as number)
+  const maxPer = caps.length ? Math.min(...caps) : null
   const plus: string[] = []
   const math: string[] = []
   let capped = false
@@ -250,23 +261,23 @@ export function estimatePay(input: { lines: string[]; yours?: { earnings: number
   const y = input.yours
   if (y && y.approved > 0 && y.earnings > 0) {
     const per = y.earnings / y.approved
-    return { dollars: per, basis: 'yours', short: `${money(per)} a video (yours)`, capped, guaranteed: fixed != null, kinds,
+    return { dollars: per, basis: 'yours', short: `${money(per)} a video (yours)`, capped, guaranteed: fixed != null, kinds, percent, maxPer,
       math: [`You earned ${money(y.earnings)} for ${y.approved} approved video${y.approved === 1 ? '' : 's'} with it: ${money(per)} each`, ...math], plus }
   }
   const m = input.members
   if (typeof m === 'number' && m > 0) {
-    return { dollars: m, basis: 'members', short: `About ${money(m)} a video (members)`, capped, guaranteed: fixed != null, kinds,
+    return { dollars: m, basis: 'members', short: `About ${money(m)} a video (members)`, capped, guaranteed: fixed != null, kinds, percent, maxPer,
       math: [`MVP members earned ${money(m)} per approved video with it, on average (5 members at least)`, ...math], plus }
   }
   if (fixed != null) {
-    return { dollars: fixed, basis: 'terms', short: `${money(fixed)} a video${plus.length ? ' +' : ''}`, capped, guaranteed: true, kinds, math, plus }
+    return { dollars: fixed, basis: 'terms', short: `${money(fixed)} a video${plus.length ? ' +' : ''}`, capped, guaranteed: true, kinds, percent, maxPer, math, plus }
   }
   if (terms.length) {
     const lead = terms.find((t) => t.kind === 'gmv') ? 'Depends on sales' : terms.find((t) => t.kind === 'adSpend') ? 'Depends on ad spend' : 'Depends on orders'
-    return { dollars: null, basis: 'variable', short: lead, capped, guaranteed: false, kinds,
+    return { dollars: null, basis: 'variable', short: lead, capped, guaranteed: false, kinds, percent, maxPer,
       math: ['It pays on results only, so MVP gives no dollar figure until members have results with it.'], plus }
   }
-  return { dollars: null, basis: 'unknown', short: input.lines.length || unread.length ? 'Pay terms unclear' : 'Pay not listed', capped: false, guaranteed: false, kinds,
+  return { dollars: null, basis: 'unknown', short: input.lines.length || unread.length ? 'Pay terms unclear' : 'Pay not listed', capped: false, guaranteed: false, kinds, percent, maxPer,
     math: [input.lines.length ? `MVP could not read these pay terms: ${input.lines.slice(0, 3).join(' · ')}. Open the brand on TRYBE to see them.` : 'TRYBE’s list gives no pay for it. Open the brand on TRYBE to see its terms.'], plus }
 }
 

@@ -10,7 +10,7 @@
 
 import { useMemo, useState, type CSSProperties, type ReactNode } from 'react'
 import { ArrowDown, ArrowUp, ArrowUpRight, Trophy } from 'lucide-react'
-import { BrandMark, proofTitle } from '@/components/labs/TrybeFinderControls'
+import { BrandMark, proofTitle, MaxPerChip } from '@/components/labs/TrybeFinderControls'
 import { retainerSource } from '@/lib/trybe-evidence'
 import { BrandName, useBrandOpen } from '@/components/labs/trybe-dossier-context'
 import { GRADE, APP, AppChip, SWEET, SweetChip } from '@/components/labs/trybe-ui'
@@ -233,8 +233,11 @@ export default function TrybeBrandTable({ brands, picked, onPick, taken, preview
                   <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1">
                     <span title={b.pay_text || undefined} style={hl('pay')}>
                       {b.pay_est?.dollars != null ? <><span className="font-bold" style={{ color: 'var(--text)' }}>${Math.round(b.pay_est.dollars)}</span> <span className="text-[11px]" style={muted}>a video</span></>
-                        : b.pay_est?.short || b.pay_text ? <span className="text-[12px]" style={{ color: 'var(--text-2)' }}>{String(b.pay_est?.short || b.pay_text).slice(0, 26)}</span> : <Unknown>Pay not shown</Unknown>}
+                        : b.pay_est?.basis === 'variable' && b.pay_est.percent ? <><span className="font-bold" style={{ color: 'var(--text)' }}>{b.pay_est.percent}%</span> <span className="text-[11px]" style={muted}>of sales</span></>
+                          : b.pay_est?.short || b.pay_text ? <span className="text-[12px]" style={{ color: 'var(--text-2)' }}>{String(b.pay_est?.short || b.pay_text).slice(0, 26)}</span> : <Unknown>Pay not shown</Unknown>}
                     </span>
+                    {/* A CAP ON WHAT ONE VIDEO EARNS, in red (Seb, 2026-11-18). */}
+                    {b.pay_est?.maxPer != null && <MaxPerChip max={b.pay_est.maxPer} />}
                     {b.retainer && <span title={retainerSource(b.retainer)} className={`inline-flex items-center rounded-full px-1.5 py-px text-[10.5px] ${b.retainer.source === 'terms' ? 'font-extrabold' : 'font-bold'} whitespace-nowrap`}
                       style={{ ...(b.retainer.source === 'terms' ? { background: '#F59E0B', color: '#1F1300' } : { border: '1.5px solid #F59E0B', color: 'var(--text)' }), ...(sort?.col === 'retainer' ? { boxShadow: '0 0 0 2px var(--accent)' } : {}) }}>{retainerCell(b.retainer)}</span>}
                   </div>

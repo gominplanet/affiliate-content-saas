@@ -208,8 +208,18 @@ export interface Dimension {
   source: string
 }
 
+/** WHAT TRYBE ITSELF SHOWS about the brand (Seb, 2026-11-18: "I'm also not a
+ *  huge fan of saying not enough yet, not enough yet, not known, depends on
+ *  sales. We've got to figure out how to get this information from Tribe"):
+ *  its creators, its rating, its TRYBE score and the videos it approved, from
+ *  MVP's copy of TRYBE's list and the brand's own page read through SCOUT.
+ *  Each box uses these when MVP creators' own results are not there yet. */
+export interface TrybeFacts { creators: number | null; rating: number | null; reviews: number | null; score: number | null; approvedVideos: number | null }
+
 export interface ScoreInput {
-  pay: { dollars: number | null; short: string | null; basis: string | null }
+  /** percent: its % of sales; maxPer: the most one video can earn (lib/trybe-pay); earned: TRYBE's payout range. */
+  pay: { dollars: number | null; short: string | null; basis: string | null; percent?: number | null; maxPer?: number | null; earned?: string | null }
+  trybe?: TrybeFacts | null
   meta: { count: number | null; own: boolean; fresh: boolean; top100Hits: number | null }
   samples: { trybe: boolean | null; products: { open: number; total: number } | null; pool: SamplePool | null }
   pool: { approvalRate: number | null; reviewDays: number | null; slowShare: number | null } | null
@@ -224,13 +234,32 @@ const clamp = (n: number) => Math.max(0, Math.min(100, Math.round(n)))
 export function scorecard(s: ScoreInput): Dimension[] {
   const dims: Dimension[] = []
 
-  // PAY: dollars per approved video. $60+ is top of TRYBE, $15 is the floor.
+  // PAY: dollars per approved video when there is a figure ($60+ is top of
+  // TRYBE, $15 the floor); else its % of sales, as TRYBE writes it (15% and
+  // up is good, 10% the norm). A cap on what one video earns holds it down.
   {
     const d = s.pay.dollars
-    const score = d == null ? null : clamp(((d - 10) / 50) * 100)
-    dims.push({ id: 'pay', label: 'Pays', grade: gradeOf(score), score,
-      value: d != null ? `$${Math.round(d)} a video` : s.pay.short || 'Not known',
-      source: d != null ? (s.pay.basis === 'members' ? 'From MVP creators’ results' : s.pay.basis === 'yours' ? 'From your own results' : 'From its pay terms on TRYBE') : s.pay.short ? 'Pays on results only, no fixed figure' : 'TRYBE does not show its pay' })
+    const pct = s.pay.percent ?? null
+    const max = s.pay.maxPer ?? null
+    let score: number | null = null
+    let value = s.pay.short || 'Pay not listed'
+    let source = s.pay.short ? 'Pays on results only' : 'TRYBE shows no pay for it: open it on TRYBE to see its terms'
+    if (d != null) {
+      score = clamp(((d - 10) / 50) * 100)
+      value = `$${Math.round(d)} a video`
+      source = s.pay.basis === 'members' ? 'From MVP creators’ results' : s.pay.basis === 'yours' ? 'From your own results' : 'From its pay terms on TRYBE'
+    } else if (pct != null) {
+      score = pct >= 15 ? 80 : pct >= 10 ? 65 : pct >= 7 ? 50 : pct >= 5 ? 35 : 15
+      value = `${pct}% of sales`
+      source = `Paid on the sales your videos make${s.pay.earned ? `. Its creators have earned ${s.pay.earned}` : ''}`
+    }
+    if (max != null) {
+      const w = max >= 1000 ? `$${(Math.round(max / 100) / 10).toLocaleString('en-US')}K` : `$${Math.round(max)}`
+      score = score == null ? 20 : Math.min(score, 25)
+      value = `${value}, max ${w}`
+      source = `Capped: one video earns no more than ${w}, however well it sells.`
+    }
+    dims.push({ id: 'pay', label: 'Pays', grade: gradeOf(score), score, value, source })
   }
 
   // AD SPEND: its own Meta ads running now, and its videos in TRYBE's Top 100.
@@ -260,8 +289,8 @@ export function scorecard(s: ScoreInput): Dimension[] {
     const p = s.samples.pool
     const prod = s.samples.products
     let score: number | null = null
-    let value = 'Not known'
-    let source = 'Neither TRYBE nor its products say'
+    let value = 'Not said'
+    let source = 'Neither TRYBE nor its products say whether it sends samples'
     if (p?.shown && p.arrivedRate != null) {
       score = clamp(p.arrivedRate)
       value = `${p.arrivedRate}% arrived`
@@ -291,28 +320,57 @@ export function scorecard(s: ScoreInput): Dimension[] {
   // scored every brand 0 and the brand page said "0.65%".
   {
     const r = s.pool?.approvalRate != null ? Math.round(s.pool.approvalRate * 100) : null
-    const score = r == null ? null : clamp(((r - 30) / 55) * 100)
-    dims.push({ id: 'approval', label: 'Approves videos', grade: gradeOf(score), score,
-      value: r == null ? 'Not enough yet' : `${r}% approved`,
-      source: r == null ? `Shown once ${POOL_MIN} MVP creators have results with it` : `From ${POOL_MIN}+ MVP creators’ videos` })
+    const t = s.trybe
+    let score: number | null = r == null ? null : clamp(((r - 30) / 55) * 100)
+    let value = r == null ? 'No rating yet' : `${r}% approved`
+    let source = r == null ? 'Creators have not rated it on TRYBE' : `From ${POOL_MIN}+ MVP creators’ videos`
+    // Before MVP creators' results: creators' own stars on TRYBE, then the
+    // videos it has approved there.
+    if (r == null && t?.rating != null && t.rating > 0) {
+      score = t.rating >= 4.7 ? 80 : t.rating >= 4.5 ? 70 : t.rating >= 4.2 ? 55 : t.rating >= 4 ? 45 : 25
+      if ((t.reviews ?? 0) < 3) score = Math.min(score, 60)
+      value = `${t.rating.toFixed(1)} \u2605 from creators`
+      source = `${t.reviews ?? 'A few'} creator review${t.reviews === 1 ? '' : 's'} on TRYBE${t.approvedVideos ? `, ${t.approvedVideos.toLocaleString('en-US')} videos approved` : ''}`
+    } else if (r == null && t?.approvedVideos) {
+      score = t.approvedVideos >= 100 ? 70 : t.approvedVideos >= 20 ? 55 : 40
+      value = `${t.approvedVideos.toLocaleString('en-US')} approved`
+      source = 'Videos it has approved on TRYBE since it joined'
+    }
+    dims.push({ id: 'approval', label: 'Approves videos', grade: gradeOf(score), score, value, source })
   }
 
   // SPEED: how many days it takes to decide a video.
   {
     const d = s.pool?.reviewDays ?? null
-    const score = d == null ? null : clamp(100 - ((d - 2) / 18) * 100)
-    dims.push({ id: 'speed', label: 'Decides fast', grade: gradeOf(score), score,
-      value: d == null ? 'Not enough yet' : `${d} day${d === 1 ? '' : 's'}`,
-      source: d == null ? `Shown once ${POOL_MIN} MVP creators have timed it` : `Middle wait for a decision, ${POOL_MIN}+ MVP creators${s.pool?.slowShare != null ? `; ${Math.round(s.pool.slowShare * 100)}% still waited after a week` : ''}` })
+    const ts = s.trybe?.score ?? null
+    let score: number | null = d == null ? null : clamp(100 - ((d - 2) / 18) * 100)
+    let value = d == null ? 'Not timed yet' : `${d} day${d === 1 ? '' : 's'}`
+    let source = d == null ? 'Open it on TRYBE through SCOUT to read its TRYBE score' : `Middle wait for a decision, ${POOL_MIN}+ MVP creators${s.pool?.slowShare != null ? `; ${Math.round(s.pool.slowShare * 100)}% still waited after a week` : ''}`
+    // Before MVP creators have timed it: TRYBE's own score, which is how fast
+    // it reviews, launches ads and replies.
+    if (d == null && ts != null && ts > 0 && ts <= 100) {
+      score = clamp(ts)
+      value = `TRYBE score ${Math.round(ts)}`
+      source = 'TRYBE’s own score of 100: how fast it reviews videos, launches ads and replies'
+    }
+    dims.push({ id: 'speed', label: 'Decides fast', grade: gradeOf(score), score, value, source })
   }
 
   // ROOM: how crowded it is with creators.
   {
     const l = s.crowd?.level ?? null
-    const score = l == null ? null : l === 'open' ? 90 : l === 'filling' ? 55 : 20
-    dims.push({ id: 'room', label: 'Room for you', grade: gradeOf(score), score,
-      value: l == null ? 'Not known' : l === 'open' ? 'Open' : l === 'filling' ? 'Filling' : 'Crowded',
-      source: s.crowd?.why || 'TRYBE does not give its creator count' })
+    const c = s.trybe?.creators ?? null
+    let score: number | null = l == null ? null : l === 'open' ? 90 : l === 'filling' ? 55 : 20
+    let value = l == null ? 'Creators not counted' : l === 'open' ? 'Open' : l === 'filling' ? 'Filling' : 'Crowded'
+    let source = s.crowd?.why || 'Open it on TRYBE through SCOUT to count its creators'
+    // Before MVP has its recent videos: its creators on TRYBE. Fewer creators,
+    // more of its budget for each.
+    if (l == null && c != null) {
+      score = c < 50 ? 90 : c < 200 ? 75 : c < 500 ? 60 : c < 1000 ? 40 : 20
+      value = `${c.toLocaleString('en-US')} creator${c === 1 ? '' : 's'}`
+      source = 'Working with it on TRYBE. Fewer creators, more of its budget for each'
+    }
+    dims.push({ id: 'room', label: 'Room for you', grade: gradeOf(score), score, value, source })
   }
   return dims
 }

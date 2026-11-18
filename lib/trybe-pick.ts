@@ -42,6 +42,8 @@ export interface PickInput {
   perVideo?: number | null
   /** Where that figure comes from: your results, members', or its terms. */
   perVideoBasis?: 'yours' | 'members' | 'terms' | 'variable' | 'unknown' | null
+  /** The most one video can earn from its sales or ads (lib/trybe-pay maxPer). */
+  payCapPer?: number | null
   /** It pays a guaranteed retainer. */
   guaranteed?: boolean
   /** How crowded it is (lib/trybe-finder crowdOf). */
@@ -215,6 +217,9 @@ export function pickScore(p: PickInput): Pick {
     else { add('perVideo', 3); reasons.push({ text: said, tone: 'info' }) }
   }
   if (p.guaranteed) { add('perVideo', 6); reasons.push({ text: 'Guaranteed pay (a retainer)', tone: 'good' }) }
+  // A CAP ON WHAT ONE VIDEO EARNS (Seb, 2026-11-18): the video that sells best
+  // is the one that pays, and a cap takes that away.
+  if (typeof p.payCapPer === 'number' && p.payCapPer > 0) { add('percent', -18); reasons.push({ text: `Caps what one video can earn at ${fmt(p.payCapPer)}: a video that sells well earns no more`, tone: 'bad' }) }
   // OPEN, FILLING, CROWDED adds to the creator count, which is already scored:
   // only a brand filling fast or crowded by output moves it.
   if (p.crowd === 'filling' && typeof c === 'number' && c < 40) { add('competition', -6); reasons.push({ text: 'Filling: creators are joining fast', tone: 'info' }) }
