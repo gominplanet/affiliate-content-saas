@@ -52,7 +52,7 @@ check('without migration 470 it still works and says so', /memory = false/.test(
 const mig = read('supabase/migrations/470_trybe_samples_amazon.sql')
 check('migration 470 is safe to run twice', (mig.match(/add column if not exists/g) || []).length === 4)
 const ui = read('components/labs/AmazonLive.tsx')
-check('Live Prep has the button, lines the matches up and names Amazon on each link', /Live with my TRYBE samples/.test(ui) && /setPicked\(asins\)/.test(ui) && /See it on Amazon<\/a>/.test(ui) && /lineupWords\(trybeRes\.items\)/.test(ui))
+check('Live Prep has the button, lines the matches up and names Amazon on each link', /Go live with your TRYBE samples/.test(ui) && /'Build my TRYBE live'/.test(ui) && ui.indexOf('Go live with your TRYBE samples') < ui.indexOf('Suggest a lineup') && /setPicked\(asins\)/.test(ui) && /See it on Amazon<\/a>/.test(ui) && /lineupWords\(trybeRes\.items\)/.test(ui))
 check('the page shows the button only with TRYBE and the switch', /<AmazonLive trybe=\{canUsePreview\('live_trybe', tier\) && canUsePreview\('trybe_outreach', tier\)\} \/>/.test(read('app/(dashboard)/amazon-live/page.tsx')))
 check('admin first', /live_trybe: 'admin'/.test(read('lib/labs-preview.ts')))
 

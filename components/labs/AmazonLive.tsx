@@ -326,6 +326,23 @@ export default function AmazonLive({ trybe = false }: { trybe?: boolean } = {}) 
 
       {loadErr && <p className="text-[13px] py-6 text-center" style={{ color: '#ef4444' }}>{loadErr}</p>}
 
+      {/* A LIVE FROM YOUR TRYBE SAMPLES, up front (Seb, 2026-11-18: "make this
+          trybe button more prominent as this is important"). */}
+      {!plan && trybe && (
+        <section className="mb-4 rounded-2xl border-2 p-4 sm:p-5 flex flex-wrap items-center gap-4" style={{ borderColor: ACCENT, background: 'linear-gradient(135deg, rgba(14,124,134,0.10), rgba(14,124,134,0.03))' }} aria-label="Go live with your TRYBE samples">
+          <span className="w-12 h-12 shrink-0 rounded-2xl grid place-items-center" style={{ background: ACCENT, color: '#fff' }}><Package size={22} /></span>
+          <div className="flex-1 min-w-[16rem]">
+            <h2 className="text-[17px] font-bold" style={{ color: 'var(--text)' }}>Go live with your TRYBE samples</h2>
+            <p className="text-[13px] mt-0.5" style={{ color: 'var(--text-soft)' }}>MVP finds which of the samples brands sent you are sold on Amazon, and lines them up as your show: one Live, every product you already have in hand.</p>
+          </div>
+          <button type="button" onClick={() => void fromTrybe()} disabled={trybeBusy}
+            className="inline-flex items-center gap-2 rounded-xl px-5 py-3 text-[14.5px] font-bold text-white shadow-sm disabled:opacity-60"
+            style={{ background: ACCENT }}>
+            {trybeBusy ? <Loader2 size={16} className="animate-spin" /> : <Package size={16} />} {trybeBusy ? 'Finding them on Amazon…' : trybeRes ? 'Line them up again' : 'Build my TRYBE live'}
+          </button>
+        </section>
+      )}
+
       {!plan && (
         <div className="grid lg:grid-cols-[1fr_320px] gap-4">
           <section className="rounded-2xl border p-4" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
@@ -333,15 +350,8 @@ export default function AmazonLive({ trybe = false }: { trybe?: boolean } = {}) 
               {([['storefront', storefrontSynced ? 'All my storefront' : 'All my products'], ['video', 'Only ones I made a video for'], ['sale', 'On sale today']] as Array<[Filter, string]>).map(([k, l]) => (
                 <button key={k} type="button" onClick={() => setFilter(k)} className="px-2.5 py-1 rounded-full text-[12px]" style={chip(filter === k)}>{l}</button>
               ))}
-              {trybe && (
-                <button type="button" onClick={() => void fromTrybe()} disabled={trybeBusy}
-                  className="ml-auto inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[12px] font-semibold disabled:opacity-40"
-                  style={{ border: `1px solid ${ACCENT}`, color: ACCENT }} title="The samples you received on TRYBE that are sold on Amazon, lined up as a show">
-                  {trybeBusy ? <Loader2 size={12} className="animate-spin" /> : <Package size={12} />} Live with my TRYBE samples
-                </button>
-              )}
               <button type="button" onClick={suggest} disabled={!pool?.length}
-                className={`${trybe ? '' : 'ml-auto '}inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[12px] font-semibold text-white disabled:opacity-40`}
+                className="ml-auto inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[12px] font-semibold text-white disabled:opacity-40"
                 style={{ background: ACCENT }}>
                 <Wand2 size={12} /> Suggest a lineup
               </button>
