@@ -46,7 +46,7 @@ check('a core message that talks pay stops the requests before any writing, nami
 check('every phrase is listed once, in order', JSON.stringify(termsHits('We pay attention. Our rate is $50 per video. Thanks for reading this far, we love it. Payment goes through PayPal.')) === JSON.stringify(['Our rate is $50 per video.', 'Payment goes through']) && quoteHits(['a', 'b', 'c']) === '\u201ca\u201d, \u201cb\u201d and \u201cc\u201d')
 check('the writer is told which words to take out', /Your last try said \u201c\$\{firstHit\}\u201d/.test(ROUTE))
 check('a brand that is not on the list is said, not dropped', /That brand is not on your list, so it was not written/.test(ROUTE))
-check('the page shows the server\'s reason with the count', /reasons\.push\(r\.error\)/.test(UI) && /function notWritten\(/.test(UI) && (UI.match(/notWritten\(r\.failed, r\.reasons/g) || []).length === 4 && !/could not be written`\)/.test(UI))
+check('the page shows the server\'s reason with the count', /reasons\.push\(r\.error\)/.test(UI) && /function notWritten\(/.test(UI) && (UI.match(/notWritten\(r\.failed, r\.reasons/g) || []).length === 5 && !/could not be written`\)/.test(UI))
 // WHERE A WRITTEN BRAND WENT (Seb, 2026-10-24: "Haus disappeared from that
 // list strangely"): Star brands leaves out what is in Ready to send, so it
 // says which brands moved there and opens it, and the toast does too.

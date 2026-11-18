@@ -18,7 +18,8 @@ const failures: string[] = []
 const check = (name: string, cond: boolean) => { if (!cond) failures.push(name) }
 
 // Cap
-check('default cap is 20', DEFAULT_DAILY_CAP === 20 && clampCap(undefined) === 20)
+// Seb, 2026-11-18: 200 a day for everyone, not a setting.
+check('the cap is 200 for everyone', DEFAULT_DAILY_CAP === 200 && clampCap(undefined) === 200)
 {
   // THE CAP IS A ROLLING 24 HOURS (Seb, 2026-10-09): when it is used, the next
   // send opens the moment the oldest counted send turns 24 hours old.
@@ -33,10 +34,11 @@ check('default cap is 20', DEFAULT_DAILY_CAP === 20 && clampCap(undefined) === 2
   check('the next free slot is 24 hours after the oldest of the last cap sends', nextFreeAt(rows.slice(0, 2), 2, now) === '2026-10-10T09:00:00.000Z')
   const ui = readFileSync('components/labs/TrybeOutreach.tsx', 'utf8')
   check('no screen says the cap resets "today" or "tomorrow" as if at midnight', !/Today.s cap is used|waits for tomorrow/.test(ui))
-  check('the cap setting says up to the most allowed in a rolling 24 hours', /rolling 24 hours \(up to \{MAX_DAILY_CAP\}/.test(ui))
+  check('no daily cap setting is shown any more', !/Daily cap\s*\n?\s*<input/.test(ui) && !/rolling 24 hours \(up to \{MAX_DAILY_CAP\}/.test(ui))
+  check('the server reads the same 200 for everyone, never a saved cap', /dailyCap: MAX_DAILY_CAP,/.test(readFileSync('app/api/labs/trybe/route.ts', 'utf8')) && !/row\.daily_cap = /.test(readFileSync('app/api/labs/trybe/route.ts', 'utf8')))
 }
-// Seb, 2026-11-07: 100 at most in a rolling 24 hours (60 before).
-check('cap is held to 1..100', MAX_DAILY_CAP === 100 && clampCap(0) === 1 && clampCap(500) === 100 && clampCap(101) === 100 && clampCap(100) === 100 && clampCap(80) === 80 && clampCap(35) === 35)
+// Seb, 2026-11-18: 200 in a rolling 24 hours (100 from 2026-11-07, 60 before).
+check('cap is held to 1..200', MAX_DAILY_CAP === 200 && clampCap(0) === 1 && clampCap(500) === 200 && clampCap(201) === 200 && clampCap(200) === 200)
 check('a run stops after two failed sends in a row, so a refusal from TRYBE is never pressed through', /if \(res\.outcome === 'failed' && lastFailed\) \{/.test(readFileSync('components/labs/TrybeOutreach.tsx', 'utf8')))
 const now = Date.parse('2026-10-06T12:00:00Z')
 check('a sent request from 23h ago counts', countsTowardCap({ status: 'sent', send_started_at: '2026-10-05T13:00:00Z' }, now))
@@ -104,7 +106,7 @@ check('the route judges fit and never drafts a brand that does not fit', /action
 check('a brand that does not fit is never sent', !/'not_fit'/.test(ROUTE.slice(ROUTE.indexOf("action === 'claim'"), ROUTE.indexOf("action === 'result'"))) && /\['drafted', 'failed'\]\.includes\(row\.status\)/.test(ROUTE))
 check('Ready to send is its own tab', /\{ id: 'queue', label: 'Ready to send'/.test(UI) && /id === 'queue' \? queue\.length/.test(UI) && /tab === 'queue' &&/.test(UI))
 check('a send that cannot start says why in the run log', /Not started: \$\{c\.error/.test(UI) && /Run log/.test(UI))
-check('the daily find runs once a day, with a niche saved', /20 \* 3600_000/.test(UI) && /autoRan\.current = true/.test(UI) && /savedKey === prefsKey\(\[\], \[\]\)\) return/.test(UI))
+check('the daily find runs once a day, from the saved daily search, or the niche before one is saved', /20 \* 3600_000/.test(UI) && /autoRan\.current = true/.test(UI) && /\(!dailySearch && savedKey === prefsKey\(\[\], \[\]\)\)\) return/.test(UI) && /if \(dailySearch\) \{[\s\S]{0,200}void runDaily\(true\)/.test(UI))
 check('joining TRYBE is one visible button, marked as a referral', /https:\/\/jointrybe\.com\/r\/HTLEJE47/.test(UI) && /rel="sponsored noopener noreferrer"/.test(UI) && /referral link/.test(UI))
 check('SCOUT searches the keywords and presses the categories, and reports each pass', /async function trybeSearchInPage\(/.test(BG) && /async function trybeChipInPage\(/.test(BG) && /passes: report/.test(BG))
 check('a category filter is never a brand row', /el\.querySelector\('img'\)\) return false/.test(BG.slice(BG.indexOf('async function trybeChipInPage('))))

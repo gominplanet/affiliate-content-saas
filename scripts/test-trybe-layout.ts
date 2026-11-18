@@ -47,7 +47,8 @@ check('the old search card is kept while the switch is off', /Or browse a niche/
 check('the filters sit in one column beside the brands', /<aside id="trybe-filters"/.test(O) && /<FinderSidebar filters=\{filters\}/.test(O) && /lg:grid lg:grid-cols-\[15\.5rem_minmax\(0,1fr\)\]/.test(O))
 check('a phone opens the column from Filters; a wide screen can hide it', /className="lg:hidden inline-flex[^"]*"[^>]*>\s*<SlidersHorizontal size=\{14\} \/> \{filtersOpen \? 'Hide filters' : 'Filters'\}/.test(O) && /\{filtersHidden \? 'Show filters' : 'Hide filters'\}/.test(O) && /localStorage\.setItem\('mvp\.trybe\.filtersHidden'/.test(O))
 check('the count, the filter button and Sort share one bar', /\{layout && finderToolbar\(true\)\}/.test(O) && /compact=\{compact\}/.test(O))
-check('the daily settings move into the outreach setup', /\{layout && capRow && <div className=\{card\} style=\{cardStyle\}><p className="text-\[14px\] font-semibold mb-2">Daily messages<\/p>\{capRow\}<\/div>\}/.test(O))
+// Seb, 2026-11-18: no cap setting and no daily box; the daily 20 have their own card under the search.
+check('the daily 20 have their own card under the search, and no cap setting is left', /<TrybeDailyBrands /.test(O) && !/capRow/.test(O))
 const C = read('components/labs/TrybeFinderControls.tsx')
 const side = C.slice(C.indexOf('export function FinderSidebar'))
 check('every filter group is in the column, in view', ['Quick lists', 'Niche', 'Pay', 'Room for you', 'The brand', 'Sells'].every((t) => side.includes(`section('${t}'`)))

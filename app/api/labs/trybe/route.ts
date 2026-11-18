@@ -37,6 +37,7 @@ import { followShort, readTikTok } from '@/lib/buyer-sources'
 import { winnersForPlan, winnersBlock, readScript } from '@/lib/trybe-mybrands'
 import { directoryChanges, adsChange, poolBrands, type Change, type MemberRow } from '@/lib/trybe-changes'
 import { topDayKey, topDayOf, TOP_DAYS_KEEP, type TopDay } from '@/lib/trybe-topdays'
+import { readDailySearch } from '@/lib/trybe-daily'
 import { buildBoard, BOARD_DAYS, type Board } from '@/lib/trybe-topboard'
 import { activeKeys, activeRows, activeBy, rankActive, categoryCounts, latestTierChanges, type ActiveBy, type ActiveRow } from '@/lib/trybe-active'
 import { GALLERY_KEY, readCardsBody, readAdCard, mergeGallery, type Gallery, type MetaAd, brandsWithAds, GALLERY_MAX, ownAd, HOOKS_KEY, withHooks, type AdHooks, brandAdsForPlan, brandAdsBlock, type PlanAd, competitorAdsForPlan, competitorAdsBlock } from '@/lib/trybe-adsgallery'
@@ -73,8 +74,8 @@ import { TOP100, adSpendProof, samplesProof, sampleSignsByBrand, activityCounts,
 import { filmedBrandIds, filmedVideos } from '@/lib/tiktok-filmed'
 import { filmedLine, withFilmedLine } from '@/lib/tiktok-match-words'
 import {
-  clampCap, countsTowardCap, sanitizeScanned, sendUrl, tidyDraft,
-  DRAFT_SYSTEM, draftUserPrompt, DEFAULT_DAILY_CAP, type ScannedBrand,
+  countsTowardCap, sanitizeScanned, sendUrl, tidyDraft,
+  DRAFT_SYSTEM, draftUserPrompt, type ScannedBrand,
   cleanTerms, prefsKey, FIT_SYSTEM, fitUserPrompt, parseFit,
   readPay, payPasses, payRank, BROWSE_SORTS, PAY_TYPES, type BrowseSort, type PayType,
   REPLY_SYSTEM, replyUserPrompt, replyBlanks, talksTerms, termsHit, termsHits, quoteHits, MIN_SEND_GAP_MS,
@@ -144,10 +145,15 @@ async function readSettings(admin: Db, ownerId: string) {
   const { data } = await admin.from('trybe_outreach_settings').select('*').eq('user_id', ownerId).maybeSingle()
   return {
     coreMessage: (data?.core_message as string | null) || '',
-    dailyCap: clampCap(data?.daily_cap ?? DEFAULT_DAILY_CAP),
+    // THE SAME 200 FOR EVERYONE (Seb, 2026-11-18): a cap saved before is not read.
+    dailyCap: MAX_DAILY_CAP,
     categories: cleanTerms(data?.categories),
     keywords: cleanTerms(data?.keywords),
     dailyFind: data?.daily_find !== false,
+    // THE DAILY SEARCH (lib/trybe-daily, migration 469): the 20 a day come
+    // from it. Null when none is saved; dailySearchColumn false before 469.
+    dailySearch: data ? readDailySearch(data.daily_search) : null,
+    dailySearchColumn: !data || 'daily_search' in data,
     lastFindAt: (data?.last_find_at as string | null) ?? null,
     // Members' combined numbers (migration 428): on unless turned off.
     poolOptOut: data?.pool_opt_out === true,
@@ -773,14 +779,18 @@ export async function POST(request: Request) {
     // Did the words change? Stamped below, on its own, so a database without
     // migration 457 still saves the message.
     const coreChanged = coreMessage != null && coreMessage !== (await readSettings(admin, ownerId)).coreMessage.trim()
-    if (body.dailyCap != null) row.daily_cap = clampCap(body.dailyCap)
+    // No daily cap is saved any more: it is 200 for everyone (Seb, 2026-11-18).
     // Sent only when the page sends them, so an older page cannot wipe them.
     if (body.categories !== undefined) row.categories = cleanTerms(body.categories)
     if (body.keywords !== undefined) row.keywords = cleanTerms(body.keywords)
     if (typeof body.dailyFind === 'boolean') row.daily_find = body.dailyFind
+    // THE DAILY SEARCH (migration 469): saved as Find brands sent it, read
+    // safely; null clears it.
+    if (body.dailySearch !== undefined) row.daily_search = body.dailySearch === null ? null : { ...readDailySearch(body.dailySearch), savedAt: now }
     const { error } = await admin.from('trybe_outreach_settings').upsert(row)
     if (error) {
       const missing = /column .* does not exist|schema cache/i.test(error.message)
+      if (missing && /daily_search/.test(error.message)) return NextResponse.json({ error: setupWords(tier, 'The daily search needs migration 469 in Supabase first.') }, { status: 500 })
       return NextResponse.json({ error: missing ? setupWords(tier, 'The niche settings need migration 416 in Supabase first.') : error.message }, { status: 500 })
     }
     if (coreChanged) { try { await admin.from('trybe_outreach_settings').update({ core_saved_at: now }).eq('user_id', ownerId) } catch { /* before 457: no drafts are marked */ } }

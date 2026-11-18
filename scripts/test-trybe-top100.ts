@@ -141,7 +141,7 @@ check('apps are told to the page, counted, and need no product list read', /digi
   const O = read('components/labs/TrybeOutreach.tsx'), T = read('components/labs/TrybeBrandTable.tsx'), UI = read('components/labs/trybe-ui.tsx')
   check('apps show apart at a glance: blue card, blue row, and a chip in words', /export const APP = \{ color: '#2563EB'/.test(UI) && /export function AppChip/.test(UI)
     && /b\.proof\?\.app \? APP\.line/.test(O) && /\{b\.proof\?\.app && <AppChip \/>\}/.test(O) && /shown in blue: nothing to ship/.test(O)
-    && /isApp \? APP\.soft/.test(T) && /inset 3px 0 0 \$\{APP\.color\}/.test(T) && /App, none needed/.test(T))
+    && /sweet \? SWEET\.soft : isApp \? APP\.soft/.test(T) && /const edgeColor = sweet \? SWEET\.color : isApp \? APP\.color : null/.test(T) && /inset 3px 0 0 \$\{edgeColor\}/.test(T) && /App, none needed/.test(T))
 }
 check('samples are read from every MVP creator\'s records, not only this one', /from\('trybe_samples'\)\.select\('brand_id, requested_at, received_at'\)\.in\('brand_id'/.test(R))
 check('fit first, quality next, proven samples last', /0\.6 \* \(x\.match \/ maxMatch\) \+ 0\.3 \* /.test(R) && /\(b\.proven \? 0\.1 : 0\)/.test(R))

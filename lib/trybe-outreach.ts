@@ -5,8 +5,10 @@
 //
 // THE BRAKES. The creator has sent 40 to 50 requests by hand back to back with
 // no trouble, but a tool doing it is held to a slower, steadier pace:
-//   - a daily cap, 20 to start (settings allow 1 to MAX_DAILY_CAP, now 100
-//     for a rolling 24 hours, Seb 2026-11-07), counted over the LAST
+//   - a daily cap, 200 for every creator for a rolling 24 hours, no longer a
+//     setting (Seb, 2026-11-18: "I don't think we should give a daily cap
+//     anymore. I think internally the daily cap should be 200 messages a day
+//     that MVP can send per user"), counted over the LAST
 //     24 HOURS, not since midnight, so a batch at 11pm and another at 1am can
 //     never add up to twice the cap;
 //   - a send MVP started and never heard back about counts toward the cap, so
@@ -20,14 +22,14 @@
 /** The least time between two join requests, held by the server's claim. */
 export const MIN_SEND_GAP_MS = 8_000
 
-export const DEFAULT_DAILY_CAP = 20
-/** The most join requests a creator can set for any 24 hours: 100 (Seb,
- *  2026-11-07: "make sure TRYBE inside MVP is able to send 100 messages per
- *  24 hours"; it was 60 from 2026-10-24, under the 80 said to be TRYBE's own
- *  limit on 2026-10-09). The pace between sends is unchanged, and a run
- *  stops after two failed sends in a row, so a refusal from TRYBE is said
- *  rather than pressed through. */
-export const MAX_DAILY_CAP = 100
+/** The join requests MVP sends for a creator in any 24 hours: 200, the same
+ *  for everyone and not a setting (Seb, 2026-11-18). It was a setting of 1 to
+ *  100 (2026-11-07), 60 before that, and 80 was said to be TRYBE's own limit
+ *  on 2026-10-09. The pace between sends is unchanged, and a run stops after
+ *  two failed sends in a row, so a refusal from TRYBE is said rather than
+ *  pressed through. */
+export const MAX_DAILY_CAP = 200
+export const DEFAULT_DAILY_CAP = MAX_DAILY_CAP
 export const MIN_GAP_MS = 45_000
 export const MAX_GAP_MS = 120_000
 /** After this many sends in one run, one longer pause. */

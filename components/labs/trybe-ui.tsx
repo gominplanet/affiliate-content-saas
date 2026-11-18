@@ -19,6 +19,20 @@ import type { Grade } from '@/lib/trybe-dossier'
  *  too, so it never rests on colour alone. */
 export const APP = { color: '#2563EB', soft: 'rgba(37,99,235,0.07)', line: 'rgba(37,99,235,0.55)', chip: 'rgba(37,99,235,0.14)', word: 'App or online service' }
 
+/** THE SWEET SPOT (Seb, 2026-11-18: "highlight in a different color brands
+ *  that have less than 500 users and have paid out more than $10,000"):
+ *  gold, apart from the app blue and the picked purple (lib/trybe-daily). */
+export const SWEET = { color: '#D97706', soft: 'rgba(217,119,6,0.08)', chip: 'rgba(217,119,6,0.16)' }
+
+export function SweetChip({ words }: { words: string }) {
+  return (
+    <span className="inline-flex items-center gap-1 text-[11px] font-semibold rounded-full px-2 py-0.5 whitespace-nowrap" style={{ background: SWEET.chip, color: 'var(--text)' }}
+      title="Under 500 creators and $10K or more paid out to creators: room to get noticed, and proof it pays.">
+      <span aria-hidden="true" style={{ color: SWEET.color }}>&#9733;</span> {words}
+    </span>
+  )
+}
+
 export function AppChip({ short = false }: { short?: boolean }) {
   return (
     <span className="inline-flex items-center gap-1 text-[11px] font-semibold rounded-full px-2 py-0.5 whitespace-nowrap" style={{ background: APP.chip, color: 'var(--text)' }}

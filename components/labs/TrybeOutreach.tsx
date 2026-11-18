@@ -34,6 +34,8 @@ import TrybeTabGate from '@/components/labs/TrybeTabGate'
 import TrybeStarBrands from '@/components/labs/TrybeStarBrands'
 import TrybeTikTokMatch from '@/components/labs/TrybeTikTokMatch'
 import TrybeTopBoard from '@/components/labs/TrybeTopBoard'
+import TrybeDailyBrands from '@/components/labs/TrybeDailyBrands'
+import { readDailySearch, sweetSpot, sweetWords, type DailySearch } from '@/lib/trybe-daily'
 import { TRYBE_OPEN_URL, TRYBE_NOT_OPEN, TRYBE_NOT_OPEN_WORDS, trybeTabWords, type TrybeTabState } from '@/lib/trybe-tab'
 import { nextGapMs, prefsKey, CATEGORY_SUGGESTIONS, DAILY_FIND, SCAN_READ, SHORT_RUN_UNDER, SHORT_GAP_MS, MAX_DAILY_CAP, termsHits, quoteHits } from '@/lib/trybe-outreach'
 import TrybeInbox, { fetchTrybeInbox, lastIsMine, type Conversation } from '@/components/labs/TrybeInbox'
@@ -59,7 +61,7 @@ import type { ClaimProof, RetainerRead } from '@/lib/trybe-evidence'
 import TrybeBrandTable from '@/components/labs/TrybeBrandTable'
 import { morningWords, autoRunWords, type AutoRunRecord } from '@/lib/trybe-morning'
 import { plainServerError, isPassingTrouble, PASSING_WAITS_MS } from '@/lib/upstream-words'
-import { APP, AppChip } from '@/components/labs/trybe-ui'
+import { APP, AppChip, SWEET, SweetChip } from '@/components/labs/trybe-ui'
 import { DossierCtx, BrandName } from '@/components/labs/trybe-dossier-context'
 import TrybeWorking from '@/components/labs/TrybeWorking'
 import TrybeCreate from '@/components/labs/TrybeCreate'
@@ -627,6 +629,12 @@ export default function TrybeOutreach({ preview = false, v2 = false, layout = fa
   const [savedKey, setSavedKey] = useState(prefsKey([], []))
   const [dailyFind, setDailyFind] = useState(true)
   const [lastFindAt, setLastFindAt] = useState<string | null>(null)
+  // THE DAILY SEARCH (lib/trybe-daily, Seb 2026-11-18): the 20 a day come from it.
+  const [dailySearch, setDailySearch] = useState<DailySearch | null>(null)
+  const [dailyCol, setDailyCol] = useState(true)
+  const [dailyNote, setDailyNote] = useState<string | null>(null)
+  const [dailyRunning, setDailyRunning] = useState(false)
+  const [dailySaving, setDailySaving] = useState(false)
   const [savingSettings, setSavingSettings] = useState(false)
   const [access, setAccess] = useState<Access>('checking')
   const [scoutVersion, setScoutVersion] = useState<string | null>(null)
@@ -790,6 +798,8 @@ export default function TrybeOutreach({ preview = false, v2 = false, layout = fa
       setDailyFind(d.settings?.dailyFind !== false)
       setPoolOptOut(d.settings?.poolOptOut === true)
       setLastFindAt(d.settings?.lastFindAt ?? null)
+      setDailySearch(readDailySearch(d.settings?.dailySearch))
+      setDailyCol(d.settings?.dailySearchColumn !== false)
       setDirectory(d.directory ?? null)
       setIsAdmin(d.isAdmin === true)
       setSaved({ core: d.settings?.coreMessage || '', dailyFind: d.settings?.dailyFind !== false })
@@ -1107,7 +1117,7 @@ export default function TrybeOutreach({ preview = false, v2 = false, layout = fa
     if (!saved) { toast.error('Your TRYBE settings did not load, so nothing was saved. Reload the page and try again.'); return false }
     setSavingSettings(true)
     try {
-      const d = await api({ action: 'settings', categories: cats, keywords: kws, ...(what.core ? { coreMessage: core } : {}), ...(what.prefs ? { dailyCap: cap, dailyFind } : {}) })
+      const d = await api({ action: 'settings', categories: cats, keywords: kws, ...(what.core ? { coreMessage: core } : {}), ...(what.prefs ? { dailyFind } : {}) })
       if (d.warning) toast.warning(d.warning, { duration: 12000 })
       setCap(d.settings.dailyCap)
       setSavedCap(d.settings.dailyCap)
@@ -1120,6 +1130,75 @@ export default function TrybeOutreach({ preview = false, v2 = false, layout = fa
       return true
     } catch (e) { toast.error(e instanceof Error ? e.message : 'Save failed'); return false }
     finally { setSavingSettings(false) }
+  }
+
+  // ── THE DAILY 20, FROM A SAVED SEARCH (lib/trybe-daily; Seb, 2026-11-18) ──
+  const currentSearch: Omit<DailySearch, 'savedAt'> = { categories: cats, keywords: kws, payType, filters, sort: sortBy }
+  /** Saves the daily search, or turns the daily 20 on or off. */
+  async function saveDaily(p: { search?: Omit<DailySearch, 'savedAt'> | null; on?: boolean }) {
+    if (!saved) { toast.error('Your TRYBE settings did not load, so nothing was saved. Reload the page and try again.'); return }
+    setDailySaving(true)
+    try {
+      const d = await api({ action: 'settings', ...(p.search !== undefined ? { dailySearch: p.search } : {}), ...(p.on !== undefined ? { dailyFind: p.on } : {}) })
+      const on = d.settings.dailyFind !== false
+      setDailySearch(readDailySearch(d.settings.dailySearch))
+      setDailyFind(on)
+      setSaved(sv => (sv ? { ...sv, dailyFind: on } : sv))
+      toast.success(p.search !== undefined ? `Saved. Your ${DAILY_FIND} brands a day come from this search.` : on ? `On: ${DAILY_FIND} new brands a day.` : 'Off: MVP writes to no brands by itself.')
+    } catch (e) {
+      const m = e instanceof Error ? e.message : 'Not saved.'
+      if (/migration 469/.test(m)) setDailyCol(false)
+      toast.error(m)
+    } finally { setDailySaving(false) }
+  }
+  /** Today's brands from the daily search: the next ones not messaged, each
+   *  written the creator's message, into Ready to send. What happened is said. */
+  async function runDaily(auto: boolean) {
+    const s = dailySearch
+    if (!s) return
+    if (access !== 'granted') { if (!auto) toast.error('Allow SCOUT on TRYBE first'); return }
+    if (!saved?.core.trim()) { if (!auto) toast.error('Write your core message first'); return }
+    const notes: string[] = []
+    setDailyRunning(true)
+    let line = ''
+    let added = 0
+    try {
+      // A fresh copy of TRYBE's list first, when MVP's is a day old.
+      if (canHarvest && !(await collectFromTrybe(notes, false))) {
+        line = 'TRYBE could not be read, so today\u2019s brands were not found. MVP tries again the next time this page opens.'
+        return
+      }
+      setFinding({ stage: 'Taking today\u2019s brands from your daily search' })
+      const d = await api({ action: 'browse', categories: s.categories, keywords: s.keywords, payType: s.payType, filters: s.filters, sort: s.sort, includeMine: false, limit: 60 })
+      const now = await load()
+      const waiting = ((now?.brands || brands) as Brand[]).filter(b => b.status === 'drafted').length
+      const room = Math.max(0, DAILY_FIND - waiting)
+      const ids = ((d.brands || []) as LiveBrand[]).filter(b => !b.status || b.status === 'new').slice(0, room).map(b => b.brand_id)
+      if (!room) line = `Ready to send already holds ${waiting} messages, so none were added today. Send those first.`
+      else if (!ids.length) line = 'No brands you have not messaged match your daily search today. Widen it: fewer filters, or more keywords.'
+      else {
+        const a = await api({ action: 'adopt', brandIds: ids })
+        const ready: string[] = a.ready || []
+        const r = ready.length ? await draftIds(ready) : { ok: 0, failed: 0, reasons: [], okIds: [] }
+        added = r.ok
+        line = `${r.ok} added to Ready to send from your daily search.${r.failed ? ` ${notWritten(r.failed, r.reasons)}` : ''}`
+      }
+      await api({ action: 'found' }).catch(() => null)
+      setLastFindAt(new Date().toISOString())
+    } catch (e) {
+      line = e instanceof Error ? e.message : 'Today\u2019s brands could not be found.'
+    } finally {
+      setFinding(null)
+      setDailyRunning(false)
+      setDailyNote(line || null)
+      setFindNotes([...notes, ...(line ? [line] : [])])
+      await load()
+      setLiveNonce(n => n + 1)
+      if (line) {
+        if (added) toast.success(line, { duration: 10000, action: { label: 'Open Ready to send', onClick: () => setTab('queue') } })
+        else if (auto) toast.message(line, { duration: 10000 })
+      }
+    }
   }
 
   /** Messages are written from the SAVED core message: changes not saved
@@ -1342,16 +1421,22 @@ export default function TrybeOutreach({ preview = false, v2 = false, layout = fa
   // THE DAILY FIND. Once a day, when this page is opened with SCOUT allowed
   // and a niche saved, MVP and SCOUT find and draft up to 20 brands that fit.
   useEffect(() => {
-    if (preview || loading || autoRan.current || access !== 'granted' || !saved || !saved.dailyFind || running || finding) return
-    if (!saved.core.trim() || savedKey === prefsKey([], [])) return
+    if (preview || loading || autoRan.current || access !== 'granted' || !saved || !saved.dailyFind || running || finding || dailyRunning) return
+    // The daily search when one is saved; before that, the niche, as it was.
+    if (!saved.core.trim() || (!dailySearch && savedKey === prefsKey([], []))) return
     const last = lastFindAt ? Date.parse(lastFindAt) : 0
     if (Date.now() - last < RECOLLECT_MS) return
     // Not before SCOUT's TRYBE tab is open: every read would fail first.
     if (ownTab && trybeTab !== 'open') return
     autoRan.current = true
+    if (dailySearch) {
+      toast(`Taking today\u2019s ${DAILY_FIND} brands from your daily search. This takes a few minutes; you can keep working.`, { duration: 9000 })
+      void runDaily(true)
+      return
+    }
     toast('Finding today\u2019s brands that fit your niche. This takes a few minutes; you can keep working.', { duration: 9000 })
     void findBrands(true)
-  }, [loading, access, saved, lastFindAt, savedKey, ownTab, trybeTab]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [loading, access, saved, lastFindAt, savedKey, ownTab, trybeTab, dailySearch]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Searched again a moment after each change to the categories or keywords.
   const hasDirectory = !!directory && directory.brands > 0
@@ -2226,23 +2311,9 @@ export default function TrybeOutreach({ preview = false, v2 = false, layout = fa
                       </>)
                     })() : undefined} />
   )
-  // THE DAILY SETTINGS: under the search before; in the outreach setup in the
-  // new layout (trybe_layout), with every other setting, so Find brands holds
-  // only finding.
-  const capRow = preview ? null : (
-    <div className="flex flex-wrap items-center gap-3">
-      <label className="text-[13px] flex items-center gap-2">Daily cap
-        <input type="number" min={1} max={MAX_DAILY_CAP} value={cap} onChange={e => setCap(Math.min(MAX_DAILY_CAP, Number(e.target.value)))} className="w-16 rounded border px-2 py-1" style={{ borderColor: 'var(--border)', background: 'transparent' }} />
-        <span className="text-[12px]" style={{ color: 'var(--text-faint)' }}>per rolling 24 hours (up to {MAX_DAILY_CAP}; each send frees up 24 hours after it went)</span>
-      </label>
-      <label className="text-[13px] flex items-center gap-2">
-        <input type="checkbox" checked={dailyFind} onChange={e => setDailyFind(e.target.checked)} className="accent-[#7C3AED]" />
-        Write messages to {DAILY_FIND} new brands every day when I open this page
-      </label>
-      <button onClick={() => void saveSettings(false, { prefs: true })} disabled={savingSettings} className={btn} style={{ background: PURPLE, color: '#fff' }}>{savingSettings ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />} Save</button>
-      {unsavedNiche && <span className="text-[12px]" style={{ color: AMBER }}>The list below already uses these. Save keeps them for the daily messages.</span>}
-    </div>
-  )
+  // NO DAILY CAP OR DAILY BOX ANY MORE (Seb, 2026-11-18): the cap is 200 for
+  // everyone, and the daily 20 have their own card under the search
+  // (components/labs/TrybeDailyBrands).
   // SCOUT sending by itself does not lock the page: its copy says keep
   // working, and a draft never touches a brand being sent (the server writes
   // drafts only to brands still waiting).
@@ -2475,7 +2546,7 @@ export default function TrybeOutreach({ preview = false, v2 = false, layout = fa
             : { done: access === 'granted' && !inboxError, title: 'Signed in to TRYBE', ok: 'MVP can read your TRYBE.', todo: inboxError ? `TRYBE did not answer: ${inboxError}. Open jointrybe.com in this Chrome and sign in.` : 'Open jointrybe.com in this Chrome and sign in.',
                 action: <a href="https://jointrybe.com" target="_blank" rel="noopener noreferrer" className={btn} style={{ border: '1px solid var(--border)' }}>Open jointrybe.com <ExternalLink size={12} /></a> },
           { done: !!saved?.core.trim(), title: 'Your core message', ok: 'Written.', todo: 'What every brand reads, in your words. Write it once in Find brands.',
-            action: <button onClick={() => { setTab('find'); setEditingCore(true) }} className={btn} style={{ border: '1px solid var(--border)' }}>Write it</button> },
+            action: <button onClick={() => { setTab('find'); setEditingCore(true); window.setTimeout(() => document.getElementById('trybe-core-message')?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 80) }} className={btn} style={{ border: '1px solid var(--border)' }}>Write it</button> },
           // No niche step (Seb, 2026-10-14: "niche should not be in there.. since
           // it may change depending on what users are searching for"). The
           // search lives in Find brands, and changes with every search.
@@ -2620,55 +2691,6 @@ export default function TrybeOutreach({ preview = false, v2 = false, layout = fa
       )}
 
       {tab === 'find' && !lockedTab && (<>
-        {/* THE SETUP, FOLDED (the new TRYBE): once the core message is saved,
-            the intro video, your stage and the message fold into one line, so
-            Find brands starts with finding brands. Open it to change any. */}
-        {(() => {
-          const setup = (<>
-        {/* The intro video for requests (lib/trybe-intro): every Pro member (Seb, 2026-10-24).
-            The core message is the request itself, so the card says where it stands and opens it. */}
-        {!preview && <TrybeIntroVideo core={core} onWriteCore={() => { setEditingCore(true); window.setTimeout(() => document.getElementById('trybe-core-message')?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 50) }} />}
-        {/* Your stage: volume first, then double down on winners (Seb, 2026-10-14). */}
-        {!preview && <TrybeStage canRead={canMyBrands} onGo={go} />}
-        {/* 1. Core message: a short preview once written, the box while editing. */}
-        {!preview && <div id="trybe-core-message" className={card} style={cardStyle}>
-          <div className="flex flex-wrap items-center gap-2">
-            <p className="text-[14px] font-semibold">1. Your core message</p>
-            {!editingCore && core.trim() && (
-              <button onClick={() => setEditingCore(true)} className="ml-auto inline-flex items-center gap-1 text-[12px] font-semibold" style={{ color: PURPLE }}><Pencil size={12} /> Edit</button>
-            )}
-          </div>
-          {!editingCore && core.trim() ? (
-            <p className="text-[13px] mt-2 whitespace-pre-wrap line-clamp-3" style={soft}>{core}</p>
-          ) : (<>
-            <p className="text-[12px] mt-1 mb-2" style={soft}>What every brand reads, in your words. MVP sends it nearly word for word: it adds a short hello to each brand by name on top, puts the brand&rsquo;s name where yours mentions a brand, and ends with your sign-off. Say who you are, what you make, and where to see your work (your links).</p>
-            <textarea value={core} onChange={e => setCore(e.target.value)} rows={8} placeholder={STARTER}
-              className="w-full rounded-lg border p-3 text-[13px] whitespace-pre-wrap" style={{ borderColor: 'var(--border)', background: 'var(--bg, transparent)' }} />
-            <div className="flex flex-wrap items-center gap-2 mt-2">
-              {!core.trim() && <button onClick={() => setCore(STARTER)} className={btn} style={{ border: '1px solid var(--border)' }}>Use the starter</button>}
-              <button onClick={() => void saveSettings(false, { core: true }).then(ok => { if (ok && core.trim()) { setEditingCore(false); setSaved(sv => (sv ? { ...sv, core } : sv)) } })} disabled={savingSettings || !core.trim()} className={btn} style={{ background: PURPLE, color: '#fff' }}>
-                {savingSettings ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />} Save message
-              </button>
-              {saved?.core.trim() && <button onClick={() => { setCore(saved.core); setEditingCore(false) }} className="text-[12px] font-semibold" style={soft}>Cancel</button>}
-            </div>
-          </>)}
-          {coreHits.length > 0 && <p className="text-[12px] mt-2 font-semibold" style={{ color: '#B45309' }}>Your core message says {quoteHits(coreHits)}, which reads as talk about pay or rates. TRYBE brands set the pay, so MVP will not write requests from it until {coreHits.length === 1 ? 'that part is' : 'those parts are'} out.</p>}
-        </div>}
-        {layout && capRow && <div className={card} style={cardStyle}><p className="text-[14px] font-semibold mb-2">Daily messages</p>{capRow}</div>}
-          </>)
-          if (!(v2 && !preview && core.trim() && !editingCore)) return setup
-          return (
-            <details className={card} style={cardStyle}>
-              <summary className="cursor-pointer flex flex-wrap items-center gap-x-3 gap-y-1 list-none [&::-webkit-details-marker]:hidden">
-                <span className="text-[14px] font-semibold">Your outreach setup</span>
-                <span className="text-[12px]" style={soft}>Core message saved{savedCap ? `, ${savedCap} messages a day at most` : ''}. Your intro video and your stage are in here too{layout ? ', with your daily cap' : ''}.</span>
-                <span className="ml-auto text-[12px] font-semibold" style={{ color: PURPLE }}>Open</span>
-              </summary>
-              <div className="mt-4 space-y-4">{setup}</div>
-            </details>
-          )
-        })()}
-
         {/* 2. Find brands. Seb, 2026-10-07: one click on a niche shows its
             brands, but make it very visible that searching a keyword is the
             better way, because a keyword matches what each brand sells. */}
@@ -2783,9 +2805,68 @@ export default function TrybeOutreach({ preview = false, v2 = false, layout = fa
           {!preview && !canHarvest && access === 'granted' && (
             <p className="text-[12px] mt-3" style={{ color: AMBER }}>Your SCOUT ({scoutVersion || 'unknown'}) reads TRYBE&rsquo;s screen a brand at a time. SCOUT {SCOUT_TRYBE_HARVEST_MIN_VERSION} collects every TRYBE brand at once so MVP can search them all by your niche. MVP checks every brand against your niche either way.</p>
           )}
-          {capRow && <div className="mt-5 pt-4 border-t" style={{ borderColor: 'var(--border)' }}>{capRow}</div>}
         </div>
         )}
+
+        {/* THE DAILY 20 (Seb, 2026-11-18): right under the search, the search
+            they come from, said in words, on or off, and run now. */}
+        {!preview && (
+          <TrybeDailyBrands search={dailySearch} on={dailyFind} current={currentSearch} lastRunAt={dailySearch ? lastFindAt : null} note={dailyNote}
+            running={dailyRunning} saving={dailySaving} needsSql={!dailyCol}
+            blocked={access !== 'granted' ? 'Allow SCOUT on TRYBE first (top of this page). Until then your daily brands wait.' : !saved?.core.trim() ? 'Write your core message first: every brand reads it.' : null}
+            onUse={() => void saveDaily({ search: currentSearch, on: true })} onToggle={(on) => void saveDaily({ on })} onRun={() => void runDaily(false)} />
+        )}
+
+        {/* THE SEARCH FIRST (Seb, 2026-11-18: "the searching for brands is too
+            low"): the outreach setup, folded to one line once the message is
+            saved, sits under the search and the daily brands. */}
+        {/* THE SETUP, FOLDED (the new TRYBE): once the core message is saved,
+            the intro video, your stage and the message fold into one line, so
+            Find brands starts with finding brands. Open it to change any. */}
+        {(() => {
+          const setup = (<>
+        {/* The intro video for requests (lib/trybe-intro): every Pro member (Seb, 2026-10-24).
+            The core message is the request itself, so the card says where it stands and opens it. */}
+        {!preview && <TrybeIntroVideo core={core} onWriteCore={() => { setEditingCore(true); window.setTimeout(() => document.getElementById('trybe-core-message')?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 50) }} />}
+        {/* Your stage: volume first, then double down on winners (Seb, 2026-10-14). */}
+        {!preview && <TrybeStage canRead={canMyBrands} onGo={go} />}
+        {/* 1. Core message: a short preview once written, the box while editing. */}
+        {!preview && <div id="trybe-core-message" className={card} style={cardStyle}>
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="text-[14px] font-semibold">1. Your core message</p>
+            {!editingCore && core.trim() && (
+              <button onClick={() => setEditingCore(true)} className="ml-auto inline-flex items-center gap-1 text-[12px] font-semibold" style={{ color: PURPLE }}><Pencil size={12} /> Edit</button>
+            )}
+          </div>
+          {!editingCore && core.trim() ? (
+            <p className="text-[13px] mt-2 whitespace-pre-wrap line-clamp-3" style={soft}>{core}</p>
+          ) : (<>
+            <p className="text-[12px] mt-1 mb-2" style={soft}>What every brand reads, in your words. MVP sends it nearly word for word: it adds a short hello to each brand by name on top, puts the brand&rsquo;s name where yours mentions a brand, and ends with your sign-off. Say who you are, what you make, and where to see your work (your links).</p>
+            <textarea value={core} onChange={e => setCore(e.target.value)} rows={8} placeholder={STARTER}
+              className="w-full rounded-lg border p-3 text-[13px] whitespace-pre-wrap" style={{ borderColor: 'var(--border)', background: 'var(--bg, transparent)' }} />
+            <div className="flex flex-wrap items-center gap-2 mt-2">
+              {!core.trim() && <button onClick={() => setCore(STARTER)} className={btn} style={{ border: '1px solid var(--border)' }}>Use the starter</button>}
+              <button onClick={() => void saveSettings(false, { core: true }).then(ok => { if (ok && core.trim()) { setEditingCore(false); setSaved(sv => (sv ? { ...sv, core } : sv)) } })} disabled={savingSettings || !core.trim()} className={btn} style={{ background: PURPLE, color: '#fff' }}>
+                {savingSettings ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />} Save message
+              </button>
+              {saved?.core.trim() && <button onClick={() => { setCore(saved.core); setEditingCore(false) }} className="text-[12px] font-semibold" style={soft}>Cancel</button>}
+            </div>
+          </>)}
+          {coreHits.length > 0 && <p className="text-[12px] mt-2 font-semibold" style={{ color: '#B45309' }}>Your core message says {quoteHits(coreHits)}, which reads as talk about pay or rates. TRYBE brands set the pay, so MVP will not write requests from it until {coreHits.length === 1 ? 'that part is' : 'those parts are'} out.</p>}
+        </div>}
+          </>)
+          if (!(v2 && !preview && core.trim() && !editingCore)) return setup
+          return (
+            <details className={card} style={cardStyle}>
+              <summary className="cursor-pointer flex flex-wrap items-center gap-x-3 gap-y-1 list-none [&::-webkit-details-marker]:hidden">
+                <span className="text-[14px] font-semibold">Your outreach setup</span>
+                <span className="text-[12px]" style={soft}>Core message saved. Your intro video and your stage are in here too.</span>
+                <span className="ml-auto text-[12px] font-semibold" style={{ color: PURPLE }}>Open</span>
+              </summary>
+              <div className="mt-4 space-y-4">{setup}</div>
+            </details>
+          )
+        })()}
 
         {/* 3. The live list, from MVP's copy of TRYBE */}
         {hasDirectory ? (
@@ -3065,6 +3146,8 @@ export default function TrybeOutreach({ preview = false, v2 = false, layout = fa
             {v2 && (live?.brands || []).length > 0 && (
               <div className="flex items-center justify-between gap-2 flex-wrap">
                 <span className="text-[12px]" style={soft}>{listView === 'table' ? 'Press a heading to sort. Press a name to see everything MVP knows about the brand.' : 'Press a name to see everything MVP knows about the brand.'}</span>
+                {/* THE SWEET SPOT, SAID (Seb, 2026-11-18): what the gold means. */}
+                <span className="text-[12px] inline-flex items-center gap-1.5" style={soft}><span className="inline-block w-3 h-3 rounded-sm" style={{ background: SWEET.soft, boxShadow: `inset 3px 0 0 ${SWEET.color}` }} aria-hidden /> Gold: under 500 creators and $10K+ paid out to creators</span>
                 <div role="tablist" aria-label="Show brands as" className="inline-flex rounded-xl p-1 gap-1" style={{ border: '1px solid var(--border)', background: 'var(--surface)' }}>
                   {(['table', 'cards'] as const).map(v => (
                     <button key={v} type="button" role="tab" aria-selected={listView === v} onClick={() => { setListView(v); try { localStorage.setItem('mvp.trybe.listView', v) } catch { /* this visit only */ } }}
@@ -3087,7 +3170,7 @@ export default function TrybeOutreach({ preview = false, v2 = false, layout = fa
                 const where = liveWhere(b)
                 const hits = (p: string) => kws.some(k => p.toLowerCase().includes(k.toLowerCase()))
                 return (
-                  <label key={b.brand_id} className={`flex gap-3 rounded-xl border p-3.5 ${taken ? 'opacity-60' : 'cursor-pointer'}`} style={{ borderColor: on ? PURPLE : b.proof?.app ? APP.line : 'var(--border)', borderWidth: b.proof?.app ? 1.5 : undefined, background: on ? 'rgb(var(--brand-rgb) / 0.04)' : b.proof?.app ? APP.soft : undefined }}>
+                  <label key={b.brand_id} className={`flex gap-3 rounded-xl border p-3.5 ${taken ? 'opacity-60' : 'cursor-pointer'}`} style={{ borderColor: on ? PURPLE : sweetSpot(b) ? SWEET.color : b.proof?.app ? APP.line : 'var(--border)', borderWidth: b.proof?.app || sweetSpot(b) ? 1.5 : undefined, background: on ? 'rgb(var(--brand-rgb) / 0.04)' : sweetSpot(b) ? SWEET.soft : b.proof?.app ? APP.soft : undefined }}>
                     {!preview && <input type="checkbox" className="mt-3 accent-[#7C3AED]" checked={on} disabled={taken} aria-label={`Pick ${b.name}`}
                       onChange={e => setLivePick(p => { const n = new Set(p); if (e.target.checked) n.add(b.brand_id); else n.delete(b.brand_id); return n })} />}
                     <BrandMark name={b.name} website={b.website} />
@@ -3097,6 +3180,7 @@ export default function TrybeOutreach({ preview = false, v2 = false, layout = fa
                         <RetainerBadge retainer={b.retainer} />
                         <FilmedChip filmed={b.filmed} />
                         {b.proof?.app && <AppChip />}
+                        {sweetSpot(b) && <SweetChip words={sweetWords(b)} />}
                         <StarButton on={!!b.starred} onClick={() => void star(b)} />
                         <CompareButton on={compare.some(x => x.brand_id === b.brand_id)} full={compare.length >= COMPARE_MAX} onClick={() => flipCompare(b)} />
                         {where && <span className="text-[11px] font-semibold rounded-full px-2 py-0.5" style={{ background: 'rgb(var(--brand-rgb) / 0.10)', color: PURPLE }}>{where}</span>}
