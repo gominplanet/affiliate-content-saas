@@ -27,7 +27,7 @@
 export interface MenuArea { label: string; rows: string[] }
 
 export const MENU_V2: MenuArea[] = [
-  { label: 'Find products', rows: ['Product research', 'Deal Radar', 'Brand campaigns', 'Partner programs', 'Idea lists', 'TRYBE'] },
+  { label: 'Find products', rows: ['Product research', 'Deal Radar', 'CC campaigns', 'Partner programs', 'Idea lists', 'TRYBE'] },
   { label: 'Make videos', rows: ['Video Scripts', 'Scriptwriter', 'Review Editor', 'Thumbnails', 'Clip Factory', 'Amazon Live'] },
   { label: 'Post videos', rows: ['Drop', 'Bulk Amazon upload', 'YouTube Co-Pilot', 'YouTube comments'] },
   { label: 'Social', rows: ['Social Push', 'Social designs', 'Social Launch Kit', 'Instagram Auto-DM', 'Meta Hub', 'Group Post Queue', 'Hashtag insights', 'Link in Bio', 'Passport links'] },

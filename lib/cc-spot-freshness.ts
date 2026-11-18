@@ -69,3 +69,31 @@ export function brandsToRecheck(
   }
   return out
 }
+
+/** IN AMAZON'S LATEST LIST (Seb, 2026-11-18: "if they're live, if they're
+ *  matching with the latest upload that we have synced from Amazon"). Whether
+ *  a card's campaign was in the last upload that finished merging. A live
+ *  check newer than that upload says more, so then nothing is added. Null
+ *  when MVP could not tell (an upload still running, or the read failed),
+ *  never a guess. Pure. */
+export function latestListWords(f: { inLatest?: boolean | null; latestAt?: string | null } & Partial<SpotFreshness>): { text: string; tone: 'ok' | 'warn' } | null {
+  if (f.inLatest == null || !f.latestAt) return null
+  const at = Date.parse(f.latestAt)
+  if (!Number.isFinite(at)) return null
+  const live = f.spotsLive && f.spotsCheckedAt ? Date.parse(f.spotsCheckedAt) : NaN
+  if (Number.isFinite(live) && live >= at) return null
+  const day = new Date(at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+  return f.inLatest
+    ? { text: `In Amazon\u2019s latest list (${day})`, tone: 'ok' }
+    : { text: `Not in Amazon\u2019s latest list (${day}): it may have ended or filled`, tone: 'warn' }
+}
+
+/** Whether the last upload has finished: staged after the merge finished
+ *  means the next upload is filling staging right now. Pure. */
+export function latestListReady(drain: { phase?: string; finishedAt?: string } | null | undefined, lastStagedAt: string | null | undefined): boolean {
+  if (!drain || drain.phase !== 'done' || !drain.finishedAt) return false
+  const done = Date.parse(drain.finishedAt)
+  if (!Number.isFinite(done)) return false
+  const staged = lastStagedAt ? Date.parse(lastStagedAt) : NaN
+  return !(Number.isFinite(staged) && staged > done)
+}

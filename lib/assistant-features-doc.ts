@@ -130,7 +130,7 @@ since members may still use it):
   Canva deck gives MVP only its title, so the creator can download it from
   Canva as a PDF and add it there. Booking pages and invites are not read.
 - Find products: Product research (tabs: Catalog search, Amazon research),
-  Deal Radar, Brand campaigns (tabs: All campaigns, Joined, Saved, Best
+  Deal Radar, CC campaigns (tabs: All CC campaigns, Joined, Saved, Best
   paying), Partner programs (tabs: Levanta, PartnerBoost and Walmart,
   Wayward, LTK), Idea lists.
 - Make videos: Video Scripts, Scriptwriter, Review Editor, Thumbnails
@@ -325,7 +325,7 @@ ${NEWSLETTER_FOR_MEMBERS ? NEWSLETTER_GUIDE : NEWSLETTER_RETIRED_GUIDE}
 
 ## CREATOR CAMPAIGNS (CC CAMPAIGNS)
 
-URL: /cc-campaigns · Sidebar: Find products → Brand campaigns (also linked
+URL: /cc-campaigns · Sidebar: Find products → CC campaigns (also linked
 from the Amazon research launchpad). The older /campaigns queue still works but the main
 surface is now /cc-campaigns (see the CC CAMPAIGNS BROWSER section below for
 the richer, decision-data version).
@@ -541,9 +541,9 @@ fresh. Filters: category, "Real deals" only, "Has video", minimum discount.
 
 ---
 
-## CC CAMPAIGNS BROWSER (sidebar name: Brand campaigns)
+## CC CAMPAIGNS BROWSER (sidebar name: CC campaigns)
 
-URL: /cc-campaigns · Sidebar: Find products → Brand campaigns → All campaigns tab
+URL: /cc-campaigns · Sidebar: Find products → CC campaigns → All CC campaigns tab
 (the Joined, Saved and Amazon's EPC tabs sit next to it; Amazon's EPC, formerly Best paying, is /epc-library)
 
 The research surface for Amazon Creator Connections. Every live campaign shows
@@ -681,7 +681,7 @@ brand, and see a headline status per brand (Joined > Accepted > Messaged >
 Pitched > Inquiry received). It's the place to answer "have I talked to this
 brand before, and what happened?" Read-only overview; take actions in the
 underlying tools (reply to an inquiry, send a new pitch in Brand pitches,
-message a brand in Brand campaigns).
+message a brand in CC campaigns).
 
 ---
 
@@ -693,7 +693,7 @@ The inbox for brands that message you through the "Work with brands" form on
 your own blog. See unread messages, read/archive them, and reply by email.
 Turn the blog form on or off in the settings panel on this page. This is for
 INBOUND brand contact; for OUTBOUND pitches use Brand pitches (/collaborations,
-formerly Brand Deals), and for Amazon campaign research use Brand campaigns
+formerly Brand Deals), and for Amazon campaign research use CC campaigns
 (/cc-campaigns).
 
 ---

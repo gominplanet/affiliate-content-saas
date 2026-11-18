@@ -15,7 +15,7 @@ export const BANNER_ART: Readonly<Record<string, string>> = {
   // Find products
   'Product research': 'product-research',
   'Deal Radar': 'deal-radar',
-  'Brand campaigns': 'brand-campaigns',
+  'CC campaigns': 'brand-campaigns',
   'Partner programs': 'partner-programs',
   'Idea lists': 'idea-lists',
   'TRYBE': 'trybe',

@@ -44,7 +44,7 @@ function detailsUrlFor(s: SavedCampaign): string {
   return ''
 }
 
-// Same ceiling as Brand campaigns' bulk message (one background run).
+// Same ceiling as CC campaigns' bulk message (one background run).
 const BULK_MAX = 100
 
 export default function SavedCampaignsPage() {
@@ -59,7 +59,7 @@ export default function SavedCampaignsPage() {
 
   // BULK MESSAGE (Seb, 2026-10-11: "saved campaigns should have the top 25,
   // top 50, top 100, select all button and then the message all brands
-  // selected button next to it"). Same window as Brand campaigns: it folds
+  // selected button next to it"). Same window as CC campaigns: it folds
   // several products from one brand into one thread and skips brands already
   // messaged. Wayward finds are not CC campaigns, so they are never selected.
   const [selected, setSelected] = useState<Set<string>>(new Set())
@@ -179,7 +179,7 @@ export default function SavedCampaignsPage() {
           </div>
           <p className="text-sm font-semibold text-[var(--text)]">Nothing saved yet</p>
           <p className="text-xs text-[var(--text-3)] max-w-sm">
-            Hit <span className="font-semibold">Save</span> on any campaign in <span className="font-semibold">Campaigns picked for you</span> on your dashboard, or on the <span className="font-semibold">Brand campaigns</span> page, and it lands here.
+            Hit <span className="font-semibold">Save</span> on any campaign in <span className="font-semibold">Campaigns picked for you</span> on your dashboard, or on the <span className="font-semibold">CC campaigns</span> page, and it lands here.
           </p>
         </div>
       ) : (

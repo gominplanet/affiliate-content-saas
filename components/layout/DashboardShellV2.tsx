@@ -624,9 +624,9 @@ export default function DashboardShellV2({
         { href: '/deal-radar', icon: <Radar size={15} />, label: 'Deal Radar', gate: canBrowseDealRadar(effectiveTier), onAmazon: 'inside' },
         // Browse, join, save and the pay table are one Creator Connections tool.
         {
-          href: '/cc-campaigns', icon: <BadgePercent size={15} />, label: 'Brand campaigns', gate: canBrowseDealRadar(effectiveTier), onAmazon: 'inside',
+          href: '/cc-campaigns', icon: <BadgePercent size={15} />, label: 'CC campaigns', gate: canBrowseDealRadar(effectiveTier), onAmazon: 'inside',
           tabs: [
-            { href: '/cc-campaigns', icon: null, label: 'All campaigns' },
+            { href: '/cc-campaigns', icon: null, label: 'All CC campaigns' },
             { href: '/joined-campaigns', icon: null, label: 'Joined' },
             { href: '/saved-campaigns', icon: null, label: 'Saved' },
             { href: '/epc-library', icon: null, label: "Amazon's EPC" },
@@ -1005,7 +1005,7 @@ export default function DashboardShellV2({
     // locTick: force recompute when a page mutates ?tab via replaceState.
   }, [pathname, locTick])
 
-  // A merged row (Brand campaigns, Connections...) is lit on any of its tabs.
+  // A merged row (CC campaigns, Connections...) is lit on any of its tabs.
   const itemActive = useCallback(
     (item: NavItemDef) => isActive(item.href) || (item.tabs ?? []).some((t) => t.gate !== false && isActive(t.href))
       || (item.alsoActiveOn ?? []).some(isActive),
@@ -1791,7 +1791,7 @@ function NavItem({ item, active, collapsed, tint, teal = false }: { item: NavIte
 }
 
 
-// The tab bar of a merged row (Brand campaigns, Connections, Brand inbox...),
+// The tab bar of a merged row (CC campaigns, Connections, Brand inbox...),
 // drawn above each of its pages so the pages read as one tool. Only the tabs
 // this account can open are shown; the current page is underlined.
 /** THE AREA'S PAGES, ABOVE EVERY ONE OF THEM (section_nav): a band in the

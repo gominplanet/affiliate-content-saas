@@ -24,7 +24,9 @@ import { ccAccessOk } from '@/lib/cc-access'
 import { ccRequestUrl } from '@/lib/cc-urls'
 import { productSignals, groupBySignals } from '@/lib/cc-dedupe'
 import { type Tier } from '@/lib/tier'
-import { spotFreshness } from '@/lib/cc-spot-freshness'
+import { spotFreshness, latestListReady } from '@/lib/cc-spot-freshness'
+import { createAdminClient } from '@/lib/supabase/admin'
+import { CC_LAST_UPLOAD_FLAG } from '@/lib/cc-upload-due'
 import { ccAsinFromQuery, ccTsQuery } from '@/lib/cc-search-query'
 
 export const dynamic = 'force-dynamic'
@@ -484,7 +486,32 @@ export async function GET(request: NextRequest) {
         }
       }
     } catch { /* no ages; the counts still show */ }
-    const shown = shownBase.map((e) => ({ ...e, ...(fresh.get(e.campaignId) ?? { spotsCheckedAt: null, spotsLive: false }) }))
+    // IN AMAZON'S LATEST LIST (Seb, 2026-11-18: "if they're live, if they're
+    // matching with the latest upload that we have synced from Amazon"). The
+    // last upload stays in staging until the next one starts, so each card on
+    // this page is looked up there by its id. While an upload is running, or
+    // when a read fails, the cards say nothing about it rather than guess.
+    let latestAt: string | null = null
+    const inLatest = new Map<string, boolean>()
+    try {
+      const ids = shownBase.map((e) => e.campaignId).filter(Boolean)
+      if (ids.length) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const admin = createAdminClient() as any
+        const { data: flags } = await admin.from('system_flags').select('key, value').in('key', ['cc_import_drain', CC_LAST_UPLOAD_FLAG])
+        const flagOf = (k: string) => ((flags ?? []) as Array<{ key: string; value: Record<string, string> | null }>).find((f) => f.key === k)?.value ?? null
+        const drain = flagOf('cc_import_drain') as { phase?: string; finishedAt?: string } | null
+        if (latestListReady(drain, flagOf(CC_LAST_UPLOAD_FLAG)?.at ?? null)) {
+          const { data: inUpload, error: ue } = await admin.from('cc_campaign_catalog_import').select('campaign_id').in('campaign_id', ids)
+          if (!ue) {
+            latestAt = drain!.finishedAt!
+            const got = new Set(((inUpload ?? []) as Array<{ campaign_id: string }>).map((r) => r.campaign_id))
+            for (const id of ids) inLatest.set(id, got.has(id))
+          }
+        }
+      }
+    } catch { /* nothing said about the latest list */ }
+    const shown = shownBase.map((e) => ({ ...e, ...(fresh.get(e.campaignId) ?? { spotsCheckedAt: null, spotsLive: false }), inLatest: inLatest.has(e.campaignId) ? inLatest.get(e.campaignId)! : null, latestAt }))
 
     // NO OPEN SPOT COUNTS AT ALL is not "nothing matches" (Seb, 2026-10-10: an
     // upload without spot counts left the catalogue with none, and every search
@@ -505,6 +532,8 @@ export async function GET(request: NextRequest) {
       ok: true,
       campaigns: shown,
       spotsMissing,
+      // When Amazon's latest list finished syncing, or null when MVP cannot say.
+      latestUpload: latestAt,
       // `total` stays the number of ranked, de-duplicated cards this request can
       // page through. It is NOT the size of the catalogue, and calling it that on
       // screen is what made a 893,644-campaign catalogue read as 219 campaigns.

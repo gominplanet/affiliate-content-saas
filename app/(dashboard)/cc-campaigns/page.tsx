@@ -33,7 +33,7 @@ import SmartScanPanel from '@/components/campaigns/SmartScanPanel'
 import { ccProofIds } from '@/lib/cc-access'
 import { refreshLiveSpots, liveSpotTerms, liveCheckWords, newCampaignsWords, type LiveSpotsResult } from '@/lib/cc-live-spots'
 import { scoutAtLeast, SCOUT_CC_NEW_MIN_VERSION } from '@/lib/scout-version'
-import { brandsToRecheck, spotAgeWords } from '@/lib/cc-spot-freshness'
+import { brandsToRecheck, spotAgeWords, latestListWords } from '@/lib/cc-spot-freshness'
 import { useLook } from '@/components/layout/shell-nav-context'
 import { TealSteps } from '@/components/layout/teal-ui'
 
@@ -69,6 +69,9 @@ interface Campaign {
   /** When the open spots were last confirmed, and whether live or by upload. */
   spotsCheckedAt?: string | null
   spotsLive?: boolean
+  /** In the last upload of Amazon's list that finished syncing; null when MVP cannot say. */
+  inLatest?: boolean | null
+  latestAt?: string | null
 }
 
 const SORTS = [
@@ -160,6 +163,7 @@ function useMakePost(c: Campaign, presetUrl: string | null, onActed?: () => void
 function CampaignCard({ c, status, onMessage, onActed, saved, onToggleSave, socialOnly = false, selected, onToggleSelect, hasReply }: { c: Campaign; status?: CampaignStatus; onMessage: (c: Campaign) => void; onActed?: () => void; saved?: boolean; onToggleSave?: () => void; socialOnly?: boolean; selected?: boolean; onToggleSelect?: () => void; hasReply?: boolean }) {
   const { gen, postUrl, makePost } = useMakePost(c, status?.url ?? null, onActed, !!status?.accepted)
   const endingSoon = c.daysLeft != null && c.daysLeft <= 1
+  const latest = latestListWords({ inLatest: c.inLatest, latestAt: c.latestAt, spotsCheckedAt: c.spotsCheckedAt ?? null, spotsLive: !!c.spotsLive })
   // What the remaining window is good for, shown BEFORE the join rather than
   // after. "18 days left" reads as plenty until you know a sample takes a
   // fortnight to arrive and search takes three weeks to find a new post, at
@@ -265,9 +269,12 @@ function CampaignCard({ c, status, onMessage, onActed, saved, onToggleSave, soci
         </div>
       </div>
 
-      {/* Open in Amazon's latest list, which no longer gives a count. */}
-      {c.totalSlots == null && c.spotsLeft == null && (
-        <p className="text-[10px] text-[var(--text-3)]">Open in Amazon&rsquo;s latest list. Spot count not given.</p>
+      {/* IN AMAZON'S LATEST LIST, looked up, not assumed (Seb, 2026-11-18). */}
+      {latest && (
+        <p className="text-[10px] font-semibold" style={{ color: latest.tone === 'ok' ? '#1c7a35' : '#d97706' }}>{latest.text}{latest.tone === 'ok' && c.totalSlots == null && c.spotsLeft == null ? '. Spot count not given.' : ''}</p>
+      )}
+      {!latest && c.totalSlots == null && c.spotsLeft == null && (
+        <p className="text-[10px] text-[var(--text-3)]">Spot count not given.</p>
       )}
       {/* Spots */}
       {c.totalSlots != null && (
@@ -277,7 +284,9 @@ function CampaignCard({ c, status, onMessage, onActed, saved, onToggleSave, soci
             {c.pctFilled != null && <span>{c.pctFilled}% full</span>}
           </div>
           {/* A five-day-old count must not read as today's (Seb, 2026-10-10). */}
-          {spotAgeWords({ spotsCheckedAt: c.spotsCheckedAt ?? null, spotsLive: !!c.spotsLive }) && (
+          {/* An upload age is left out when the latest list already says it:
+              a row the upload left unchanged keeps its old import date. */}
+          {(c.spotsLive || !latest) && spotAgeWords({ spotsCheckedAt: c.spotsCheckedAt ?? null, spotsLive: !!c.spotsLive }) && (
             <p className="text-[9.5px] mb-1" style={{ color: c.spotsLive ? '#1c7a35' : 'var(--text-3)' }}>
               {spotAgeWords({ spotsCheckedAt: c.spotsCheckedAt ?? null, spotsLive: !!c.spotsLive })}
             </p>
@@ -389,6 +398,8 @@ export default function CcCampaignsPage() {
   // The catalogue has no open spot counts at all (a broken upload), as opposed
   // to nothing matching: said differently on screen.
   const [spotsMissing, setSpotsMissing] = useState(false)
+  // When Amazon's latest list finished syncing (null: MVP cannot say right now).
+  const [latestUpload, setLatestUpload] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [loadingMore, setLoadingMore] = useState(false)
   const [nextPage, setNextPage] = useState<number | null>(null)
@@ -671,6 +682,9 @@ export default function CcCampaignsPage() {
     } catch { /* non-fatal */ }
   }, [])
 
+  // Pages on screen: a reload after a live check would drop the ones the
+  // creator loaded with Load more, so it only runs while page 1 is all there is.
+  const pagesLoaded = useRef(1)
   const fetchPage = useCallback(async (page: number, append: boolean) => {
     if (append) setLoadingMore(true); else setLoading(true)
     const seq = append ? fetchSeq.current : ++fetchSeq.current
@@ -689,8 +703,16 @@ export default function CcCampaignsPage() {
       setLocked(false)
       setSearchError(null)
       if (!append) setResultsQ(q.trim())
-      setCampaigns((prev) => append ? [...prev, ...j.campaigns] : j.campaigns)
-      if (!append) setSpotsMissing(j.spotsMissing === true)
+      // LOAD MORE NEVER SHOWS A CARD TWICE (Seb, 2026-11-18: "it's loading
+      // weird"): each page ranks its window again, so a card already shown
+      // can come back on the next one.
+      setCampaigns((prev) => {
+        if (!append) return j.campaigns
+        const have = new Set(prev.map((c) => c.campaignId))
+        return [...prev, ...(j.campaigns as typeof prev).filter((c) => !have.has(c.campaignId))]
+      })
+      pagesLoaded.current = append ? pagesLoaded.current + 1 : 1
+      if (!append) { setSpotsMissing(j.spotsMissing === true); setLatestUpload(typeof j.latestUpload === 'string' ? j.latestUpload : null) }
       setNextPage(j.nextPage)
       setTotal(j.total ?? 0)
       // Only page 1 carries a count; load-more keeps the figure already shown
@@ -734,8 +756,10 @@ export default function CcCampaignsPage() {
   // it mirrors Amazon exactly and works at any scale.
   const fetchJoinedLive = useCallback(async (pages: number, append: boolean) => {
     if (append) setLoadingMore(true); else setLoading(true)
+    const seq = ++fetchSeq.current
     try {
       const res = await requestMyCcCampaigns({ keyword: q.trim(), maxPages: pages })
+      if (seq !== fetchSeq.current) return
       if (!res.ok) {
         const msg = res.error === 'not-installed'
           ? 'SCOUT isn’t detected. Install/enable it and open Amazon, then try again.'
@@ -763,8 +787,17 @@ export default function CcCampaignsPage() {
         for (const m of mapped) if (m.repAsin) n[m.repAsin] = { ...(n[m.repAsin] || {}), accepted: true }
         return n
       })
-    } finally { setLoadingMore(false); setLoading(false) }
+    } finally { if (seq === fetchSeq.current) { setLoadingMore(false); setLoading(false) } }
   }, [q, mapJoined])
+
+  // Switching between the catalogue and Joined only starts from an empty
+  // list, so one list is never shown under the other's heading.
+  const modeSeen = useRef(joinedOnly)
+  useEffect(() => {
+    if (modeSeen.current === joinedOnly) return
+    modeSeen.current = joinedOnly
+    setCampaigns([])
+  }, [joinedOnly])
 
   // "Verify my CC access" — SCOUT opens the user's own Creator Connections grid;
   // real campaigns back = proven invite, which we stamp server-side to unlock.
@@ -839,7 +872,9 @@ export default function CcCampaignsPage() {
     void refreshLiveSpots(terms).then((r) => {
       setLiveCheck({ state: 'done', r })
       // Reload so a campaign found full leaves the list now, not next visit.
-      if (r.saved > 0 || r.added > 0) void fetchPage(1, false)
+      // Only when one did, or new ones came in: a count that merely changed
+      // used to reload and reorder the list on nearly every visit.
+      if ((r.nowFull > 0 || r.added > 0) && pagesLoaded.current === 1) void fetchPage(1, false)
     }).catch(() => setLiveCheck(null)).finally(() => { liveBusy.current = false })
   }, [joinedOnly, locked, loading, campaigns, q, sort, minCommission, payingOnly, hasSpots, fetchPage])
 
@@ -973,8 +1008,8 @@ export default function CcCampaignsPage() {
   return (
     <>
       <PageHero
-        title="Brand campaigns"
-        subtitle={<>Every live Creator Connections campaign with the numbers that matter (commission, $ per sale, spots left, whether the brand actually pays out) and one click to turn it into a blog post.<span className="block mt-1 text-[12px]">Formerly CC Campaigns.</span></>}
+        title="CC campaigns"
+        subtitle={<>Every live Amazon Creator Connections (CC) campaign, with the numbers that matter (commission, $ per sale, spots left, whether the brand actually pays out) and one click to turn it into a blog post.</>}
       />
       {teal && !locked && (
         <TealSteps steps={[
@@ -1122,7 +1157,9 @@ export default function CcCampaignsPage() {
         </div>
       )}
 
-      {loading ? (
+      {/* THE LIST STAYS WHILE IT RELOADS (Seb, 2026-11-18): every keystroke,
+          filter and live check used to swap the whole grid for a spinner. */}
+      {loading && !campaigns.length ? (
         <div className="flex items-center gap-2 text-sm text-[var(--text-3)] py-10"><Loader2 size={16} className="animate-spin" /> Loading campaigns…</div>
       ) : campaigns.length === 0 ? (
         <div className="card p-8 text-center text-sm text-[var(--text-3)]">
@@ -1188,11 +1225,14 @@ export default function CcCampaignsPage() {
           )}
           {/* A SEARCH THAT FAILED, or has not answered yet, says so above the
               list it did not replace, so the old list never passes for it. */}
-          {!joinedOnly && (searchError || (loading && q.trim() !== resultsQ)) && (
-            <p className="text-xs mb-2" style={{ color: searchError ? '#d97706' : 'var(--text-3)' }}>
+          {!joinedOnly && (searchError || loading) && (
+            <p className="text-xs mb-2 inline-flex items-center gap-1.5" style={{ color: searchError ? '#d97706' : 'var(--text-3)' }}>
+              {!searchError && <Loader2 size={12} className="animate-spin" />}
               {searchError
-                ? `${searchError} The list below is still the one for ${resultsQ ? `“${resultsQ}”` : 'all campaigns'}.`
-                : `Searching for ${q.trim() ? `“${q.trim()}”` : 'all campaigns'}…`}
+                ? `${searchError} The list below is still the one for ${resultsQ ? `“${resultsQ}”` : 'all CC campaigns'}.`
+                : q.trim() !== resultsQ
+                  ? `Searching for ${q.trim() ? `“${q.trim()}”` : 'all CC campaigns'}…`
+                  : 'Updating the list…'}
             </p>
           )}
           <div className="flex items-center justify-between gap-3 flex-wrap mb-3">
@@ -1211,6 +1251,7 @@ export default function CcCampaignsPage() {
                     </>
                   : <>{total.toLocaleString()} live campaign{total === 1 ? '' : 's'}</>}
               {hiddenCount > 0 && <span> · {hiddenCount.toLocaleString()} hidden</span>}
+              {!joinedOnly && latestUpload && <span> · checked against Amazon&rsquo;s list synced {new Date(latestUpload).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>}
               {shown.length < visible.length && <span> · showing {shown.length.toLocaleString()}</span>}
             </p>
             <div className="flex items-center gap-2 text-[11px]">
