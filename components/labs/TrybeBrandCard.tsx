@@ -143,7 +143,7 @@ export default function TrybeBrandCard({ chatName, chatRaw, directory, canStats,
             <button onClick={() => setBriefOpen((v) => !v)} className={`${link} ${card.briefUrl ? 'ml-3' : ''}`} style={{ color: PURPLE }}>
               <FileText size={12} /> {briefOpen ? 'Hide the brief' : 'Read the brief here'} <ChevronDown size={12} className={briefOpen ? 'rotate-180' : ''} />
             </button>
-            {briefOpen && <p className="mt-1.5 text-[12.5px] whitespace-pre-line max-h-60 overflow-y-auto">{card.brief}</p>}
+            {briefOpen && <p className="mt-1.5 text-[12.5px] whitespace-pre-line max-h-60 overflow-y-auto break-words [overflow-wrap:anywhere]">{card.brief}</p>}
           </>)}
         </div>
       )}

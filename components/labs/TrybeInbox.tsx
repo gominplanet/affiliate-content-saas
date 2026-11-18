@@ -480,7 +480,12 @@ export default function TrybeInbox({ scoutVersion, allowed, openRequest, onOpene
           {loadingList ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />} Refresh
         </button>
       </div>
-      <div className="grid md:grid-cols-[18rem_1fr] min-h-[28rem]">
+      {/* THE CONVERSATION FITS THE CARD (Seb, 2026-11-18: "it's cutting the
+          right-hand side ... I can find the send button"). A plain 1fr column
+          grew to its widest child, a long link in a message most often, and
+          the card cut it off with the Send button. minmax(0,1fr) and min-w-0
+          hold it to the card, and long words wrap. */}
+      <div className="grid md:grid-cols-[18rem_minmax(0,1fr)] min-h-[28rem]">
         <div className="border-r overflow-y-auto max-h-[36rem]" style={{ borderColor: 'var(--border)' }}>
           {convos === null && <p className="p-4 text-[12px] inline-flex items-center gap-1.5" style={soft}><Loader2 size={12} className="animate-spin" /> Reading your conversations...</p>}
           {listNote && <p className="p-4 text-[12px]" style={{ color: convos?.length ? 'inherit' : AMBER }}>{listNote}</p>}
@@ -515,24 +520,24 @@ export default function TrybeInbox({ scoutVersion, allowed, openRequest, onOpene
             </button>
           ))}
         </div>
-        <div className="flex flex-col">
+        <div className="flex flex-col min-w-0">
           {!openConvo && <p className="m-auto text-[13px]" style={soft}>Pick a conversation.</p>}
           {openConvo && (<>
-            <div className="px-4 py-3 border-b flex flex-wrap items-center gap-2" style={{ borderColor: 'var(--border)' }}>
-              <span className="text-[13px] font-semibold">{openConvo.name}</span>
+            <div className="px-4 py-3 border-b flex flex-wrap items-center gap-2 min-w-0" style={{ borderColor: 'var(--border)' }}>
+              <span className="text-[13px] font-semibold break-words min-w-0">{openConvo.name}</span>
               {/* THE BRAND'S OWN PAGE, WEBSITE AND BRIEF, from the chat. */}
               <TrybeBrandCard key={openConvo.id} chatName={openConvo.name} chatRaw={openConvo.raw} directory={directory}
                 canStats={scoutAtLeast(scoutVersion, SCOUT_TRYBE_MYBRANDS_MIN_VERSION)} canDetails={scoutAtLeast(scoutVersion, SCOUT_TRYBE_PLAYBOOK_MIN_VERSION)} />
             </div>
             {/* WHAT THE BRAND SENT, IN SHORT: its links read, a TLDR, and Brand scripts follow them. */}
             <TrybeBrandLinks key={`links-${openConvo.id}`} brandId={brandIdFromChat(openConvo.raw) || matchBrand(openConvo.name, [], directory)?.id || null} brandName={openConvo.name} messages={msgs} />
-            <div ref={threadRef} className="flex-1 overflow-y-auto max-h-[28rem] px-4 py-3 space-y-2">
+            <div ref={threadRef} className="flex-1 overflow-y-auto overflow-x-hidden max-h-[28rem] px-4 py-3 space-y-2">
               {loadingMsgs && <p className="text-[12px] inline-flex items-center gap-1.5" style={soft}><Loader2 size={12} className="animate-spin" /> Reading the conversation...</p>}
               {msgNote && <p className="text-[12px]" style={{ color: AMBER }}>{msgNote}</p>}
               {readNote && <p className="text-[12px]" style={{ color: AMBER }}>{readNote}</p>}
               {(msgs || []).map(m => (
                 <div key={m.id} className={`flex ${m.mine ? 'justify-end' : 'justify-start'}`}>
-                  <div className="max-w-[80%] rounded-2xl px-3 py-2 text-[13px] whitespace-pre-wrap"
+                  <div className="max-w-[80%] min-w-0 rounded-2xl px-3 py-2 text-[13px] whitespace-pre-wrap break-words [overflow-wrap:anywhere]"
                     style={m.mine ? { background: PURPLE, color: '#fff' } : { background: 'var(--surface-2, rgba(0,0,0,0.05))' }}>
                     {!m.mine && <span className="block text-[11px] font-semibold mb-0.5" style={soft}>{m.who}</span>}
                     {m.text}
@@ -541,9 +546,9 @@ export default function TrybeInbox({ scoutVersion, allowed, openRequest, onOpene
                 </div>
               ))}
             </div>
-            <div className="border-t p-3" style={{ borderColor: 'var(--border)' }}>
+            <div className="border-t p-3 min-w-0" style={{ borderColor: 'var(--border)' }}>
               <textarea value={reply} onChange={e => setReply(e.target.value)} rows={3} placeholder="Write a reply. Line breaks are kept."
-                className="w-full rounded-lg border p-2.5 text-[13px]" style={{ borderColor: 'var(--border)', background: 'transparent' }} />
+                className="block w-full max-w-full rounded-lg border p-2.5 text-[13px]" style={{ borderColor: 'var(--border)', background: 'transparent' }} />
               {blanksLeft.length > 0 && (
                 <p className="text-[12px] mt-1.5 inline-flex items-start gap-1" style={{ color: AMBER }}>
                   <AlertTriangle size={12} className="mt-0.5 shrink-0" /> Fill in before sending: {blanksLeft.join(', ')}. MVP never guesses an address, a date or a number for you.
@@ -564,11 +569,11 @@ export default function TrybeInbox({ scoutVersion, allowed, openRequest, onOpene
               </div>
               {voiceOpen && voice.state && (
                 <ul className="mt-1.5 space-y-1.5 max-h-56 overflow-y-auto rounded-lg border p-2 text-[12px]" style={{ borderColor: 'var(--border)' }}>
-                  {voice.state.voice.map((v, i) => <li key={i}><b>To {v.brand || 'a brand'}:</b> <span className="whitespace-pre-line">{v.text}</span></li>)}
+                  {voice.state.voice.map((v, i) => <li key={i} className="break-words [overflow-wrap:anywhere]"><b>To {v.brand || 'a brand'}:</b> <span className="whitespace-pre-line">{v.text}</span></li>)}
                 </ul>
               )}
               {/* What is true, ticked by you: a suggestion says a step is done only when it is ticked. */}
-              <fieldset className="mt-2 rounded-lg border px-3 py-2" style={{ borderColor: 'var(--border)' }}>
+              <fieldset className="mt-2 min-w-0 rounded-lg border px-3 py-2" style={{ borderColor: 'var(--border)' }}>
                 <legend className="px-1 text-[12px] font-semibold" style={{ color: 'var(--text-soft)' }}>Before MVP suggests a reply, tick what is true</legend>
                 <div className="flex flex-wrap gap-x-4 gap-y-1.5">
                   {REPLY_STEPS.map(s => (

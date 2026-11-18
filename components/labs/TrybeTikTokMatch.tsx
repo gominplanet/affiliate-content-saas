@@ -235,7 +235,7 @@ export default function TrybeTikTokMatch({ hasCore, onWrite, scoutOpens = false,
         </p>
       )}
 
-      <div className="grid gap-4 lg:grid-cols-[1fr_1.1fr]">
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
         {/* The account. */}
         <div className="rounded-xl border p-3.5" style={{ borderColor: 'var(--border)' }}>
           {lib ? (

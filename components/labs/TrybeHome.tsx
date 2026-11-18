@@ -337,7 +337,7 @@ export default function TrybeHome({ go, unread, queue, repliedWeek, inboxRead, f
       {/* ── WHAT TRYBE BRANDS PAY ─────────────────────────────────────────── */}
       {market && d?.payIndex && d.payIndex.rows.length > 0 && (
         <Section title="What TRYBE brands pay" aside={`From the pay of ${d.payIndex.read.toLocaleString()} of ${d.payIndex.brands.toLocaleString()} listed brands MVP could read`}>
-          <div className="grid grid-cols-1 lg:grid-cols-[1.4fr_1fr] gap-3">
+          <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)] gap-3">
             <div className="rounded-2xl overflow-x-auto" style={ui.card}>
               <table className="w-full text-[13px]" style={{ fontVariantNumeric: 'tabular-nums' }}>
                 <thead>
