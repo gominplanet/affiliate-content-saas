@@ -4,7 +4,7 @@
 // tick, the brands you work with, and seven days planned from the boxes.
 
 import { readFileSync } from 'node:fs'
-import { planWeek, stageOf, brandsOf, weekText, CHASE_DAYS, type Sample } from '../lib/trybe-week'
+import { planWeek, stageOf, brandsOf, weekText, stageCounts, weekSummary, laterDays, NEXT_STEP, UNDO_BOX, STAGE_ORDER, CHASE_DAYS, type Sample } from '../lib/trybe-week'
 
 const failures: string[] = []
 const check = (name: string, ok: boolean) => { if (!ok) failures.push(name) }
@@ -47,6 +47,24 @@ const b = brandsOf([s({ id: '1', brand_name: 'Oink' }), s({ id: '2', brand_name:
 check('brands are counted once each, with where their samples stand', b.length === 2 && b[0].name === 'Oink' && b[0].counts.on_the_way === 1 && b[0].counts.to_film === 1)
 check('the week prints with a box per task and says an empty day', /\[ \] Film 3 videos/.test(weekText(week)) && /Nothing planned/.test(weekText(planWeek([], { perDay: 1, now, dayName: names }))))
 
+// WHERE YOUR SAMPLES STAND (Seb, 2026-11-18: "a total mess ... harder and
+// harder to understand what we've received, what we've shot")
+const board = [
+  s({ id: 'w1', requested_at: iso(CHASE_DAYS + 1) }), s({ id: 'w2', requested_at: iso(1) }),
+  s({ id: 'h1', received_at: iso(8), videos_planned: 2 }), s({ id: 'h2', received_at: iso(1), videos_planned: 3 }),
+  s({ id: 'f1', received_at: iso(4), filmed_at: iso(1), videos_planned: 4 }),
+  s({ id: 'd1', received_at: iso(9), filmed_at: iso(8), submitted_at: iso(2) }), s({ id: 'd2', received_at: iso(90), filmed_at: iso(80), submitted_at: iso(70) }),
+]
+const c = stageCounts(board, now)
+check('the stages are counted in the order a sample moves', STAGE_ORDER.join(',') === 'on_the_way,to_film,to_submit,done')
+check('samples and videos per stage, late ones counted', c.on_the_way.samples === 2 && c.on_the_way.late === 1 && c.to_film.samples === 2 && c.to_film.videos === 5 && c.to_film.late === 1 && c.to_submit.samples === 1 && c.to_submit.videos === 4)
+check('submitted is counted this month and in all', c.done.samples === 2 && c.done.thisMonth === 1)
+check('the week in one sentence, in the order you act', weekSummary(c) === '2 samples here to film (5 videos), 1 sample filmed to submit, 2 on the way, 1 late and 1 submitted this month.')
+check('an empty list and a list all submitted say so', weekSummary(stageCounts([], now)) === 'No samples yet.' && /^Every sample is submitted/.test(weekSummary(stageCounts([board[6]], now))))
+check('one next step per stage, and one box back', NEXT_STEP.on_the_way.box === 'received' && NEXT_STEP.to_film.box === 'filmed' && NEXT_STEP.to_submit.box === 'submitted' && UNDO_BOX.to_film === 'received' && UNDO_BOX.done === 'submitted')
+const paced = planWeek([], { perDay: 1, now, dayName: names, pace: [{ brand: 'Oink', sent: 0, target: 60 }] })
+check('the monthly pace is said today, not again on each later day', paced[0].tasks.some((t) => t.kind === 'volume') && laterDays(paced).length === 6 && laterDays(paced).every((d) => !d.tasks.some((t) => t.kind === 'volume')))
+
 // Wiring
 const route = read('app/api/labs/trybe/samples/route.ts')
 check('ticking a later box ticks the earlier ones, unticking clears the later ones', /order\.slice\(0, at \+ 1\)\.forEach/.test(route) && /order\.slice\(at\)\.forEach\(\(f\) => \{ patch\[f\] = null \}\)/.test(route))
@@ -57,6 +75,13 @@ check('a sample\'s ideas are planned about its product and kept on the sample', 
 const ui = read('components/labs/TrybeWeek.tsx')
 check('the page reads the list and says when it could not', /setLoadError/.test(ui) && /Try again/.test(ui))
 check('the rows are not a component made inside the page (that closed ideas mid-plan)', !/const SampleRow = /.test(ui) && /sampleRow\(r\)/.test(ui))
+check('This week opens on where the samples stand, then today, then the samples, then the month, then downloads', (() => {
+  const at = (re: RegExp) => ui.search(re)
+  const order = [at(/weekSummary\(counts\)/), at(/STAGE_ORDER\.map\(tile\)/), at(/ Today<\/p>/), at(/ Your samples<\/p>/), at(/>Your month<\/p>/), at(/>Print and download<\/p>/)]
+  return order.every((n, i) => n > 0 && (i === 0 || n > order[i - 1]))
+})())
+check('each sample has one next step and an undo, not three loose boxes', /NEXT_STEP\[st\]/.test(ui) && /tick\(r, next\.box, true\)/.test(ui) && /tick\(r, undo, false\)/.test(ui) && !/type="checkbox" checked=\{on\}/.test(ui))
+check('the month is one card, the goal drawn inside it', /<TrybeGoal canRead=\{canRead\} bare \/>/.test(ui) && /bare = false/.test(read('components/labs/TrybeGoal.tsx')))
 check('the TRYBE page has the This week tab', /\{ id: 'week', label: 'This week'/.test(read('components/labs/TrybeOutreach.tsx')))
 const mig = read('supabase/migrations/427_trybe_samples.sql')
 check('migration 427 is safe to run twice', /create table if not exists public\.trybe_samples/.test(mig) && /drop policy if exists/.test(mig) && /create index if not exists/.test(mig))

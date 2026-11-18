@@ -79,7 +79,7 @@ check('the stage card shows it', /Road to \{ROAD_GOAL\}/.test(read('components/l
 // ── Keighly: 250 a month ──
 const g = goalOf(142)
 check('the goal is 250 a month, with a weekly and batch pace', MONTHLY_GOAL === 250 && g.left === 108 && g.perWeek === 59 && g.perBatch === 20 && /142 of 250/.test(g.says) && /goal met/.test(goalOf(260).says))
-check('This week shows the goal, and a failed read is said', /<TrybeGoal canRead=\{canRead\} \/>/.test(read('components/labs/TrybeWeek.tsx')) && /could not read your last 30 days/.test(read('components/labs/TrybeGoal.tsx')))
+check('This week shows the goal, and a failed read is said', /<TrybeGoal canRead=\{canRead\} bare \/>/.test(read('components/labs/TrybeWeek.tsx')) && /could not read your last 30 days/.test(read('components/labs/TrybeGoal.tsx')))
 
 // ── Keighly: didn't run? move on ──
 const v = (id: string, brand: string, impressions: number | null, earned = 0, live: boolean | null = false): AdVideo => ({ ...NO_TOTALS, id, title: null, brand, brandId: brand, thumbnail: null, live, impressions, earned })

@@ -18,7 +18,9 @@ const GREEN = '#16A34A'
 const AMBER = '#B45309'
 const KEY = 'mvp.trybe.monthlyGoal'
 
-export default function TrybeGoal({ canRead }: { canRead: boolean }) {
+/** `bare`: drawn as one row inside This week's Your month card (Seb,
+ *  2026-11-18: one card for the month, not two goals in two cards). */
+export default function TrybeGoal({ canRead, bare = false }: { canRead: boolean; bare?: boolean }) {
   const [goal, setGoal] = useState(MONTHLY_GOAL)
   const [sent, setSent] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -40,10 +42,10 @@ export default function TrybeGoal({ canRead }: { canRead: boolean }) {
   const read = sent == null ? null : goalOf(sent, goal)
   const soft = { color: 'var(--text-soft)' }
   return (
-    <div className="rounded-2xl border p-4" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
+    <div className={bare ? '' : 'rounded-2xl border p-4'} style={bare ? undefined : { borderColor: 'var(--border)', background: 'var(--surface)' }}>
       <div className="flex flex-wrap items-center gap-2 mb-1">
-        <Target size={16} style={{ color: PURPLE }} />
-        <p className="text-[15px] font-semibold flex-1">Your monthly video goal</p>
+        <Target size={bare ? 14 : 16} style={{ color: PURPLE }} />
+        <p className={bare ? 'text-[13.5px] font-semibold flex-1' : 'text-[15px] font-semibold flex-1'}>{bare ? 'All your TRYBE videos, last 30 days' : 'Your monthly video goal'}</p>
         <label className="text-[12px] inline-flex items-center gap-1.5" style={soft}>
           Goal
           <select value={goal} onChange={(e) => choose(Number(e.target.value))} className="rounded-lg border px-2 py-1 text-[12.5px] bg-transparent" style={{ borderColor: 'var(--border)', color: 'var(--text)' }}>
@@ -51,7 +53,7 @@ export default function TrybeGoal({ canRead }: { canRead: boolean }) {
           </select>
         </label>
       </div>
-      <p className="text-[12.5px] mb-2 max-w-[75ch]" style={soft}>A goal for the month, not a daily habit: many brands approve on a couple of days a week, so film in batches and keep the rest of your week for your other income.</p>
+      {!bare && <p className="text-[12.5px] mb-2 max-w-[75ch]" style={soft}>A goal for the month, not a daily habit: many brands approve on a couple of days a week, so film in batches and keep the rest of your week for your other income.</p>}
       {!canRead ? <p className="text-[13px]" style={soft}>Allow SCOUT on TRYBE and MVP counts the videos you sent in the last 30 days.</p>
         : error ? <p className="text-[13px]" style={{ color: AMBER }}>{error}</p>
           : !read ? <p className="text-[13px] inline-flex items-center gap-1.5" style={soft}><Loader2 size={12} className="animate-spin" /> Counting your videos on TRYBE...</p>

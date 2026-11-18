@@ -3,7 +3,9 @@
 //
 // THIS WEEK, TRYBE Outreach's own tab (Seb, 2026-10-13, after Alejandro: "a
 // weekly plan and list of collaborating brands and samples so I have control
-// of who is sending what"). The brands you work with, the samples each one is
+// of who is sending what"). Laid out again 2026-11-18 (Seb: "a total mess"):
+// where your samples stand first, then today, then each sample with one next
+// step, then your month in one card, then print and download. The brands you work with, the samples each one is
 // sending, three boxes per sample (here, filmed, submitted), each sample's
 // own video ideas, and the next seven days planned from those boxes
 // (lib/trybe-week.ts). A list MVP could not read says so, never "no samples".
@@ -14,7 +16,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { Loader2, Plus, Trash2, Copy, Check, Printer, CalendarDays, Package, ChevronDown, ChevronUp, AlertTriangle, FileDown } from 'lucide-react'
 import TrybeVideoIdeas, { loadBrandPage, type SavedPlan } from '@/components/labs/TrybeVideoIdeas'
-import { planWeek, brandsOf, stageOf, weekText, perDayNeeded, STAGE_WORDS, CHASE_DAYS, MONTHLY_TARGET, type Sample, type Stage, type Pace } from '@/lib/trybe-week'
+import { planWeek, brandsOf, stageOf, weekText, perDayNeeded, stageCounts, weekSummary, laterDays, STAGE_WORDS, STAGE_ORDER, STAGE_ASKS, NEXT_STEP, UNDO_BOX, CHASE_DAYS, MONTHLY_TARGET, type Sample, type Stage, type Pace, type Task, type Box } from '@/lib/trybe-week'
 import { readBrandSubs } from '@/components/labs/TrybeMyBrands'
 import { requestTrybeApi } from '@/lib/extension-frame'
 import { readBrandStats, byBrandName, withSubmissions, judgeBrands, readTopVideos, type MyBrand, type Submission } from '@/lib/trybe-mybrands'
@@ -31,6 +33,10 @@ const AMBER = '#B45309'
 const PER_DAY_KEY = 'mvp.trybe.week.perDay'
 const FOCUS_KEY = 'mvp.trybe.week.focus'
 const TARGET_KEY = 'mvp.trybe.week.target'
+/** Each stage's colour, in the order a sample moves: waiting is quiet, a
+ *  shoot is orange (This week's own colour), filmed is the look's colour,
+ *  submitted is green. Always shown with the stage's words too. */
+const STAGE_COLOR: Record<Stage, string> = { on_the_way: 'var(--text-soft)', to_film: '#EA580C', to_submit: PURPLE, done: GREEN }
 
 type Row = Omit<Sample, 'has_ideas'> & { ideas: SavedPlan; ideas_at: string | null }
 
@@ -75,6 +81,9 @@ export default function TrybeWeek({ knownBrands, canRead, isAdmin = false }: {
   const [busy, setBusy] = useState<string | null>(null)
   const [open, setOpen] = useState<string | null>(null)
   const [showDone, setShowDone] = useState(false)
+  const [showAdd, setShowAdd] = useState(false)
+  const [showLater, setShowLater] = useState(false)
+  const [showGoals, setShowGoals] = useState(false)
   const [copied, setCopied] = useState(false)
   const [perDay, setPerDay] = useState(1)
 
@@ -235,7 +244,7 @@ export default function TrybeWeek({ knownBrands, canRead, isAdmin = false }: {
     finally { setAdding(false) }
   }
 
-  async function tick(r: Row, field: 'received' | 'filmed' | 'submitted', on: boolean) {
+  async function tick(r: Row, field: Box, on: boolean) {
     setBusy(`${r.id}:${field}`)
     try {
       const d = await call({ action: 'tick', id: r.id, field, on })
@@ -417,35 +426,113 @@ export default function TrybeWeek({ knownBrands, canRead, isAdmin = false }: {
   }
   if (!rows) return <p className="text-[13px] inline-flex items-center gap-1.5" style={soft}><Loader2 size={13} className="animate-spin" /> Reading your samples...</p>
 
+  // WHERE YOUR SAMPLES STAND (Seb, 2026-11-18: "harder and harder to
+  // understand what we've received, what we've shot"): four counts in the
+  // order a sample moves, then today, then each sample with one next step.
+  const counts = stageCounts(rows)
+  const later = laterDays(days)
+  const laterTotal = later.reduce((n, d) => n + d.tasks.length, 0)
+  const dateWords = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : '')
+  const goTo = (st: Stage) => {
+    if (st === 'done') setShowDone(true)
+    setTimeout(() => document.getElementById(`trybe-week-${st}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0)
+  }
+  const sorted = (st: Stage) => byStage(st).sort((a, b) => {
+    const at = (x: Row) => Date.parse((st === 'to_film' ? x.received_at : st === 'to_submit' ? x.filmed_at : st === 'done' ? x.submitted_at : x.requested_at) || '') || 0
+    return st === 'done' ? at(b) - at(a) : at(a) - at(b)
+  })
+
+  const tile = (st: Stage) => {
+    const c = counts[st]
+    const big = st === 'done' ? c.thisMonth : c.samples
+    const line = st === 'on_the_way' ? (c.late ? `${c.late} asked over a week ago` : c.samples ? 'asked, not here yet' : 'nothing on the way')
+      : st === 'to_film' ? (c.samples ? `${c.videos} video${c.videos === 1 ? '' : 's'} to shoot${c.late ? `, ${c.late} waiting a week` : ''}` : 'nothing to shoot')
+        : st === 'to_submit' ? (c.samples ? `${c.videos} video${c.videos === 1 ? '' : 's'} to submit` : 'nothing waiting')
+          : `this month, ${c.samples} in all`
+    const hot = (st === 'to_film' || st === 'to_submit') && c.samples > 0
+    return (
+      <button key={st} onClick={() => goTo(st)} className="rounded-xl border px-3 py-2.5 text-left"
+        style={{ borderColor: hot ? STAGE_COLOR[st] : 'var(--border)', background: 'var(--surface)', boxShadow: `inset 0 3px 0 ${STAGE_COLOR[st]}` }}>
+        <span className="block text-[11px] font-bold uppercase tracking-wider" style={{ color: STAGE_COLOR[st] }}>{STAGE_WORDS[st]}</span>
+        <span className="block text-[24px] font-bold tabular-nums leading-tight">{big}</span>
+        <span className="block text-[12px]" style={(st === 'on_the_way' || st === 'to_film') && c.late ? { color: AMBER } : soft}>{line}</span>
+      </button>
+    )
+  }
+
+  const taskLine = (t: Task, i: number) => (
+    <li key={i} className="text-[13px] flex items-start gap-1.5" style={t.late ? { color: AMBER } : undefined}>
+      <span aria-hidden className="mt-0.5 shrink-0 text-[11px] font-bold rounded px-1" style={{ background: t.kind === 'film' || t.kind === 'volume' ? 'rgb(var(--brand-rgb) / 0.12)' : 'rgba(0,0,0,0.05)', color: t.kind === 'film' || t.kind === 'volume' ? PURPLE : 'var(--text-soft)' }}>
+        {t.kind === 'film' || t.kind === 'volume' ? 'Film' : t.kind === 'submit' ? 'Submit' : t.kind === 'ideas' ? 'Plan' : 'Ask'}
+      </span>
+      <span>{t.text}</span>
+    </li>
+  )
+
   // A plain function, not a component: a component made here would remount
   // on every render and close the open video ideas mid-plan.
+  // ONE NEXT STEP PER SAMPLE (Seb, 2026-11-18): the three boxes said nothing
+  // about order; the button says what happened next, the track shows each
+  // step with its date, and Undo takes it back one step.
   const sampleRow = (r: Row) => {
     const st = stageOf(r)
-    const when = st === 'on_the_way' ? `asked ${ago(r.requested_at)} day${ago(r.requested_at) === 1 ? '' : 's'} ago`
-      : st === 'to_film' ? `here ${ago(r.received_at)} day${ago(r.received_at) === 1 ? '' : 's'}`
-      : st === 'to_submit' ? `filmed ${ago(r.filmed_at)} day${ago(r.filmed_at) === 1 ? '' : 's'} ago` : `submitted ${ago(r.submitted_at)} day${ago(r.submitted_at) === 1 ? '' : 's'} ago`
+    const age = st === 'on_the_way' ? ago(r.requested_at) : st === 'to_film' ? ago(r.received_at) : st === 'to_submit' ? ago(r.filmed_at) : ago(r.submitted_at)
+    const dd = `${age} day${age === 1 ? '' : 's'}`
+    const when = st === 'on_the_way' ? `asked ${dd} ago` : st === 'to_film' ? `here ${dd}` : st === 'to_submit' ? `filmed ${dd} ago` : `submitted ${dd} ago`
     const late = (st === 'on_the_way' && ago(r.requested_at) >= CHASE_DAYS) || (st === 'to_film' && ago(r.received_at) >= 7)
-    const box = (f: 'received' | 'filmed' | 'submitted', label: string, on: boolean) => (
-      <label className="inline-flex items-center gap-1.5 cursor-pointer select-none">
-        {busy === `${r.id}:${f}` ? <Loader2 size={13} className="animate-spin" /> : <input type="checkbox" checked={on} onChange={(e) => void tick(r, f, e.target.checked)} className="h-4 w-4" style={{ accentColor: GREEN }} />}
-        {label}
-      </label>
-    )
+    const next = st === 'done' ? null : NEXT_STEP[st]
+    const into: Stage = st === 'on_the_way' ? 'to_film' : st === 'to_film' ? 'to_submit' : 'done'
+    const undo = st === 'on_the_way' ? null : UNDO_BOX[st]
+    const mine = !!busy && busy.startsWith(`${r.id}:`)
+    const steps: Array<{ box: Box | null; label: string; at: string | null }> = [
+      { box: null, label: 'Asked', at: r.requested_at },
+      { box: 'received', label: 'Here', at: r.received_at },
+      { box: 'filmed', label: 'Filmed', at: r.filmed_at },
+      { box: 'submitted', label: 'Submitted', at: r.submitted_at },
+    ]
     return (
       <li key={r.id} className="rounded-xl border px-3 py-2.5" style={{ borderColor: 'var(--border)' }}>
-        <div className="flex flex-wrap items-start gap-x-3 gap-y-1.5">
-          <div className="min-w-0 flex-1">
+        <div className="flex flex-wrap items-start gap-x-3 gap-y-2">
+          <div className="min-w-0 flex-1 basis-[14rem]">
             <p className="text-[13.5px] font-semibold">{r.product}</p>
             <p className="text-[12px]" style={late ? { color: AMBER } : soft}>{r.brand_name} · {r.videos_planned} video{r.videos_planned === 1 ? '' : 's'} · {when}</p>
             <ProductAmazon match={amz.product(r.brand_name, r.product)} />
           </div>
-          <div className="flex flex-wrap items-center gap-3 text-[12.5px]">
-            {box('received', 'Received', !!r.received_at)}
-            {box('filmed', 'Filmed', !!r.filmed_at)}
-            {box('submitted', 'Submitted', !!r.submitted_at)}
-            <button onClick={() => void remove(r)} disabled={busy === `${r.id}:remove`} title="Remove from your list" className="p-1 rounded" style={soft}><Trash2 size={13} /></button>
+          <div className="flex flex-wrap items-center gap-2">
+            {next && (
+              <button onClick={() => void tick(r, next.box, true)} disabled={mine} className={btn} style={{ background: STAGE_COLOR[into], color: '#fff' }}>
+                {busy === `${r.id}:${next.box}` ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />} {next.words}
+              </button>
+            )}
+            {undo && (
+              <button onClick={() => void tick(r, undo, false)} disabled={mine} className="text-[12px] font-semibold underline disabled:opacity-50" style={soft} title="Take it back one step">
+                {busy === `${r.id}:${undo}` ? <Loader2 size={12} className="animate-spin" /> : 'Undo'}
+              </button>
+            )}
+            <button onClick={() => void remove(r)} disabled={mine} title="Remove from your list" aria-label={`Remove ${r.product} from your list`} className="p-1 rounded" style={soft}><Trash2 size={13} /></button>
           </div>
         </div>
+        <ol className="mt-2 flex flex-wrap items-center gap-y-1 text-[11.5px]" aria-label="Where this sample stands">
+          {steps.map((p, i) => {
+            const on = !!p.at
+            const isNext = !on && !!steps[i - 1]?.at
+            const dot = (
+              <>
+                <span aria-hidden className="inline-block w-2.5 h-2.5 rounded-full shrink-0" style={on ? { background: GREEN } : { border: `1.5px solid ${isNext ? 'var(--text)' : 'var(--border)'}` }} />
+                <span style={on ? undefined : soft}>{p.label}{on ? ` ${dateWords(p.at)}` : ''}</span>
+              </>
+            )
+            return (
+              <li key={p.label} className="inline-flex items-center gap-1">
+                {i > 0 && <span aria-hidden className="inline-block w-4 h-px mx-1" style={{ background: on ? GREEN : 'var(--border)' }} />}
+                {!on && p.box ? (
+                  <button onClick={() => void tick(r, p.box as Box, true)} disabled={mine} className="inline-flex items-center gap-1 hover:underline disabled:opacity-50"
+                    title={`Mark it ${p.label.toLowerCase()}${i > 1 ? ', with the steps before it' : ''}`}>{dot}</button>
+                ) : <span className="inline-flex items-center gap-1">{dot}</span>}
+              </li>
+            )
+          })}
+        </ol>
         {st !== 'done' && (
           <button onClick={() => setOpen((o) => (o === r.id ? null : r.id))} className="mt-1.5 inline-flex items-center gap-1 text-[12px] font-semibold" style={{ color: PURPLE }}>
             {r.ideas ? 'Scripts for this sample' : 'Write scripts for this sample'} {open === r.id ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
@@ -461,88 +548,41 @@ export default function TrybeWeek({ knownBrands, canRead, isAdmin = false }: {
     )
   }
 
+  const addForm = (
+    <div className="flex flex-wrap items-end gap-2 mb-4 rounded-xl p-3" style={{ background: 'var(--surface-2, rgba(0,0,0,0.03))' }}>
+      <label className="flex flex-col gap-1 text-[12px] min-w-[160px] flex-1" style={soft}>Brand
+        <input list="trybe-week-brands" value={brand} onChange={(e) => setBrand(e.target.value)} placeholder="Brand name" className={field} style={{ borderColor: 'var(--border)', color: 'var(--text)' }} />
+        <datalist id="trybe-week-brands">{suggestions.map((b) => <option key={b.id || b.name} value={b.name} />)}</datalist>
+      </label>
+      <label className="flex flex-col gap-1 text-[12px] min-w-[180px] flex-[2]" style={soft}>Product
+        <input value={product} onChange={(e) => setProduct(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') void add() }} placeholder="What they are sending" className={field} style={{ borderColor: 'var(--border)', color: 'var(--text)' }} />
+      </label>
+      <label className="flex flex-col gap-1 text-[12px]" style={soft}>Videos
+        <select value={count} onChange={(e) => setCount(Number(e.target.value))} className={field} style={{ borderColor: 'var(--border)', color: 'var(--text)' }}>
+          {[1, 2, 3, 4, 5, 6, 8, 10].map((n) => <option key={n} value={n}>{n}</option>)}
+        </select>
+      </label>
+      <label className="inline-flex items-center gap-1.5 text-[12.5px] pb-2 cursor-pointer"><input type="checkbox" checked={here} onChange={(e) => setHere(e.target.checked)} className="h-4 w-4" style={{ accentColor: GREEN }} /> Already here</label>
+      <button onClick={() => void add()} disabled={adding || !brand.trim() || !product.trim()} className={btn} style={{ background: PURPLE, color: '#fff' }}>
+        {adding ? <Loader2 size={13} className="animate-spin" /> : <Plus size={13} />} Add sample
+      </button>
+    </div>
+  )
+
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center gap-2 rounded-2xl border px-4 py-3" style={{ borderColor: 'rgb(var(--brand-rgb) / 0.35)', background: 'rgb(var(--brand-rgb) / 0.05)' }}>
-        <FileDown size={18} style={{ color: PURPLE }} />
-        <p className="text-[13px] flex-1 min-w-[16rem]"><b>Your weekly planner, ready to print.</b> <span style={soft}>This week&rsquo;s three jobs, a 7 day calendar, a page per product you have on hand with 5 video guidelines and the brand&rsquo;s best videos (QR codes), samples on the way, and your money as charts.</span></p>
-        <button onClick={() => void makePlanner()} disabled={!!exporting} className={btn} style={{ background: PURPLE, color: '#fff' }}>
-          {exporting ? <Loader2 size={13} className="animate-spin" /> : <FileDown size={13} />} Download my weekly planner (PDF)
-        </button>
-        <button onClick={() => void makeSamplesPdf()} disabled={samplesBusy || !rows?.length} className={btn} style={{ border: `1px solid ${PURPLE}`, color: PURPLE }}
-          title={rows?.length ? 'Every sample, by brand, with where each one stands' : 'No samples yet'}>
-          {samplesBusy ? <Loader2 size={13} className="animate-spin" /> : <Package size={13} />} Download my samples (PDF)
-        </button>
-        {exporting && <p className="w-full text-[12px] inline-flex items-center gap-1" style={soft}>{exporting}</p>}
+      {/* 1. WHERE YOUR SAMPLES STAND: one sentence, then the four stages in order. */}
+      <div>
+        <p className="text-[14px] font-semibold">{weekSummary(counts)}</p>
+        <div className="mt-2 grid grid-cols-2 sm:grid-cols-4 gap-2">{STAGE_ORDER.map(tile)}</div>
       </div>
 
       <TrybeSampleGuard samples={rows} />
-      <TrybeGoal canRead={canRead} />
 
-      {/* YOUR MONTH: the video target per focus brand. */}
+      {/* 2. TODAY, then the rest of the week folded. */}
       <div className={card} style={cardStyle}>
-        <div className="flex flex-wrap items-center gap-2 mb-1">
-          <p className="text-[15px] font-semibold">Your month</p>
-          <label className="ml-auto text-[12px] inline-flex items-center gap-1.5" style={soft}>
-            Videos a month per focus brand
-            <select value={target} onChange={(e) => chooseTarget(Number(e.target.value))} className={field} style={{ borderColor: 'var(--border)', color: 'var(--text)' }}>
-              {[15, 30, 45, 60, 90].map((n) => <option key={n} value={n}>{n}</option>)}
-            </select>
-          </label>
-        </div>
-        <p className="text-[12.5px] mb-3 max-w-[75ch]" style={soft}>About 1 ad in 25 becomes a winner (Meta&rsquo;s figure, as TRYBE&rsquo;s co-founder quotes it), so around 30 videos a month gives you a fair shot at one. Your first 2 or 3 with a new brand only test whether it answers; after that, this is the pace. Most top creators earned little for their first months: the ones who kept the volume up are the ones earning now.</p>
-        {!canRead ? (
-          <p className="text-[13px]" style={soft}>Allow SCOUT on TRYBE and MVP counts the videos you sent each brand this month.</p>
-        ) : joined === null ? (
-          <p className="text-[13px] inline-flex items-center gap-1.5" style={soft}><Loader2 size={13} className="animate-spin" /> Reading the brands you work with on TRYBE...</p>
-        ) : joined.length === 0 ? (
-          <p className="text-[13px]" style={joinedErr ? { color: AMBER } : soft}>{joinedErr || 'No brand has accepted you on TRYBE yet. Once one does, set your monthly target here.'}</p>
-        ) : (<>
-          {focusIds.length === 0 && <p className="text-[13px] mb-2" style={soft}>Pick the 1 or 2 brands you are building with. On TRYBE the top creators make about 90% of their money from 1 or 2 brands.</p>}
-          <ul className="space-y-2.5">
-            {focusIds.map((id) => {
-              const b = joined.find((x) => x.id === id)
-              if (!b) return null
-              const st = sentThisMonth[id]
-              const n = st?.n
-              const share = n != null ? Math.min(1, n / target) : 0
-              const need = n != null ? perDayNeeded({ brand: b.name, sent: n, target }) : null
-              return (
-                <li key={id}>
-                  <div className="flex flex-wrap items-baseline gap-x-2 text-[13.5px]">
-                    <b>{b.name}</b>
-                    <span className="tabular-nums" style={n != null && n >= target ? { color: GREEN } : soft}>
-                      {st == null ? 'reading...' : n == null ? `could not read: ${st.error}` : `${n} of ${target} sent this month`}
-                    </span>
-                    {need != null && need > 0 && <span className="ml-auto text-[12.5px]" style={soft}>{need} a day to get there</span>}
-                    {n != null && n >= target && <span className="ml-auto text-[12.5px] font-semibold" style={{ color: GREEN }}>Target reached</span>}
-                  </div>
-                  <span className="block mt-1 h-2 rounded-full" style={{ background: 'var(--border)' }}>
-                    <span className="block h-2 rounded-full" style={{ width: `${Math.max(2, Math.round(share * 100))}%`, background: n != null && n >= target ? GREEN : PURPLE }} />
-                  </span>
-                </li>
-              )
-            })}
-          </ul>
-          <div className="mt-3 flex flex-wrap gap-1.5">
-            {joined.slice(0, 12).map((b) => {
-              const on = focusIds.includes(b.id)
-              return (
-                <button key={b.id} onClick={() => toggleFocus(b.id)} aria-pressed={on} className="rounded-full border px-2.5 py-1 text-[12px] font-semibold"
-                  style={on ? { background: 'rgb(var(--brand-rgb) / 0.10)', color: PURPLE, borderColor: 'transparent' } : { borderColor: 'var(--border)', color: 'var(--text)' }}>
-                  {on ? '\u2713 ' : '+ '}{b.name}
-                </button>
-              )
-            })}
-          </div>
-          {monthReading && <p className="mt-2 text-[12px] inline-flex items-center gap-1" style={soft}><Loader2 size={11} className="animate-spin" /> Counting this month&rsquo;s videos on TRYBE...</p>}
-        </>)}
-      </div>
-
-      {/* The next seven days. */}
-      <div className={card} style={cardStyle}>
-        <div className="flex flex-wrap items-center gap-2 mb-1">
-          <p className="text-[15px] font-semibold inline-flex items-center gap-1.5"><CalendarDays size={16} style={{ color: PURPLE }} /> Your next 7 days</p>
+        <div className="flex flex-wrap items-center gap-2 mb-2">
+          <p className="text-[15px] font-semibold inline-flex items-center gap-1.5"><CalendarDays size={16} style={{ color: PURPLE }} /> Today</p>
           <label className="ml-auto text-[12px] inline-flex items-center gap-1.5" style={soft}>
             Samples to film a day
             <select value={perDay} onChange={(e) => choosePerDay(Number(e.target.value))} className={field} style={{ borderColor: 'var(--border)' }}>
@@ -550,106 +590,181 @@ export default function TrybeWeek({ knownBrands, canRead, isAdmin = false }: {
             </select>
           </label>
         </div>
-        <p className="text-[12.5px] mb-3" style={soft}>Planned from your samples below. Tick a box there and the week changes. Two or three videos per brand to start, oldest sample first.</p>
-        {tasksTotal === 0 ? (
-          <p className="text-[13px]" style={soft}>{rows.length ? 'Nothing to do this week: every sample is submitted or still on its way.' : 'Add the samples brands are sending you below, and MVP plans your week from them.'}</p>
+        {days[0].tasks.length ? (
+          <ul className="space-y-1.5">{days[0].tasks.map(taskLine)}</ul>
         ) : (
+          <p className="text-[13px]" style={soft}>{!rows.length ? 'Add the samples brands are sending you, and MVP plans your days from them.' : laterTotal ? 'Nothing to do today.' : 'Nothing to do this week: every sample is submitted or still on its way.'}</p>
+        )}
+        {laterTotal > 0 && (
           <>
-            <ol className="grid gap-2 sm:grid-cols-2">
-              {days.map((d) => (
-                <li key={d.date} className="rounded-xl border px-3 py-2" style={{ borderColor: 'var(--border)', opacity: d.tasks.length ? 1 : 0.6 }}>
-                  <p className="text-[12px] font-bold uppercase tracking-wider" style={soft}>{d.label} <span className="font-normal normal-case tracking-normal">{d.date}</span></p>
-                  {d.tasks.length ? (
-                    <ul className="mt-1 space-y-1">
-                      {d.tasks.map((t, i) => (
-                        <li key={i} className="text-[13px] flex items-start gap-1.5" style={t.late ? { color: AMBER } : undefined}>
-                          <span aria-hidden className="mt-0.5 shrink-0 text-[11px] font-bold rounded px-1" style={{ background: t.kind === 'film' || t.kind === 'volume' ? 'rgb(var(--brand-rgb) / 0.12)' : 'rgba(0,0,0,0.05)', color: t.kind === 'film' || t.kind === 'volume' ? PURPLE : 'var(--text-soft)' }}>
-                            {t.kind === 'film' || t.kind === 'volume' ? 'Film' : t.kind === 'submit' ? 'Submit' : t.kind === 'ideas' ? 'Plan' : 'Ask'}
-                          </span>
-                          <span>{t.text}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  ) : <p className="text-[12.5px] mt-1" style={soft}>Nothing planned</p>}
-                </li>
-              ))}
-            </ol>
-            <div className="mt-3 flex flex-wrap gap-2">
-              <button onClick={() => void copyWeek()} className={btn} style={{ border: '1px solid var(--border)' }}>{copied ? <Check size={13} /> : <Copy size={13} />} {copied ? 'Copied' : 'Copy the week'}</button>
-              <button onClick={printWeek} className={btn} style={{ border: '1px solid var(--border)' }}><Printer size={13} /> Print or save as PDF</button>
-            </div>
+            <button onClick={() => setShowLater((v) => !v)} className="mt-3 inline-flex items-center gap-1 text-[12.5px] font-semibold" style={{ color: PURPLE }}>
+              {showLater ? 'Hide the rest of the week' : `The rest of the week (${laterTotal} job${laterTotal === 1 ? '' : 's'})`} {showLater ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+            </button>
+            {showLater && (
+              <ol className="mt-2 grid gap-2 sm:grid-cols-2">
+                {later.map((d) => (
+                  <li key={d.date} className="rounded-xl border px-3 py-2" style={{ borderColor: 'var(--border)', opacity: d.tasks.length ? 1 : 0.6 }}>
+                    <p className="text-[12px] font-bold uppercase tracking-wider" style={soft}>{d.label} <span className="font-normal normal-case tracking-normal">{d.date}</span></p>
+                    {d.tasks.length ? <ul className="mt-1 space-y-1">{d.tasks.map(taskLine)}</ul> : <p className="text-[12.5px] mt-1" style={soft}>Nothing planned</p>}
+                  </li>
+                ))}
+              </ol>
+            )}
           </>
         )}
       </div>
 
-      {/* The brands you work with. */}
-      {(brands.length > 0 || (joined && joined.length > 0)) && (
-        <div className={card} style={cardStyle}>
-          <p className="text-[15px] font-semibold mb-2">Brands you work with</p>
-          <div className="flex flex-wrap gap-2">
-            {brands.map((b) => (
-              <span key={b.name} className="rounded-full border px-3 py-1 text-[12.5px]" style={{ borderColor: 'var(--border)' }}>
-                <b>{b.name}</b>{' '}
-                <span style={soft}>{(['on_the_way', 'to_film', 'to_submit', 'done'] as Stage[]).filter((s) => b.counts[s]).map((s) => `${b.counts[s]} ${STAGE_WORDS[s].toLowerCase()}`).join(', ')}</span>
-              </span>
-            ))}
-            {(joined || []).filter((j) => !brands.some((b) => b.name.trim().toLowerCase() === j.name.trim().toLowerCase())).map((j) => (
-              <span key={j.id} className="rounded-full border px-3 py-1 text-[12.5px]" style={{ borderColor: 'var(--border)', ...soft }} title="Joined on TRYBE, no sample logged in MVP">{j.name} <span>· no sample logged</span></span>
-            ))}
-          </div>
-          {canRead && joined === null && <p className="mt-2 text-[12px] inline-flex items-center gap-1" style={soft}><Loader2 size={11} className="animate-spin" /> Reading the brands you joined on TRYBE...</p>}
-        </div>
-      )}
-
-      {/* The samples, with their boxes. */}
+      {/* 3. THE SAMPLES, by stage, in the order you act on them. */}
       <div className={card} style={cardStyle}>
-        <p className="text-[15px] font-semibold inline-flex items-center gap-1.5 mb-1"><Package size={16} style={{ color: PURPLE }} /> Samples</p>
+        <div className="flex flex-wrap items-center gap-2 mb-1">
+          <p className="text-[15px] font-semibold inline-flex items-center gap-1.5"><Package size={16} style={{ color: PURPLE }} /> Your samples</p>
+          {rows.length > 0 && (
+            <button onClick={() => setShowAdd((v) => !v)} className={`${btn} ml-auto`} style={{ border: `1px solid ${PURPLE}`, color: PURPLE }}>
+              {showAdd ? <ChevronUp size={13} /> : <Plus size={13} />} {showAdd ? 'Close' : 'Add a sample'}
+            </button>
+          )}
+        </div>
         {synced && <p className="text-[12.5px] mb-2 font-semibold" style={{ color: synced.ok ? GREEN : AMBER }}>{synced.text}</p>}
         {amz.error && <p className="text-[12.5px] mb-2" style={{ color: AMBER }}>{amz.error.replace(/\.$/, '')}. Your Amazon videos of these products may be missing below.</p>}
-        <p className="text-[12.5px] mb-3" style={soft}>Your TRYBE sample requests come in here by themselves. You can also add a sample by hand. Tick Received when it arrives, Filmed when the videos are shot, Submitted when they are on TRYBE.</p>
-        <div className="flex flex-wrap items-end gap-2 mb-4">
-          <label className="flex flex-col gap-1 text-[12px] min-w-[160px] flex-1" style={soft}>Brand
-            <input list="trybe-week-brands" value={brand} onChange={(e) => setBrand(e.target.value)} placeholder="Brand name" className={field} style={{ borderColor: 'var(--border)', color: 'var(--text)' }} />
-            <datalist id="trybe-week-brands">{suggestions.map((b) => <option key={b.id || b.name} value={b.name} />)}</datalist>
-          </label>
-          <label className="flex flex-col gap-1 text-[12px] min-w-[180px] flex-[2]" style={soft}>Product
-            <input value={product} onChange={(e) => setProduct(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') void add() }} placeholder="What they are sending" className={field} style={{ borderColor: 'var(--border)', color: 'var(--text)' }} />
-          </label>
-          <label className="flex flex-col gap-1 text-[12px]" style={soft}>Videos
-            <select value={count} onChange={(e) => setCount(Number(e.target.value))} className={field} style={{ borderColor: 'var(--border)', color: 'var(--text)' }}>
-              {[1, 2, 3, 4, 5, 6, 8, 10].map((n) => <option key={n} value={n}>{n}</option>)}
-            </select>
-          </label>
-          <label className="inline-flex items-center gap-1.5 text-[12.5px] pb-2 cursor-pointer"><input type="checkbox" checked={here} onChange={(e) => setHere(e.target.checked)} className="h-4 w-4" style={{ accentColor: GREEN }} /> Already here</label>
-          <button onClick={() => void add()} disabled={adding || !brand.trim() || !product.trim()} className={btn} style={{ background: PURPLE, color: '#fff' }}>
-            {adding ? <Loader2 size={13} className="animate-spin" /> : <Plus size={13} />} Add sample
-          </button>
-        </div>
+        <p className="text-[12.5px] mb-3" style={soft}>Your TRYBE sample requests come in here by themselves. Press the button on a sample as it arrives, when you film it and when you submit it.</p>
+        {(showAdd || rows.length === 0) && addForm}
 
         {rows.length === 0 ? (
           <p className="text-[13px]" style={soft}>No samples yet. When a brand accepts you on TRYBE, request a sample on its brand page, then add it here.</p>
         ) : (
-          <div className="space-y-4">
+          <div className="space-y-5">
             {(['to_film', 'to_submit', 'on_the_way'] as Stage[]).map((st) => {
-              const list = byStage(st)
-              if (!list.length) return null
+              const list = sorted(st)
               return (
-                <div key={st}>
-                  <p className="text-[11px] font-bold uppercase tracking-wider mb-1.5" style={soft}>{STAGE_WORDS[st]} ({list.length})</p>
-                  <ul className="space-y-2">{list.map((r) => sampleRow(r))}</ul>
-                </div>
+                <section key={st} id={`trybe-week-${st}`} className="scroll-mt-4">
+                  <p className="text-[13px] font-bold inline-flex items-center gap-1.5"><span aria-hidden className="w-2 h-2 rounded-full" style={{ background: STAGE_COLOR[st] }} /> {STAGE_WORDS[st]} <span className="font-normal tabular-nums" style={soft}>({list.length})</span></p>
+                  <p className="text-[12px] mb-2" style={soft}>{list.length ? STAGE_ASKS[st] : 'None right now.'}</p>
+                  {list.length > 0 && <ul className="space-y-2">{list.map((r) => sampleRow(r))}</ul>}
+                </section>
               )
             })}
             {byStage('done').length > 0 && (
-              <div>
-                <button onClick={() => setShowDone((v) => !v)} className="text-[11px] font-bold uppercase tracking-wider inline-flex items-center gap-1" style={soft}>
-                  {STAGE_WORDS.done} ({byStage('done').length}) {showDone ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+              <section id="trybe-week-done" className="scroll-mt-4">
+                <button onClick={() => setShowDone((v) => !v)} className="text-[13px] font-bold inline-flex items-center gap-1.5">
+                  <span aria-hidden className="w-2 h-2 rounded-full" style={{ background: STAGE_COLOR.done }} /> {STAGE_WORDS.done} <span className="font-normal tabular-nums" style={soft}>({byStage('done').length})</span> {showDone ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
                 </button>
-                {showDone && <ul className="mt-1.5 space-y-2">{byStage('done').map((r) => sampleRow(r))}</ul>}
-              </div>
+                {showDone && <ul className="mt-2 space-y-2">{sorted('done').map((r) => sampleRow(r))}</ul>}
+              </section>
             )}
           </div>
         )}
+
+        {/* By brand, as one line of chips under the samples. */}
+        {(brands.length > 0 || (joined && joined.length > 0)) && (
+          <div className="mt-5 pt-3 border-t" style={{ borderColor: 'var(--border)' }}>
+            <p className="text-[11px] font-bold uppercase tracking-wider mb-1.5" style={soft}>By brand</p>
+            <div className="flex flex-wrap gap-2">
+              {brands.map((b) => (
+                <span key={b.name} className="rounded-full border px-3 py-1 text-[12.5px]" style={{ borderColor: 'var(--border)' }}>
+                  <b>{b.name}</b>{' '}
+                  <span style={soft}>{STAGE_ORDER.filter((s) => b.counts[s]).map((s) => `${b.counts[s]} ${STAGE_WORDS[s].toLowerCase()}`).join(', ')}</span>
+                </span>
+              ))}
+              {(joined || []).filter((j) => !brands.some((b) => b.name.trim().toLowerCase() === j.name.trim().toLowerCase())).map((j) => (
+                <span key={j.id} className="rounded-full border px-3 py-1 text-[12.5px]" style={{ borderColor: 'var(--border)', ...soft }} title="Joined on TRYBE, no sample logged in MVP">{j.name} <span>· no sample logged</span></span>
+              ))}
+            </div>
+            {canRead && joined === null && <p className="mt-2 text-[12px] inline-flex items-center gap-1" style={soft}><Loader2 size={11} className="animate-spin" /> Reading the brands you joined on TRYBE...</p>}
+          </div>
+        )}
+      </div>
+
+      {/* 4. YOUR MONTH, one card: every video in the last 30 days against your
+          goal, then each focus brand this month. The settings are folded. */}
+      <div className={card} style={cardStyle}>
+        <div className="flex flex-wrap items-center gap-2 mb-2">
+          <p className="text-[15px] font-semibold">Your month</p>
+          {canRead && joined && joined.length > 0 && (
+            <button onClick={() => setShowGoals((v) => !v)} className="ml-auto text-[12px] font-semibold underline" style={{ color: PURPLE }}>{showGoals ? 'Done' : 'Change your focus brands'}</button>
+          )}
+        </div>
+        {!canRead ? (
+          <p className="text-[13px]" style={soft}>Allow SCOUT on TRYBE and MVP counts the videos you sent this month, all brands and each focus brand.</p>
+        ) : (<>
+          <TrybeGoal canRead={canRead} bare />
+          <div className="mt-4">
+            <p className="text-[13.5px] font-semibold mb-1.5">Your focus brands, this month <span className="font-normal" style={soft}>({target} videos each)</span></p>
+            {joined === null ? (
+              <p className="text-[13px] inline-flex items-center gap-1.5" style={soft}><Loader2 size={13} className="animate-spin" /> Reading the brands you work with on TRYBE...</p>
+            ) : joined.length === 0 ? (
+              <p className="text-[13px]" style={joinedErr ? { color: AMBER } : soft}>{joinedErr || 'No brand has accepted you on TRYBE yet. Once one does, set your monthly target here.'}</p>
+            ) : (<>
+              {focusIds.length === 0 && <p className="text-[13px] mb-2" style={soft}>Pick the 1 or 2 brands you are building with. On TRYBE the top creators make about 90% of their money from 1 or 2 brands.</p>}
+              <ul className="space-y-2.5">
+                {focusIds.map((id) => {
+                  const b = joined.find((x) => x.id === id)
+                  if (!b) return null
+                  const st = sentThisMonth[id]
+                  const n = st?.n
+                  const share = n != null ? Math.min(1, n / target) : 0
+                  const need = n != null ? perDayNeeded({ brand: b.name, sent: n, target }) : null
+                  return (
+                    <li key={id}>
+                      <div className="flex flex-wrap items-baseline gap-x-2 text-[13.5px]">
+                        <b>{b.name}</b>
+                        <span className="tabular-nums" style={n != null && n >= target ? { color: GREEN } : soft}>
+                          {st == null ? 'reading...' : n == null ? `could not read: ${st.error}` : `${n} of ${target} sent this month`}
+                        </span>
+                        {need != null && need > 0 && <span className="ml-auto text-[12.5px]" style={soft}>{need} a day to get there</span>}
+                        {n != null && n >= target && <span className="ml-auto text-[12.5px] font-semibold" style={{ color: GREEN }}>Target reached</span>}
+                      </div>
+                      <span className="block mt-1 h-2 rounded-full" style={{ background: 'var(--border)' }}>
+                        <span className="block h-2 rounded-full" style={{ width: `${Math.max(2, Math.round(share * 100))}%`, background: n != null && n >= target ? GREEN : PURPLE }} />
+                      </span>
+                    </li>
+                  )
+                })}
+              </ul>
+              {(showGoals || focusIds.length === 0) && (
+                <div className="mt-3 space-y-2.5">
+                  <div className="flex flex-wrap gap-1.5">
+                    {joined.slice(0, 12).map((b) => {
+                      const on = focusIds.includes(b.id)
+                      return (
+                        <button key={b.id} onClick={() => toggleFocus(b.id)} aria-pressed={on} className="rounded-full border px-2.5 py-1 text-[12px] font-semibold"
+                          style={on ? { background: 'rgb(var(--brand-rgb) / 0.10)', color: PURPLE, borderColor: 'transparent' } : { borderColor: 'var(--border)', color: 'var(--text)' }}>
+                          {on ? '✓ ' : '+ '}{b.name}
+                        </button>
+                      )
+                    })}
+                  </div>
+                  <label className="text-[12px] inline-flex items-center gap-1.5" style={soft}>
+                    Videos a month per focus brand
+                    <select value={target} onChange={(e) => chooseTarget(Number(e.target.value))} className={field} style={{ borderColor: 'var(--border)', color: 'var(--text)' }}>
+                      {[15, 30, 45, 60, 90].map((n) => <option key={n} value={n}>{n}</option>)}
+                    </select>
+                  </label>
+                  <p className="text-[12px] max-w-[75ch]" style={soft}>About 1 ad in 25 becomes a winner (Meta&rsquo;s figure, as TRYBE&rsquo;s co-founder quotes it), so around 30 videos a month gives a brand a fair shot at one. Your first 2 or 3 with a new brand only test whether it answers; after that, this is the pace.</p>
+                </div>
+              )}
+              {monthReading && <p className="mt-2 text-[12px] inline-flex items-center gap-1" style={soft}><Loader2 size={11} className="animate-spin" /> Counting this month&rsquo;s videos on TRYBE...</p>}
+            </>)}
+          </div>
+        </>)}
+      </div>
+
+      {/* 5. PRINT AND DOWNLOAD, last: tools, not the week itself. */}
+      <div className="rounded-2xl border px-4 py-3" style={cardStyle}>
+        <div className="flex flex-wrap items-center gap-2">
+          <FileDown size={16} style={{ color: PURPLE }} />
+          <p className="text-[13.5px] font-semibold flex-1 min-w-[10rem]">Print and download</p>
+          <button onClick={() => void makePlanner()} disabled={!!exporting} className={btn} style={{ background: PURPLE, color: '#fff' }}>
+            {exporting ? <Loader2 size={13} className="animate-spin" /> : <FileDown size={13} />} Download my weekly planner (PDF)
+          </button>
+          <button onClick={() => void makeSamplesPdf()} disabled={samplesBusy || !rows?.length} className={btn} style={{ border: `1px solid ${PURPLE}`, color: PURPLE }}
+            title={rows?.length ? 'Every sample, by brand, with where each one stands' : 'No samples yet'}>
+            {samplesBusy ? <Loader2 size={13} className="animate-spin" /> : <Package size={13} />} Download my samples (PDF)
+          </button>
+          <button onClick={() => void copyWeek()} disabled={!tasksTotal} className={btn} style={{ border: '1px solid var(--border)' }}>{copied ? <Check size={13} /> : <Copy size={13} />} {copied ? 'Copied' : 'Copy the week'}</button>
+          <button onClick={printWeek} disabled={!tasksTotal} className={btn} style={{ border: '1px solid var(--border)' }}><Printer size={13} /> Print the week</button>
+        </div>
+        <p className="text-[12px] mt-1.5" style={soft}>The weekly planner has this week&rsquo;s jobs, a 7 day calendar, a page per product you have on hand with 5 video guidelines and the brand&rsquo;s best videos (QR codes), samples on the way, and your money as charts.</p>
+        {exporting && <p className="text-[12px] mt-1 inline-flex items-center gap-1" style={soft}>{exporting}</p>}
       </div>
     </div>
   )

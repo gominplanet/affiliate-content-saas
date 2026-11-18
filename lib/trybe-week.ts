@@ -194,3 +194,75 @@ export function sampleGuard(samples: Array<Pick<Sample, 'received_at' | 'filmed_
     : `You have ${unfilmed} sample${unfilmed === 1 ? '' : 's'} here and not filmed${onTheWay ? `, and ${onTheWay} on the way` : ''}. ${level === 'stop' ? 'Film these before asking any brand for another one' : 'Film some of these before asking for more'}: brands see who asks and never films.`
   return { unfilmed, onTheWay, filmed, level, says }
 }
+
+// ── WHERE YOUR SAMPLES STAND (Seb, 2026-11-18: "if I go to home and I click
+// on this week, it is a total mess ... it feels like it's harder and harder to
+// understand what we've received, what we've shot, and there's no rhyme or
+// reason"). The page opens on four counts in the order a sample moves (asked,
+// here, filmed, submitted), each sample shows one next step, and the week is
+// said in one sentence. Pure, so it is tested (scripts/test-trybe-week.ts).
+
+/** The stages in the order a sample moves through them. */
+export const STAGE_ORDER: Stage[] = ['on_the_way', 'to_film', 'to_submit', 'done']
+
+export interface StageCount { samples: number; videos: number; late: number; thisMonth: number }
+
+/** Samples and videos per stage. `late`: asked CHASE_DAYS ago and not here,
+ *  or here LATE_DAYS and not filmed. `thisMonth`: submitted this calendar month. Pure. */
+export function stageCounts(samples: Array<Pick<Sample, 'videos_planned' | 'requested_at' | 'received_at' | 'filmed_at' | 'submitted_at'>>, now = Date.now()): Record<Stage, StageCount> {
+  const out = Object.fromEntries(STAGE_ORDER.map((st) => [st, { samples: 0, videos: 0, late: 0, thisMonth: 0 }])) as Record<Stage, StageCount>
+  const d = new Date(now)
+  const monthStart = new Date(d.getFullYear(), d.getMonth(), 1).getTime()
+  for (const s of samples) {
+    const st = stageOf(s)
+    const c = out[st]
+    c.samples++
+    c.videos += Math.max(1, Math.min(10, s.videos_planned || 3))
+    if (st === 'on_the_way' && daysSince(s.requested_at, now) >= CHASE_DAYS) c.late++
+    if (st === 'to_film' && daysSince(s.received_at, now) >= LATE_DAYS) c.late++
+    if (st === 'done' && s.submitted_at && Date.parse(s.submitted_at) >= monthStart) c.thisMonth++
+  }
+  return out
+}
+
+export type Box = 'received' | 'filmed' | 'submitted'
+
+/** The one next step for a sample: the box it ticks and the words on the
+ *  button. Ticking a later box ticks the earlier ones (the samples route). */
+export const NEXT_STEP: Record<Exclude<Stage, 'done'>, { box: Box; words: string }> = {
+  on_the_way: { box: 'received', words: 'It arrived' },
+  to_film: { box: 'filmed', words: 'I filmed it' },
+  to_submit: { box: 'submitted', words: 'I submitted it' },
+}
+
+/** The box that takes a sample back one step (unticking clears the later ones too). */
+export const UNDO_BOX: Record<Exclude<Stage, 'on_the_way'>, Box> = { to_film: 'received', to_submit: 'filmed', done: 'submitted' }
+
+/** What each stage asks of you, said under its heading. */
+export const STAGE_ASKS: Record<Stage, string> = {
+  on_the_way: 'Asked for, not here yet. MVP says when one is late enough to ask the brand.',
+  to_film: 'Here and not filmed yet, oldest first. These are your shoots.',
+  to_submit: 'Filmed. Edit them and submit them on TRYBE.',
+  done: 'Submitted on TRYBE.',
+}
+
+/** The week in one sentence, in the order you act: shoots, submissions, what
+ *  is coming, what went this month. Stages with nothing are left out. Pure. */
+export function weekSummary(c: Record<Stage, StageCount>): string {
+  const n = (k: number, one: string, many = `${one}s`) => `${k} ${k === 1 ? one : many}`
+  const parts: string[] = []
+  if (c.to_film.samples) parts.push(`${n(c.to_film.samples, 'sample')} here to film (${n(c.to_film.videos, 'video')})`)
+  if (c.to_submit.samples) parts.push(`${n(c.to_submit.samples, 'sample')} filmed to submit`)
+  if (c.on_the_way.samples) parts.push(`${c.on_the_way.samples} on the way${c.on_the_way.late ? `, ${c.on_the_way.late} late` : ''}`)
+  if (c.done.thisMonth) parts.push(`${c.done.thisMonth} submitted this month`)
+  if (!parts.length) return c.done.samples ? 'Every sample is submitted. Ask a brand for your next one.' : 'No samples yet.'
+  const last = parts.pop() as string
+  const s = parts.length ? `${parts.join(', ')} and ${last}` : last
+  return `${s[0].toUpperCase()}${s.slice(1)}.`
+}
+
+/** The rest of the week without the monthly pace said again each day: the
+ *  pace is a daily figure, said once today and in Your month. Pure. */
+export function laterDays(days: Day[]): Day[] {
+  return days.slice(1).map((d) => ({ ...d, tasks: d.tasks.filter((t) => t.kind !== 'volume') }))
+}
