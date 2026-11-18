@@ -15,7 +15,8 @@ export default function AmazonLivePage() {
   const tier = useEffectiveTier()
 
 
-  if (tier !== null && canUsePreview('amazon_live', tier)) return <AmazonLive />
+  // The TRYBE samples button needs TRYBE too (lib/live-trybe).
+  if (tier !== null && canUsePreview('amazon_live', tier)) return <AmazonLive trybe={canUsePreview('live_trybe', tier) && canUsePreview('trybe_outreach', tier)} />
   // Not on this plan: say so and how to get it, never a silent bounce.
   if (tier !== null) return <ProUpgradePanel feature="Amazon Live Prep" body="Amazon Live Prep builds your show plan from your own reviews: talking points, product order and a teleprompter." />
 

@@ -9,7 +9,7 @@
 import { normalizeTier } from '@/lib/tier'
 import { canSeeNav } from '@/lib/feature-access'
 
-export type PreviewFeature = 'on_sale' | 'amazon_live' | 'comparison' | 'shorts_mode' | 'first_comment' | 'brand_recap' | 'deal_aftercare' | 'post_refresh' | 'facebook_reels' | 'whole_video' | 'sold_campaigns' | 'liftoff_split' | 'earnings' | 'live_followup' | 'video_plan' | 'studio_upload' | 'facebook_setup' | 'group_queue' | 'trybe_outreach' | 'hashtag_trends' | 'drop' | 'video_qr' | 'deals_import' | 'product_scripts' | 'review_edit' | 'creator_look' | 'new_look' | 'trybe_v2' | 'section_nav' | 'trybe_layout' | 'menu_v2' | 'trybe_batch' | 'trybe_top_board' | 'trybe_edit'
+export type PreviewFeature = 'on_sale' | 'amazon_live' | 'comparison' | 'shorts_mode' | 'first_comment' | 'brand_recap' | 'deal_aftercare' | 'post_refresh' | 'facebook_reels' | 'whole_video' | 'sold_campaigns' | 'liftoff_split' | 'earnings' | 'live_followup' | 'video_plan' | 'studio_upload' | 'facebook_setup' | 'group_queue' | 'trybe_outreach' | 'hashtag_trends' | 'drop' | 'video_qr' | 'deals_import' | 'product_scripts' | 'review_edit' | 'creator_look' | 'new_look' | 'trybe_v2' | 'section_nav' | 'trybe_layout' | 'menu_v2' | 'trybe_batch' | 'trybe_top_board' | 'trybe_edit' | 'live_trybe'
 
 /** Who may use each preview feature: 'admin' while testing, 'labs' once open to Pro. */
 const OPEN_TO: Record<PreviewFeature, 'admin' | 'labs'> = {
@@ -157,6 +157,11 @@ const OPEN_TO: Record<PreviewFeature, 'admin' | 'labs'> = {
   // brief (lib/trybe-edit). Admin first. The TRYBE ads' own allowance (200 a
   // month) is on for everyone already.
   trybe_edit: 'admin',
+  // AN AMAZON LIVE FROM YOUR TRYBE SAMPLES (Seb, 2026-11-18: "let's prepare
+  // an Amazon Live with Tribe products that exist on Amazon"): Live Prep finds
+  // which samples you received are on Amazon and lines them up (lib/live-trybe).
+  // Admin first.
+  live_trybe: 'admin',
 }
 
 /** Every preview feature. A check can then ask which are still admin only

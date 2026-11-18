@@ -5,10 +5,11 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
-import { Loader2, Radio, Check, Printer, MonitorPlay, Trash2, ChevronLeft, ChevronRight, X, Tag, MessageCircle, Search, Wand2 } from 'lucide-react'
+import { Loader2, Radio, Check, Printer, MonitorPlay, Trash2, ChevronLeft, ChevronRight, X, Tag, MessageCircle, Search, Wand2, Package } from 'lucide-react'
 import PageHero from '@/components/layout/PageHero'
 import { AmazonLiveGuide } from '@/components/guide/tool-guides'
 import { clockLabel, LIVE_LENGTHS, LIVE_MAX_PRODUCTS, type LivePlan, type LiveSegment } from '@/lib/live-plan'
+import { lineupWords, LIVE_TRYBE_TITLE, LIVE_TRYBE_NOTES, type LiveTrybeItem } from '@/lib/live-trybe'
 
 const ACCENT = '#0E7C86'
 
@@ -161,7 +162,8 @@ function Teleprompter({ plan, onClose }: { plan: LivePlan; onClose: () => void }
   )
 }
 
-export default function AmazonLive() {
+/** `trybe`: the creator has TRYBE and the Labs switch, so the TRYBE samples button shows. */
+export default function AmazonLive({ trybe = false }: { trybe?: boolean } = {}) {
   const [pool, setPool] = useState<PoolProduct[] | null>(null)
   const [storefrontSynced, setStorefrontSynced] = useState(true)
   const [loadErr, setLoadErr] = useState<string | null>(null)
@@ -177,6 +179,10 @@ export default function AmazonLive() {
   const [saved, setSaved] = useState<SavedPlan[]>([])
   const [savedErr, setSavedErr] = useState<string | null>(null)
   const [prompter, setPrompter] = useState(false)
+  // A LIVE FROM YOUR TRYBE SAMPLES (Seb, 2026-11-18; lib/live-trybe).
+  const [trybeBusy, setTrybeBusy] = useState(false)
+  const [trybeRes, setTrybeRes] = useState<{ items: LiveTrybeItem[]; notes: string[]; needsSql: boolean } | null>(null)
+  const [trybeErr, setTrybeErr] = useState<string | null>(null)
 
   const loadSaved = useCallback(async () => {
     const r = await fetch('/api/live/plans').catch(() => null)
@@ -215,6 +221,35 @@ export default function AmazonLive() {
     const top = [...pool].sort((a, b) => b.score - a.score).slice(0, n).map((p) => p.asin)
     setPicked(top)
     toast.success(`Picked ${top.length} from your storefront. Change the order or swap any of them.`)
+  }
+
+  // THE SAMPLES YOU RECEIVED ON TRYBE that are sold on Amazon, as the
+  // lineup: each match joins the product list, the found ones are picked,
+  // and the show is long enough for them. What was not found is said.
+  async function fromTrybe() {
+    setTrybeBusy(true); setTrybeErr(null)
+    try {
+      const r = await fetch('/api/live/trybe', { method: 'POST', signal: AbortSignal.timeout(125_000) })
+      const j = await r.json().catch(() => ({}))
+      if (!r.ok) { setTrybeErr(j?.error || 'MVP could not read your TRYBE samples just now.'); return }
+      const items = (j.items || []) as LiveTrybeItem[]
+      setTrybeRes({ items, notes: j.notes || [], needsSql: !!j.needsSql })
+      const found = items.filter((i) => i.state === 'found' && i.asin)
+      if (!found.length) return
+      setPool((cur) => {
+        const have = new Set((cur || []).map((p) => p.asin))
+        const add: PoolProduct[] = found.filter((i) => !have.has(i.asin as string)).map((i) => ({ asin: i.asin as string, title: i.title || `${i.brand} ${i.product}`, image: i.image, hasVideo: i.by === 'video', videos: 0, saleLabel: null, earnedCents: 0, score: 0 }))
+        return [...add, ...(cur || [])]
+      })
+      const asins = Array.from(new Set(found.map((i) => i.asin as string))).slice(0, LIVE_MAX_PRODUCTS)
+      setPicked(asins)
+      // The plan needs about a minute a product plus the opening and close.
+      setMinutes((m) => Math.max(m, LIVE_LENGTHS.find((n) => n >= asins.length * 3 + 4) ?? LIVE_LENGTHS[LIVE_LENGTHS.length - 1]))
+      setTitle((t) => t.trim() ? t : LIVE_TRYBE_TITLE)
+      setNotes((n) => n.trim() ? n : LIVE_TRYBE_NOTES)
+      toast.success(`Lined up ${asins.length} of your TRYBE samples that are on Amazon. Change the order or add others.`)
+    } catch { setTrybeErr('MVP could not read your TRYBE samples just now.') }
+    finally { setTrybeBusy(false) }
   }
 
   function toggle(asin: string) {
@@ -298,12 +333,51 @@ export default function AmazonLive() {
               {([['storefront', storefrontSynced ? 'All my storefront' : 'All my products'], ['video', 'Only ones I made a video for'], ['sale', 'On sale today']] as Array<[Filter, string]>).map(([k, l]) => (
                 <button key={k} type="button" onClick={() => setFilter(k)} className="px-2.5 py-1 rounded-full text-[12px]" style={chip(filter === k)}>{l}</button>
               ))}
+              {trybe && (
+                <button type="button" onClick={() => void fromTrybe()} disabled={trybeBusy}
+                  className="ml-auto inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[12px] font-semibold disabled:opacity-40"
+                  style={{ border: `1px solid ${ACCENT}`, color: ACCENT }} title="The samples you received on TRYBE that are sold on Amazon, lined up as a show">
+                  {trybeBusy ? <Loader2 size={12} className="animate-spin" /> : <Package size={12} />} Live with my TRYBE samples
+                </button>
+              )}
               <button type="button" onClick={suggest} disabled={!pool?.length}
-                className="ml-auto inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[12px] font-semibold text-white disabled:opacity-40"
+                className={`${trybe ? '' : 'ml-auto '}inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[12px] font-semibold text-white disabled:opacity-40`}
                 style={{ background: ACCENT }}>
                 <Wand2 size={12} /> Suggest a lineup
               </button>
             </div>
+            {trybeBusy && (
+              <p className="text-[12px] mb-3 inline-flex items-center gap-1.5" style={{ color: 'var(--text-soft)' }}><Loader2 size={12} className="animate-spin" /> Looking for your TRYBE samples on Amazon: your videos and storefront first, then Amazon by name. Up to a minute.</p>
+            )}
+            {trybeErr && <p className="text-[12px] mb-3 rounded-lg px-3 py-2" style={{ color: '#d97706', background: 'rgba(217,119,6,0.08)' }}>{trybeErr}</p>}
+            {trybeRes && (
+              <div className="mb-3 rounded-xl border p-3" style={{ borderColor: ACCENT, background: 'rgba(14,124,134,0.04)' }}>
+                <div className="flex items-start gap-2">
+                  <p className="text-[13px] font-semibold flex-1" style={{ color: 'var(--text)' }}>{lineupWords(trybeRes.items)}</p>
+                  <button type="button" onClick={() => setTrybeRes(null)} aria-label="Close" className="p-0.5 rounded" style={{ color: 'var(--text-soft)' }}><X size={14} /></button>
+                </div>
+                {trybeRes.items.some((i) => i.state === 'found') && (
+                  <ul className="mt-2 space-y-1">
+                    {trybeRes.items.filter((i) => i.state === 'found').map((i) => (
+                      <li key={i.sampleId} className="text-[12.5px] flex flex-wrap items-baseline gap-x-2" style={{ color: 'var(--text)' }}>
+                        <Check size={12} style={{ color: '#16a34a' }} className="shrink-0 self-center" />
+                        <b>{i.product}</b><span style={{ color: 'var(--text-soft)' }}>{i.brand} · {i.why}</span>
+                        <a href={`https://www.amazon.com/dp/${i.asin}`} target="_blank" rel="noopener noreferrer" className="underline" style={{ color: ACCENT }}>See it on Amazon</a>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {trybeRes.items.some((i) => i.state !== 'found') && (
+                  <ul className="mt-2 space-y-0.5">
+                    {trybeRes.items.filter((i) => i.state !== 'found').map((i) => (
+                      <li key={i.sampleId} className="text-[12px]" style={{ color: i.state === 'unchecked' ? '#d97706' : 'var(--text-soft)' }}>{i.product} ({i.brand}): {i.why}</li>
+                    ))}
+                  </ul>
+                )}
+                {trybeRes.notes.map((n) => <p key={n} className="mt-1.5 text-[12px]" style={{ color: '#d97706' }}>{n}</p>)}
+                {trybeRes.needsSql && <p className="mt-1.5 text-[12px]" style={{ color: '#d97706' }}>Run migration 470 in Supabase so MVP remembers these answers instead of looking them up again each time.</p>}
+              </div>
+            )}
             {!storefrontSynced && pool && (
               <p className="text-[12px] mb-3 rounded-lg px-3 py-2" style={{ color: '#d97706', background: 'rgba(217,119,6,0.08)' }}>
                 Your Amazon storefront is not synced yet, so these are the products from your own videos. Sync it on the
