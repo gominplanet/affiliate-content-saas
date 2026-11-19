@@ -10,6 +10,7 @@ import { trackMeta } from '@/lib/meta-pixel'
 import { TIERS, normalizeTier, SELLABLE_TIERS, PRICES_BEFORE, type Tier } from '@/lib/tier'
 import { effectiveTier, getViewAsTier, setViewAsTier, VIEW_AS_TIERS, viewAsLabel } from '@/lib/view-as'
 import { FREE_WEEK_SENTENCE, FREE_WEEK_CTA_SHORT } from '@/lib/guarantee'
+import { TRYBE_FREE_LIVE } from '@/lib/trybe-free'
 
 export default function BillingPage() {
   const supabase = createBrowserClient()
@@ -444,6 +445,7 @@ export default function BillingPage() {
                 {freeWeekOffered === false
                   ? 'This account had a subscription before, so Pro is charged when you start.'
                   : FREE_WEEK_SENTENCE}
+                {TRYBE_FREE_LIVE && <> TRYBE is free without a plan: <a href="/trybe" className="font-semibold underline text-[#7C3AED]">open TRYBE</a>.</>}
               </p>
             </div>
           )}

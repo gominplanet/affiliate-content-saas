@@ -1656,7 +1656,7 @@ export async function POST(request: Request) {
       || (sample ? { name: String(sample.brand_name), website: givenSite, categories: [], about: null, pay_text: null, site_summary: null, site_products: [String(sample.product), ...givenProducts] } : null)
       || (givenName ? { name: givenName, website: givenSite, categories: [], about: null, pay_text: null, site_summary: null, site_products: givenProducts } : null)
     if (!row) return NextResponse.json({ error: 'MVP could not tell which brand this is. Open the brand on TRYBE once with SCOUT on, then try again.' }, { status: 404 })
-    const spend = await spendGate(userId, tier)
+    const spend = await spendGate(userId, tier, { counted: g.access === 'free' })
     if (spend) return spend
     // COPY WHAT WINS: the words of the brand's own best videos on TRYBE.
     const winners = winnersForPlan(body.winners)
@@ -3588,7 +3588,7 @@ Weigh posts pushed to social, and TRYBE brands they earned with or submitted to,
       const img = /^image\/(png|jpeg|gif|webp)/i.exec(ct)?.[0]?.toLowerCase()
         || (head.startsWith('\x89PNG') ? 'image/png' : head.startsWith('\xff\xd8') ? 'image/jpeg' : null)
       if (isPdf || img) {
-        const spend = await spendGate(userId, tier)
+        const spend = await spendGate(userId, tier, { counted: g.access === 'free' })
         if (spend) return spend
         try {
           const source = { type: 'base64' as const, media_type: (isPdf ? 'application/pdf' : img) as 'application/pdf', data: bytes.toString('base64') }

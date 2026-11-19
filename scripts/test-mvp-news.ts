@@ -29,8 +29,10 @@ check('never an entry dated ahead of today (a day of grace for time zones)', rec
 check('the new look is news for every account the week it opens, a free one too', ['pro', 'studio', 'creator', 'trial'].every(t => recentNews(t, at('2026-11-03T15:00:00Z')).some(u => u.gate === 'new_look')))
 const pro = recentNews('pro', at('2026-10-17T12:00:00Z'))
 check('newest first', pro.every((u, i) => i === 0 || pro[i - 1].date >= u.date))
-const trial = recentNews('trial', at('2026-10-17T12:00:00Z'))
-check('a plan without TRYBE does not see TRYBE news', !trial.some(u => u.gate === 'trybe') && pro.some(u => u.gate === 'trybe'))
+const legacy = recentNews('creator', at('2026-10-17T12:00:00Z'))
+check('a plan without TRYBE does not see TRYBE news', !legacy.some(u => u.gate === 'trybe') && pro.some(u => u.gate === 'trybe'))
+// TRYBE Free (2026-11-19): an account with no plan has TRYBE, so it sees its news.
+check('an account on TRYBE Free sees TRYBE news', recentNews('trial', at('2026-10-17T12:00:00Z')).some(u => u.gate === 'trybe'))
 check('Drop is news for Pro now that Pro has Drop', WHATS_NEW.some(u => u.gate === 'drop') && pro.some(u => u.gate === 'drop'))
 // The gate still hides a feature the owner is testing. Read from the switches
 // rather than naming one, so graduating it does not quietly turn this off.

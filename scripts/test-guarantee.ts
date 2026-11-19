@@ -78,7 +78,8 @@ for (const f of SELLING) {
   const src = read(f)
   check(`${f} reads the free week from lib/guarantee`, /from '@\/lib\/guarantee'/.test(src) && /FREE_WEEK_(LABEL|SHORT|SENTENCE|DAYS)/.test(body(src)))
   check(`${f} promises no refund or money back`, !/money.back|\brefund\b|no questions asked/i.test(body(src)), f)
-  check(`${f} never says no card is needed`, !/No card to start|no card/i.test(body(src)))
+  // TRYBE Free's own block is the one place no card is true (lib/trybe-free).
+  check(`${f} never says no card is needed`, !/No card to start|no card/i.test(body(src).replace(/\{TRYBE_FREE_LIVE && \([\s\S]*?\n      \)\}/, '')))
   // THE DEAD FREE TIER IS NOT A DOOR. tier="trial" skips checkout entirely,
   // which is how the promise and the payment screen came apart; and the
   // account it opens has a zero-day window, so there is nothing behind it
@@ -129,7 +130,7 @@ check('the home page shows the steps under the price', /<FreeWeekSteps \/>/.test
   check('the blog sales page table: yearly never offers the free week', /ctaLabel: showYear \? `Start \$\{t\.label\} yearly` : FREE_WEEK_CTA/.test(read('components/landing/AdPricingTable.tsx')))
   check('the blog sales page shows the steps', /<FreeWeekSteps tone="light"/.test(body(read('app/own-your-blog/page.tsx'))))
   const SIGNUP = body(read('components/auth/SignupForm.tsx'))
-  check('signup: monthly is headed with the free week and shows the steps, yearly is not', /annual \? `Start \$\{tierLabel \|\| 'Pro'\} yearly` : FREE_WEEK_CTA/.test(SIGNUP) && /!invited && !annual && \(/.test(SIGNUP) && /<FreeWeekSteps compact \/>/.test(SIGNUP))
+  check('signup: monthly is headed with the free week and shows the steps, yearly is not', /annual \? `Start \$\{tierLabel \|\| 'Pro'\} yearly` : FREE_WEEK_CTA/.test(SIGNUP) && /!invited && !annual && (!trybeFree && )?\(/.test(SIGNUP) && /<FreeWeekSteps compact \/>/.test(SIGNUP))
   for (const f of ['app/api/auth/signup-paid/route.ts', 'app/api/stripe/checkout/route.ts']) {
     check(`${f}: Stripe's checkout page says it beside the pay button`, /\.\.\.\(freeWeek \? \{ custom_text: \{ submit: \{ message: FREE_WEEK_CHECKOUT_NOTE \} \} \} : \{\}\)/.test(read(f)))
   }

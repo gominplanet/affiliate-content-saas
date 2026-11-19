@@ -74,7 +74,10 @@ export default async function DashboardLayout({ children }: { children: React.Re
     // TRYBE FREE (lib/trybe-free): once live, TRYBE is open without a plan.
     const open = ['/billing', '/settings', '/help', ...(TRYBE_FREE_LIVE ? ['/trybe'] : [])].some((r) => pathname === r || pathname.startsWith(r + '/'))
     // An unread path never redirects: a loop on Billing would lock them out.
-    if (pathname && !open) redirect('/billing?plan=pro&start=1')
+    // A TRYBE Free sign-up (signup_for, components/auth/SignupForm) goes back to
+    // TRYBE; any other account without a plan is asked to start Pro.
+    const forTrybe = TRYBE_FREE_LIVE && (user.user_metadata as { signup_for?: string } | null)?.signup_for === 'trybe'
+    if (pathname && !open) redirect(forTrybe ? '/trybe' : '/billing?plan=pro&start=1')
   }
 
   // ── Onboarding funnel hard gate ─────────────────────────────────────────────

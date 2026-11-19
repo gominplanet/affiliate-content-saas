@@ -48,7 +48,8 @@ async function gate() {
   const admin = createAdminClient() as Db
   const { data: intg } = await admin.from('integrations').select('tier, tiktok_username, tiktok_scopes, tiktok_access_token').eq('user_id', ownerId).maybeSingle()
   const { data: me } = await admin.from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
-  if (trybeAccess(me?.tier) === 'none') return { error: NextResponse.json({ error: 'Match my TikTok is part of TRYBE on the Pro plan.' }, { status: 403 }) }
+  // TRYBE Free shows Match my TikTok as Pro (lib/trybe-free FREE_TABS).
+  if (trybeAccess(me?.tier) === 'none' || trybeAccess(me?.tier) === 'free') return { error: NextResponse.json({ error: 'Match my TikTok is part of TRYBE on the Pro plan.' }, { status: 403 }) }
   return { admin, ownerId, intg: intg || {} }
 }
 

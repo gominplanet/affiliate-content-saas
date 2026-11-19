@@ -115,7 +115,9 @@ const split = strip(SPLIT)
 // support ticket, and the refund is read from lib/guarantee, never typed.
 {
   for (const [name, src] of [['landing', landing], ['pricing', pricing]] as const) {
-    check(`${name} offers no free trial`, !/free trial|no card|Start free|5 free|free posts/i.test(src),
+    // TRYBE Free (2026-11-19, lib/trybe-free) is the one free part, said in its
+    // own block; outside it there is no trial and no free plan.
+    check(`${name} offers no free trial`, !/free trial|no card|Start free|5 free|free posts/i.test(src.replace(/\{TRYBE_FREE_LIVE && \([\s\S]*?\n      \)\}/, '')),
       'there is no trial for new signups; every new member starts on Pro')
     // The free week on the monthly plan replaced the refund (Seb, 2026-10-19).
     check(`${name} reads the free week from lib/guarantee`, /FREE_WEEK_(LABEL|SENTENCE|SHORT)/.test(src),

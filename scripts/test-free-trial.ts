@@ -319,7 +319,9 @@ const check = (name: string, cond: boolean, detail?: string) => {
     'one counter across the three is what makes five designs mean five')
   // 2026-10-18: no trial for new signups, so the pricing page describes no
   // free plan at all. It must not promise one either.
-  check('the pricing page promises no free plan', !/freeTrialHighlights\(\)/.test(PRICING) && !/Start free|no card/i.test(PRICING),
+  // 2026-11-19: TRYBE Free is the one free part (lib/trybe-free), said in its
+  // own block under the plan; outside it the page promises no free plan.
+  check('the pricing page promises no free plan', !/freeTrialHighlights\(\)/.test(PRICING) && !/Start free|no card/i.test(PRICING.replace(/\{TRYBE_FREE_LIVE && \([\s\S]*?\n      \)\}/, '')) && /Only here for TRYBE\? TRYBE is free\./.test(PRICING),
     'a page that sells a trial nobody can get is how a refund request starts')
 
   // The loop has to be REACHABLE. The caps and the qualifier are meaningless if

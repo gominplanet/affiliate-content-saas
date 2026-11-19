@@ -25,8 +25,12 @@
 // Enforced on the server by action (FREE_ACTIONS); the page only mirrors it.
 // Pure, so it is tested (scripts/test-trybe-free.ts).
 
-/** On for every account with no paid plan. Until then, only View as Free shows it. */
-export const TRYBE_FREE_LIVE = false
+/** On for every account with no paid plan (Seb, 2026-11-19: "ok go live"). */
+export const TRYBE_FREE_LIVE = true
+
+/** Where a TRYBE Free sign-up lands, and the sign-up that makes one (no card). */
+export const TRYBE_FREE_LANDING = '/trybe'
+export const TRYBE_FREE_SIGNUP = '/signup?for=trybe'
 
 /** Requests SCOUT sends a day on TRYBE Free (Pro: 200). */
 export const FREE_DAILY_SENDS = 20

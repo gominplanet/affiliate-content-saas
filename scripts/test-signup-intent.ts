@@ -144,7 +144,9 @@ const check = (name: string, cond: boolean, detail?: string) => {
   check('and Pro is the only one', norm(formTiers) === 'pro' && norm(apiTiers) === 'pro',
     'a second plan here is a plan the sales pages no longer offer')
   check('every signup that is not a team invite is a Pro checkout',
-    /if \(!joiningTeam\) setPaidTier\(t && PAID_SIGNUP_TIERS\.includes\(t\) \? t : 'pro'\)/.test(FORM),
+    // TRYBE Free (/signup?for=trybe, lib/trybe-free) is the one exception.
+    /if \(!joiningTeam && !forTrybe\) setPaidTier\(t && PAID_SIGNUP_TIERS\.includes\(t\) \? t : 'pro'\)/.test(FORM)
+      && /const forTrybe = TRYBE_FREE_LIVE && !joiningTeam && \(sp\.get\('for'\) \|\| ''\)\.trim\(\)\.toLowerCase\(\) === 'trybe'/.test(FORM),
     'without it a bare /signup would make a free account with nothing to use')
 
   // 1b. A plan with no price env is a fault on our side, and has to be reported
@@ -234,7 +236,7 @@ const check = (name: string, cond: boolean, detail?: string) => {
 
   check('a submitted signup reports a lead', /trackMeta\('Lead'/.test(FORM2),
     'everyone who typed an address and never confirmed was invisible')
-  check('and the lead says which door they came through', /content_category: path/.test(FORM2))
+  check('and the lead says which door they came through', /content_category: (trybeFree \? 'trybe' : )?path/.test(FORM2))
 
   // The ad landing is its own step, and its own audience.
   const JOIN = readFileSync('app/join/amazon/page.tsx', 'utf8')

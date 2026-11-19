@@ -6,7 +6,7 @@
 // scripts, "I know it costs AI, but let's see how we can manage that").
 
 import { readFileSync } from 'node:fs'
-import { templateRequest, uploadNoteTemplate, freeAllows, freeLeftWords, monthStartUtc, FREE_TABS, FREE_ACTIONS, FREE_CAPPED, FREE_DAILY_SENDS, FREE_SCRIPTS_MONTHLY, TRYBE_FREE_LIVE } from '../lib/trybe-free'
+import { templateRequest, uploadNoteTemplate, freeAllows, freeLeftWords, monthStartUtc, FREE_TABS, FREE_ACTIONS, FREE_CAPPED, FREE_DAILY_SENDS, FREE_SCRIPTS_MONTHLY, TRYBE_FREE_LIVE, TRYBE_FREE_LANDING, TRYBE_FREE_SIGNUP } from '../lib/trybe-free'
 import { trybeAccess } from '../lib/labs-preview'
 
 const failures: string[] = []
@@ -14,7 +14,8 @@ const check = (name: string, ok: boolean) => { if (!ok) failures.push(name) }
 const read = (p: string) => readFileSync(p, 'utf8')
 
 // 1. Who gets it
-check('not live yet: an account with no plan gets no TRYBE', TRYBE_FREE_LIVE === false && trybeAccess('trial') === 'none')
+// LIVE (Seb, 2026-11-19: "ok go live")
+check('live: an account with no plan gets TRYBE Free', (TRYBE_FREE_LIVE as boolean) === true && trybeAccess('trial') === 'free' && trybeAccess(null) === 'free')
 check('an admin viewing as Free sees TRYBE Free', trybeAccess('trial', { adminPreview: true }) === 'free')
 check('Pro keeps all of it, the Amazon plan its preview', trybeAccess('pro') === 'full' && trybeAccess('admin') === 'full' && trybeAccess('amazon') === 'preview' && trybeAccess('amazon', { adminPreview: true }) === 'preview')
 
@@ -59,6 +60,15 @@ check('the planner PDF is Pro on Free', /Weekly planner \(PDF\) is on Pro/.test(
 check('the page asks for your own message on Free, so View as Free shows the real thing', /\.\.\.\(free \? \{ template: true \} : \{\}\)/.test(O))
 check('the page and the menu show it', /if \(access === 'free'\) return <TrybeOutreach free/.test(read('app/(dashboard)/trybe/page.tsx')) && /trybeAcc === 'free' \? 'Free'/.test(read('components/layout/DashboardShellV2.tsx')))
 check('once live, TRYBE is open without a plan', /\.\.\.\(TRYBE_FREE_LIVE \? \['\/trybe'\] : \[\]\)/.test(read('app/(dashboard)/layout.tsx')))
+const L = read('app/(dashboard)/layout.tsx')
+check('a TRYBE Free sign-up goes back to TRYBE, any other account without a plan to Billing', /signup_for === 'trybe'/.test(L) && /redirect\(forTrybe \? '\/trybe' : '\/billing\?plan=pro&start=1'\)/.test(L))
+const S = read('components/auth/SignupForm.tsx')
+check('the no-card sign-up is /signup?for=trybe and lands in TRYBE', TRYBE_FREE_SIGNUP === '/signup?for=trybe' && TRYBE_FREE_LANDING === '/trybe' && /\(sp\.get\('for'\) \|\| ''\)\.trim\(\)\.toLowerCase\(\) === 'trybe'/.test(S) && /if \(!joiningTeam && !forTrybe\) setPaidTier/.test(S) && /\?\? \(forTrybe \? TRYBE_FREE_LANDING : null\)/.test(S))
+check('it says no card, and never shows the Pro free week steps', /'Start TRYBE free'/.test(S) && /No credit card needed for TRYBE Free/.test(S) && /!invited && !annual && !trybeFree && \(/.test(S) && /signup_for: 'trybe'/.test(S))
+check('the free scripts get past the trial spend gate, the daily backstop still applies', /if \(opts\.counted\) return null/.test(read('lib/ai-spend.ts')) && read('lib/ai-spend.ts').indexOf('globalDailyCeilingUsd()') < read('lib/ai-spend.ts').indexOf('if (opts.counted) return null') && (R.match(/spendGate\(userId, tier, \{ counted: g\.access === 'free' \}\)/g) || []).length === 2)
+check('Match my TikTok stays Pro on the server too', /trybeAccess\(me\?\.tier\) === 'free'\) return/.test(read('app/api/labs/tiktok-library/route.ts')))
+check('the pricing page says TRYBE is free, under the plan, with the no-card sign-up', /Only here for TRYBE\? TRYBE is free\./.test(read('app/pricing/page.tsx')) && /href=\{TRYBE_FREE_SIGNUP\}/.test(read('app/pricing/page.tsx')))
+check('Billing tells an account without a plan that TRYBE is free', /TRYBE is free without a plan: <a href="\/trybe"/.test(read('app/(dashboard)/billing/page.tsx')))
 
 if (failures.length) {
   console.error(`test-trybe-free: ${failures.length} failed`)

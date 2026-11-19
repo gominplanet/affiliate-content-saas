@@ -17,6 +17,7 @@ import { friendlyAuthError } from '@/lib/auth-error'
 import { safeNextPath } from '@/lib/safe-next'
 import { FREE_WEEK_CTA, FREE_WEEK_ON_US } from '@/lib/guarantee'
 import FreeWeekSteps from '@/components/landing/FreeWeekSteps'
+import { TRYBE_FREE_LIVE, TRYBE_FREE_LANDING } from '@/lib/trybe-free'
 
 // PRO ONLY, NO TRIAL (Seb, 2026-10-18): every signup is a Pro checkout. A
 // link that still says ?tier=amazon or carries no plan at all buys Pro, and
@@ -60,6 +61,9 @@ export default function SignupForm() {
   // AN INVITED TEAM MEMBER is joining someone else's account, not starting a
   // trial: the trial pitch told them about free designs they are not getting.
   const invited = !!nextPath && nextPath.startsWith('/agency/accept/')
+  // TRYBE FREE (lib/trybe-free; Seb, 2026-11-19 "ok go live"): /signup?for=trybe
+  // makes an account with no card, confirmed by email, that lands in TRYBE.
+  const [trybeFree, setTrybeFree] = useState(false)
   const [captchaToken, setCaptchaToken] = useState<string | null>(null)
   const captchaRef = useRef<TurnstileHandle>(null)
   // Queue the submit until Turnstile mints a token instead of erroring when the
@@ -98,13 +102,15 @@ export default function SignupForm() {
     // list did not.
     const next = safeNextPath(sp.get('next'))
     const joiningTeam = !!next && next.startsWith('/agency/accept/')
-    if (!joiningTeam) setPaidTier(t && PAID_SIGNUP_TIERS.includes(t) ? t : 'pro')
+    const forTrybe = TRYBE_FREE_LIVE && !joiningTeam && (sp.get('for') || '').trim().toLowerCase() === 'trybe'
+    setTrybeFree(forTrybe)
+    if (!joiningTeam && !forTrybe) setPaidTier(t && PAID_SIGNUP_TIERS.includes(t) ? t : 'pro')
     setAnnual(sp.get('billing') === 'annual')
     // Which onboarding they came for. Carried in the URL because it has to
     // survive a round trip through their inbox.
     setPath(parseOnboardingPath(sp.get('for')) ?? (t === 'amazon' ? 'amazon' : null))
     // Same-origin paths only: it ends up in the post-confirmation redirect.
-    setNextPath(safeNextPath(sp.get('next')))
+    setNextPath(safeNextPath(sp.get('next')) ?? (forTrybe ? TRYBE_FREE_LANDING : null))
     // Carried from the ad landing, where they already typed it. Asking for the
     // same address twice on consecutive screens is a drop-off for no reason.
     // Only shape-checked, never trusted: Supabase validates it for real and the
@@ -181,7 +187,9 @@ export default function SignupForm() {
       email,
       password,
       options: {
-        data: { full_name: fullName },
+        // signup_for: a TRYBE Free account is sent back to TRYBE, not to Billing
+        // (app/(dashboard)/layout.tsx).
+        data: { full_name: fullName, ...(trybeFree ? { signup_for: 'trybe' } : {}) },
         captchaToken: token ?? undefined,
         // Send the confirmation link through our auth callback (which exchanges
         // the code for a session) and on to onboarding. window.origin keeps it
@@ -211,7 +219,7 @@ export default function SignupForm() {
       // email and a bad audience looked identical. This is the step that tells
       // those two apart, tagged with the door they came through.
       // An invited team member is not a lead from the ads.
-      if (!invited) trackMeta('Lead', { content_name: path === 'amazon' ? 'Amazon signup' : 'Creator signup', content_category: path ?? 'creator' })
+      if (!invited) trackMeta('Lead', { content_name: trybeFree ? 'TRYBE Free signup' : path === 'amazon' ? 'Amazon signup' : 'Creator signup', content_category: trybeFree ? 'trybe' : path ?? 'creator' })
       setSuccess(true)
     }
   }
@@ -229,6 +237,7 @@ export default function SignupForm() {
           We sent a confirmation link to <strong>{email}</strong>.{' '}
           {invited
             ? 'Click it and you go straight back to your team invite to accept it.'
+            : trybeFree ? <>Click it and you land in TRYBE, ready to find brands.</>
             : <>Click it to finish signing in.</>}
           (Check spam if it doesn&apos;t show in a minute.)
         </p>
@@ -246,13 +255,16 @@ export default function SignupForm() {
           each day. The yearly plan has none, so its signup never says it. */}
       <h2 className="text-lg font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">{invited
         ? 'Create your account to join the team'
+        : trybeFree ? 'Start TRYBE free'
         : annual ? `Start ${tierLabel || 'Pro'} yearly` : FREE_WEEK_CTA}</h2>
-      <p className={`text-sm text-[#6e6e73] dark:text-[#ebebf0] ${!invited && !annual ? 'mb-3' : 'mb-6'}`}>{invited
+      <p className={`text-sm text-[#6e6e73] dark:text-[#ebebf0] ${!invited && !annual && !trybeFree ? 'mb-3' : 'mb-6'}`}>{invited
         ? 'Confirm your email and you come straight back to the invite to accept it.'
+        : trybeFree
+          ? 'No card. Find TRYBE brands, request them with your own message, upload your videos and track your earnings. Confirm your email and you land in TRYBE.'
         : annual
           ? 'Create your account, then continue to secure checkout. Everything in MVP opens today, and the yearly plan is charged when you join.'
           : `${FREE_WEEK_ON_US}. Create your account, then add your card at secure checkout. Everything in MVP opens today.`}</p>
-      {!invited && !annual && (
+      {!invited && !annual && !trybeFree && (
         <div className="mb-6">
           <FreeWeekSteps compact />
         </div>
@@ -318,11 +330,12 @@ export default function SignupForm() {
             ? 'Verifying…'
             : loading
             ? (paidTier ? 'Starting checkout…' : 'Creating account…')
-            : (paidTier ? (annual ? 'Continue to payment →' : 'Start my free week →') : 'Create my account')}
+            : (paidTier ? (annual ? 'Continue to payment →' : 'Start my free week →') : trybeFree ? 'Start TRYBE free' : 'Create my account')}
         </button>
         <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] text-center mt-1">
           {invited
             ? 'No credit card needed to join a team'
+            : trybeFree ? 'No credit card needed for TRYBE Free'
             : annual ? 'Secure checkout by Stripe · Cancel anytime' : 'Secure checkout by Stripe · $0 today · Cancel anytime'}
         </p>
       </form>

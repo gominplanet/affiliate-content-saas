@@ -111,7 +111,7 @@ const stage = read('components/labs/TrybeStage.tsx')
 check('a failed read of your numbers says the stage is not known', /your stage is not known/.test(stage))
 
 // ── The Amazon plan's preview (Seb, 2026-10-14: "build the amazon plan preview") ──
-check('Pro and admin get all of TRYBE, the Amazon plan the preview, a trial none', trybeAccess('pro') === 'full' && trybeAccess('admin') === 'full' && trybeAccess('amazon') === 'preview' && trybeAccess('trial') === 'none' && trybeAccess(null) === 'none')
+check('Pro and admin get all of TRYBE, the Amazon plan the preview, no plan TRYBE Free, a legacy plan none', trybeAccess('pro') === 'full' && trybeAccess('admin') === 'full' && trybeAccess('amazon') === 'preview' && trybeAccess('trial') === 'free' && trybeAccess(null) === 'free' && trybeAccess('creator') === 'none')
 const AI_OR_SEND = ['draft', 'video_plan', 'kickoff', 'followup', 'suggest_reply', 'brief_read', 'match', 'claim', 'result', 'directory', 'meta_ads', 'top100', 'adopt', 'settings', 'ideas', 'brand_products', 'import', 'shortlist']
 check('the preview may browse, star, pass and rank, and nothing that calls AI, sends or writes the shared copy', ['browse', 'star', 'pass', 'unskip', 'priorities'].every(a => TRYBE_PREVIEW_ACTIONS.has(a)) && AI_OR_SEND.every(a => !TRYBE_PREVIEW_ACTIONS.has(a)))
 check('the server refuses every other action on the preview, before any work', /if \(g\.access === 'preview' && !TRYBE_PREVIEW_ACTIONS\.has\(action\)\)/.test(api) && api.indexOf("g.access === 'preview'") < api.indexOf("action === 'settings'"))

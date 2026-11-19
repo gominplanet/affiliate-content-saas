@@ -241,7 +241,11 @@ export function spendUpgradeFor(tier: unknown): { tier: Tier; label: string; lim
  * Fails open (returns null) on any telemetry error — never hard-blocks on a
  * read failure. Keep the gate AFTER auth but BEFORE the model call.
  */
-export async function spendGate(userId: string, tier: unknown): Promise<NextResponse | null> {
+/** `counted`: an allowance the caller already counted, TRYBE Free's few sets
+ *  of brand scripts a month (lib/trybe-free FREE_CAPPED). An account with no
+ *  plan reads as an ended trial, which would refuse them; only the platform-wide
+ *  daily backstop applies to it. */
+export async function spendGate(userId: string, tier: unknown, opts: { counted?: boolean } = {}): Promise<NextResponse | null> {
   if (!userId) return null
 
   // Platform-wide daily backstop (off unless GLOBAL_DAILY_SPEND_CEILING_USD is
@@ -258,6 +262,8 @@ export async function spendGate(userId: string, tier: unknown): Promise<NextResp
       }, { status: 503 })
     }
   }
+
+  if (opts.counted) return null
 
   const status = await spendStatus(userId, tier)
   if (!status.exceeded) return null

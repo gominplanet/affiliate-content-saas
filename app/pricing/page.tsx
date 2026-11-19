@@ -25,6 +25,7 @@ import MetaTrack from '@/components/analytics/MetaTrack'
 import { TIERS, SELLABLE_TIERS, type Tier } from '@/lib/tier'
 import { MAX_ITEMS as BULK_UPLOAD_MAX_VIDEOS } from '@/lib/launch-batch'
 import { SHORTS_MONTHLY_CAP } from '@/lib/usage-cap'
+import { TRYBE_FREE_LIVE, TRYBE_FREE_SIGNUP, FREE_DAILY_SENDS, FREE_SCRIPTS_MONTHLY } from '@/lib/trybe-free'
 
 // The layout's title template appends "· MVP Affiliate"; spelling it here too
 // printed it twice in the tab and in search results.
@@ -386,6 +387,16 @@ export default async function PricingPage({
           <FreeWeekSteps cta={false} />
         )}
       </div>
+
+      {/* TRYBE FREE (lib/trybe-free; Seb, 2026-11-19 "ok go live"): the one
+          free part of MVP, said under the plan, never as a second plan card. */}
+      {TRYBE_FREE_LIVE && (
+        <div className="mt-10 w-full max-w-3xl rounded-2xl border border-[#7C3AED]/25 bg-[#7C3AED]/5 px-5 py-4 text-center">
+          <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Only here for TRYBE? TRYBE is free.</p>
+          <p className="text-sm text-[#6e6e73] dark:text-[#ebebf0] mt-1">Find TRYBE brands, request them with your own message ({FREE_DAILY_SENDS} a day), upload your videos, track your earnings and write {FREE_SCRIPTS_MONTHLY} sets of brand scripts a month. No card.</p>
+          <a href={TRYBE_FREE_SIGNUP} className="inline-block mt-2 text-sm font-semibold text-[#7C3AED] hover:underline">Start TRYBE free</a>
+        </div>
+      )}
 
       <p className="mt-10 text-sm text-[#86868b] dark:text-[#8e8e93] max-w-2xl text-center px-4">
         Auto-posting live today: your WordPress site, X, LinkedIn, Facebook, Instagram, Threads, Bluesky,
