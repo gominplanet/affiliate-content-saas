@@ -12,7 +12,7 @@
 // on a phone), each saying what waits in it, and the pages of the open job sit
 // under them as tabs that wrap. Nothing is hidden off the edge.
 
-import { LayoutDashboard, Search, Rocket, ScanSearch, Send, Inbox, Clapperboard, UploadCloud, CalendarDays, Lightbulb, BarChart3, ListChecks, Bell, Megaphone, ChevronRight, MessageCircle, Check, Star, Trophy, type LucideIcon } from 'lucide-react'
+import { LayoutDashboard, Search, Rocket, ScanSearch, Send, Inbox, Clapperboard, UploadCloud, CalendarDays, Lightbulb, BarChart3, ListChecks, Bell, Megaphone, ChevronRight, MessageCircle, Check, Star, Trophy, Lock, type LucideIcon } from 'lucide-react'
 import type { Tab } from '@/components/labs/TrybeOutreach'
 
 type Item = { label: string; icon: LucideIcon; tabs: Tab[]; count?: 'queue' | 'unread' }
@@ -100,7 +100,8 @@ export function groupOf(tab: Tab, layout = false): string {
   return (groups.find((g) => g.items.some((it) => it.tabs.includes(tab))) ?? groups[0]).id
 }
 
-export default function TrybeNav({ tab, queue, unread, go, layout = false, topBoard = false }: { tab: Tab; queue: number; unread: number; go: (t: Tab) => void; layout?: boolean; topBoard?: boolean }) {
+/** `locked`: a tab that is Pro on this plan (TRYBE Free), drawn with a lock. */
+export default function TrybeNav({ tab, queue, unread, go, layout = false, topBoard = false, locked }: { tab: Tab; queue: number; unread: number; go: (t: Tab) => void; layout?: boolean; topBoard?: boolean; locked?: (t: Tab) => boolean }) {
   // The Top 100 board only where Labs opens it (labs-preview trybe_top_board).
   const groups = (layout ? GROUPS_V3 : GROUPS).map((g) => ({ ...g, items: g.items.filter((it) => topBoard || !it.tabs.includes('top100')) }))
   const open = groupOf(tab, layout)
@@ -168,6 +169,7 @@ export default function TrybeNav({ tab, queue, unread, go, layout = false, topBo
                   : { background: 'var(--surface)', color: 'var(--text)', border: '1px solid rgb(var(--brand-rgb) / 0.30)', outlineColor: 'var(--accent)' }}>
                 <Icon size={16} style={on ? undefined : { color: 'var(--accent-text, var(--accent))' }} />
                 {it.label}
+                {locked?.(firstOf(it)) && <Lock size={12} aria-label="Pro" style={on ? undefined : { color: 'var(--text-3)' }} />}
                 {n > 0 && (it.count === 'unread' ? <UnreadDot n={n} />
                   : <span className="text-[11px] font-bold rounded-full px-1.5 min-w-[20px] text-center" style={on ? { background: '#fff', color: 'var(--accent)' } : { background: 'var(--accent)', color: '#fff' }}>{n}</span>)}
               </button>

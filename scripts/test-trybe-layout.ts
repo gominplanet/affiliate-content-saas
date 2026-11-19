@@ -39,7 +39,7 @@ check('short hints, no dashes', GROUPS_V3.every((g) => g.hint.length <= 20 && !/
 // ── THE PAGE ──
 const O = read('components/labs/TrybeOutreach.tsx')
 const P = read('app/(dashboard)/trybe/page.tsx')
-check('the page follows the switch', /layout=\{canUsePreview\('trybe_layout', tier\)\}/.test(P) && /<TrybeNav tab=\{tab\} queue=\{queue\.length\} unread=\{navUnread\} go=\{go\} layout=\{layout\} topBoard=\{topBoard\} \/>/.test(O))
+check('the page follows the switch', /layout=\{canUsePreview\('trybe_layout', tier\)\}/.test(P) && /<TrybeNav tab=\{tab\} queue=\{queue\.length\} unread=\{navUnread\} go=\{go\} layout=\{layout\} topBoard=\{topBoard\}( locked=\{free \? proOnly : undefined\})? \/>/.test(O))
 check('the Top 100 page shows only where Labs opens it', /topBoard=\{canUsePreview\('trybe_top_board', tier\)\}/.test(P) && /topBoard \|\| !it\.tabs\.includes\('top100'\)/.test(read('components/labs/TrybeNav.tsx')) && /tab === 'top100' && topBoard && !lockedTab/.test(O))
 check('no page carries a second switch inside it in the new menu', /const pair = !layout && tile && tile\.tabs\.length > 1 \? tile\.tabs : null/.test(O))
 check('one search row: what you review, or a brand by name', /htmlFor="trybe-kw"/.test(O) && /htmlFor="trybe-name"/.test(O) && /\{layout \? \(\n\s*\/\/ ONE SEARCH ROW/.test(O))

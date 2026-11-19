@@ -53,7 +53,9 @@ const esc = (t: string) => t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replac
 const DAY = 86_400_000
 const ago = (iso: string | null) => (iso ? Math.max(0, Math.floor((Date.now() - Date.parse(iso)) / DAY)) : 0)
 
-export default function TrybeWeek({ knownBrands, canRead, isAdmin = false }: {
+export default function TrybeWeek({ knownBrands, canRead, isAdmin = false, free = false }: {
+  /** TRYBE Free (lib/trybe-free): the planner PDF is shown as Pro. */
+  free?: boolean
   /** Brands MVP knows the creator works with or asked (accepted first). */
   knownBrands: Array<{ id: string; name: string }>
   /** SCOUT can read TRYBE (brand stats, briefs, best videos). */
@@ -753,9 +755,15 @@ export default function TrybeWeek({ knownBrands, canRead, isAdmin = false }: {
         <div className="flex flex-wrap items-center gap-2">
           <FileDown size={16} style={{ color: PURPLE }} />
           <p className="text-[13.5px] font-semibold flex-1 min-w-[10rem]">Print and download</p>
+          {free ? (
+            <a href="/billing?plan=pro" className={btn} style={{ border: `1px solid ${PURPLE}`, color: PURPLE }} title="The planner writes 5 video guidelines for every product you have on hand">
+              <FileDown size={13} /> Weekly planner (PDF) is on Pro
+            </a>
+          ) : (
           <button onClick={() => void makePlanner()} disabled={!!exporting} className={btn} style={{ background: PURPLE, color: '#fff' }}>
             {exporting ? <Loader2 size={13} className="animate-spin" /> : <FileDown size={13} />} Download my weekly planner (PDF)
           </button>
+          )}
           <button onClick={() => void makeSamplesPdf()} disabled={samplesBusy || !rows?.length} className={btn} style={{ border: `1px solid ${PURPLE}`, color: PURPLE }}
             title={rows?.length ? 'Every sample, by brand, with where each one stands' : 'No samples yet'}>
             {samplesBusy ? <Loader2 size={13} className="animate-spin" /> : <Package size={13} />} Download my samples (PDF)

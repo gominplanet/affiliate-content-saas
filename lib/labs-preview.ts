@@ -8,6 +8,7 @@
 
 import { normalizeTier } from '@/lib/tier'
 import { canSeeNav } from '@/lib/feature-access'
+import { TRYBE_FREE_LIVE } from '@/lib/trybe-free'
 
 export type PreviewFeature = 'on_sale' | 'amazon_live' | 'comparison' | 'shorts_mode' | 'first_comment' | 'brand_recap' | 'deal_aftercare' | 'post_refresh' | 'facebook_reels' | 'whole_video' | 'sold_campaigns' | 'liftoff_split' | 'earnings' | 'live_followup' | 'video_plan' | 'studio_upload' | 'facebook_setup' | 'group_queue' | 'trybe_outreach' | 'hashtag_trends' | 'drop' | 'video_qr' | 'deals_import' | 'product_scripts' | 'review_edit' | 'creator_look' | 'new_look' | 'trybe_v2' | 'section_nav' | 'trybe_layout' | 'menu_v2' | 'trybe_batch' | 'trybe_top_board' | 'trybe_edit' | 'live_trybe'
 
@@ -200,11 +201,17 @@ export function previewOpenToPro(feature: PreviewFeature): boolean {
 // (messages, scripts, briefs, replies, fit checks) and nothing SCOUT sends or
 // writes to the shared copy of TRYBE. Enforced on the server by action.
 
-export type TrybeAccess = 'full' | 'preview' | 'none'
+export type TrybeAccess = 'full' | 'preview' | 'free' | 'none'
 
-export function trybeAccess(rawTier: unknown): TrybeAccess {
+/** `adminPreview`: an admin viewing as Free sees TRYBE Free before it is
+ *  live (the page only; the server reads the real plan). */
+export function trybeAccess(rawTier: unknown, opts: { adminPreview?: boolean } = {}): TrybeAccess {
   if (canUsePreview('trybe_outreach', rawTier)) return 'full'
-  return normalizeTier(rawTier) === 'amazon' ? 'preview' : 'none'
+  const t = normalizeTier(rawTier)
+  if (t === 'amazon') return 'preview'
+  // TRYBE FREE (lib/trybe-free): an account with no paid plan.
+  if (t === 'trial' && (TRYBE_FREE_LIVE || opts.adminPreview)) return 'free'
+  return 'none'
 }
 
 /** The server actions the Amazon plan's preview may call (POST); the GET

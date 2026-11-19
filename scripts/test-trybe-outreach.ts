@@ -204,7 +204,7 @@ check('the inbox is a tab of TRYBE', /\{ id: 'inbox', label: 'Inbox'/.test(UI) &
   const SHELL = readFileSync('components/layout/DashboardShellV2.tsx', 'utf8')
   const find = SHELL.slice(SHELL.indexOf("label: 'Find products'"), SHELL.indexOf("label: 'Make videos'"))
   const labs = SHELL.slice(SHELL.indexOf("label: 'Labs',"))
-  check('all of TRYBE is open to Pro (the Amazon plan gets the Find brands preview), in Find products, not Labs', /trybe_outreach: 'labs'/.test(readFileSync('lib/labs-preview.ts', 'utf8')) && !/'trybe_outreach'/.test((() => { const lp = readFileSync('lib/labs-preview.ts', 'utf8'); const at = lp.indexOf('const ALSO_AMAZON'); return lp.slice(at, lp.indexOf('])', at)) })()) && /href: '\/trybe'.*gate: (canUsePreview\('trybe_outreach', effectiveTier\)|trybeAccess\(effectiveTier\) !== 'none')/.test(find) && !/trybe-outreach/.test(labs))
+  check('all of TRYBE is open to Pro (the Amazon plan gets the Find brands preview), in Find products, not Labs', /trybe_outreach: 'labs'/.test(readFileSync('lib/labs-preview.ts', 'utf8')) && !/'trybe_outreach'/.test((() => { const lp = readFileSync('lib/labs-preview.ts', 'utf8'); const at = lp.indexOf('const ALSO_AMAZON'); return lp.slice(at, lp.indexOf('])', at)) })()) && /href: '\/trybe'.*gate: (canUsePreview\('trybe_outreach', effectiveTier\)|trybeAccess\(effectiveTier\) !== 'none'|trybeAcc !== 'none')/.test(find) && !/trybe-outreach/.test(labs))
 }
 
 const collectorRun = (async () => {

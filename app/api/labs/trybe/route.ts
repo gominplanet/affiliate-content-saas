@@ -57,6 +57,7 @@ import { readSampleCatalogs, refreshCatalogs } from '@/lib/trybe-catalog-refresh
 import { payLinePass, popularityPass, sitesPass, socialsPass, directoryLeft } from '@/lib/trybe-directory-refresh'
 import { getAuthAndOwner } from '@/lib/agency-auth'
 import { trybeAccess, canUsePreview, TRYBE_PREVIEW_ACTIONS } from '@/lib/labs-preview'
+import { FREE_DAILY_SENDS, FREE_CAPPED, FREE_SCRIPTS_MONTHLY, freeAllows, freeLeftWords, monthStartUtc, templateRequest, uploadNoteTemplate } from '@/lib/trybe-free'
 import { normalizeTier } from '@/lib/tier'
 import { spendGate } from '@/lib/ai-spend'
 import { createAnthropicClient } from '@/lib/anthropic'
@@ -187,6 +188,16 @@ async function usedToday(admin: Db, ownerId: string): Promise<number> {
   return (await capRows(admin, ownerId)).filter(r => countsTowardCap(r, now)).length
 }
 
+/** What is left of a TRYBE Free monthly allowance (lib/trybe-free FREE_CAPPED):
+ *  the AI use MVP recorded under `feature` this calendar month. Null when it
+ *  could not be counted, so the caller says so rather than guessing either way. */
+async function freeLeft(admin: Db, userId: string, feature: string, monthly: number): Promise<number | null> {
+  const { count, error } = await admin.from('ai_usage').select('id', { count: 'exact', head: true })
+    .eq('user_id', userId).eq('feature', feature).gte('created_at', monthStartUtc())
+  if (error) return null
+  return Math.max(0, monthly - (count ?? 0))
+}
+
 /** When the next send opens up, for a cap that is used (null while there is room). */
 async function nextFree(admin: Db, ownerId: string, cap: number): Promise<string | null> {
   return nextFreeAt(await capRows(admin, ownerId), cap, Date.now())
@@ -211,7 +222,8 @@ export async function GET() {
   if ('error' in g) return g.error
   const { admin, ownerId, supabase } = g
   const [settings, used, rows] = await Promise.all([
-    readSettings(admin, ownerId),
+    // TRYBE Free sends FREE_DAILY_SENDS a day (lib/trybe-free).
+    readSettings(admin, ownerId).then((s) => (g.access === 'free' ? { ...s, dailyCap: FREE_DAILY_SENDS } : s)),
     usedToday(admin, ownerId),
     // EVERY ROW, not the first 1,000: older sent brands dropped off the page
     // and the sent and replied counts with them.
@@ -223,7 +235,9 @@ export async function GET() {
   // Only the brands still to send or that failed: a sent brand is history.
   const left = await leftTrybe(admin, rows.rows.filter(r => r.status === 'failed' || r.status === 'drafted').map(r => String(r.brand_id))).catch(() => new Map<string, string>())
   const brands = rows.rows.map(r => ({ ...r, worked_with: worked.has(brandKey(String(r.name || ''))), left_trybe_at: left.get(String(r.brand_id)) ?? null }))
-  return NextResponse.json({ ok: true, settings, usedToday: used, nextFreeAt: await nextFree(admin, ownerId, settings.dailyCap), maxDailyCap: MAX_DAILY_CAP, brands, directory: await directoryStats(admin), isAdmin: g.tier === 'admin' })
+  // TRYBE FREE: what is left of this month's brand scripts, said on Make videos.
+  const free = g.access === 'free' ? { scriptsLeft: await freeLeft(admin, g.userId, FREE_CAPPED.video_plan.feature, FREE_SCRIPTS_MONTHLY), scriptsMonthly: FREE_SCRIPTS_MONTHLY, sendsPerDay: FREE_DAILY_SENDS } : null
+  return NextResponse.json({ ok: true, settings, usedToday: used, nextFreeAt: await nextFree(admin, ownerId, settings.dailyCap), maxDailyCap: g.access === 'free' ? FREE_DAILY_SENDS : MAX_DAILY_CAP, brands, directory: await directoryStats(admin), isAdmin: g.tier === 'admin', access: g.access, free })
 }
 
 /** A brand's products with the ones naming a keyword first, so a search for
@@ -669,6 +683,18 @@ export async function POST(request: Request) {
   // anything SCOUT feeds into the shared copy of TRYBE are Pro.
   if (g.access === 'preview' && !TRYBE_PREVIEW_ACTIONS.has(action)) {
     return NextResponse.json({ error: 'This part of TRYBE is on the Pro plan.', pro: true }, { status: 403 })
+  }
+  // TRYBE FREE (lib/trybe-free): the actions it may call, and the AI ones
+  // it may call a few times a month, counted before anything is spent.
+  if (g.access === 'free') {
+    const v = freeAllows(action)
+    if (!v.ok) return NextResponse.json({ error: v.error, pro: true }, { status: 403 })
+    const capped = FREE_CAPPED[action]
+    if (capped) {
+      const left = await freeLeft(admin, userId, capped.feature, capped.monthly)
+      if (left === null) return NextResponse.json({ error: `MVP could not count your free ${capped.words} just now, so nothing was written. Try again in a minute.` }, { status: 503 })
+      if (left <= 0) return NextResponse.json({ error: freeLeftWords(0, capped.monthly, capped.words), pro: true, freeCap: action }, { status: 403 })
+    }
   }
   const brandId = typeof body.brandId === 'string' ? body.brandId.slice(0, 80) : ''
   const now = new Date().toISOString()
@@ -1495,6 +1521,8 @@ export async function POST(request: Request) {
     const count = Math.max(1, Math.min(20, Number(body.count) || 1))
     const products = (Array.isArray(body.products) ? body.products : []).filter((x: unknown): x is string => typeof x === 'string' && !!x.trim()).map((x: string) => x.trim().slice(0, 160)).slice(0, 6)
     if (!brandName) return NextResponse.json({ error: 'Which brand is it for?' }, { status: 400 })
+    // TRYBE Free: a short note from what was uploaded, no AI (lib/trybe-free).
+    if (g.access === 'free') return NextResponse.json({ ok: true, text: uploadNoteTemplate({ brand: brandName, count, products }), voiced: false, template: true })
     const spend = await spendGate(userId, tier)
     if (spend) return spend
     const creator = await writerFacts(admin, ownerId)
@@ -2975,6 +3003,30 @@ Weigh posts pushed to social, and TRYBE brands they earned with or submitted to,
     // written", with no reason).
     const coreHits = termsHits(settings.coreMessage)
     if (coreHits.length) return NextResponse.json({ error: `Your core message says ${quoteHits(coreHits)}, which reads as talk about pay or rates. TRYBE brands set the pay, so no request was written. Take ${coreHits.length === 1 ? 'that part' : 'those parts'} out of your core message, press Save message, and write again.` }, { status: 400 })
+    // YOUR OWN MESSAGE, NO AI (TRYBE Free; Seb, 2026-11-19: "send their
+    // automatic message, not necessarily AI message"): the core message with
+    // the brand's name in it (lib/trybe-free templateRequest), and the line
+    // about a video you already filmed of it. Saved exactly as the AI one is.
+    if (g.access === 'free' || body.template === true) {
+      const { data: trows } = await admin.from('trybe_brands').select('brand_id, name, status').eq('user_id', ownerId).in('brand_id', ids)
+      const filmedT = await filmedVideos(admin, ownerId, ids).catch(() => new Map<string, { url: string; product: string | null }>())
+      const results: Array<{ brandId: string; ok: boolean; error?: string; template?: boolean }> = []
+      for (const r of (trows || []) as Array<{ brand_id: string; name: string | null; status: string }>) {
+        if (r.status === 'sent' || r.status === 'sending' || r.status === 'already') { results.push({ brandId: r.brand_id, ok: false, error: 'Already requested.' }); continue }
+        if (r.status === 'removed' || r.status === 'skipped') { results.push({ brandId: r.brand_id, ok: false, error: 'You took this brand off your list.' }); continue }
+        let text = templateRequest(settings.coreMessage, String(r.name || ''))
+        const fv = filmedT.get(r.brand_id)
+        if (fv) text = withFilmedLine(text, filmedLine({ core: settings.coreMessage, url: fv.url, product: fv.product, brand: String(r.name || '') }))
+        const { data: savedT, error: tErr } = await admin.from('trybe_brands').update({ draft: text, drafted_at: new Date().toISOString(), status: 'drafted', error: null, updated_at: new Date().toISOString() })
+          .eq('user_id', ownerId).eq('brand_id', r.brand_id).in('status', ['new', 'drafted', 'failed', 'not_fit']).select('brand_id')
+        if (tErr) results.push({ brandId: r.brand_id, ok: false, error: `The message was not saved: ${dbWords(tErr.message)}` })
+        else if (!(savedT || []).length) results.push({ brandId: r.brand_id, ok: false, error: 'This brand was sent or changed just now, so the message was not saved.' })
+        else results.push({ brandId: r.brand_id, ok: true, template: true })
+      }
+      const gotT = new Set(((trows || []) as Array<{ brand_id: string }>).map(r => r.brand_id))
+      for (const id of ids) if (!gotT.has(id)) results.push({ brandId: id, ok: false, error: 'That brand is not on your list, so it was not written. Load the page again and pick it again.' })
+      return NextResponse.json({ ok: true, results, template: true })
+    }
     const spend = await spendGate(userId, tier)
     if (spend) return spend
     const creator = await writerFacts(admin, ownerId)
@@ -3913,7 +3965,8 @@ Weigh posts pushed to social, and TRYBE brands they earned with or submitted to,
   }
 
   if (action === 'claim') {
-    const settings = await readSettings(admin, ownerId)
+    const base = await readSettings(admin, ownerId)
+    const settings = g.access === 'free' ? { ...base, dailyCap: FREE_DAILY_SENDS } : base
     const used = await usedToday(admin, ownerId)
     if (used >= settings.dailyCap) {
       return NextResponse.json({ ok: false, capped: true, usedToday: used, dailyCap: settings.dailyCap, nextFreeAt: await nextFree(admin, ownerId, settings.dailyCap) })

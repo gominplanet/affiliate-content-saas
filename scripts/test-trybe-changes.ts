@@ -156,7 +156,7 @@ check('My brands sends its numbers only when included, and shows members togethe
 const page = read('components/labs/TrybeOutreach.tsx')
 check('the page is called TRYBE, with What changed and What\'s working tabs', />\s*TRYBE\s*<\/h1>/.test(page) && /\{ id: 'changes', label: 'What changed'/.test(page) && /\{ id: 'working', label: 'What\\u2019s working'/.test(page))
 check('the page has the Your week line and the setup check', /Your week/.test(page) && /Setup check/.test(page))
-check('the menu says TRYBE', /label: 'TRYBE', gate: (canUsePreview\('trybe_outreach'|trybeAccess\(effectiveTier\))/.test(read('components/layout/DashboardShellV2.tsx')))
+check('the menu says TRYBE', /label: 'TRYBE', gate: (canUsePreview\('trybe_outreach'|trybeAccess\(effectiveTier\)|trybeAcc !== 'none')/.test(read('components/layout/DashboardShellV2.tsx')))
 const mig = read('supabase/migrations/428_trybe_changes_and_pool.sql')
 check('migration 428 is safe to run twice', !/create table (?!if not exists)/i.test(mig) && !/add column (?!if not exists)/i.test(mig) && /create index if not exists/.test(mig))
 

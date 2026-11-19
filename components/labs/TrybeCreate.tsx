@@ -12,7 +12,7 @@
 //      Below, every script you have for the brand.
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Loader2, ArrowLeft, Search, Check, ExternalLink, AlertTriangle, ImagePlus, X, Upload, Wand2 } from 'lucide-react'
+import { Loader2, ArrowLeft, Search, Check, ExternalLink, AlertTriangle, ImagePlus, X, Upload, Wand2, Lock } from 'lucide-react'
 import { requestTrybeApi } from '@/lib/extension-frame'
 import { readBrandStats, byBrandName, type MyBrand } from '@/lib/trybe-mybrands'
 import { brandPageUrl } from '@/lib/trybe-brand-page'
@@ -25,12 +25,16 @@ import type { LinksDigest } from '@/lib/trybe-message-links'
 import { AmazonLine, ProductAmazon, AmazonFilmedList } from '@/components/labs/TrybeFinderControls'
 import { useTrybeAmazon } from '@/components/labs/useTrybeAmazon'
 import { shrinkPicture } from '@/lib/buyer-read-client'
+import { freeLeftWords } from '@/lib/trybe-free'
 
 const PURPLE = 'var(--accent)'
 const GREEN = '#16A34A'
 const AMBER = '#B45309'
 
-export default function TrybeCreate({ canRead, isAdmin, canEdit = false, onFind, start, onStarted }: {
+export default function TrybeCreate({ canRead, isAdmin, canEdit = false, onFind, start, onStarted, free = null }: {
+  /** TRYBE Free (lib/trybe-free): sets of quick scripts left this month
+   *  (null while not counted), the month's allowance, and a call after each set. */
+  free?: { left: number | null; monthly: number; onUsed: () => void } | null
   /** Film and edit inside a batch (labs-preview trybe_edit). */
   canEdit?: boolean
   canRead: boolean; isAdmin: boolean; onFind: () => void
@@ -228,7 +232,7 @@ export default function TrybeCreate({ canRead, isAdmin, canEdit = false, onFind,
             // buyers' reviews are read from there unless you gave a link.
             const asin = amz.product(brand.name, product)?.products?.[0]?.asin
             const link = buyerLink.trim() || (asin ? `https://www.amazon.com/dp/${asin}` : '')
-            return <TrybeVideoIdeas key={`${brand.id}|${product}`} brandId={brand.id} name={brand.name} plan={null} canRead={canRead} isAdmin={isAdmin} product={product} page={page} auto emphasize buyerLink={link} buyerShot={buyerShot} context={context} />
+            return <TrybeVideoIdeas key={`${brand.id}|${product}`} brandId={brand.id} name={brand.name} plan={null} canRead={canRead} isAdmin={isAdmin} product={product} page={page} auto emphasize buyerLink={link} buyerShot={buyerShot} context={context} onPlan={free ? () => free.onUsed() : undefined} />
           })()}
         </section>
   ) : null
@@ -340,8 +344,18 @@ export default function TrybeCreate({ canRead, isAdmin, canEdit = false, onFind,
           <p className="text-[12px] font-bold uppercase tracking-wider" style={soft}>Film today</p>
           <h3 className="text-[19px] font-bold mt-1">{VIDEO_IDEAS} quick scripts</h3>
           <p className="text-[13.5px] mt-1.5 flex-1" style={soft}>{VIDEO_IDEAS} different videos for {product || 'the product you pick'}, from the brief, what its buyers say and TRYBE&rsquo;s top videos{context.trim() ? ', built around your context' : ''}. Each set is kept below until you clear it.</p>
-          <button disabled={!product} onClick={() => setDoor('quick')} className="mt-4 self-start inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-[14px] font-semibold disabled:opacity-50" style={{ background: PURPLE, color: '#fff' }}><Wand2 size={15} /> Write quick scripts</button>
+          {free && free.left != null && <p className="mt-3 text-[12.5px] font-semibold" style={{ color: free.left > 0 ? 'var(--text-2)' : AMBER }}>{freeLeftWords(free.left, free.monthly, 'sets of brand scripts')}</p>}
+          <button disabled={!product || (!!free && free.left === 0)} onClick={() => setDoor('quick')} className="mt-4 self-start inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-[14px] font-semibold disabled:opacity-50" style={{ background: PURPLE, color: '#fff' }}><Wand2 size={15} /> Write quick scripts</button>
+          {free && free.left === 0 && <a href="/billing?plan=pro" className="mt-2 self-start text-[13px] font-semibold underline" style={{ color: PURPLE }}>See Pro</a>}
         </section>
+        {free ? (
+        <section className="rounded-2xl p-5 flex flex-col" style={{ border: '1px solid var(--border)', background: 'var(--surface)' }}>
+          <p className="text-[12px] font-bold uppercase tracking-wider inline-flex items-center gap-1.5" style={soft}><Lock size={12} /> On Pro</p>
+          <h3 className="text-[19px] font-bold mt-1">A batch, as many as the brand asks for</h3>
+          <p className="text-[13.5px] mt-1.5 flex-1" style={soft}>For a challenge or a big brief: MVP reads everything {brand.name} gave you, shows its plan first, then writes up to 300 scripts and checks each one against the brief.</p>
+          <a href="/billing?plan=pro" className="mt-4 self-start inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-[14px] font-semibold" style={{ border: `1px solid ${PURPLE}`, color: PURPLE }}>See Pro</a>
+        </section>
+        ) : (
         <section className="rounded-2xl p-5 flex flex-col" style={{ border: `2px solid ${PURPLE}`, background: 'var(--surface)' }}>
           <p className="text-[12px] font-bold uppercase tracking-wider" style={{ color: PURPLE }}>A challenge or a big brief</p>
           <h3 className="text-[19px] font-bold mt-1">A batch, as many as the brand asks for</h3>
@@ -359,6 +373,7 @@ export default function TrybeCreate({ canRead, isAdmin, canEdit = false, onFind,
           </label>
           <button disabled={!product} onClick={() => startBatch(null)} className="mt-4 self-start inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-[14px] font-semibold disabled:opacity-50" style={{ background: PURPLE, color: '#fff' }}>Plan {batchCount} scripts</button>
         </section>
+        )}
       </div>
     )}
 
@@ -378,7 +393,7 @@ export default function TrybeCreate({ canRead, isAdmin, canEdit = false, onFind,
         <div className={card} style={cardStyle}><p className="text-[15px] font-semibold">Make videos needs SCOUT on TRYBE</p><p className="text-[13.5px] mt-1" style={soft}>Install SCOUT, allow it on TRYBE and sign in to TRYBE in this Chrome. MVP then shows the brands you work with and the products they want videos of.</p></div>
         <TrybeSavedScripts />
         {/* Batch scripts need no SCOUT either: the brief is pasted or uploaded. */}
-        <TrybeBatchScripts />
+        {!free && <TrybeBatchScripts />}
       </div>
     )
   }

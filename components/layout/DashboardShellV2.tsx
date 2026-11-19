@@ -482,6 +482,8 @@ export default function DashboardShellV2({
   // the REAL tier so the admin tools + the view-as dropdown never vanish while
   // previewing (you'd have no way back).
   const effectiveTier: Tier = isAdmin && viewAs !== 'admin' ? viewAs : (tier as Tier)
+  // TRYBE's level for the menu row; an admin viewing as Free sees TRYBE Free (lib/trybe-free).
+  const trybeAcc = trybeAccess(effectiveTier, { adminPreview: isAdmin })
   // Unread TRYBE messages on the TRYBE Outreach item (upgrade 4).
   const trybeUnread = useTrybeAlerts(canUsePreview('trybe_outreach', effectiveTier), pathname)
 
@@ -649,7 +651,7 @@ export default function DashboardShellV2({
         // 2026-10-08: "unlock TRYBE for pro users and drop it inside of FIND
         // PRODUCTS").
         // The Amazon plan sees it too, as a preview: Find brands to browse.
-        { href: '/trybe', icon: <Handshake size={15} />, label: 'TRYBE', gate: trybeAccess(effectiveTier) !== 'none', badge: trybeUnread > 0 ? trybeUnread : trybeAccess(effectiveTier) === 'preview' ? 'Preview' : 'New' },
+        { href: '/trybe', icon: <Handshake size={15} />, label: 'TRYBE', gate: trybeAcc !== 'none', badge: trybeUnread > 0 ? trybeUnread : trybeAcc === 'preview' ? 'Preview' : trybeAcc === 'free' ? 'Free' : 'New' },
       ],
     },
     {

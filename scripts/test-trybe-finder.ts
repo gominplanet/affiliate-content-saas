@@ -116,9 +116,9 @@ const AI_OR_SEND = ['draft', 'video_plan', 'kickoff', 'followup', 'suggest_reply
 check('the preview may browse, star, pass and rank, and nothing that calls AI, sends or writes the shared copy', ['browse', 'star', 'pass', 'unskip', 'priorities'].every(a => TRYBE_PREVIEW_ACTIONS.has(a)) && AI_OR_SEND.every(a => !TRYBE_PREVIEW_ACTIONS.has(a)))
 check('the server refuses every other action on the preview, before any work', /if \(g\.access === 'preview' && !TRYBE_PREVIEW_ACTIONS\.has\(action\)\)/.test(api) && api.indexOf("g.access === 'preview'") < api.indexOf("action === 'settings'"))
 const page = read('app/(dashboard)/trybe/page.tsx')
-check('the Amazon plan opens the page as a preview, and the menu shows it to them', /access === 'preview'\) return <TrybeOutreach preview \/>/.test(page) && /trybeAccess\(effectiveTier\) !== 'none'/.test(read('components/layout/DashboardShellV2.tsx')))
-check('the preview never runs the daily find, reads the inbox or checks Meta ads', /if \(preview \|\| loading \|\| autoRan\.current/.test(ui) && /const canInbox = !preview &&/.test(ui) && /const canPlaybook = !preview &&/.test(ui))
-check('a Pro tab opened on the preview says it is Pro, with the way there', /is on the Pro plan<\/p>/.test(ui) && /if \(preview && t !== 'find'\) \{ setLockedTab\(t\); return \}/.test(ui) && /Message brands on Pro/.test(ui))
+check('the Amazon plan opens the page as a preview, and the menu shows it to them', /access === 'preview'\) return <TrybeOutreach preview \/>/.test(page) && /const trybeAcc = trybeAccess\(effectiveTier, \{ adminPreview: isAdmin \}\)/.test(read('components/layout/DashboardShellV2.tsx')) && /gate: trybeAcc !== 'none'/.test(read('components/layout/DashboardShellV2.tsx')))
+check('the preview never runs the daily find, reads the inbox or checks Meta ads', /if \(preview \|\| free \|\| loading \|\| autoRan\.current/.test(ui) && /const canInbox = !preview &&/.test(ui) && /const canPlaybook = !preview &&/.test(ui))
+check('a Pro tab opened on the preview says it is Pro, with the way there', /is on the Pro plan<\/p>/.test(ui) && /const proOnly = useCallback\(\(t: Tab\) => \(preview && t !== 'find'\) \|\| \(free && !FREE_TABS\.includes\(t\)\)/.test(ui) && /if \(proOnly\(t\)\) \{ setLockedTab\(t\); return \}/.test(ui) && /Message brands on Pro/.test(ui))
 
 check('the Setup check has no niche step: the search changes with every search', !/title: 'Your niche'/.test(ui) && !/Pick my niche/.test(ui))
 

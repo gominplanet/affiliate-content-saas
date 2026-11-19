@@ -96,7 +96,7 @@ check('a request that did not go is said where it goes', /moves to Sent as Not s
 check('"--" is no sentence break', tidyDraft('Thanks for approving us -- we cannot wait.') === 'Thanks for approving us, we cannot wait.')
 check('Amazon video links say Amazon', /Video \{i \+ 1\} on Amazon/.test(read('components/labs/TrybeAfterAccept.tsx')))
 check('no Amazon plan is named to a customer', !UI.split('\n').some((l) => /Amazon plan/.test(l) && !/^\s*(\/\/|\{\/\*|\*|\/\*\*)/.test(l)))
-check('Suggest a reply is not offered in group chats', /\{!\/\\\(group\\\)\/i\.test\(openConvo\?\.name \|\| ''\) && <button onClick=\{\(\) => void suggestReply\(\)\}/.test(read('components/labs/TrybeInbox.tsx')))
+check('Suggest a reply is not offered in group chats', /\{(!free && )?!\/\\\(group\\\)\/i\.test\(openConvo\?\.name \|\| ''\) && <button onClick=\{\(\) => void suggestReply\(\)\}/.test(read('components/labs/TrybeInbox.tsx')))
 check('a failed samples read is said', /MVP could not check your samples just now/.test(read('components/labs/TrybeSampleGuard.tsx')))
 
 if (fails.length) { console.error('trybe-outreach-cleanup failed:\n - ' + fails.join('\n - ')); process.exit(1) }

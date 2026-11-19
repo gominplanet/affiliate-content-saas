@@ -220,7 +220,7 @@ const SAY: Record<string, string> = {
 const errWords = (r: { error?: string; status?: number }) =>
   r.error ? (SAY[r.error] || r.error) : r.status === 401 || r.status === 403 ? `TRYBE refused it (${r.status}): open jointrybe.com, sign in, and try again.` : `TRYBE answered ${r.status ?? 'nothing'}.`
 
-export default function TrybeInbox({ scoutVersion, allowed, openRequest, onOpened, onConvos, directory = [] }: {
+export default function TrybeInbox({ scoutVersion, allowed, openRequest, onOpened, onConvos, directory = [], free = false }: {
   scoutVersion: string | null; allowed: boolean
   /** A conversation the page asked to open (Sent's "Open chat"). */
   openRequest?: { id: string; n: number } | null
@@ -232,6 +232,8 @@ export default function TrybeInbox({ scoutVersion, allowed, openRequest, onOpene
   /** MVP's TRYBE brand list (id, name, website), to tell which brand a chat
    *  is with when the chat itself does not say. */
   directory?: Array<{ id: string; name: string; website?: string | null }>
+  /** TRYBE Free (lib/trybe-free): replies by hand, no suggestion or summary. */
+  free?: boolean
 }) {
   const [convos, setConvos] = useState<Conversation[] | null>(null)
   // SEARCH YOUR CHATS (Seb, 2026-11-10: "a search bar to search for the brand
@@ -530,7 +532,7 @@ export default function TrybeInbox({ scoutVersion, allowed, openRequest, onOpene
                 canStats={scoutAtLeast(scoutVersion, SCOUT_TRYBE_MYBRANDS_MIN_VERSION)} canDetails={scoutAtLeast(scoutVersion, SCOUT_TRYBE_PLAYBOOK_MIN_VERSION)} />
             </div>
             {/* WHAT THE BRAND SENT, IN SHORT: its links read, a TLDR, and Brand scripts follow them. */}
-            <TrybeBrandLinks key={`links-${openConvo.id}`} brandId={brandIdFromChat(openConvo.raw) || matchBrand(openConvo.name, [], directory)?.id || null} brandName={openConvo.name} messages={msgs} />
+            {!free && <TrybeBrandLinks key={`links-${openConvo.id}`} brandId={brandIdFromChat(openConvo.raw) || matchBrand(openConvo.name, [], directory)?.id || null} brandName={openConvo.name} messages={msgs} />}
             <div ref={threadRef} className="flex-1 overflow-y-auto overflow-x-hidden max-h-[28rem] px-4 py-3 space-y-2">
               {loadingMsgs && <p className="text-[12px] inline-flex items-center gap-1.5" style={soft}><Loader2 size={12} className="animate-spin" /> Reading the conversation...</p>}
               {msgNote && <p className="text-[12px]" style={{ color: AMBER }}>{msgNote}</p>}
@@ -587,7 +589,11 @@ export default function TrybeInbox({ scoutVersion, allowed, openRequest, onOpene
               <div className="flex flex-wrap items-center gap-3 mt-2">
                 {/* Not in a group chat or TRYBE's community rooms: a "reply to the
                     brand" there would go to every creator in the room. */}
-                {!/\(group\)/i.test(openConvo?.name || '') && <button onClick={() => void suggestReply()} disabled={suggesting || sending || !msgs?.length || lastIsYours}
+                {free && !/\(group\)/i.test(openConvo?.name || '') && (
+                  <a href="/billing?plan=pro" className="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-[13px] font-semibold" style={{ border: `1px solid ${PURPLE}`, color: PURPLE }}
+                    title="Pro writes a reply to the brand's latest message in your voice. You edit it, then send."><Sparkles size={13} /> Suggested replies are on Pro</a>
+                )}
+                {!free && !/\(group\)/i.test(openConvo?.name || '') && <button onClick={() => void suggestReply()} disabled={suggesting || sending || !msgs?.length || lastIsYours}
                   className="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-[13px] font-semibold disabled:opacity-50" style={{ border: `1px solid ${PURPLE}`, color: PURPLE }}
                   title={lastIsYours ? 'The last message is yours. MVP suggests a reply once the brand answers.' : !msgs?.length ? 'Open a conversation with messages first.' : 'MVP writes a reply to the brand\u2019s latest message in your voice. You edit it, then send.'}>
                   {suggesting ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />} {beforeSuggest !== null ? 'Suggest another' : 'Suggest a reply'}

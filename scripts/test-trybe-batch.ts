@@ -299,7 +299,7 @@ const fake = async (_system: string, user: string): Promise<string> => {
   const ideasUi = read('components/labs/TrybeVideoIdeas.tsx')
   check('the quick writer sends the context, writes a new set for it, and says it was used', /\.\.\.\(context\.trim\(\) \? \{ context: context\.trim\(\)\.slice\(0, 2000\) \} : \{\}\)/.test(ideasUi) && /if \(match && !context\.trim\(\)\)/.test(ideasUi) && /follow your context/.test(ideasUi))
   const createUi = read('components/labs/TrybeCreate.tsx')
-  check('one context box on the brand page feeds both doors', (createUi.match(/<span className="font-semibold">Context<\/span>/g) || []).length === 1 && /buyerShot=\{buyerShot\} context=\{context\} \/>/.test(createUi) && /context=\{context\} openId=\{openBatch\}/.test(createUi) && /in quick scripts and in a batch/.test(createUi))
+  check('one context box on the brand page feeds both doors', (createUi.match(/<span className="font-semibold">Context<\/span>/g) || []).length === 1 && /buyerShot=\{buyerShot\} context=\{context\}( onPlan=\{free \? \(\) => free\.onUsed\(\) : undefined\})? \/>/.test(createUi) && /context=\{context\} openId=\{openBatch\}/.test(createUi) && /in quick scripts and in a batch/.test(createUi))
 
 
   // ── Every quick script follows the context (Seb, 2026-11-16: "only a few had the context ... make sure that the context is being actually listened to") ──

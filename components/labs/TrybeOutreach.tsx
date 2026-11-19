@@ -35,6 +35,7 @@ import TrybeStarBrands from '@/components/labs/TrybeStarBrands'
 import TrybeTikTokMatch from '@/components/labs/TrybeTikTokMatch'
 import TrybeTopBoard from '@/components/labs/TrybeTopBoard'
 import TrybeDailyBrands from '@/components/labs/TrybeDailyBrands'
+import { FREE_TABS, FREE_DAILY_SENDS, FREE_SCRIPTS_MONTHLY } from '@/lib/trybe-free'
 import { readDailySearch, sweetSpot, sweetWords, type DailySearch } from '@/lib/trybe-daily'
 import { TRYBE_OPEN_URL, TRYBE_NOT_OPEN, TRYBE_NOT_OPEN_WORDS, trybeTabWords, type TrybeTabState } from '@/lib/trybe-tab'
 import { nextGapMs, prefsKey, CATEGORY_SUGGESTIONS, DAILY_FIND, SCAN_READ, SHORT_RUN_UNDER, SHORT_GAP_MS, MAX_DAILY_CAP, termsHits, quoteHits } from '@/lib/trybe-outreach'
@@ -572,7 +573,12 @@ function sentShows(r: { b: { name: string; status: string }; reply: string; rq?:
   return r.reply !== 'replied' && (WENT as string[]).includes(r.b.status)
 }
 
-export default function TrybeOutreach({ preview = false, v2 = false, layout = false, topBoard = false, trybeEdit = false }: { preview?: boolean; v2?: boolean; layout?: boolean; topBoard?: boolean; trybeEdit?: boolean } = {}) {
+/** `free`: TRYBE Free (lib/trybe-free): the tabs in FREE_TABS open, the rest shown as Pro. */
+export default function TrybeOutreach({ preview = false, free = false, v2 = false, layout = false, topBoard = false, trybeEdit = false }: { preview?: boolean; free?: boolean; v2?: boolean; layout?: boolean; topBoard?: boolean; trybeEdit?: boolean } = {}) {
+  // What TRYBE Free has left this month, from the server (null on Pro).
+  const [freeInfo, setFreeInfo] = useState<{ scriptsLeft: number | null; scriptsMonthly: number; sendsPerDay: number } | null>(null)
+  /** A tab that is Pro on this plan. */
+  const proOnly = useCallback((t: Tab) => (preview && t !== 'find') || (free && !FREE_TABS.includes(t)), [preview, free])
   // THE NEW TRYBE (Seb, 2026-11-06): team only first (labs-preview
   // 'trybe_v2'), so members keep the page they know until it is opened to them.
   const [dossierOf, setDossierOf] = useState<{ id: string; name: string } | null>(null)
@@ -600,19 +606,19 @@ export default function TrybeOutreach({ preview = false, v2 = false, layout = fa
   // The tab goes into the address too, so a reload stays on it.
   const router = useRouter()
   const go = useCallback((t: Tab) => {
-    if (preview && t !== 'find') { setLockedTab(t); return }
+    if (proOnly(t)) { setLockedTab(t); return }
     setLockedTab(null); setTab(t)
     try { if (new URLSearchParams(window.location.search).get('tab') !== t) router.replace(`?tab=${t}`, { scroll: false }) } catch { /* no URL */ }
-  }, [preview, router])
+  }, [proOnly, router])
   const onTabQuery = useCallback((t: string | null) => {
     if (!t || !TABS.some(x => x.id === t)) return
     // The home is the new TRYBE's: an address with it, opened without the switch, opens as before.
     if (t === 'home' && !v2) return
     // The Top 100 board only where Labs opens it.
     if (t === 'top100' && !topBoard) return
-    if (preview) { if (t !== 'find') setLockedTab(t as Tab); else setLockedTab(null); return }
+    if (proOnly(t as Tab)) { setLockedTab(t as Tab); return }
     setLockedTab(null); setTab(t as Tab)
-  }, [preview, v2, topBoard])
+  }, [proOnly, v2, topBoard])
   // Switched off while on the home (View as a member): back to the page's usual first tab, never a blank page.
   useEffect(() => { if (!v2 && tab === 'home') setTab(preview ? 'find' : 'create') }, [v2, tab, preview])
   const [core, setCore] = useState('')
@@ -792,6 +798,7 @@ export default function TrybeOutreach({ preview = false, v2 = false, layout = fa
       setCap(d.settings?.dailyCap ?? 20)
       setSavedCap(d.settings?.dailyCap ?? 20)
       setUsed(d.usedToday ?? 0)
+      setFreeInfo(d.free ?? null)
       setFreeAt(d.nextFreeAt ?? null)
       const c = d.settings?.categories || [], k = d.settings?.keywords || []
       setSavedKey(prefsKey(c, k))
@@ -1230,12 +1237,14 @@ export default function TrybeOutreach({ preview = false, v2 = false, layout = fa
   async function draftIds(ids: string[]): Promise<{ ok: number; failed: number; reasons: string[]; okIds: string[] }> {
     let ok = 0, failed = 0
     const reasons: string[] = [], okIds: string[] = []
-    setFinding({ stage: 'Writing messages', done: 0, total: ids.length })
+    setFinding({ stage: free ? 'Putting your message in for each brand' : 'Writing messages', done: 0, total: ids.length })
     for (let i = 0; i < ids.length; i += 4) {
       const chunk = ids.slice(i, i + 4)
       try {
         // Your own messages to brands, so the first message writes the way you do.
-        const d = await api({ action: 'draft', brandIds: chunk, voice: readVoice() })
+        // TRYBE Free: your own message, as written (lib/trybe-free); asked for
+        // by name too, so an admin viewing as Free sees what a free member gets.
+        const d = await api({ action: 'draft', brandIds: chunk, voice: readVoice(), ...(free ? { template: true } : {}) })
         for (const r of (d.results || []) as Array<{ brandId: string; ok: boolean; error?: string }>) { if (r.ok) { ok++; okIds.push(r.brandId) } else { failed++; if (r.error) reasons.push(r.error) } }
       // The rest are counted too: a stop must not make them vanish from the total.
       } catch (e) { failed += ids.length - i; reasons.push(e instanceof Error ? e.message : 'Writing stopped.'); break }
@@ -1253,6 +1262,7 @@ export default function TrybeOutreach({ preview = false, v2 = false, layout = fa
   /** Judge every brand not yet judged against the saved niche, five at a time. */
   async function judge(list: Brand[]): Promise<{ fit: number; no: number; failed: number }> {
     let fit = 0, no = 0, failed = 0
+    if (free) return { fit, no, failed }
     const ids = list.map(b => b.brand_id).slice(0, 80)
     setFinding({ stage: 'Reading websites and checking fit', done: 0, total: ids.length })
     for (let i = 0; i < ids.length; i += 5) {
@@ -1421,7 +1431,7 @@ export default function TrybeOutreach({ preview = false, v2 = false, layout = fa
   // THE DAILY FIND. Once a day, when this page is opened with SCOUT allowed
   // and a niche saved, MVP and SCOUT find and draft up to 20 brands that fit.
   useEffect(() => {
-    if (preview || loading || autoRan.current || access !== 'granted' || !saved || !saved.dailyFind || running || finding || dailyRunning) return
+    if (preview || free || loading || autoRan.current || access !== 'granted' || !saved || !saved.dailyFind || running || finding || dailyRunning) return
     // The daily search when one is saved; before that, the niche, as it was.
     if (!saved.core.trim() || (!dailySearch && savedKey === prefsKey([], []))) return
     const last = lastFindAt ? Date.parse(lastFindAt) : 0
@@ -2481,6 +2491,17 @@ export default function TrybeOutreach({ preview = false, v2 = false, layout = fa
         </section>
       )}
 
+      {/* TRYBE FREE: what is open, and what Pro adds (lib/trybe-free). */}
+      {free && (
+        <section className="rounded-2xl border p-4 flex flex-wrap items-center gap-3" style={{ borderColor: 'rgb(var(--brand-rgb) / 0.35)', background: 'rgb(var(--brand-rgb) / 0.05)' }}>
+          <div className="flex-1 min-w-[16rem]">
+            <p className="text-[15px] font-bold">TRYBE Free</p>
+            <p className="text-[13px] mt-0.5" style={{ color: 'var(--text-2)' }}>Find brands, see the Top 100, request brands with your own message ({FREE_DAILY_SENDS} a day), answer your inbox, upload your videos, track your earnings and write {FREE_SCRIPTS_MONTHLY} sets of brand scripts a month. Pro writes each brand its own message, finds 20 new brands for you every day, suggests your replies and writes as many scripts as you need.</p>
+          </div>
+          <a href="/billing?plan=pro" className="inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-[13px] font-semibold" style={{ background: PURPLE, color: '#fff' }}>See Pro <ArrowRight size={13} /></a>
+        </section>
+      )}
+
       {/* THE AMAZON PLAN'S PREVIEW: what is open, and what Pro adds. */}
       {preview && (
         <section className="rounded-2xl border p-4 flex flex-wrap items-center gap-3" style={{ borderColor: 'rgb(var(--brand-rgb) / 0.35)', background: 'rgb(var(--brand-rgb) / 0.05)' }}>
@@ -2602,7 +2623,7 @@ export default function TrybeOutreach({ preview = false, v2 = false, layout = fa
       )}
 
       {v2
-        ? <TrybeNav tab={tab} queue={queue.length} unread={navUnread} go={go} layout={layout} topBoard={topBoard} />
+        ? <TrybeNav tab={tab} queue={queue.length} unread={navUnread} go={go} layout={layout} topBoard={topBoard} locked={free ? proOnly : undefined} />
         : <TrybeMenu tab={tab} lockedTab={lockedTab} preview={preview} queue={queue} history={history} unread={navUnread} changes={changes} go={go} />}
       {/* Where you are, and what it is for. */}
       {(() => {
@@ -2653,7 +2674,8 @@ export default function TrybeOutreach({ preview = false, v2 = false, layout = fa
         forYou={(live?.brands || []).filter(b => !b.status || b.status === 'new').slice().sort((a, b) => (b.pick ?? -1) - (a.pick ?? -1)).slice(0, 6)}
         forYouWhy={[...cats, ...kws].slice(0, 4).join(', ')} canMoney={canMyBrands}
         yours={(changes?.changes || []).filter(c => c.yours).slice().sort((a, b) => Date.parse(b.at) - Date.parse(a.at))} />}
-      {tab === 'create' && <TrybeCreate canRead={canMyBrands} isAdmin={isAdmin} canEdit={trybeEdit} onFind={() => setTab('find')} start={scriptsFor} onStarted={() => setScriptsFor(null)} />}
+      {tab === 'create' && <TrybeCreate canRead={canMyBrands} isAdmin={isAdmin} canEdit={trybeEdit} onFind={() => setTab('find')} start={scriptsFor} onStarted={() => setScriptsFor(null)}
+        free={free ? { left: freeInfo?.scriptsLeft ?? null, monthly: freeInfo?.scriptsMonthly ?? FREE_SCRIPTS_MONTHLY, onUsed: () => void load() } : null} />}
 
       {tab === 'upload' && <TrybeUpload inbox={inbox} canChat={canInbox} onOpenChat={(id) => { setOpenChat(o => ({ id, n: (o?.n ?? 0) + 1 })); setTab('inbox') }} />}
 
@@ -2682,9 +2704,9 @@ export default function TrybeOutreach({ preview = false, v2 = false, layout = fa
       {lockedTab && (
         <section className="rounded-2xl border p-5" style={{ borderColor: 'var(--border-2)', background: 'var(--surface)' }}>
           <p className="text-[15px] font-bold inline-flex items-center gap-2"><Lock size={15} style={{ color: PURPLE }} /> {TABS.find((x) => x.id === lockedTab)?.label} is on the Pro plan</p>
-          <p className="text-[13px] mt-1 max-w-[62ch]" style={{ color: 'var(--text-2)' }}>{TABS.find((x) => x.id === lockedTab)?.says} On your plan, Find brands is open: see which TRYBE brands you already filmed on Amazon, and rank, filter and star them.</p>
+          <p className="text-[13px] mt-1 max-w-[62ch]" style={{ color: 'var(--text-2)' }}>{TABS.find((x) => x.id === lockedTab)?.says} {free ? `On TRYBE Free you have Find brands, the Top 100, your own requests (${FREE_DAILY_SENDS} a day), the Inbox, Upload videos, This week, your earnings and ${FREE_SCRIPTS_MONTHLY} sets of brand scripts a month.` : 'On your plan, Find brands is open: see which TRYBE brands you already filmed on Amazon, and rank, filter and star them.'}</p>
           <div className="flex flex-wrap gap-2 mt-3">
-            <a href="/billing" className="inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-[13px] font-semibold" style={{ background: PURPLE, color: '#fff' }}>See Pro <ArrowRight size={13} /></a>
+            <a href={free ? '/billing?plan=pro' : '/billing'} className="inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-[13px] font-semibold" style={{ background: PURPLE, color: '#fff' }}>See Pro <ArrowRight size={13} /></a>
             <button onClick={() => go('find')} className="rounded-lg px-4 py-2 text-[13px] font-semibold border" style={{ borderColor: 'var(--border-2)' }}>Back to Find brands</button>
           </div>
         </section>
@@ -2810,7 +2832,14 @@ export default function TrybeOutreach({ preview = false, v2 = false, layout = fa
 
         {/* THE DAILY 20 (Seb, 2026-11-18): right under the search, the search
             they come from, said in words, on or off, and run now. */}
-        {!preview && (
+        {free && (
+          <section className="rounded-2xl border p-4 flex flex-wrap items-center gap-3" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }} aria-label="Daily brands, on Pro">
+            <Lock size={16} style={{ color: PURPLE }} />
+            <p className="text-[13px] flex-1 min-w-[14rem]"><b>20 new brands a day, found and written for you, is on Pro.</b> <span style={{ color: 'var(--text-2)' }}>On TRYBE Free you search, tick the brands you like and send them your own message.</span></p>
+            <a href="/billing?plan=pro" className="text-[13px] font-semibold underline" style={{ color: PURPLE }}>See Pro</a>
+          </section>
+        )}
+        {!preview && !free && (
           <TrybeDailyBrands search={dailySearch} on={dailyFind} current={currentSearch} lastRunAt={dailySearch ? lastFindAt : null} note={dailyNote}
             running={dailyRunning} saving={dailySaving} needsSql={!dailyCol}
             blocked={access !== 'granted' ? 'Allow SCOUT on TRYBE first (top of this page). Until then your daily brands wait.' : !saved?.core.trim() ? 'Write your core message first: every brand reads it.' : null}
@@ -2842,6 +2871,8 @@ export default function TrybeOutreach({ preview = false, v2 = false, layout = fa
             <p className="text-[13px] mt-2 whitespace-pre-wrap line-clamp-3" style={soft}>{core}</p>
           ) : (<>
             <p className="text-[12px] mt-1 mb-2" style={soft}>What every brand reads, in your words. MVP sends it nearly word for word: it adds a short hello to each brand by name on top, puts the brand&rsquo;s name where yours mentions a brand, and ends with your sign-off. Say who you are, what you make, and where to see your work (your links).</p>
+            {/* TRYBE FREE: the message goes as written (lib/trybe-free templateRequest). */}
+            {free && <p className="text-[12px] mb-2 rounded-lg px-3 py-2" style={{ background: 'rgb(var(--brand-rgb) / 0.06)', color: 'var(--text-2)' }}>On TRYBE Free each brand gets this message as you wrote it: write <b>{'{brand}'}</b> where its name goes, or start with <b>Hi</b> and MVP puts the name after it. Pro rewrites it for each brand from its website.</p>}
             <textarea value={core} onChange={e => setCore(e.target.value)} rows={8} placeholder={STARTER}
               className="w-full rounded-lg border p-3 text-[13px] whitespace-pre-wrap" style={{ borderColor: 'var(--border)', background: 'var(--bg, transparent)' }} />
             <div className="flex flex-wrap items-center gap-2 mt-2">
@@ -3444,7 +3475,7 @@ export default function TrybeOutreach({ preview = false, v2 = false, layout = fa
       )}
 
       {tab === 'inbox' && <TrybeInbox scoutVersion={scoutVersion} allowed={access === 'granted'} openRequest={openChat} onOpened={() => setOpenChat(null)} onConvos={onInboxConvos}
-        directory={inboxDirectory} />}
+        directory={inboxDirectory} free={free} />}
 
       {tab === 'analytics' && canMyBrands && <TrybeAds canRead={canMyBrands} isAdmin={isAdmin} onPlan={() => go('week')} />}
       {tab === 'submissions' && canMyBrands && <TrybeSubmissions canRead={canMyBrands} isAdmin={isAdmin} />}
@@ -3471,7 +3502,7 @@ export default function TrybeOutreach({ preview = false, v2 = false, layout = fa
       {tab === 'week' && (
         // Accepted brands first, for the brand box (Seb, 2026-10-13); a brand
         // that declined is no brand to send a sample from.
-        <TrybeWeek canRead={canMyBrands} isAdmin={isAdmin}
+        <TrybeWeek canRead={canMyBrands} isAdmin={isAdmin} free={free}
           knownBrands={[...sentRows.filter(r => r.rq?.state === 'accepted'), ...sentRows.filter(r => r.rq?.state !== 'accepted' && r.rq?.state !== 'declined')].map(r => ({ id: r.b.brand_id, name: r.b.name }))} />
       )}
 

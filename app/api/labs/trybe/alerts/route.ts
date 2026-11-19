@@ -13,7 +13,7 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getAuthAndOwner } from '@/lib/agency-auth'
-import { canUsePreview } from '@/lib/labs-preview'
+import { canUsePreview, trybeAccess } from '@/lib/labs-preview'
 import { freshUnread } from '@/lib/trybe-alerts'
 
 export const runtime = 'nodejs'
@@ -29,7 +29,8 @@ async function gate() {
   const { user, ownerId } = auth as { user: { id: string }; ownerId: string }
   const admin = createAdminClient() as Db
   const { data: intg } = await admin.from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
-  if (!canUsePreview('trybe_outreach', intg?.tier)) return { error: NextResponse.json({ error: 'TRYBE is part of the Pro plan.' }, { status: 403 }) }
+  // TRYBE Free has these too (lib/trybe-free).
+  if (!canUsePreview('trybe_outreach', intg?.tier) && trybeAccess(intg?.tier) !== 'free') return { error: NextResponse.json({ error: 'TRYBE is part of the Pro plan.' }, { status: 403 }) }
   return { admin, ownerId }
 }
 

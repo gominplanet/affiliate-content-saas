@@ -12,6 +12,7 @@ import CcRecipeSync from '@/components/scout/CcRecipeSync'
 import { Toaster } from '@/components/ui/toaster'
 import MigrationDriftBanner from '@/components/admin/MigrationDriftBanner'
 import { HelpDeskProvider, HelpDeskPanel } from '@/components/HelpDeskSidebar'
+import { TRYBE_FREE_LIVE } from '@/lib/trybe-free'
 
 // Content-creation features that need WordPress + YouTube. An un-onboarded user
 // (nothing connected) who navigates to one of these is sent to /onboarding to
@@ -70,7 +71,8 @@ export default async function DashboardLayout({ children }: { children: React.Re
   if (normalizeTier(tier) === 'trial' && signedUpWithoutTrial(user.created_at)
     && (await getOwnerUserId(user.id).catch(() => user.id)) === user.id) {
     const pathname = (await headers()).get('x-pathname') || ''
-    const open = ['/billing', '/settings', '/help'].some((r) => pathname === r || pathname.startsWith(r + '/'))
+    // TRYBE FREE (lib/trybe-free): once live, TRYBE is open without a plan.
+    const open = ['/billing', '/settings', '/help', ...(TRYBE_FREE_LIVE ? ['/trybe'] : [])].some((r) => pathname === r || pathname.startsWith(r + '/'))
     // An unread path never redirects: a loop on Billing would lock them out.
     if (pathname && !open) redirect('/billing?plan=pro&start=1')
   }
