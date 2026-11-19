@@ -8,7 +8,7 @@
 
 import { normalizeTier } from '@/lib/tier'
 import { canSeeNav } from '@/lib/feature-access'
-import { TRYBE_FREE_LIVE } from '@/lib/trybe-free'
+import { TRYBE_FREE_LIVE, TRYBE_FREE_TIERS } from '@/lib/trybe-free'
 
 export type PreviewFeature = 'on_sale' | 'amazon_live' | 'comparison' | 'shorts_mode' | 'first_comment' | 'brand_recap' | 'deal_aftercare' | 'post_refresh' | 'facebook_reels' | 'whole_video' | 'sold_campaigns' | 'liftoff_split' | 'earnings' | 'live_followup' | 'video_plan' | 'studio_upload' | 'facebook_setup' | 'group_queue' | 'trybe_outreach' | 'hashtag_trends' | 'drop' | 'video_qr' | 'deals_import' | 'product_scripts' | 'review_edit' | 'creator_look' | 'new_look' | 'trybe_v2' | 'section_nav' | 'trybe_layout' | 'menu_v2' | 'trybe_batch' | 'trybe_top_board' | 'trybe_edit' | 'live_trybe'
 
@@ -209,8 +209,9 @@ export function trybeAccess(rawTier: unknown, opts: { adminPreview?: boolean } =
   if (canUsePreview('trybe_outreach', rawTier)) return 'full'
   const t = normalizeTier(rawTier)
   if (t === 'amazon') return 'preview'
-  // TRYBE FREE (lib/trybe-free): an account with no paid plan.
-  if (t === 'trial' && (TRYBE_FREE_LIVE || opts.adminPreview)) return 'free'
+  // TRYBE FREE (lib/trybe-free): an account with no paid plan, and the
+  // legacy Creator and Studio plans.
+  if (TRYBE_FREE_TIERS.includes(t) && (TRYBE_FREE_LIVE || opts.adminPreview)) return 'free'
   return 'none'
 }
 

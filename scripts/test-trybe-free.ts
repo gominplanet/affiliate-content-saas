@@ -16,6 +16,7 @@ const read = (p: string) => readFileSync(p, 'utf8')
 // 1. Who gets it
 // LIVE (Seb, 2026-11-19: "ok go live")
 check('live: an account with no plan gets TRYBE Free', (TRYBE_FREE_LIVE as boolean) === true && trybeAccess('trial') === 'free' && trybeAccess(null) === 'free')
+check('the legacy Creator and Studio plans get TRYBE Free too (Seb: "give them free trybe too")', trybeAccess('creator') === 'free' && trybeAccess('studio') === 'free')
 check('an admin viewing as Free sees TRYBE Free', trybeAccess('trial', { adminPreview: true }) === 'free')
 check('Pro keeps all of it, the Amazon plan its preview', trybeAccess('pro') === 'full' && trybeAccess('admin') === 'full' && trybeAccess('amazon') === 'preview' && trybeAccess('amazon', { adminPreview: true }) === 'preview')
 

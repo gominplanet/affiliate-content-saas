@@ -32,6 +32,11 @@ export const TRYBE_FREE_LIVE = true
 export const TRYBE_FREE_LANDING = '/trybe'
 export const TRYBE_FREE_SIGNUP = '/signup?for=trybe'
 
+/** Who gets TRYBE Free: an account with no plan, and members still on the
+ *  legacy Creator and Studio plans (Seb, 2026-11-19: "give them free trybe
+ *  too"), so a plan that pays never gets less TRYBE than no plan. */
+export const TRYBE_FREE_TIERS: readonly string[] = ['trial', 'creator', 'studio']
+
 /** Requests SCOUT sends a day on TRYBE Free (Pro: 200). */
 export const FREE_DAILY_SENDS = 20
 /** Sets of brand scripts a calendar month on TRYBE Free. */

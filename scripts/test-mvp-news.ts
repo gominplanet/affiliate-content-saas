@@ -29,10 +29,9 @@ check('never an entry dated ahead of today (a day of grace for time zones)', rec
 check('the new look is news for every account the week it opens, a free one too', ['pro', 'studio', 'creator', 'trial'].every(t => recentNews(t, at('2026-11-03T15:00:00Z')).some(u => u.gate === 'new_look')))
 const pro = recentNews('pro', at('2026-10-17T12:00:00Z'))
 check('newest first', pro.every((u, i) => i === 0 || pro[i - 1].date >= u.date))
-const legacy = recentNews('creator', at('2026-10-17T12:00:00Z'))
-check('a plan without TRYBE does not see TRYBE news', !legacy.some(u => u.gate === 'trybe') && pro.some(u => u.gate === 'trybe'))
-// TRYBE Free (2026-11-19): an account with no plan has TRYBE, so it sees its news.
-check('an account on TRYBE Free sees TRYBE news', recentNews('trial', at('2026-10-17T12:00:00Z')).some(u => u.gate === 'trybe'))
+// TRYBE Free (2026-11-19): no plan and the legacy plans have TRYBE too, so
+// every account sees its news; the gate still follows lib/labs-preview trybeAccess.
+check('every account has TRYBE, so every account sees TRYBE news', ['trial', 'creator', 'studio', 'pro'].every(t => recentNews(t, at('2026-10-17T12:00:00Z')).some(u => u.gate === 'trybe')) && /if \(gate === 'trybe'\) return trybeAccess\(tier\) !== 'none'/.test(readFileSync('lib/whats-new.ts', 'utf8')))
 check('Drop is news for Pro now that Pro has Drop', WHATS_NEW.some(u => u.gate === 'drop') && pro.some(u => u.gate === 'drop'))
 // The gate still hides a feature the owner is testing. Read from the switches
 // rather than naming one, so graduating it does not quietly turn this off.

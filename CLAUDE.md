@@ -57,8 +57,8 @@ costs nothing. One free week per creator (matched on card and email). The
 members who paid on day one between 2026-10-18 and the free week keep the
 7-day refund they joined with. The first 7 days run at a quarter of each
 monthly allowance.
-Since 2026-11-19 there is **TRYBE Free**: an account with no plan and no card
-gets TRYBE (find brands, requests from their own message, 20 a day, the inbox
+Since 2026-11-19 there is **TRYBE Free**: an account with no plan and no card,
+and a member still on the legacy Creator or Studio plan, gets TRYBE (find brands, requests from their own message, 20 a day, the inbox
 by hand, upload, earnings, the Top 100, 3 sets of brand scripts a month). It
 is the one free part of MVP (sign up at `/signup?for=trybe`; lib/trybe-free),
 said as TRYBE Free, never as a plan beside Pro. There is no other free plan,
