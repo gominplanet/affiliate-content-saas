@@ -38,6 +38,7 @@ import { winnersForPlan, winnersBlock, readScript } from '@/lib/trybe-mybrands'
 import { directoryChanges, adsChange, poolBrands, type Change, type MemberRow } from '@/lib/trybe-changes'
 import { topDayKey, topDayOf, TOP_DAYS_KEEP, type TopDay } from '@/lib/trybe-topdays'
 import { readDailySearch } from '@/lib/trybe-daily'
+import { readChallenges } from '@/lib/trybe-challenge'
 import { buildBoard, BOARD_DAYS, type Board } from '@/lib/trybe-topboard'
 import { activeKeys, activeRows, activeBy, rankActive, categoryCounts, latestTierChanges, type ActiveBy, type ActiveRow } from '@/lib/trybe-active'
 import { GALLERY_KEY, readCardsBody, readAdCard, mergeGallery, type Gallery, type MetaAd, brandsWithAds, GALLERY_MAX, ownAd, HOOKS_KEY, withHooks, type AdHooks, brandAdsForPlan, brandAdsBlock, type PlanAd, competitorAdsForPlan, competitorAdsBlock } from '@/lib/trybe-adsgallery'
@@ -825,6 +826,27 @@ export async function POST(request: Request) {
     const coreHits = coreMessage ? termsHits(coreMessage) : []
     const warning = coreHits.length ? `Your core message says ${quoteHits(coreHits)}, which reads as talk about pay, rates or prices. TRYBE brands set the pay, so MVP will not write requests from it until ${coreHits.length === 1 ? 'that part is' : 'those parts are'} out.` : null
     return NextResponse.json({ ok: true, settings: await readSettings(admin, ownerId), ...(warning ? { warning } : {}) })
+  }
+
+  if (action === 'challenges') {
+    // BRAND CHALLENGES (lib/trybe-challenge, migration 471): read them, or
+    // save the list the page sent (checked, at most 12). The page reads each
+    // brand's submissions itself through SCOUT; only the challenge is kept.
+    if (body.challenges !== undefined) {
+      const list = readChallenges(body.challenges)
+      const { error } = await admin.from('trybe_outreach_settings').upsert({ user_id: ownerId, challenges: list, updated_at: now })
+      if (error) {
+        const missing = /column .* does not exist|schema cache/i.test(error.message)
+        return NextResponse.json({ error: missing ? setupWords(tier, 'Brand challenges need migration 471 in Supabase first.') : error.message, setup: missing }, { status: 500 })
+      }
+      return NextResponse.json({ ok: true, challenges: list })
+    }
+    const { data, error } = await admin.from('trybe_outreach_settings').select('challenges').eq('user_id', ownerId).maybeSingle()
+    if (error) {
+      const missing = /column .* does not exist|schema cache/i.test(error.message)
+      return NextResponse.json({ error: missing ? setupWords(tier, 'Brand challenges need migration 471 in Supabase first.') : error.message, setup: missing }, { status: 500 })
+    }
+    return NextResponse.json({ ok: true, challenges: readChallenges(data?.challenges) })
   }
 
   if (action === 'found') {

@@ -59,7 +59,7 @@ export const FREE_ACTIONS: ReadonlySet<string> = new Set([
   // Upload videos (the note is the creator's template, uploadNote)
   'upload_note', 'kickoff_sent',
   // Earnings and My brands
-  'my_stats', 'pooled', 'pool_setting', 'retainers', 'retainer_save', 'retainer_remove',
+  'my_stats', 'pooled', 'pool_setting', 'retainers', 'retainer_save', 'retainer_remove', 'challenges',
   // Make videos: brand scripts (capped, FREE_CAPPED) and the scripts kept
   'video_plan', 'brief_read', 'ideas', 'saved_scripts', 'script_done', 'idea_delete', 'idea_restore',
   'brand_scripts', 'top_scripts', 'hook_library', 'top_lines', 'top_scripts_seen', 'top_script_save', 'buyer_resolve', 'message_links_get',

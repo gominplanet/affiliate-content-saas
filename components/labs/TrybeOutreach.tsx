@@ -68,6 +68,7 @@ import { DossierCtx, BrandName } from '@/components/labs/trybe-dossier-context'
 import TrybeWorking from '@/components/labs/TrybeWorking'
 import TrybeCreate from '@/components/labs/TrybeCreate'
 import TrybeStage from '@/components/labs/TrybeStage'
+import TrybeChallenges from '@/components/labs/TrybeChallenges'
 import TrybeAds from '@/components/labs/TrybeAds'
 import TrybeSubmissions from '@/components/labs/TrybeSubmissions'
 import TrybeRetainers from '@/components/labs/TrybeRetainers'
@@ -2727,7 +2728,8 @@ export default function TrybeOutreach({ preview = false, free = false, v2 = fals
         forYouWhy={[...cats, ...kws].slice(0, 4).join(', ')} canMoney={canMyBrands}
         yours={(changes?.changes || []).filter(c => c.yours).slice().sort((a, b) => Date.parse(b.at) - Date.parse(a.at))}
         // Your stage: volume first, then double down on winners (Seb, 2026-10-14), on the home.
-        stage={!preview && <TrybeStage canRead={canMyBrands} onGo={go} />} />}
+        // Then any brand challenge you are chasing (Seb, 2026-11-20).
+        stage={!preview && <><TrybeStage canRead={canMyBrands} onGo={go} /><TrybeChallenges canRead={canMyBrands} /></>} />}
       {tab === 'create' && <TrybeCreate canRead={canMyBrands} isAdmin={isAdmin} canEdit={trybeEdit} onFind={() => setTab('find')} start={scriptsFor} onStarted={() => setScriptsFor(null)}
         free={free ? { left: freeInfo?.scriptsLeft ?? null, monthly: freeInfo?.scriptsMonthly ?? FREE_SCRIPTS_MONTHLY, onUsed: () => void load() } : null} />}
 

@@ -51,9 +51,11 @@ const apiWords = (e: string | undefined, status?: number) =>
     : e === 'no-answer-from-page' ? 'your TRYBE tab did not answer. Reload your TRYBE tab, then press Read again.'
       : `${e || 'SCOUT did not answer.'}${status ? ` (TRYBE answered ${status})` : ''}`
 
-export async function readBrandSubs(brandId: string): Promise<SubRead> {
+/** A brand's submissions through SCOUT, 50 a page; 4 pages unless asked
+ *  for more (a challenge of 300 needs more, lib/trybe-challenge). */
+export async function readBrandSubs(brandId: string, pages = SUB_PAGES): Promise<SubRead> {
   const subs: Submission[] = []
-  for (let page = 1; page <= SUB_PAGES; page++) {
+  for (let page = 1; page <= pages; page++) {
     const r = await requestTrybeApi('GET', `/backend/api/creator/v2/brands/${encodeURIComponent(brandId)}/submissions?period=all&page=${page}&limit=${SUB_LIMIT}`)
     if (!r.ok) return { subs, error: apiWords(r.error, r.status), complete: false }
     const got = readSubmissions(r.json)

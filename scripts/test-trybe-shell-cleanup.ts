@@ -40,7 +40,7 @@ check('the intro video news reaches every Pro member now that the video does', n
 check('links name where they go and the referral is on the link', /Install SCOUT from the Chrome Web Store/.test(UI) && /Join free on TRYBE <span className="font-normal">\(MVP&rsquo;s referral link\)<\/span>/.test(UI) && !/href="\/earnings" className="font-semibold underline">Sync your Amazon videos<\/a>/.test(UI))
 check('See all new is not narrowed by a name search or pay filter', /setFilters\(\{ \.\.\.NO_FILTERS, newOnly: true \}\); setNameQ\(''\); setPayType\('any'\)/.test(UI))
 check('This week reads the accepted brands for its order', /tab === 'sent' \|\| tab === 'week'\) && !requests\) void loadRequests\(\)/.test(UI))
-check('the preview never says an old SCOUT or shows Your stage', /\{!preview && <TrybeStage /.test(UI) && /On your plan, the Top 100 and Meta ads are read with Pro\./.test(UI))
+check('the preview never says an old SCOUT or shows Your stage', /\{!preview && <><TrybeStage /.test(UI) && /On your plan, the Top 100 and Meta ads are read with Pro\./.test(UI))
 
 if (fails.length) { console.error('trybe-shell-cleanup failed:\n - ' + fails.join('\n - ')); process.exit(1) }
 console.log('✅ trybe-shell-cleanup: the TRYBE page loads honestly, deep links work, jobs wait for TRYBE, and team parts follow View as')
