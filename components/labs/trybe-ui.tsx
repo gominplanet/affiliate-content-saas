@@ -9,7 +9,7 @@
 // nothing depends on colour alone.
 
 import type { CSSProperties, ReactNode } from 'react'
-import { Smartphone } from 'lucide-react'
+import { Smartphone, FlaskConical } from 'lucide-react'
 import type { Grade } from '@/lib/trybe-dossier'
 
 /** APPS AND ONLINE SERVICES IN MY TOP 100 (Seb, 2026-11-06: "let apps in and
@@ -29,6 +29,20 @@ export function SweetChip({ words }: { words: string }) {
     <span className="inline-flex items-center gap-1 text-[11px] font-semibold rounded-full px-2 py-0.5 whitespace-nowrap" style={{ background: SWEET.chip, color: 'var(--text)' }}
       title="Under 500 creators and $10K or more paid out to creators: room to get noticed, and proof it pays.">
       <span aria-hidden="true" style={{ color: SWEET.color }}>&#9733;</span> {words}
+    </span>
+  )
+}
+
+/** WORTH A TEST (lib/trybe-test-call; Seb, 2026-11-20: "show on brand cards
+ *  too"): green, apart from the sweet spot's gold and the app blue, with each
+ *  reason in its own numbers on hover. Said in words, never colour alone. */
+export const TEST = { color: '#059669', soft: 'rgba(5,150,105,0.08)', chip: 'rgba(5,150,105,0.14)', line: 'rgba(5,150,105,0.40)' }
+
+export function TestChip({ call }: { call: { why: string[]; caveats: string[] } }) {
+  return (
+    <span className="inline-flex items-center gap-1 text-[11px] font-semibold rounded-full px-2 py-0.5 whitespace-nowrap" style={{ background: TEST.chip, color: 'var(--text)' }}
+      title={`Worth a test of 5 to 10 videos. ${[...call.why, ...call.caveats].join(' ')}`}>
+      <FlaskConical size={11} style={{ color: TEST.color }} aria-hidden="true" /> Worth a test
     </span>
   )
 }

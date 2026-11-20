@@ -23,7 +23,7 @@ import { requestTrybeApi } from '@/lib/extension-frame'
 import { scorecard, verdictOf, seriesMove, readLiveBrand, type LiveBrandRead, type Dimension, type SamplePool, type ReplyPool, type DossierProduct, type TimelineItem, type SeriesPoint } from '@/lib/trybe-dossier'
 import { adLibraryUrl } from '@/lib/trybe-pick'
 import { CHANGE_WORDS } from '@/lib/trybe-changes'
-import { GRADE, ui, Section, Tag, Meter, ScoreRing, Figure, AreaChart, Btn } from '@/components/labs/trybe-ui'
+import { GRADE, ui, Section, Tag, Meter, ScoreRing, Figure, AreaChart, Btn, TEST } from '@/components/labs/trybe-ui'
 import TrybeLink from '@/components/labs/TrybeLink'
 import { BrandProof, RetainerBadge } from '@/components/labs/TrybeFinderControls'
 import { BrandName } from '@/components/labs/trybe-dossier-context'
@@ -283,8 +283,8 @@ export default function TrybeDossier({ brandId, name, onClose, actions, scout = 
 
           {/* ── WORTH A TEST (Seb, 2026-11-20: "maybe a leap of faith") ───── */}
           {test && (
-            <div className="rounded-[20px] p-5" style={{ background: 'rgba(217,119,6,0.08)', border: '1px solid rgba(217,119,6,0.35)' }}>
-              <p className="text-[16px] font-bold inline-flex items-center gap-2" style={ui.text}><FlaskConical size={17} style={{ color: '#D97706' }} /> {test.title}</p>
+            <div className="rounded-[20px] p-5" style={{ background: TEST.soft, border: `1px solid ${TEST.line}` }}>
+              <p className="text-[16px] font-bold inline-flex items-center gap-2" style={ui.text}><FlaskConical size={17} style={{ color: TEST.color }} /> {test.title}</p>
               <ul className="mt-2 flex flex-col gap-1">{test.why.map((w) => <li key={w} className="text-[13.5px]" style={ui.text}>{w}</li>)}</ul>
               <p className="text-[13px] mt-2 font-semibold" style={ui.mid}>{test.plan}</p>
               {test.caveats.map((c) => <p key={c} className="text-[12.5px] mt-1.5" style={ui.soft}>{c}</p>)}

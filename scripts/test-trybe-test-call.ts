@@ -7,7 +7,7 @@
 // a submission, and "MVP judged it not a fit").
 
 import { readFileSync } from 'node:fs'
-import { testCall, NEW_DAYS, TEST_MIN_PAID, ROOM_CREATORS, type TestCallInput } from '../lib/trybe-test-call'
+import { testCall, testCallOf, NEW_DAYS, TEST_MIN_PAID, ROOM_CREATORS, type TestCallInput } from '../lib/trybe-test-call'
 import { readLiveBrand } from '../lib/trybe-dossier'
 import { estimatePay } from '../lib/trybe-pay'
 import { paidOutOf } from '../lib/trybe-daily'
@@ -30,6 +30,14 @@ check('a brand with nothing known is not', testCall({ daysOnTrybe: null, paidOut
 check('the lines: 90 days new, $10K paid, under 500 creators', NEW_DAYS === 90 && TEST_MIN_PAID === 10_000 && ROOM_CREATORS === 500)
 check('no dashes in what it says', !/[–—]/.test(JSON.stringify(t)))
 
+// 1b. The same call from a brand's card in the list (Seb: "show on brand cards too")
+const now = Date.parse('2026-11-20T12:00:00Z')
+const row = { total_creators: 400, earnings_bucket: '$30K+', stats: { paidOut: null, joinedAt: '2026-10-15T12:00:00Z' }, review_rating: 4.8, review_count: 17, trybe_score: 85, pay_est: { maxPer: 5000 }, status: 'not_fit' }
+const rc = testCallOf(row, now)
+check('a card reads the same call from the list row', !!rc && rc.why[0] === 'On TRYBE 36 days, and its creators have already earned $30K+.' && rc.caveats.length === 2)
+check('TRYBE\u2019s paid out total wins over the range', !!testCallOf({ ...row, earnings_bucket: '$1K+', stats: { paidOut: 25_000, joinedAt: '2026-10-15T12:00:00Z' } }, now))
+check('a card with no payout known gets no chip', testCallOf({ total_creators: 100, review_rating: 5, review_count: 40, trybe_score: 95 }, now) === null)
+
 // 2. TRYBE's own numbers, wherever its page keeps them
 const deep = readLiveBrand({ data: { brand: { name: 'The Perfect Jean', createdAt: '2026-10-15T12:00:00Z', metrics: { stats: { totalCreators: 400, trybeScore: { value: 85 }, creatorEarnings: '$30K+' } } } } })
 const by = Object.fromEntries(deep.numbers.map((n) => [n.id, n.value]))
@@ -47,6 +55,8 @@ check('not a fit says the fit check’s reason', /status === 'not_fit' && \(/.te
 check('the worth a test card sits before MVP’s read', D.indexOf('{test && (') > 0 && D.indexOf('{test && (') < D.indexOf('── VERDICT'))
 check('the cap from its own page reaches the pay box', /maxPer: listing\?\.pay_est\?\.maxPer \?\? livePay\?\.maxPer \?\? null, earned/.test(D))
 check('the numbers read are kept for the lists', /void post\(\{ action: 'live_facts', brandId, creators: n\('creators'\), score: n\('score'\) \}\)/.test(D))
+check('the cards and the table in Find brands show it, with the reasons on hover', /const tc = testCallOf\(b\); return tc \? <TestChip call=\{tc\} \/> : null/.test(read('components/labs/TrybeOutreach.tsx')) && /const tc = testCallOf\(b\); return tc \? <span className="block mt-0\.5"><TestChip call=\{tc\} \/><\/span> : null/.test(read('components/labs/TrybeBrandTable.tsx')) && /title=\{`Worth a test of 5 to 10 videos\. \$\{\[\.\.\.call\.why, \.\.\.call\.caveats\]\.join\(' '\)\}`\}/.test(read('components/labs/trybe-ui.tsx')))
+check('the card and the brand page share one colour, apart from the gold and the blue', /export const TEST = \{ color: '#059669'/.test(read('components/labs/trybe-ui.tsx')) && /background: TEST\.soft, border: `1px solid \$\{TEST\.line\}`/.test(D))
 const R = read('app/api/labs/trybe/route.ts')
 check('the server keeps only numbers that can be TRYBE’s', /if \(action === 'live_facts'\) \{/.test(R) && /const score = int\(body\.score, 100\)/.test(R) && /from\('trybe_directory'\)\.update\(patch\)\.eq\('brand_id', brandId\)/.test(R))
 check('TRYBE Free does not write the shared copy', !/'live_facts'/.test(read('lib/trybe-free.ts')))

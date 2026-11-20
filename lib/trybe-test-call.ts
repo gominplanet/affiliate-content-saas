@@ -10,6 +10,8 @@
 // 10 videos, with each reason in TRYBE's own numbers, and the catch (a cap
 // per video) said plainly. Pure, so it is tested (scripts/test-trybe-test-call.ts).
 
+import { bucketDollars } from '@/lib/trybe-pick'
+
 /** A brand this young on TRYBE counts as new. */
 export const NEW_DAYS = 90
 /** Paid out to its creators, in dollars, before a test is worth it. */
@@ -61,4 +63,35 @@ export function testCall(i: TestCallInput): TestCall | null {
     plan: 'Ask to join, film 5 to 10 videos of one product, and look at what it approves and runs as ads within two weeks.',
     caveats,
   }
+}
+
+/** A brand as the Find brands list carries it, for its card. */
+export interface TestListing {
+  total_creators?: number | null
+  earnings_bucket?: string | null
+  stats?: { paidOut?: number | null; joinedAt?: string | null } | null
+  review_rating?: number | null
+  review_count?: number | null
+  trybe_score?: number | null
+  pay_est?: { maxPer?: number | null } | null
+  status?: string | null
+}
+
+/** The same call from a brand's card in the list (Seb, 2026-11-20: "show on
+ *  brand cards too"). Paid out is TRYBE's total, else the low end of its
+ *  payout range, as the sweet spot reads it. Pure. */
+export function testCallOf(b: TestListing, now = Date.now()): TestCall | null {
+  const t = b.stats?.joinedAt ? Date.parse(b.stats.joinedAt) : NaN
+  const total = b.stats?.paidOut
+  return testCall({
+    daysOnTrybe: Number.isFinite(t) ? Math.max(0, Math.floor((now - t) / 86_400_000)) : null,
+    paidOut: typeof total === 'number' && total > 0 ? total : bucketDollars(b.earnings_bucket),
+    earnedWords: b.earnings_bucket ?? null,
+    creators: typeof b.total_creators === 'number' ? b.total_creators : null,
+    rating: typeof b.review_rating === 'number' ? b.review_rating : null,
+    reviews: typeof b.review_count === 'number' ? b.review_count : null,
+    score: typeof b.trybe_score === 'number' ? b.trybe_score : null,
+    maxPer: b.pay_est?.maxPer ?? null,
+    notFit: b.status === 'not_fit',
+  })
 }

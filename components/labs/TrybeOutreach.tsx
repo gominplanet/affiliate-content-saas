@@ -62,7 +62,8 @@ import type { ClaimProof, RetainerRead } from '@/lib/trybe-evidence'
 import TrybeBrandTable from '@/components/labs/TrybeBrandTable'
 import { morningWords, autoRunWords, type AutoRunRecord } from '@/lib/trybe-morning'
 import { plainServerError, isPassingTrouble, PASSING_WAITS_MS } from '@/lib/upstream-words'
-import { APP, AppChip, SWEET, SweetChip } from '@/components/labs/trybe-ui'
+import { APP, AppChip, SWEET, SweetChip, TestChip } from '@/components/labs/trybe-ui'
+import { testCallOf } from '@/lib/trybe-test-call'
 import { DossierCtx, BrandName } from '@/components/labs/trybe-dossier-context'
 import TrybeWorking from '@/components/labs/TrybeWorking'
 import TrybeCreate from '@/components/labs/TrybeCreate'
@@ -3212,6 +3213,7 @@ export default function TrybeOutreach({ preview = false, free = false, v2 = fals
                         <FilmedChip filmed={b.filmed} />
                         {b.proof?.app && <AppChip />}
                         {sweetSpot(b) && <SweetChip words={sweetWords(b)} />}
+                        {(() => { const tc = testCallOf(b); return tc ? <TestChip call={tc} /> : null })()}
                         <StarButton on={!!b.starred} onClick={() => void star(b)} />
                         <CompareButton on={compare.some(x => x.brand_id === b.brand_id)} full={compare.length >= COMPARE_MAX} onClick={() => flipCompare(b)} />
                         {where && <span className="text-[11px] font-semibold rounded-full px-2 py-0.5" style={{ background: 'rgb(var(--brand-rgb) / 0.10)', color: PURPLE }}>{where}</span>}

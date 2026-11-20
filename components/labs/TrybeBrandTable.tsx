@@ -13,7 +13,8 @@ import { ArrowDown, ArrowUp, ArrowUpRight, Trophy } from 'lucide-react'
 import { BrandMark, proofTitle, MaxPerChip } from '@/components/labs/TrybeFinderControls'
 import { retainerSource } from '@/lib/trybe-evidence'
 import { BrandName, useBrandOpen } from '@/components/labs/trybe-dossier-context'
-import { GRADE, APP, AppChip, SWEET, SweetChip } from '@/components/labs/trybe-ui'
+import { GRADE, APP, AppChip, SWEET, SweetChip, TestChip } from '@/components/labs/trybe-ui'
+import { testCallOf } from '@/lib/trybe-test-call'
 import { sweetSpot, sweetWords } from '@/lib/trybe-daily'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -213,6 +214,7 @@ export default function TrybeBrandTable({ brands, picked, onPick, taken, preview
                     <div className="min-w-0 flex-1">
                       <BrandName id={b.brand_id} name={b.name} className="text-[13.5px] font-semibold block truncate" style={{ color: 'var(--text)', ...hl('brand') }} />
                       {sweet && <span className="block mt-0.5"><SweetChip words={sweetWords(b)} /></span>}
+                      {(() => { const tc = testCallOf(b); return tc ? <span className="block mt-0.5"><TestChip call={tc} /></span> : null })()}
                       <span className="text-[11px] block truncate" style={muted}>
                         {isApp && !where ? <AppChip /> : where ? <span style={{ color: 'var(--accent-text, var(--accent))', fontWeight: 600 }}>{where}</span> : b.is_new ? <span style={{ color: 'var(--hot, #C2410C)', fontWeight: 600 }}>New on TRYBE</span> : (b.categories || []).slice(0, 2).join(', ')}
                       </span>
