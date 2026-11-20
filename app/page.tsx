@@ -157,6 +157,9 @@ export default function LandingPreview() {
       <Hero />
       {/* The platform logo row (PlatformBar) now renders inside <Hero />, so the
           "which one are you?" fork and the old standalone strip are both gone. */}
+      {/* TRYBE Free (lib/trybe-free; Seb, 2026-11-19): the one free part of MVP,
+          said loud and high so the TRYBE crowd sees the free door first. */}
+      <TrybeFreeBand />
       <OldWayNewWay />
       {/* PROOF MOVES ITSELF. With a real wall of quotes, proof belongs high:
           cold traffic off an ad trusts nobody, and other creators are the
@@ -394,6 +397,48 @@ const ROLES: { id: string; gate: PreviewFeature | null; icon: React.ReactNode; r
     note: 'Partner programs use your own Levanta, PartnerBoost, Walmart or Wayward account.',
   },
 ]
+/** TRYBE Free band — the loud, full-width statement that the TRYBE feature is
+ *  free, placed right under the hero so the TRYBE crowd meets the free door
+ *  first. Gated on TRYBE_FREE_LIVE; caps read from lib/trybe-free. Framed as
+ *  the one free part of MVP, never as a plan beside Pro. */
+function TrybeFreeBand() {
+  if (!TRYBE_FREE_LIVE) return null
+  return (
+    <section className="px-6 lg:px-8 py-8 sm:py-12">
+      <div
+        className="max-w-6xl mx-auto rounded-3xl border px-6 sm:px-10 py-9 sm:py-12 relative overflow-hidden"
+        style={{ background: 'linear-gradient(135deg, rgba(0,128,128,0.14), rgba(45,212,191,0.10))', borderColor: 'rgba(0,128,128,0.35)' }}
+      >
+        <div className="flex flex-col lg:flex-row lg:items-center gap-7 lg:gap-12">
+          <div className="flex-1 min-w-0">
+            <span className="inline-flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.16em]" style={{ color: '#0C6E6B' }}>
+              <span className="w-10 h-10 rounded-xl grid place-items-center text-white flex-shrink-0" style={{ background: 'linear-gradient(135deg,#008080,#2DD4BF)' }}><Handshake size={20} /></span>
+              The one free part of MVP
+            </span>
+            <h2 className="text-[30px] sm:text-[42px] font-extrabold tracking-[-0.03em] leading-[1.04] mt-4" style={{ color: 'var(--text)' }}>
+              TRYBE is free. No credit card needed.
+            </h2>
+            <p className="mt-3.5 text-[15.5px] sm:text-[16.5px] leading-relaxed max-w-2xl" style={{ color: 'var(--text-soft)' }}>
+              Find TRYBE brands, request them with your own message ({FREE_DAILY_SENDS} a day), upload your videos, track your earnings, browse the Top 100 and write {FREE_SCRIPTS_MONTHLY} sets of brand scripts a month. Free for as long as you want it, and you can move up to Pro whenever you like.
+            </p>
+          </div>
+          <div className="flex flex-col items-start lg:items-center gap-2.5 flex-shrink-0">
+            <a
+              href={TRYBE_FREE_SIGNUP}
+              className="inline-flex items-center gap-2 rounded-full px-8 py-4 text-[16.5px] font-extrabold text-white transition-transform hover:-translate-y-0.5"
+              style={{ background: 'linear-gradient(135deg,#008080,#2DD4BF)', boxShadow: '0 12px 28px -8px rgba(0,128,128,0.55)' }}
+            >
+              Start TRYBE free
+              <ArrowRight size={18} />
+            </a>
+            <span className="text-[12.5px]" style={{ color: 'var(--text-faint)' }}>No credit card. Takes a minute.</span>
+          </div>
+        </div>
+      </div>
+    </section>
+  )
+}
+
 function RolesSection() {
   return (
     <section id="roles" className="px-6 lg:px-8 pt-4 pb-16 sm:pb-24 relative">
