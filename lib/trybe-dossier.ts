@@ -404,7 +404,9 @@ export function verdictOf(dims: Dimension[]): Verdict {
 // be traced.
 
 export interface LiveBrandRead {
-  numbers: Array<{ id: 'creators' | 'subs30' | 'subsTotal' | 'score' | 'payout' | 'rating'; label: string; value: string; sub: string }>
+  numbers: Array<{ id: 'creators' | 'subs30' | 'subsTotal' | 'score' | 'payout' | 'rating' | 'earnings'; label: string; value: string; sub: string }>
+  /** When the brand joined TRYBE, when its page says. */
+  createdAt?: string | null
   program: string | null
   approval: string | null
   keys: string[]
@@ -423,28 +425,49 @@ export function readLiveBrand(json: unknown): LiveBrandRead {
     for (const n of nested) for (const k of keys) if (n[k] != null && n[k] !== '') return n[k]
     return undefined
   }
+  // TRYBE'S OWN NAMES, UP TO THREE LEVELS DOWN, nearest first (Seb, 2026-11-20:
+  // "the total creators and the Tribe score does not show on MVP"): its page
+  // has kept them inside stats or metrics objects. Only names that cannot mean
+  // anything else are looked for this deep; a bare "score" stays one level down.
+  const levels: Obj[][] = [[o]]
+  for (let dd = 0; dd < 3; dd++) levels.push(levels[dd].flatMap((x) => Object.values(x).filter(isObj)))
+  const findDeep = (keys: string[]): unknown => {
+    for (const lvl of levels) for (const x of lvl) for (const k of keys) if (x[k] != null && x[k] !== '') return x[k]
+    return undefined
+  }
   const num = (v: unknown): number | null => { const n = typeof v === 'number' ? v : typeof v === 'string' && /\d/.test(v) && !/[a-z]{3,}/i.test(v) ? parseFloat(v.replace(/[^0-9.]/g, '')) : NaN; return Number.isFinite(n) && n >= 0 ? n : null }
   const label = (v: unknown): string | null => (typeof v === 'string' && /\d/.test(v) && v.length <= 20 ? v.trim() : typeof v === 'number' && Number.isFinite(v) ? v.toLocaleString('en-US') : null)
   const numbers: LiveBrandRead['numbers'] = []
-  const creators = label(find(['creatorLabel', 'totalCreators', 'creatorsCount', 'creatorCount', 'numCreators', 'activeCreators', 'creators']))
+  const creators = label(findDeep(['creatorLabel', 'totalCreators', 'totalCreatorsLabel', 'creatorsCount', 'creatorCount', 'numCreators', 'activeCreators']) ?? find(['creators']))
   if (creators) numbers.push({ id: 'creators', label: 'Creators', value: creators, sub: 'Working with it on TRYBE' })
   const s30 = num(find(['submissionsLast30Days', 'submissions30d', 'subs30', 'last30DaysSubmissions', 'recentSubmissions', 'submissionsThisMonth']))
   if (s30 != null) numbers.push({ id: 'subs30', label: 'Videos in 30 days', value: s30.toLocaleString('en-US'), sub: 'Submitted to it in the last 30 days' })
   const st = num(find(['totalSubmissions', 'submissionsTotal', 'subsTotal', 'submissionCount', 'submissionsCount']))
   if (st != null) numbers.push({ id: 'subsTotal', label: 'Videos all time', value: st.toLocaleString('en-US'), sub: 'Submitted to it since it joined' })
-  const score = num(find(['trybeScore', 'brandScore', 'score']))
+  // A score sent as { value: 85 } or { score: 85 } counts too.
+  const scoreOf = (v: unknown): number | null => (isObj(v) ? num(v.value ?? v.score ?? v.total ?? v.overall) : num(v))
+  const score = scoreOf(findDeep(['trybeScore', 'brandScore', 'trybe_score'])) ?? scoreOf(find(['score']))
   if (score != null && score <= 100) numbers.push({ id: 'score', label: 'TRYBE score', value: `${Math.round(score)}`, sub: 'Of 100: how fast it reviews, launches ads and replies' })
   const pd = num(find(['payoutDays', 'payoutFrequencyDays', 'paidEveryDays', 'paymentTermsDays']))
   if (pd != null && pd > 0 && pd <= 90) numbers.push({ id: 'payout', label: 'Pays every', value: `${Math.round(pd)} day${pd === 1 ? '' : 's'}`, sub: pd <= 7 ? 'Weekly, the TRYBE norm' : 'Slower than weekly' })
   const rating = num(find(['reviewRating', 'averageRating']))
   const rc = num(find(['reviewCount', 'ratingsCount', 'ratingCount']))
   if (rating != null && rating > 0 && rating <= 5) numbers.push({ id: 'rating', label: 'Rating', value: `${rating.toFixed(1)} ★`, sub: rc != null ? `From ${rc} creator review${rc === 1 ? '' : 's'}` : 'Creators’ stars' })
+  // WHAT ITS CREATORS HAVE EARNED, as TRYBE says it ("$30K+").
+  const ev = findDeep(['creatorEarnings', 'creatorEarningsLabel', 'earningsLabel', 'totalCreatorEarnings', 'earningsBucket'])
+  const earned = typeof ev === 'string' && /\d/.test(ev) && ev.trim().length <= 20 ? ev.trim() : typeof ev === 'number' && Number.isFinite(ev) && ev > 0 ? '$' + Math.round(ev).toLocaleString('en-US') : null
+  if (earned) numbers.push({ id: 'earnings', label: 'Creator earnings', value: earned, sub: 'Paid to its creators on TRYBE' })
+  // WHEN IT JOINED TRYBE, from its own page; a date in the future is not one.
+  const ca = find(['createdAt', 'launchedAt', 'joinedAt', 'listedAt'])
+  const caT = typeof ca === 'string' ? Date.parse(ca) : NaN
+  const createdAt = Number.isFinite(caT) && caT <= Date.now() ? new Date(caT).toISOString() : null
   const programs = [o.programs, o.commissionPrograms].find(Array.isArray) as unknown[] | undefined
   const prog = find(['programName']) ?? (programs && isObj(programs[0]) ? (programs[0] as Obj).name : undefined)
   const ap = find(['joinApproval', 'approvalType', 'joinType'])
   const auto = find(['autoApprove', 'autoApproval', 'autoAccept'])
   return {
     numbers,
+    createdAt,
     program: typeof prog === 'string' && prog.trim() ? prog.trim().slice(0, 80) : null,
     approval: auto === true ? 'Approves creators automatically' : auto === false ? 'Reviews each creator who asks to join' : typeof ap === 'string' ? (/auto/i.test(ap) ? 'Approves creators automatically' : /manual|review/i.test(ap) ? 'Reviews each creator who asks to join' : null) : null,
     keys: Object.keys(o).slice(0, 80),

@@ -3628,6 +3628,25 @@ Weigh posts pushed to social, and TRYBE brands they earned with or submitted to,
   const SCRIPTS_SQL = 'How they win needs migration 442 in Supabase first.'
   const scriptsMissing = (m?: string) => /trybe_top_scripts/.test(m || '') && /does not exist|schema cache|could not find/i.test(m || '')
 
+  if (action === 'live_facts') {
+    // TRYBE'S OWN NUMBERS, KEPT (Seb, 2026-11-20: "the total creators and the
+    // Tribe score does not show on MVP"). TRYBE's list no longer carries a
+    // brand's creators or score; its own page does, read through the member's
+    // SCOUT when its brand page opens. Kept on MVP's shared copy so the lists,
+    // the filters and the sweet spot use them too. Only numbers that can be
+    // TRYBE's; one not given leaves what is there (the collection keeps them).
+    const int = (v: unknown, max: number) => { const n = typeof v === 'number' ? v : NaN; return Number.isFinite(n) && n >= 0 && n <= max ? Math.round(n) : null }
+    const creators = int(body.creators, 10_000_000)
+    const score = int(body.score, 100)
+    const patch: Record<string, number> = {}
+    if (creators != null) patch.total_creators = creators
+    if (score != null) patch.trybe_score = score
+    if (!brandId || !Object.keys(patch).length) return NextResponse.json({ ok: true, saved: false })
+    const { error: lfErr } = await admin.from('trybe_directory').update(patch).eq('brand_id', brandId)
+    if (lfErr) return NextResponse.json({ error: dbWords(lfErr.message) }, { status: 500 })
+    return NextResponse.json({ ok: true, saved: true })
+  }
+
   if (action === 'brand_top_seen') {
     // YOUR BRANDS' TOP VIDEOS, FILED (lib/trybe-brand-scripts; Seb,
     // 2026-10-20: "the exact scripts of the top videos"). The creator's SCOUT

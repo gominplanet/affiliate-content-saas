@@ -14,9 +14,11 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { X, Globe, ExternalLink, Loader2, AlertTriangle, MessageCircle, Send, Clapperboard, Star, PlayCircle, Package, History, Users, Megaphone } from 'lucide-react'
+import { X, Globe, ExternalLink, Loader2, AlertTriangle, MessageCircle, Send, Clapperboard, Star, PlayCircle, Package, History, Users, Megaphone, FlaskConical } from 'lucide-react'
 import { readBrandCard } from '@/lib/trybe-brand-page'
-import { payLines } from '@/lib/trybe-pay'
+import { payLines, estimatePay } from '@/lib/trybe-pay'
+import { paidOutOf } from '@/lib/trybe-daily'
+import { testCall } from '@/lib/trybe-test-call'
 import { requestTrybeApi } from '@/lib/extension-frame'
 import { scorecard, verdictOf, seriesMove, readLiveBrand, type LiveBrandRead, type Dimension, type SamplePool, type ReplyPool, type DossierProduct, type TimelineItem, type SeriesPoint } from '@/lib/trybe-dossier'
 import { adLibraryUrl } from '@/lib/trybe-pick'
@@ -106,7 +108,13 @@ export default function TrybeDossier({ brandId, name, onClose, actions, scout = 
     const r = await requestTrybeApi('GET', `/backend/api/creator/v2/brands/${encodeURIComponent(brandId)}/details`).catch(() => ({ ok: false as const, error: 'SCOUT did not answer.', json: undefined }))
     if (!r.ok || r.json == null) { setLive({ state: 'failed', error: ('error' in r && r.error) || 'no answer' }); return }
     const card = readBrandCard(r.json)
-    setLive({ state: 'read', read: readLiveBrand(r.json), rules: payLines(r.json), brief: card.brief, briefUrl: card.briefUrl })
+    const read = readLiveBrand(r.json)
+    setLive({ state: 'read', read, rules: payLines(r.json), brief: card.brief, briefUrl: card.briefUrl })
+    // KEPT FOR THE LISTS TOO (Seb, 2026-11-20): TRYBE's list no longer carries
+    // a brand's creators or score; its page does. Best effort: a page that
+    // shows them here still does when the save fails.
+    const n = (id: string) => { const v = read.numbers.find((x) => x.id === id)?.value; const f = v ? parseFloat(v.replace(/[^0-9.]/g, '')) : NaN; return Number.isFinite(f) ? f : null }
+    if (n('creators') != null || n('score') != null) void post({ action: 'live_facts', brandId, creators: n('creators'), score: n('score') }).catch(() => null)
   }, [brandId, canDetails])
   useEffect(() => { void readLive() }, [readLive])
 
@@ -141,9 +149,12 @@ export default function TrybeDossier({ brandId, name, onClose, actions, scout = 
     score: liveNum('score'),
     approvedVideos: typeof listing?.stats?.videosApproved === 'number' ? listing.stats.videosApproved : null,
   }
+  // ITS PAY RULES FROM ITS OWN PAGE: TRYBE's list can leave out the cap per
+  // video ("max $5000.00 per submission") that its page says.
+  const livePay = live?.rules?.length ? estimatePay({ lines: live.rules }) : null
   const dims: Dimension[] = scorecard({
     pay: { dollars: listing?.pay_est?.dollars ?? d?.pool?.payPerApproved ?? null, short: listing?.pay_est?.short ?? listing?.pay_text ?? null, basis: listing?.pay_est?.dollars != null ? listing?.pay_est?.basis ?? null : d?.pool?.payPerApproved != null ? 'members' : null,
-      percent: listing?.pay_est?.percent ?? null, maxPer: listing?.pay_est?.maxPer ?? null, earned: listing?.earnings_bucket ?? null },
+      percent: listing?.pay_est?.percent ?? livePay?.percent ?? null, maxPer: listing?.pay_est?.maxPer ?? livePay?.maxPer ?? null, earned: listing?.earnings_bucket ?? null },
     trybe: trybeFacts,
     meta: { count: typeof listing?.meta_ads === 'number' ? listing.meta_ads : null, own: listing?.meta_trust === 'own' || listing?.meta_trust === 'unchecked', fresh: !!listing?.meta_fresh, top100Hits: typeof listing?.top100_hits === 'number' ? listing.top100_hits : null },
     samples: { trybe: listing?.stats?.samples ?? null, products: productsOpen, pool: d?.samples ?? null },
@@ -155,7 +166,25 @@ export default function TrybeDossier({ brandId, name, onClose, actions, scout = 
   const mine = actions?.mineOf(brandId) ?? null
   const status = mine?.status ?? d?.you.status ?? listing?.status ?? null
   const move = d ? seriesMove(d.meta, 'ads') : null
-  const onTrybe = daysSince(listing?.stats?.joinedAt ?? null)
+  const onTrybe = daysSince(listing?.stats?.joinedAt ?? live?.read?.createdAt ?? null)
+  // TRYBE'S OWN NUMBERS, AS TRYBE SHOWS THEM (Seb, 2026-11-20: "I see creator
+  // earnings, 30K ... But the total creators and the Tribe score does not show
+  // on MVP"): its page read through SCOUT first, then MVP's copy of its list.
+  const earnedWords: string | null = live?.read?.numbers.find((x) => x.id === 'earnings')?.value ?? listing?.earnings_bucket ?? null
+  const facts: Array<{ label: string; value: string | null; reading: boolean }> = [
+    { label: 'Creator earnings', value: earnedWords, reading: false },
+    { label: 'Total creators', value: trybeFacts.creators != null ? (live?.read?.numbers.find((x) => x.id === 'creators')?.value ?? trybeFacts.creators.toLocaleString('en-US')) : null, reading: live?.state === 'reading' },
+    { label: 'TRYBE score', value: trybeFacts.score != null ? String(Math.round(trybeFacts.score)) : null, reading: live?.state === 'reading' },
+    { label: trybeFacts.reviews != null ? `Rating (${trybeFacts.reviews} reviews)` : 'Rating', value: trybeFacts.rating != null ? `${Number(trybeFacts.rating).toFixed(1)} \u2605` : null, reading: false },
+    { label: 'On TRYBE', value: onTrybe != null ? `${onTrybe} day${onTrybe === 1 ? '' : 's'}` : null, reading: false },
+  ]
+  const missingFacts = facts.filter((f) => f.value == null && !f.reading).map((f) => f.label.toLowerCase().replace(/ \(.*\)$/, ''))
+  // WORTH A TEST (lib/trybe-test-call): new and already paying, or room, pay and liked.
+  const test = testCall({
+    daysOnTrybe: onTrybe, paidOut: paidOutOf({ total_creators: trybeFacts.creators, stats: listing?.stats ?? null, earnings_bucket: earnedWords }), earnedWords,
+    creators: trybeFacts.creators, rating: trybeFacts.rating != null ? Number(trybeFacts.rating) : null, reviews: trybeFacts.reviews, score: trybeFacts.score,
+    maxPer: listing?.pay_est?.maxPer ?? livePay?.maxPer ?? null, notFit: status === 'not_fit',
+  })
 
   async function act(kind: 'message' | 'send') {
     if (!actions) return
@@ -190,6 +219,11 @@ export default function TrybeDossier({ brandId, name, onClose, actions, scout = 
                 <TrybeLink brandId={brandId} name={title} scout={scout} label="Open on TRYBE" />
               </div>
               <p className="text-[12.5px] mt-1.5" style={ui.mid}>{standing(d?.you, listing)}</p>
+              {/* WHY NOT A FIT (Seb, 2026-11-20: "I'd like to understand why MVP
+                  judges this not to be a fit"): the reason the fit check gave. */}
+              {status === 'not_fit' && (
+                <p className="text-[12.5px] mt-1" style={ui.soft}>{d?.you.fitReason ? <>Why: {d.you.fitReason.replace(/\s+$/, '').replace(/([^.!?])$/, '$1.')} </> : 'The fit check gave no reason. '}It was checked against the niche and keywords in your outreach setup. Writing it a message puts it back on your list.</p>
+              )}
             </div>
             <button type="button" onClick={onClose} aria-label="Close" className="shrink-0 rounded-full p-2 hover:brightness-95" style={{ background: 'var(--surface-2)', color: 'var(--text)' }}><X size={18} /></button>
           </div>
@@ -223,6 +257,37 @@ export default function TrybeDossier({ brandId, name, onClose, actions, scout = 
               <AlertTriangle size={15} className="mt-0.5 shrink-0" />
               <span>{err.listing && err.dossier ? `MVP could not read this brand: ${err.dossier}` : err.dossier ? `Part of this page did not load (${err.dossier}). Its TRYBE listing is below.` : `Its TRYBE listing did not load (${err.listing}). What MVP creators saw is below.`}{' '}
                 <button type="button" onClick={() => void load()} className="font-semibold underline">Read it again</button></span>
+            </div>
+          )}
+
+          {/* ── TRYBE'S OWN NUMBERS ──────────────────────────────────────── */}
+          {(listing || d || live) && (
+            <div>
+              <div className="rounded-[20px] grid grid-cols-2 sm:grid-cols-5" style={ui.card} aria-label="TRYBE's own numbers">
+                {facts.map((f) => (
+                  <div key={f.label} className="px-4 py-3.5 text-center border-b sm:border-b-0 sm:border-r last:border-r-0" style={{ borderColor: 'var(--border)' }}>
+                    <p className="text-[19px] font-bold leading-tight" style={{ ...ui.num, ...ui.text, opacity: f.value ? 1 : 0.45 }}>{f.value ?? (f.reading ? <Loader2 size={15} className="animate-spin inline" /> : 'Not read')}</p>
+                    <p className="text-[11.5px] mt-0.5" style={ui.soft}>{f.label}</p>
+                  </div>
+                ))}
+              </div>
+              {missingFacts.length > 0 && (
+                <p className="text-[12px] mt-1.5" style={ui.soft}>
+                  {live?.state === 'failed' ? `SCOUT could not read its page on TRYBE (${live.error}), so its ${missingFacts.join(' and ')} ${missingFacts.length === 1 ? 'is' : 'are'} missing here.`
+                    : !canDetails ? `Its ${missingFacts.join(' and ')} show${missingFacts.length === 1 ? 's' : ''} once SCOUT can read its page on TRYBE: allow SCOUT on TRYBE at the top of the page.`
+                    : `TRYBE\u2019s page did not give its ${missingFacts.join(' or ')}.`}
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* ── WORTH A TEST (Seb, 2026-11-20: "maybe a leap of faith") ───── */}
+          {test && (
+            <div className="rounded-[20px] p-5" style={{ background: 'rgba(217,119,6,0.08)', border: '1px solid rgba(217,119,6,0.35)' }}>
+              <p className="text-[16px] font-bold inline-flex items-center gap-2" style={ui.text}><FlaskConical size={17} style={{ color: '#D97706' }} /> {test.title}</p>
+              <ul className="mt-2 flex flex-col gap-1">{test.why.map((w) => <li key={w} className="text-[13.5px]" style={ui.text}>{w}</li>)}</ul>
+              <p className="text-[13px] mt-2 font-semibold" style={ui.mid}>{test.plan}</p>
+              {test.caveats.map((c) => <p key={c} className="text-[12.5px] mt-1.5" style={ui.soft}>{c}</p>)}
             </div>
           )}
 

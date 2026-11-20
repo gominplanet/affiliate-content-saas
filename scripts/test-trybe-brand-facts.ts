@@ -60,7 +60,7 @@ check('nothing to go on is not scored, and never says not enough yet or not know
 
 // 4. Wiring
 const D = read('components/labs/TrybeDossier.tsx')
-check('the brand page gives the scorecard what TRYBE shows', /trybe: trybeFacts,/.test(D) && /liveNum\('creators'\) \?\? \(typeof listing\?\.total_creators === 'number'/.test(D) && /percent: listing\?\.pay_est\?\.percent \?\? null, maxPer: listing\?\.pay_est\?\.maxPer \?\? null/.test(D))
+check('the brand page gives the scorecard what TRYBE shows', /trybe: trybeFacts,/.test(D) && /liveNum\('creators'\) \?\? \(typeof listing\?\.total_creators === 'number'/.test(D) && /percent: listing\?\.pay_est\?\.percent \?\? livePay\?\.percent \?\? null, maxPer: listing\?\.pay_est\?\.maxPer \?\? livePay\?\.maxPer \?\? null/.test(D))
 check('only a known box is drawn; the rest are named in one line', /dims\.filter\(\(x\) => x\.score != null\)\.map/.test(D) && /Not scored yet:/.test(D))
 check('MVP creators’ results wait as one line until there are some', /What MVP creators got back from it shows here once 5 of them have results/.test(D))
 check('the list carries the percent and the cap', /percent: e\.percent, maxPer: e\.maxPer/.test(read('app/api/labs/trybe/route.ts')) && /payCapPer: estBy\.get\(r\.brand_id\)\?\.maxPer \?\? null/.test(read('app/api/labs/trybe/route.ts')))
