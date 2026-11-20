@@ -26,6 +26,7 @@ import { FREE_WEEK_LABEL, FREE_WEEK_SHORT, FREE_WEEK_SENTENCE, FREE_WEEK_CTA, FR
 import FreeWeekSteps from '@/components/landing/FreeWeekSteps'
 import { TESTIMONIALS } from '@/lib/testimonials'
 import { previewOpenToPro, type PreviewFeature } from '@/lib/labs-preview'
+import { TRYBE_FREE_LIVE, TRYBE_FREE_SIGNUP, FREE_DAILY_SENDS, FREE_SCRIPTS_MONTHLY } from '@/lib/trybe-free'
 import {
   FileText, Calendar,
   Play, Sparkles, ArrowRight,
@@ -326,7 +327,7 @@ function FeaturesGridCondensed() {
  *  sold as something a new member can use, and the label flips to "New" the
  *  day it opens, with no copy change. It is also why this section has the
  *  #roles id the nav (and the free guide's copy of it) already points at. */
-const ROLES: { id: string; gate: PreviewFeature | null; icon: React.ReactNode; role: string; title: string; desc: string; points: string[]; note: string }[] = [
+const ROLES: { id: string; gate: PreviewFeature | null; icon: React.ReactNode; role: string; title: string; desc: string; points: string[]; note: string; free?: boolean }[] = [
   {
     id: 'drop',
     gate: 'drop',
@@ -358,6 +359,7 @@ const ROLES: { id: string; gate: PreviewFeature | null; icon: React.ReactNode; r
       'What is working now: how the top videos open, the most active brands and the ads they run on Meta',
     ],
     note: 'Works with your own TRYBE account through the SCOUT Chrome extension. TRYBE is a separate service.',
+    free: true,
   },
   {
     id: 'meta-hub',
@@ -430,6 +432,22 @@ function RolesSection() {
                 <p className="mt-auto pt-5 text-[12.5px]" style={{ color: 'var(--text-faint)' }}>
                   {live ? r.note : `Coming soon to every member. ${r.note}`}
                 </p>
+                {r.free && TRYBE_FREE_LIVE && (
+                  <div className="mt-4 rounded-xl border p-4" style={{ background: 'linear-gradient(135deg, rgba(0,128,128,0.08), rgba(45,212,191,0.08))', borderColor: 'rgba(0,128,128,0.3)' }}>
+                    <p className="text-[14px] font-bold" style={{ color: 'var(--text)' }}>TRYBE is free. No credit card needed.</p>
+                    <p className="mt-1 text-[13px] leading-snug" style={{ color: 'var(--text-soft)' }}>
+                      Find TRYBE brands, request them with your own message ({FREE_DAILY_SENDS} a day), upload your videos, track your earnings, browse the Top 100 and write {FREE_SCRIPTS_MONTHLY} sets of brand scripts a month. Pro adds the per-brand messages, the daily finds, reply suggestions and more.
+                    </p>
+                    <a
+                      href={TRYBE_FREE_SIGNUP}
+                      className="mt-3 inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-[13px] font-bold text-white transition-transform hover:-translate-y-0.5"
+                      style={{ background: 'linear-gradient(135deg,#008080,#2DD4BF)' }}
+                    >
+                      Start TRYBE free
+                      <ArrowRight size={14} />
+                    </a>
+                  </div>
+                )}
               </article>
             )
           })}
@@ -1569,21 +1587,28 @@ function Hero() {
           <HeroVideo />
           <PlatformBar />
           <a
-            href="#trybe"
+            href={TRYBE_FREE_LIVE ? TRYBE_FREE_SIGNUP : '#trybe'}
             className="mt-7 flex items-center gap-2.5 rounded-2xl px-4 py-3 text-[13px] font-medium transition-transform hover:-translate-y-0.5"
             style={{
-              background: 'linear-gradient(135deg, rgba(249,115,22,0.14), rgba(45,212,191,0.14))',
-              border: '1px solid rgba(249,115,22,0.3)',
+              background: 'linear-gradient(135deg, rgba(0,128,128,0.12), rgba(45,212,191,0.12))',
+              border: '1px solid rgba(0,128,128,0.3)',
               color: 'var(--text)',
             }}
           >
-            <span className="inline-flex items-center justify-center w-7 h-7 rounded-lg flex-shrink-0" style={{ background: 'linear-gradient(135deg, #2DD4BF, #2DD4BF)', color: '#fff' }}>
+            <span className="inline-flex items-center justify-center w-7 h-7 rounded-lg flex-shrink-0" style={{ background: 'linear-gradient(135deg, #008080, #2DD4BF)', color: '#fff' }}>
               <Handshake size={14} />
             </span>
-            <span>
-              <span className="font-semibold">New: TRYBE brand deals.</span>{' '}
-              <span style={{ color: 'var(--text-soft)' }}>MVP sorts every TRYBE brand by fit for your channel, drafts your pitch and writes the shooting scripts.</span>
-            </span>
+            {TRYBE_FREE_LIVE ? (
+              <span>
+                <span className="font-semibold">TRYBE is free.</span>{' '}
+                <span style={{ color: 'var(--text-soft)' }}>Find brands, send your own requests, upload your videos and track your earnings. No credit card needed. Start TRYBE free.</span>
+              </span>
+            ) : (
+              <span>
+                <span className="font-semibold">New: TRYBE brand deals.</span>{' '}
+                <span style={{ color: 'var(--text-soft)' }}>MVP sorts every TRYBE brand by fit for your channel, drafts your pitch and writes the shooting scripts.</span>
+              </span>
+            )}
             <ArrowRight size={14} className="flex-shrink-0" style={{ color: '#2DD4BF' }} />
           </a>
         </div>
