@@ -25,7 +25,7 @@ import { useEffectiveTier } from '@/lib/useEffectiveTier'
 import { toast } from 'sonner'
 import { Loader2, Lock, Search, Sparkles, Send, Square, ExternalLink, Check, AlertTriangle, Globe, Star, Handshake, RotateCcw, X, Trash2, Tag,
   Dumbbell, Shirt, House, UtensilsCrossed, Baby, PawPrint, Gem, Cpu, Tent, Plane, BookOpen, Church, Palette, SprayCan, Moon, Pill, HeartPulse,
-  ScanSearch, Scissors, Droplet, Coffee, Leaf, Wand2, MessageCircle, Pencil, ChevronUp, Bell, Lightbulb, CalendarDays, Inbox, ArrowRight, Clapperboard, UploadCloud, BarChart3, Rocket, Trophy, ListChecks, LayoutDashboard, SlidersHorizontal, type LucideIcon } from 'lucide-react'
+  ScanSearch, Scissors, Droplet, Coffee, Leaf, Wand2, MessageCircle, Pencil, ChevronUp, Bell, Lightbulb, CalendarDays, Inbox, ArrowRight, Clapperboard, UploadCloud, BarChart3, Rocket, Trophy, ListChecks, LayoutDashboard, SlidersHorizontal, Puzzle, type LucideIcon } from 'lucide-react'
 import { nameKey, trybeSearchPath, brandsNamed, TRYBE_SEARCH_PARAMS } from '@/lib/trybe-name-lookup'
 import { TOP100, META_ROUND, META_ROUNDS_MAX } from '@/lib/trybe-top100'
 import { ensureTrybeTab, requestTrybeTab, requestTrybeTabOpen, requestTrybeMorning, type TrybeMorning, requestTrybeApi, requestTrybeAccess, requestTrybeScan, requestTrybeSend, requestTrybeHarvest, requestTrybeRun, requestTrybeRunStatus, requestTrybeRunStop, type TrybeScanPass, type TrybeRun } from '@/lib/extension-frame'
@@ -2492,12 +2492,62 @@ export default function TrybeOutreach({ preview = false, free = false, v2 = fals
         </section>
       )}
 
+      {/* START HERE: SCOUT (Seb, 2026-11-20: "people know how to and where to
+          download and install Scout, because Scout is necessary to run Tribe,
+          even on the free account ... when new people come in without zero
+          experience with MVP, they need to know what's up"). First thing on
+          the page until SCOUT answers in this Chrome; a phone or another
+          browser is told where SCOUT works instead of a button that cannot. */}
+      {!preview && access === 'no-scout' && (() => {
+        const ua = typeof navigator === 'undefined' ? '' : navigator.userAgent
+        const phone = /Mobi|Android|iPhone|iPad/i.test(ua)
+        const chrome = /Chrome\//.test(ua) && !/Edg\/|OPR\/|SamsungBrowser/.test(ua)
+        const stepsS: Array<{ title: string; text: string; action?: React.ReactNode }> = [
+          { title: 'Add SCOUT to Chrome', text: 'SCOUT is MVP\u2019s free Chrome extension. It takes a few seconds.',
+            action: <a href={SCOUT_STORE_LISTING_URL} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 rounded-xl px-4 py-2.5 text-[14px] font-bold" style={{ background: PURPLE, color: '#fff' }}>Add SCOUT from the Chrome Web Store <ExternalLink size={13} /></a> },
+          { title: 'Pin it', text: 'Press the puzzle piece at the top right of Chrome and pin SCOUT, so you can see it working.' },
+          { title: 'Sign in to TRYBE in this Chrome', text: 'SCOUT works in your own TRYBE account, from your browser. MVP never asks for your TRYBE password.',
+            action: <a href="https://jointrybe.com" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-[13px] font-semibold" style={{ border: '1px solid var(--border)' }}>Open jointrybe.com <ExternalLink size={12} /></a> },
+          { title: 'Come back and reload this page', text: 'Chrome asks once to let SCOUT work on TRYBE: press Allow. Then MVP finds brands, sends your requests and reads your inbox through it.',
+            action: <button onClick={() => window.location.reload()} className="inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-[13px] font-semibold" style={{ border: `1px solid ${PURPLE}`, color: PURPLE }}><RotateCcw size={13} /> I added SCOUT: reload this page</button> },
+        ]
+        return (
+          <section className="rounded-2xl border-2 p-5 sm:p-6" style={{ borderColor: PURPLE, background: 'rgb(var(--brand-rgb) / 0.05)' }} aria-label="Start here: add SCOUT to Chrome">
+            <div className="flex items-start gap-3">
+              <span className="w-11 h-11 shrink-0 rounded-2xl grid place-items-center" style={{ background: PURPLE, color: '#fff' }}><Puzzle size={20} /></span>
+              <div className="min-w-0">
+                <p className="text-[11px] font-bold uppercase tracking-wider" style={{ color: PURPLE }}>Start here</p>
+                <h2 className="text-[19px] font-bold leading-tight">TRYBE in MVP runs through SCOUT, our free Chrome extension</h2>
+                <p className="text-[13px] mt-1" style={soft}>Without it MVP cannot reach your TRYBE: no brands to request, no inbox, no earnings. Four steps, about two minutes.</p>
+              </div>
+            </div>
+            {(phone || !chrome) && (
+              <p className="mt-3 text-[13px] font-semibold rounded-xl px-3 py-2" style={{ background: 'rgba(180,83,9,0.09)', color: AMBER }}>
+                {phone ? 'SCOUT works on a computer, in Google Chrome. Open MVP on your computer in Chrome to set it up; TRYBE on your phone works once it is.' : 'SCOUT is a Google Chrome extension. Open MVP in Chrome on this computer to set it up.'}
+              </p>
+            )}
+            <ol className="mt-4 grid gap-3 sm:grid-cols-2">
+              {stepsS.map((x, i) => (
+                <li key={x.title} className="rounded-xl border p-3.5 flex gap-3" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
+                  <span className="w-7 h-7 shrink-0 rounded-full grid place-items-center text-[13px] font-bold" style={i === 0 ? { background: PURPLE, color: '#fff' } : { border: '1px solid var(--border)', color: 'var(--text-soft)' }}>{i + 1}</span>
+                  <div className="min-w-0">
+                    <p className="text-[14px] font-semibold">{x.title}</p>
+                    <p className="text-[12.5px] mt-0.5" style={soft}>{x.text}</p>
+                    {x.action && <div className="mt-2">{x.action}</div>}
+                  </div>
+                </li>
+              ))}
+            </ol>
+          </section>
+        )
+      })()}
+
       {/* TRYBE FREE: what is open, and what Pro adds (lib/trybe-free). */}
       {free && (
         <section className="rounded-2xl border p-4 flex flex-wrap items-center gap-3" style={{ borderColor: 'rgb(var(--brand-rgb) / 0.35)', background: 'rgb(var(--brand-rgb) / 0.05)' }}>
           <div className="flex-1 min-w-[16rem]">
             <p className="text-[15px] font-bold">TRYBE Free</p>
-            <p className="text-[13px] mt-0.5" style={{ color: 'var(--text-2)' }}>Find brands, see the Top 100, request brands with your own message ({FREE_DAILY_SENDS} a day), answer your inbox, upload your videos, track your earnings and write {FREE_SCRIPTS_MONTHLY} sets of brand scripts a month. Pro writes each brand its own message, finds 20 new brands for you every day, suggests your replies and writes as many scripts as you need.</p>
+            <p className="text-[13px] mt-0.5" style={{ color: 'var(--text-2)' }}>Find brands, see the Top 100, request brands with your own message ({FREE_DAILY_SENDS} a day), answer your inbox, upload your videos, track your earnings and write {FREE_SCRIPTS_MONTHLY} sets of brand scripts a month. It all runs through SCOUT, our free Chrome extension. Pro writes each brand its own message, finds 20 new brands for you every day, suggests your replies and writes as many scripts as you need.</p>
           </div>
           <a href="/billing?plan=pro" className="inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-[13px] font-semibold" style={{ background: PURPLE, color: '#fff' }}>See Pro <ArrowRight size={13} /></a>
         </section>
@@ -2579,7 +2629,8 @@ export default function TrybeOutreach({ preview = false, free = false, v2 = fals
         const gateShows = tabScout && (access === 'not-granted' || (access === 'granted' && (trybeTab === 'closed' || trybeTab === 'signed-out' || trybeTab === 'unknown')))
         if (gateShows) for (const x of steps) if (!x.done && (x.title === 'SCOUT allowed on TRYBE' || x.title === 'TRYBE open in this Chrome')) { x.action = undefined; x.todo = 'Use the TRYBE card at the top of this page.' }
         const next = steps.findIndex((x) => !x.done)
-        if (next < 0) return null
+        // The start card at the top shows the first steps while SCOUT is missing.
+        if (next < 0 || access === 'no-scout') return null
         return (
           <section className="rounded-2xl border p-5" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
             <div className="flex flex-wrap items-baseline gap-2 mb-2">
@@ -2674,7 +2725,9 @@ export default function TrybeOutreach({ preview = false, free = false, v2 = fals
       {tab === 'home' && v2 && <TrybeHome view={layout ? 'today' : 'all'} go={go} unread={unread} queue={queue.length} repliedWeek={repliedWeek} inboxRead={!!inbox}
         forYou={(live?.brands || []).filter(b => !b.status || b.status === 'new').slice().sort((a, b) => (b.pick ?? -1) - (a.pick ?? -1)).slice(0, 6)}
         forYouWhy={[...cats, ...kws].slice(0, 4).join(', ')} canMoney={canMyBrands}
-        yours={(changes?.changes || []).filter(c => c.yours).slice().sort((a, b) => Date.parse(b.at) - Date.parse(a.at))} />}
+        yours={(changes?.changes || []).filter(c => c.yours).slice().sort((a, b) => Date.parse(b.at) - Date.parse(a.at))}
+        // Your stage: volume first, then double down on winners (Seb, 2026-10-14), on the home.
+        stage={!preview && <TrybeStage canRead={canMyBrands} onGo={go} />} />}
       {tab === 'create' && <TrybeCreate canRead={canMyBrands} isAdmin={isAdmin} canEdit={trybeEdit} onFind={() => setTab('find')} start={scriptsFor} onStarted={() => setScriptsFor(null)}
         free={free ? { left: freeInfo?.scriptsLeft ?? null, monthly: freeInfo?.scriptsMonthly ?? FREE_SCRIPTS_MONTHLY, onUsed: () => void load() } : null} />}
 
@@ -2858,8 +2911,8 @@ export default function TrybeOutreach({ preview = false, free = false, v2 = fals
         {/* The intro video for requests (lib/trybe-intro): every Pro member (Seb, 2026-10-24).
             The core message is the request itself, so the card says where it stands and opens it. */}
         {!preview && <TrybeIntroVideo core={core} onWriteCore={() => { setEditingCore(true); window.setTimeout(() => document.getElementById('trybe-core-message')?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 50) }} />}
-        {/* Your stage: volume first, then double down on winners (Seb, 2026-10-14). */}
-        {!preview && <TrybeStage canRead={canMyBrands} onGo={go} />}
+        {/* Your stage moved to the TRYBE home (Seb, 2026-11-20), where what to
+            double down on is the first thing seen, not part of the setup. */}
         {/* 1. Core message: a short preview once written, the box while editing. */}
         {!preview && <div id="trybe-core-message" className={card} style={cardStyle}>
           <div className="flex flex-wrap items-center gap-2">

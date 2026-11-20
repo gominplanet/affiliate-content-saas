@@ -68,8 +68,13 @@ export default async function DashboardLayout({ children }: { children: React.Re
   // left half way), so every page but Billing and Settings sends it to start
   // Pro. Accounts made before keep their free month. A team member joins free
   // and works on the owner's account, so they are never sent to pay.
-  if (normalizeTier(tier) === 'trial' && signedUpWithoutTrial(user.created_at)
-    && (await getOwnerUserId(user.id).catch(() => user.id)) === user.id) {
+  // TRYBE FREE (Seb, 2026-11-20): an account with no plan is never bounced. It
+  // keeps TRYBE, and every other page opens as a locked preview with the way
+  // to Pro (components/layout/DashboardShellV2 freeLocks). A team member works
+  // on the owner's account, so it is never locked as a free one.
+  const ownsAccount = normalizeTier(tier) === 'trial' ? (await getOwnerUserId(user.id).catch(() => user.id)) === user.id : true
+  const freeLocks = TRYBE_FREE_LIVE && normalizeTier(tier) === 'trial' && ownsAccount
+  if (!TRYBE_FREE_LIVE && normalizeTier(tier) === 'trial' && signedUpWithoutTrial(user.created_at) && ownsAccount) {
     const pathname = (await headers()).get('x-pathname') || ''
     // TRYBE FREE (lib/trybe-free): once live, TRYBE is open without a plan.
     const open = ['/billing', '/settings', '/help', ...(TRYBE_FREE_LIVE ? ['/trybe'] : [])].some((r) => pathname === r || pathname.startsWith(r + '/'))
@@ -108,7 +113,8 @@ export default async function DashboardLayout({ children }: { children: React.Re
   // paid at 19:25 and never signed in again (see lib/onboarding-path
   // youtubeRequiredForTier); the Amazon plan meets the same wall on
   // /link-in-bio and /storefront, which ARE their plan's features.
-  if (!onboarded && normalizeTier(tier) !== 'amazon') {
+  // A free account meets the locked preview, never the YouTube funnel.
+  if (!onboarded && normalizeTier(tier) !== 'amazon' && !freeLocks) {
     const pathname = (await headers()).get('x-pathname') || ''
     if (isContentRoute(pathname)) {
       redirect('/onboarding')
@@ -139,6 +145,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
         // The new look (lib/look), decided here so the page is drawn in it
         // from the first paint.
         look={look}
+        freeLocks={freeLocks}
       >
         {/* Migration drift banner — admin-only sticky warning that
             recent feature-gating migrations haven't been applied on the

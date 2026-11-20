@@ -49,7 +49,12 @@ const val = (n: number | null, unit: '$' | '%') => (n == null ? '' : unit === '$
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type ForYou = Record<string, any>
 
-export default function TrybeHome({ go, unread, queue, repliedWeek, inboxRead, forYou = [], forYouWhy = '', canMoney = false, yours = [], view = 'all' }: {
+export default function TrybeHome({ go, unread, queue, repliedWeek, inboxRead, forYou = [], forYouWhy = '', canMoney = false, yours = [], view = 'all', stage = null }: {
+  /** YOUR STAGE (components/labs/TrybeStage): volume first, then double down
+   *  on your winners, right under the week (Seb, 2026-11-20: "should not be
+   *  inside of my outreach setup. It should be in the home of Tribe ... really
+   *  prominent so people know what to double down on"). */
+  stage?: React.ReactNode
   /** Open a TRYBE tab. */
   go: (tab: 'find' | 'queue' | 'inbox' | 'week' | 'changes' | 'stars' | 'sent' | 'analytics') => void
   unread: number
@@ -152,6 +157,9 @@ export default function TrybeHome({ go, unread, queue, repliedWeek, inboxRead, f
         {err && <p className="mt-3 text-[13px] inline-flex items-center gap-1.5" style={{ color: 'var(--text)' }}><AlertTriangle size={14} style={{ color: '#F59E0B' }} /> MVP could not count this week: {err}. <button type="button" className="font-semibold underline" onClick={() => void load(true)}>Try again</button></p>}
         {d?.readError && <p className="mt-3 text-[13px] inline-flex items-center gap-1.5" style={{ color: 'var(--text)' }}><AlertTriangle size={14} style={{ color: '#F59E0B' }} /> Part of this week did not load: {d.readError}. The lists below may be short. <button type="button" className="font-semibold underline" onClick={() => void load(true)}>Count again</button></p>}
       </div>
+
+      {/* ── YOUR STAGE: what to double down on ──────────────────────────── */}
+      {stage}
 
       {/* ── WHAT NEEDS YOU ────────────────────────────────────────────────── */}
       {mine && <Section title="What needs you today">

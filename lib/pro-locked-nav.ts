@@ -102,8 +102,37 @@ export function lockedPageAt(groups: LockableGroup[], pathname: string): LockedP
  *  does (its menu line), then what Pro is. */
 export function proLockedBody(page: LockedPage, tier: string): string {
   const line = featureLine(page.href) ?? featureLine(page.rowHref)
+  // TRYBE Free: no plan to move from, and TRYBE stays theirs either way.
+  if (tier === 'trial') return `${line ? `${line} ` : ''}Pro is the full MVP membership: every tool in this menu, open. TRYBE stays free either way.`
   const plan = tier === 'studio' ? 'Studio' : 'Creator'
   return `${line ? `${line} ` : ''}Pro is the full MVP membership: every tool in this menu, open. Moving from ${plan} to Pro keeps everything you have made in MVP.`
+}
+
+/** TRYBE FREE'S MENU (Seb, 2026-11-20: "anything else that they would click
+ *  on the left ... should ask them to go pro. It should just give them a
+ *  preview of that page, but just they can't do anything"). Every row a
+ *  member can see, locked, but the ones `open` keeps (TRYBE and the account's
+ *  own pages), and each locked row's tabs with it. Staff rows are left as
+ *  they are. Pure. */
+export function lockAllBut<I extends LockableItem, G extends LockableGroup<I>>(groups: G[], open: (href: string) => boolean): G[] {
+  return groups.map((g) => (STAFF.has(g.label) ? g : {
+    ...g,
+    items: g.items.map((it) => {
+      if (it.gate === false || it.external || open(it.href)) return it
+      return { ...it, locked: true, badge: 'Pro', tabs: it.tabs?.map((t) => (t.gate === false ? t : { ...t, badge: undefined, locked: true })) } as I
+    }),
+  }))
+}
+
+/** The pages TRYBE Free opens: TRYBE, the area hubs that list the tools,
+ *  and the account's own pages (Billing must stay open, or the way to Pro
+ *  is locked too). */
+export const FREE_OPEN_PATHS: readonly string[] = ['/trybe', '/trybe-outreach', '/area', '/billing', '/settings', '/help', '/support', '/usage']
+
+/** Whether TRYBE Free opens this page. Pure. */
+export function freeOpenPath(path: string): boolean {
+  const p = pathOf(path)
+  return FREE_OPEN_PATHS.some((r) => p === r || p.startsWith(`${r}/`))
 }
 
 /** The legacy plans that see Pro's tools locked. */

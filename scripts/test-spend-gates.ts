@@ -39,7 +39,10 @@ check('an unreadable signup date never expires an account',
 check('a team member made since the trial ended is not read as an expired trial',
   /const teamMember = [\s\S]{0,160}getOwnerUserId\(userId\)/.test(SPEND) && /if \(signupISO && !teamMember\)/.test(SPEND))
 check('and the dashboard never sends a team member to pay',
-  /signedUpWithoutTrial\(user\.created_at\)\s*&& \(await getOwnerUserId\(user\.id\)/.test(read('app/(dashboard)/layout.tsx')))
+  // 2026-11-20: the owner is worked out once (ownsAccount) for the bounce and
+  // for TRYBE Free's locks alike; a team member is never sent to pay or locked.
+  /const ownsAccount = normalizeTier\(tier\) === 'trial' \? \(await getOwnerUserId\(user\.id\)/.test(read('app/(dashboard)/layout.tsx'))
+  && /signedUpWithoutTrial\(user\.created_at\) && ownsAccount\)/.test(read('app/(dashboard)/layout.tsx')))
 check('the expired-trial sentence is the same one the image routes show',
   freeTrialExpiredBlock({ tier: 'trial', signupISO: '2020-01-01T00:00:00Z' }) === FREE_TRIAL_OVER_MESSAGE
   && /FREE_TRIAL_OVER_MESSAGE/.test(SPEND))

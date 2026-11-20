@@ -77,12 +77,13 @@ import SiteSwitcherChip from './SiteSwitcherChip'
 import { HelpDeskButton } from '@/components/HelpDeskSidebar'
 import AmazonUpgradeGate from '@/components/upgrade/AmazonUpgradeGate'
 import ProUpgradePanel from '@/components/upgrade/ProUpgradePanel'
-import { lockProRows, lockedPageAt, seesProLocked, proLockedBody } from '@/lib/pro-locked-nav'
+import { lockProRows, lockedPageAt, seesProLocked, proLockedBody, lockAllBut, freeOpenPath } from '@/lib/pro-locked-nav'
 import { regroupMenu } from '@/lib/menu-areas'
 import PermalinkAutoHeal from '@/components/PermalinkAutoHeal'
 import AnnouncementModal from '@/components/dashboard/AnnouncementModal'
 import MvpNews from '@/components/dashboard/MvpNews'
 import ReconnectCheckup from '@/components/dashboard/ReconnectCheckup'
+import { TRYBE_FREE_LIVE } from '@/lib/trybe-free'
 
 // Wrapper to handle context safely
 function HelpDeskButtonWrapper() {
@@ -362,6 +363,9 @@ interface DashboardShellV2Props {
   /** The look to draw (lib/look): the new one, for every account. The
    *  server hands it over, so the first paint is already right. */
   look?: Look
+  /** TRYBE Free (lib/trybe-free): an account with no plan, not a team member.
+   *  Every page but TRYBE and its own account pages opens as a locked preview. */
+  freeLocks?: boolean
   children: React.ReactNode
 }
 
@@ -374,6 +378,7 @@ export default function DashboardShellV2({
   showBurner,
   contentOnly = false,
   look = 'classic',
+  freeLocks = false,
   children,
 }: DashboardShellV2Props) {
   const pathname = usePathname() || ''
@@ -888,14 +893,22 @@ export default function DashboardShellV2({
   // rows Pro opens and their plan does not are listed where Pro has them, with
   // a lock, and open the Pro upgrade panel (proLocked below). Labs and Admin
   // are staff rows, never offered.
-  const legacyView = seesProLocked(effectiveTier)
+  // TRYBE FREE (Seb, 2026-11-20): an account with no plan sees every row, and
+  // everything but TRYBE and its own account pages is locked, a preview with
+  // the way to Pro. An admin viewing as Free sees the same.
+  const freeView = TRYBE_FREE_LIVE && (freeLocks || (isAdmin && effectiveTier === 'trial'))
+  const legacyView = seesProLocked(effectiveTier) || freeView
   // THE MENU REDRAWN (lib/menu-areas, labs-preview menu_v2): the same rows,
   // gates and tabs, one job per area.
   // Every account on every plan once open (Seb, 2026-11-09: "turn it on for everyone").
   const menuV2 = previewOpenToPro('menu_v2') || canUsePreview('menu_v2', effectiveTier)
-  const builtNav: NavGroupDef[] = legacyView ? lockProRows<NavItemDef, NavGroupDef>(navFor(effectiveTier), navFor('pro')) : navFor(effectiveTier)
+  const proRows: NavGroupDef[] = legacyView ? lockProRows<NavItemDef, NavGroupDef>(navFor(effectiveTier), navFor('pro')) : navFor(effectiveTier)
+  const builtNav: NavGroupDef[] = freeView ? lockAllBut<NavItemDef, NavGroupDef>(proRows, freeOpenPath) : proRows
   const NAV_GROUPS: NavGroupDef[] = menuV2 ? regroupMenu<NavItemDef, NavGroupDef>(builtNav) : builtNav
-  const proLocked = legacyView ? lockedPageAt(NAV_GROUPS, pathname) : undefined
+  // A page outside the menu is locked on Free too, never opened by its address.
+  const proLocked = freeView
+    ? (freeOpenPath(pathname) ? undefined : lockedPageAt(NAV_GROUPS, pathname) ?? { href: pathname, label: 'This page', rowHref: pathname })
+    : legacyView ? lockedPageAt(NAV_GROUPS, pathname) : undefined
 
   // Walled garden (2026-08-13): an Amazon Influencer opening anything outside
   // their plan (blog / YouTube / SEO / blog-tools) gets the upgrade
@@ -1637,7 +1650,18 @@ export default function DashboardShellV2({
             )}
             {!amazonLocked && tabbedItem && <SectionTabs item={tabbedItem} isActive={isActive} teal={teal} />}
             {amazonLocked ? <AmazonUpgradeGate feature={amazonLocked.label} redirect={amazonLocked.redirect} />
-              : proLocked ? <ProUpgradePanel feature={proLocked.label} body={proLockedBody(proLocked, effectiveTier)} />
+              // A PREVIEW OF THE PAGE, under the way to Pro (Seb, 2026-11-20): seen,
+              // dimmed and inert, so nothing on it can be pressed or typed in,
+              // and the toasts a page shows when its reads are refused are hidden.
+              : proLocked ? (
+                <div className="relative" data-pro-preview>
+                  <style>{'[data-sonner-toaster]{display:none !important}'}</style>
+                  <div inert aria-hidden="true" className="pointer-events-none select-none overflow-hidden" style={{ maxHeight: '82vh', opacity: 0.45, filter: 'blur(1.5px) saturate(0.8)', WebkitMaskImage: 'linear-gradient(to bottom, #000 45%, transparent)', maskImage: 'linear-gradient(to bottom, #000 45%, transparent)' }}>{children}</div>
+                  <div className="absolute inset-x-0 top-0 px-1 pt-4">
+                    <ProUpgradePanel feature={proLocked.label} body={proLockedBody(proLocked, freeView ? 'trial' : effectiveTier)} trybeFree={freeView} />
+                  </div>
+                </div>
+              )
               : children}
           </div>
         </main>

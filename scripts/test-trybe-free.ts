@@ -8,6 +8,7 @@
 import { readFileSync } from 'node:fs'
 import { templateRequest, uploadNoteTemplate, freeAllows, freeLeftWords, monthStartUtc, FREE_TABS, FREE_ACTIONS, FREE_CAPPED, FREE_DAILY_SENDS, FREE_SCRIPTS_MONTHLY, TRYBE_FREE_LIVE, TRYBE_FREE_LANDING, TRYBE_FREE_SIGNUP } from '../lib/trybe-free'
 import { trybeAccess } from '../lib/labs-preview'
+import { lockAllBut, freeOpenPath, proLockedBody, lockedPageAt } from '../lib/pro-locked-nav'
 
 const failures: string[] = []
 const check = (name: string, ok: boolean) => { if (!ok) failures.push(name) }
@@ -62,7 +63,34 @@ check('the page asks for your own message on Free, so View as Free shows the rea
 check('the page and the menu show it', /if \(access === 'free'\) return <TrybeOutreach free/.test(read('app/(dashboard)/trybe/page.tsx')) && /trybeAcc === 'free' \? 'Free'/.test(read('components/layout/DashboardShellV2.tsx')))
 check('once live, TRYBE is open without a plan', /\.\.\.\(TRYBE_FREE_LIVE \? \['\/trybe'\] : \[\]\)/.test(read('app/(dashboard)/layout.tsx')))
 const L = read('app/(dashboard)/layout.tsx')
-check('a TRYBE Free sign-up goes back to TRYBE, any other account without a plan to Billing', /signup_for === 'trybe'/.test(L) && /redirect\(forTrybe \? '\/trybe' : '\/billing\?plan=pro&start=1'\)/.test(L))
+// EVERY PAGE BUT TRYBE IS A LOCKED PREVIEW (Seb, 2026-11-20: "anything else
+// that they would click on the left ... should ask them to go pro. It should
+// just give them a preview of that page, but just they can't do anything")
+check('a free account is never bounced: the shell locks the pages instead', /if \(!TRYBE_FREE_LIVE && normalizeTier\(tier\) === 'trial' && signedUpWithoutTrial\(user\.created_at\) && ownsAccount\)/.test(L) && /const freeLocks = TRYBE_FREE_LIVE && normalizeTier\(tier\) === 'trial' && ownsAccount/.test(L) && /freeLocks=\{freeLocks\}/.test(L))
+check('a team member on the owner\u2019s account is never locked as a free one', /const ownsAccount = normalizeTier\(tier\) === 'trial' \? \(await getOwnerUserId\(user\.id\)/.test(L))
+check('a free account meets the preview, never the YouTube funnel', /if \(!onboarded && normalizeTier\(tier\) !== 'amazon' && !freeLocks\)/.test(L))
+type Row = { href: string; label: string; gate?: boolean; locked?: boolean; badge?: string | number; tabs?: Row[] }
+const menu: Array<{ label: string; items: Row[] }> = [
+  { label: 'Find products', items: [{ href: '/amz-finder', label: 'Product research' }, { href: '/trybe', label: 'TRYBE', badge: 'Free' }, { href: '/cc-campaigns', label: 'CC campaigns', tabs: [{ href: '/cc-campaigns', label: 'All CC campaigns' }, { href: '/joined-campaigns', label: 'Joined' }] }] },
+  { label: 'Make videos', items: [{ href: '/review-editor', label: 'Review Editor' }, { href: '/hidden', label: 'Hidden', gate: false }] },
+  { label: 'Admin', items: [{ href: '/admin', label: 'Admin' }] },
+]
+const locked = lockAllBut(menu, freeOpenPath)
+const at = (h: string) => locked.flatMap((g) => g.items).find((x) => x.href === h)!
+check('every row but TRYBE is locked, marked Pro, its tabs too', !!at('/amz-finder').locked && at('/amz-finder').badge === 'Pro' && !!at('/review-editor').locked && !at('/trybe').locked && at('/trybe').badge === 'Free' && (at('/cc-campaigns').tabs || []).every((t) => t.locked))
+check('a hidden row stays hidden and staff rows are left alone', at('/hidden').gate === false && !at('/hidden').locked && !at('/admin').locked)
+check('TRYBE, the hubs and the account pages stay open; the rest does not', ['/trybe', '/trybe?tab=find', '/area/find-products', '/billing', '/billing/success', '/settings', '/help'].every(freeOpenPath) && !['/dashboard', '/cc-campaigns', '/review-editor', '/content/new', '/trybe-x'].some(freeOpenPath))
+check('a locked page is found under its row, with its name', lockedPageAt(locked, '/cc-campaigns')?.label === 'CC campaigns' && lockedPageAt(locked, '/trybe') === undefined)
+check('the panel for a free account names no plan to move from, and keeps TRYBE free', /TRYBE stays free either way\.$/.test(proLockedBody({ href: '/cc-campaigns', label: 'CC campaigns', rowHref: '/cc-campaigns' }, 'trial')) && !/Creator|Studio/.test(proLockedBody({ href: '/x', label: 'X', rowHref: '/x' }, 'trial')))
+const SH = read('components/layout/DashboardShellV2.tsx')
+check('the shell locks the menu and every page outside it on Free; an admin viewing as Free sees it', /const freeView = TRYBE_FREE_LIVE && \(freeLocks \|\| \(isAdmin && effectiveTier === 'trial'\)\)/.test(SH) && /freeView \? lockAllBut<NavItemDef, NavGroupDef>\(proRows, freeOpenPath\) : proRows/.test(SH) && /lockedPageAt\(NAV_GROUPS, pathname\) \?\? \{ href: pathname, label: 'This page', rowHref: pathname \}/.test(SH))
+check('the locked page is a preview nothing on can be pressed, under the way to Pro', /<div inert aria-hidden="true" className="pointer-events-none select-none overflow-hidden"/.test(SH) && /\[data-sonner-toaster\]\{display:none !important\}/.test(SH) && /trybeFree=\{freeView\}/.test(SH))
+const PP = read('components/upgrade/ProUpgradePanel.tsx')
+check('the panel goes to the card checkout, says the free week, and leads back to TRYBE', /href=\{trybeFree \? '\/billing\?plan=pro' : '\/billing'\}/.test(PP) && /\{trybeFree \? 'Go Pro' : 'Upgrade to Pro'\}/.test(PP) && /FREE_WEEK_SENTENCE/.test(PP) && /Back to TRYBE, free/.test(PP))
+// SCOUT FIRST (Seb, 2026-11-20: "Scout is necessary to run Tribe, even on the free account")
+check('without SCOUT, TRYBE opens on a start card with the Chrome Web Store button and four steps', /\{!preview && access === 'no-scout' && \(\(\) => \{/.test(O) && /TRYBE in MVP runs through SCOUT, our free Chrome extension/.test(O) && /Add SCOUT from the Chrome Web Store/.test(O) && /I added SCOUT: reload this page/.test(O) && O.indexOf("access === 'no-scout' && (() => {") < O.indexOf('TRYBE FREE: what is open'))
+check('a phone or another browser is told where SCOUT works', /SCOUT works on a computer, in Google Chrome\./.test(O) && /SCOUT is a Google Chrome extension\./.test(O))
+check('the free sign-up, its email step and the pricing line say SCOUT comes next', /where MVP shows you how to add SCOUT/.test(read('components/auth/SignupForm.tsx')) && /The first step there is adding SCOUT/.test(read('components/auth/SignupForm.tsx')) && /through SCOUT, our free extension/.test(read('app/pricing/page.tsx')))
 const S = read('components/auth/SignupForm.tsx')
 check('the no-card sign-up is /signup?for=trybe and lands in TRYBE', TRYBE_FREE_SIGNUP === '/signup?for=trybe' && TRYBE_FREE_LANDING === '/trybe' && /\(sp\.get\('for'\) \|\| ''\)\.trim\(\)\.toLowerCase\(\) === 'trybe'/.test(S) && /if \(!joiningTeam && !forTrybe\) setPaidTier/.test(S) && /\?\? \(forTrybe \? TRYBE_FREE_LANDING : null\)/.test(S))
 check('it says no card, and never shows the Pro free week steps', /'Start TRYBE free'/.test(S) && /No credit card needed for TRYBE Free/.test(S) && /!invited && !annual && !trybeFree && \(/.test(S) && /signup_for: 'trybe'/.test(S))

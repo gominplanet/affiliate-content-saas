@@ -107,6 +107,9 @@ check('migration 430 adds the two columns and is safe to run twice', existsSync(
 const ui = read('components/labs/TrybeOutreach.tsx')
 check('Find brands shows the stage, filters, priorities, Amazon and star and pass', /<TrybeStage canRead=\{canMyBrands\}/.test(ui) && /<FinderToolbar/.test(ui) && /<FinderPriorities/.test(ui) && /<BrandExtras amazon=\{b\.amazon\}/.test(ui) && /<StarButton/.test(ui) && /<PassButton/.test(ui) && /<FinderFilterNote/.test(ui))
 check('no Amazon videos synced is said, with where to sync them', /MVP has none of your Amazon videos yet/.test(ui) && /href="\/earnings"/.test(ui))
+// YOUR STAGE ON THE HOME (Seb, 2026-11-20: "should not be inside of my outreach
+// setup. It should be in the home of Tribe ... really prominent")
+check('the stage card is on the TRYBE home, under the week, not in the outreach setup', /stage=\{!preview && <TrybeStage canRead=\{canMyBrands\} onGo=\{go\} \/>\} \/>\}/.test(ui) && (ui.match(/<TrybeStage /g) || []).length === 1 && (() => { const h = read('components/labs/TrybeHome.tsx'); return h.indexOf('{stage}') > h.indexOf('THE WEEK, IN ONE LINE') && h.indexOf('{stage}') < h.indexOf('WHAT NEEDS YOU ──') })())
 const stage = read('components/labs/TrybeStage.tsx')
 check('a failed read of your numbers says the stage is not known', /your stage is not known/.test(stage))
 

@@ -237,7 +237,7 @@ export default function SignupForm() {
           We sent a confirmation link to <strong>{email}</strong>.{' '}
           {invited
             ? 'Click it and you go straight back to your team invite to accept it.'
-            : trybeFree ? <>Click it and you land in TRYBE, ready to find brands.</>
+            : trybeFree ? <>Click it on your computer, in Google Chrome, and you land in TRYBE. The first step there is adding SCOUT, our free Chrome extension: it connects your TRYBE account.</>
             : <>Click it to finish signing in.</>}
           (Check spam if it doesn&apos;t show in a minute.)
         </p>
@@ -260,7 +260,7 @@ export default function SignupForm() {
       <p className={`text-sm text-[#6e6e73] dark:text-[#ebebf0] ${!invited && !annual && !trybeFree ? 'mb-3' : 'mb-6'}`}>{invited
         ? 'Confirm your email and you come straight back to the invite to accept it.'
         : trybeFree
-          ? 'No card. Find TRYBE brands, request them with your own message, upload your videos and track your earnings. Confirm your email and you land in TRYBE.'
+          ? 'No card. Find TRYBE brands, request them with your own message, upload your videos and track your earnings. Confirm your email and you land in TRYBE, where MVP shows you how to add SCOUT, our free Chrome extension that connects your TRYBE account.'
         : annual
           ? 'Create your account, then continue to secure checkout. Everything in MVP opens today, and the yearly plan is charged when you join.'
           : `${FREE_WEEK_ON_US}. Create your account, then add your card at secure checkout. Everything in MVP opens today.`}</p>

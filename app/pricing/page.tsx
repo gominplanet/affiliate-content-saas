@@ -393,7 +393,7 @@ export default async function PricingPage({
       {TRYBE_FREE_LIVE && (
         <div className="mt-10 w-full max-w-3xl rounded-2xl border border-[#7C3AED]/25 bg-[#7C3AED]/5 px-5 py-4 text-center">
           <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Only here for TRYBE? TRYBE is free.</p>
-          <p className="text-sm text-[#6e6e73] dark:text-[#ebebf0] mt-1">Find TRYBE brands, request them with your own message ({FREE_DAILY_SENDS} a day), upload your videos, track your earnings and write {FREE_SCRIPTS_MONTHLY} sets of brand scripts a month. No card.</p>
+          <p className="text-sm text-[#6e6e73] dark:text-[#ebebf0] mt-1">Find TRYBE brands, request them with your own message ({FREE_DAILY_SENDS} a day), upload your videos, track your earnings and write {FREE_SCRIPTS_MONTHLY} sets of brand scripts a month. No card. It runs in Google Chrome through SCOUT, our free extension.</p>
           <a href={TRYBE_FREE_SIGNUP} className="inline-block mt-2 text-sm font-semibold text-[#7C3AED] hover:underline">Start TRYBE free</a>
         </div>
       )}
