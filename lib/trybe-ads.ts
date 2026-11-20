@@ -189,7 +189,24 @@ export function paceOf(earned7: number | null, earned30: number | null): { dir: 
   return { dir: pct >= 15 ? 'up' : pct <= -15 ? 'down' : 'steady', pct }
 }
 
-export interface AdBrand { brand: string; brandId: string | null; videos: number; live: number; earned: number; hookRate: number | null; ctr: number | null }
+export interface AdBrand {
+  brand: string
+  brandId: string | null
+  /** Videos TRYBE listed with ad results for this brand in the window. */
+  videos: number
+  /** Of those, running as an ad now (TRYBE's live flag). */
+  live: number
+  earned: number
+  hookRate: number | null
+  ctr: number | null
+  /** DELIVERY (Seb, 2026-11-20): the strongest signal in the data. Null when
+   *  no video of the brand carried the number, never 0. */
+  impressions: number | null
+  clicks: number | null
+  /** Its active ads: TRYBE's per video count where sent, else its live videos;
+   *  null when TRYBE said neither. */
+  activeAds: number | null
+}
 
 /** Your results per brand, most earned first. Pure. */
 export function adBrands(videos: AdVideo[]): AdBrand[] {
@@ -202,7 +219,12 @@ export function adBrands(videos: AdVideo[]): AdBrand[] {
   const out: AdBrand[] = []
   for (const list of by.values()) {
     const f = fillTotals({ ...NO_TOTALS }, list)
-    out.push({ brand: list.find((v) => v.brand)?.brand || 'A brand', brandId: list.find((v) => v.brandId)?.brandId ?? null, videos: list.length, live: list.filter((v) => v.live).length, earned: f.earned ?? 0, hookRate: f.hookRate, ctr: f.ctr })
+    // Active ads: TRYBE's own count per video when it sent one, else the
+    // videos it said are live; null when it said neither for any of them.
+    const counted = list.filter((v) => v.liveAds != null)
+    const flagged = list.filter((v) => v.live != null)
+    const activeAds = counted.length ? counted.reduce((a, v) => a + (v.liveAds as number), 0) : flagged.length ? flagged.filter((v) => v.live).length : null
+    out.push({ brand: list.find((v) => v.brand)?.brand || 'A brand', brandId: list.find((v) => v.brandId)?.brandId ?? null, videos: list.length, live: list.filter((v) => v.live).length, earned: f.earned ?? 0, hookRate: f.hookRate, ctr: f.ctr, impressions: f.impressions, clicks: f.clicks, activeAds })
   }
   return out.sort((a, b) => b.earned - a.earned || (b.hookRate ?? -1) - (a.hookRate ?? -1))
 }
@@ -304,4 +326,175 @@ export function remixOf(videos: AdVideo[]): Remix | null {
   if (!hook || !body || hook.id === body.id) return null
   const name = (v: AdVideo) => `"${(v.title || 'a video').slice(0, 60)}"`
   return { hookFrom: hook, bodyFrom: body, says: `Remix: open with the first 3 seconds of ${name(hook)} (hook rate ${(hook.hookRate as number).toFixed(1)}%), then the body of ${name(body)} (click rate ${(body.ctr as number).toFixed(2)}%).` }
+}
+
+
+// ── WHO ACTUALLY PAYS YOU (Seb, 2026-11-20, from his own week: $49.05 earned,
+// 4 videos from 2 brands made 91.4% of it, and NOBL, 35% of GMV, 57 approved
+// videos and the best hook, click and watch numbers on the account, paid
+// $0.00 while holding 54% of the active ads and 10.7% of the impressions).
+// Four things the screen could not say: which brands pay per approved video,
+// whether a brand is actually running the videos, whether a $0 means anything
+// yet, and how far the advertised rate is from what was paid. Every threshold
+// is the creator's own median; a number TRYBE did not send stays null and
+// never becomes a verdict. Pure, so it is tested (scripts/test-trybe-ads).
+
+/** Impressions per active ad. Null when either is not known or no ad is active. Pure. */
+export function impressionsPerAd(b: Pick<AdBrand, 'impressions' | 'activeAds'>): number | null {
+  if (b.impressions == null || b.activeAds == null || b.activeAds <= 0) return null
+  return b.impressions / b.activeAds
+}
+
+/** The middle of a list, or null when it is empty. Pure. */
+export function medianOf(xs: Array<number | null | undefined>): number | null {
+  return median(xs.filter((n): n is number => n != null && Number.isFinite(n)))
+}
+
+export type Delivery = 'running' | 'light' | 'shelved' | 'unknown'
+/** Fewer active ads than this and a brand's delivery is not judged: one ad
+ *  launched yesterday is not a shelf. */
+export const DELIVERY_MIN_ADS = 3
+
+/** A brand's impressions per active ad against the creator's own median:
+ *  'shelved' at a fifth of it or less, 'light' at half or less. 'unknown'
+ *  when a number is missing or there are too few ads to say. Pure. */
+export function deliveryOf(b: Pick<AdBrand, 'impressions' | 'activeAds'>, medianPerAd: number | null): Delivery {
+  const per = impressionsPerAd(b)
+  if (per == null || medianPerAd == null || medianPerAd <= 0 || (b.activeAds ?? 0) < DELIVERY_MIN_ADS) return 'unknown'
+  const r = per / medianPerAd
+  return r <= 0.2 ? 'shelved' : r <= 0.5 ? 'light' : 'running'
+}
+
+export type ZeroRead = 'too_early' | 'not_converting' | 'not_run'
+/** The conversion rate a zero is weighed against: 1 click in 100 buys. */
+export const ZERO_CVR = 0.01
+/** A zero less likely than this, at that rate, says the clicks are not buying. */
+export const ZERO_SURPRISE = 0.05
+
+/** How likely no sale at all is from this many clicks when 1 in 100 buys:
+ *  (1 - cvr) ^ clicks. Pure. */
+export function zeroChance(clicks: number, cvr = ZERO_CVR): number {
+  return Math.pow(1 - cvr, Math.max(0, clicks))
+}
+
+/** What a $0 brand's zero means. 'not_run': no clicks to judge. 'too_early':
+ *  at this many clicks no sale is unremarkable (about 300 clicks at 1 in
+ *  100). 'not_converting': a zero this long would be rare, so these clicks
+ *  are not buying. Null when it earned, or TRYBE sent no clicks. Pure. */
+export function zeroRead(clicks: number | null, earned: number): ZeroRead | null {
+  if (earned > 0 || clicks == null) return null
+  if (clicks <= 0) return 'not_run'
+  return zeroChance(clicks) > ZERO_SURPRISE ? 'too_early' : 'not_converting'
+}
+
+export interface Concentration { videos: number; of: number; share: number; brands: string[]; total: number }
+
+/** How few videos made most of the money: the videos that each made at
+ *  least a tenth of the window's earnings, their share and their brands.
+ *  Said only when it is worth saying: they made half or more of it, and are
+ *  half of the videos that earned or fewer. Null otherwise, or under 5
+ *  videos. Pure. */
+export function concentrationOf(videos: AdVideo[]): Concentration | null {
+  const paid = videos.filter((v) => (v.earned ?? 0) > 0).sort((a, b) => (b.earned as number) - (a.earned as number))
+  const total = paid.reduce((a, v) => a + (v.earned as number), 0)
+  if (total <= 0 || videos.length < 5) return null
+  const top = paid.filter((v) => (v.earned as number) >= total * 0.1)
+  const sum = top.reduce((a, v) => a + (v.earned as number), 0)
+  if (!top.length || sum / total < 0.5 || top.length > Math.max(1, Math.floor(paid.length / 2))) return null
+  const brands = Array.from(new Set(top.map((v) => v.brand || 'A brand')))
+  return { videos: top.length, of: videos.length, share: sum / total, brands, total }
+}
+
+/** "4 of your 103 videos made 91.4% of your earnings, all for Taste Flavor
+ *  Co. and BRYN." Pure. */
+export function concentrationWords(c: Concentration): string {
+  const names = c.brands.length <= 1 ? c.brands[0] || 'one brand' : `${c.brands.slice(0, -1).join(', ')} and ${c.brands[c.brands.length - 1]}`
+  return `${c.videos} of your ${c.of} videos made ${(c.share * 100).toFixed(1)}% of your earnings, all for ${names}.`
+}
+
+/** What MVP knows of a brand apart from its ads: TRYBE's own approved count
+ *  and earnings for the window, and its advertised pay (lib/trybe-pay). */
+export interface PayFact { brand: string; brandId: string | null; approved?: number | null; earned?: number | null; advertised?: string | null; advertisedPct?: number | null }
+
+export interface PayRow {
+  brand: string
+  brandId: string | null
+  earned: number
+  /** The honest denominator: TRYBE's approved count when it was read, else
+   *  the videos it listed with ad results, said in `perBasis`. */
+  perVideo: number | null
+  perBasis: 'approved' | 'ad_videos' | null
+  approved: number | null
+  adVideos: number
+  impressions: number | null
+  clicks: number | null
+  activeAds: number | null
+  perAd: number | null
+  delivery: Delivery
+  zero: ZeroRead | null
+  advertised: string | null
+  advertisedPct: number | null
+  /** The advertised rate against what was paid, when the gap is worth saying. */
+  gap: string | null
+  says: string[]
+}
+
+const keyOf = (b: { brandId: string | null; brand: string }) => (b.brandId || b.brand).trim().toLowerCase()
+const dollars = (n: number) => `$${n >= 1000 ? Math.round(n).toLocaleString('en-US') : n.toFixed(2)}`
+const whole = (n: number) => Math.round(n).toLocaleString('en-US')
+
+/** Who actually pays you: one row per brand, ranked by dollars per approved
+ *  video, then earned. Each row says, in its own numbers, whether the brand is
+ *  running the videos (against your typical brand), what a $0 means at its
+ *  clicks, and how its advertised rate compares with what it paid. Pure. */
+export function whoPays(brands: AdBrand[], facts: PayFact[] = []): { rows: PayRow[]; medianPerAd: number | null } {
+  const factBy = new Map(facts.map((f) => [keyOf(f), f]))
+  const byName = new Map(facts.map((f) => [f.brand.trim().toLowerCase(), f]))
+  const seen = new Set<string>()
+  const base = brands.map((b) => {
+    const f = factBy.get(keyOf(b)) || byName.get(b.brand.trim().toLowerCase())
+    if (f) seen.add(keyOf(f))
+    return { b, f }
+  })
+  // A brand with approved videos and no ad rows at all is still a row.
+  for (const f of facts) if (!seen.has(keyOf(f)) && (f.approved ?? 0) > 0) base.push({ b: { brand: f.brand, brandId: f.brandId, videos: 0, live: 0, earned: 0, hookRate: null, ctr: null, impressions: null, clicks: null, activeAds: null }, f })
+  const medianPerAd = medianOf(base.filter(({ b }) => (b.activeAds ?? 0) >= DELIVERY_MIN_ADS).map(({ b }) => impressionsPerAd(b)))
+  const pre = base.map(({ b, f }) => {
+    const earned = f?.earned ?? b.earned
+    const approved = f?.approved ?? null
+    const denom = approved != null && approved > 0 ? approved : b.videos > 0 ? b.videos : null
+    return {
+      b, f, earned, approved,
+      perVideo: denom ? earned / denom : null,
+      perBasis: (approved != null && approved > 0 ? 'approved' : b.videos > 0 ? 'ad_videos' : null) as PayRow['perBasis'],
+    }
+  })
+  const medianPer = medianOf(pre.filter((r) => r.perBasis === 'approved').map((r) => r.perVideo))
+  const pcts = pre.map((r) => r.f?.advertisedPct).filter((n): n is number => n != null)
+  const topPct = pcts.length ? Math.max(...pcts) : null
+  const medianPct = medianOf(pcts)
+  const rows: PayRow[] = pre.map(({ b, f, earned, approved, perVideo, perBasis }) => {
+    const perAd = impressionsPerAd(b)
+    const delivery = deliveryOf(b, medianPerAd)
+    const zero = zeroRead(b.clicks, earned)
+    const advertised = f?.advertised ?? null
+    const advertisedPct = f?.advertisedPct ?? null
+    const says: string[] = []
+    if ((delivery === 'shelved' || delivery === 'light') && perAd != null && medianPerAd != null) {
+      says.push(`${b.brand}: ${whole(perAd)} impressions per active ad. Your typical brand gets ${whole(medianPerAd)}. ${delivery === 'shelved' ? 'It is barely running your videos.' : 'It is running your videos less than your other brands.'}`)
+    }
+    if (zero === 'too_early' && b.clicks != null) says.push(`$0 so far from ${whole(b.clicks)} clicks. Even if 1 click in 100 buys, no sale at all happens ${Math.round(zeroChance(b.clicks) * 100)}% of the time at this many clicks: too early to judge.`)
+    if (zero === 'not_converting' && b.clicks != null) says.push(`$0 from ${whole(b.clicks)} clicks. If 1 click in 100 bought, a zero this long would happen ${(zeroChance(b.clicks) * 100).toFixed(1).replace(/\.0$/, '')}% of the time: these clicks are not buying.`)
+    if (zero === 'not_run') says.push('No clicks yet, so nothing to judge.')
+    // The gap: a rate at or above your middle one, a real sample of approved
+    // videos, and paid below your middle brand per approved video.
+    let gap: string | null = null
+    if (advertised && advertisedPct != null && medianPct != null && advertisedPct >= medianPct && approved != null && approved >= 5 && perVideo != null && (medianPer == null ? earned === 0 : perVideo < medianPer)) {
+      gap = `${b.brand} advertises ${advertised}${topPct != null && advertisedPct >= topPct && pcts.length > 1 ? ', the highest you have' : ''}. It has paid ${dollars(earned)} across ${whole(approved)} approved video${approved === 1 ? '' : 's'}.`
+      says.push(gap)
+    }
+    return { brand: b.brand, brandId: b.brandId, earned, perVideo, perBasis, approved, adVideos: b.videos, impressions: b.impressions, clicks: b.clicks, activeAds: b.activeAds, perAd, delivery, zero, advertised, advertisedPct, gap, says }
+  })
+  rows.sort((a, b) => (b.perVideo ?? -1) - (a.perVideo ?? -1) || b.earned - a.earned)
+  return { rows, medianPerAd }
 }

@@ -22,13 +22,13 @@
 // Tapping Approved, Pending, Revision or Rejected, or searching, lists those
 // videos (components/labs/TrybeSubList), for All or the brand picked.
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Loader2, RotateCcw, TrendingUp, TrendingDown, Minus, Megaphone, PlayCircle, AlertTriangle, Search } from 'lucide-react'
 import { useTrybeAds } from '@/components/labs/useTrybeAds'
 import { useTrybeSubmissions, useTrybeSubList } from '@/components/labs/useTrybeSubmissions'
 import TrybeSubList from '@/components/labs/TrybeSubList'
 import type { SubFilter } from '@/lib/trybe-sub-list'
-import { paceOf, adBrands, adWinners, bestVideos, notRunning, diagnose, remixOf, DIAGNOSIS_WORDS, AD_PERIODS, type AdPeriod, type AdTotals } from '@/lib/trybe-ads'
+import { paceOf, adBrands, adWinners, bestVideos, notRunning, diagnose, remixOf, whoPays, concentrationOf, concentrationWords, DIAGNOSIS_WORDS, AD_PERIODS, type AdPeriod, type AdTotals, type PayFact, type Delivery, type ZeroRead } from '@/lib/trybe-ads'
 import { approvalRateOf, brandAdTotals, sameBrand, NO_COUNTS } from '@/lib/trybe-analytics'
 
 const PURPLE = 'var(--accent)'
@@ -54,6 +54,13 @@ const TILES: Tile[] = [
   { key: 'spend', label: 'Ad spend', show: (t) => (t.spend == null ? null : money(t.spend)), says: 'What brands spent running your videos as ads.' },
 ]
 
+/** Whether a brand is running your videos, and what its $0 means, as chips (lib/trybe-ads). */
+const DELIVERY_CHIP: Partial<Record<Delivery, { word: string; color: string }>> = { shelved: { word: 'Barely running your videos', color: RED }, light: { word: 'Running them less', color: AMBER }, running: { word: 'Running them', color: GREEN } }
+const ZERO_CHIP: Partial<Record<ZeroRead, { word: string; color: string }>> = { too_early: { word: 'Too early to judge', color: 'var(--text-3)' }, not_converting: { word: 'Clicks not buying', color: RED }, not_run: { word: 'No clicks yet', color: 'var(--text-3)' } }
+function Chip({ word, color }: { word: string; color: string }) {
+  return <span className="text-[10.5px] font-semibold rounded-full px-1.5 py-0.5 border whitespace-nowrap" style={{ borderColor: color, color }}>{word}</span>
+}
+
 const SUB_ROWS = [
   { key: 'approved', label: 'Approved', color: '#16A34A' },
   { key: 'pending', label: 'Pending', color: '#3B82F6' },
@@ -78,6 +85,29 @@ export default function TrybeAds({ canRead, isAdmin, onPlan }: { canRead: boolea
     return list.filter((b) => b.n > 0).sort((a, b) => b.n - a.n)
   }, [subs.read, read])
   const brand = chips.find((b) => b.id === brandId) || null
+  // EACH BRAND'S ADVERTISED PAY (lib/trybe-pay, from MVP's copy of TRYBE's
+  // list), to set against what it actually paid (Seb, 2026-11-20). A brand
+  // MVP has no pay for says nothing, never a guess.
+  const [terms, setTerms] = useState<Record<string, { text: string | null; pct: number | null }>>({})
+  const termIds = useMemo(() => Array.from(new Set([...(read?.videos || []).map((x) => x.brandId), ...(subs.read?.brands || []).map((x) => x.id)].filter((x): x is string => !!x))).slice(0, 120).sort().join(','), [read, subs.read])
+  useEffect(() => {
+    if (!canRead || !termIds) return
+    let gone = false
+    const ids = termIds.split(',')
+    void (async () => {
+      const out: Record<string, { text: string | null; pct: number | null }> = {}
+      for (let i = 0; i < ids.length; i += 60) {
+        const r = await fetch('/api/labs/trybe', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'browse', ids: ids.slice(i, i + 60), includeMine: true, limit: 60 }), signal: AbortSignal.timeout(30_000) }).catch(() => null)
+        const d = r && r.ok ? await r.json().catch(() => null) : null
+        for (const b of ((d?.brands || []) as Array<{ brand_id: string; pay_text?: string | null; pay_est?: { short?: string | null; percent?: number | null } | null }>)) {
+          const pct = typeof b.pay_est?.percent === 'number' ? b.pay_est.percent : null
+          out[b.brand_id] = { text: pct != null ? `${pct}% of GMV` : (b.pay_text || b.pay_est?.short || null), pct }
+        }
+      }
+      if (!gone) setTerms(out)
+    })()
+    return () => { gone = true }
+  }, [canRead, termIds])
   if (!canRead) return null
   const full = read?.source === 'full'
   const one = brand && read ? brandAdTotals(read.videos, brand) : null
@@ -92,6 +122,16 @@ export default function TrybeAds({ canRead, isAdmin, onPlan }: { canRead: boolea
   const best = full ? bestVideos(shownVideos) : []
   const stalled = full && read && !brand ? notRunning(read.videos, days) : []
   const remix = full && read && !brand ? remixOf(read.videos) : null
+  // WHO ACTUALLY PAYS YOU (lib/trybe-ads whoPays): TRYBE's approved count and
+  // earnings per brand for the window, each brand's advertised pay, and its
+  // ads; ranked by dollars per approved video. All brands only.
+  const facts: PayFact[] = (() => {
+    const out: PayFact[] = (subs.read?.brands || []).map((s) => ({ brand: s.name, brandId: s.id, approved: s.read ? s?.counts.approved ?? null : null, earned: s.earned ?? null, advertised: terms[s.id]?.text ?? null, advertisedPct: terms[s.id]?.pct ?? null }))
+    for (const b of brands) if (b.brandId && !out.some((f) => f.brandId === b.brandId) && terms[b.brandId]) out.push({ brand: b.brand, brandId: b.brandId, advertised: terms[b.brandId].text, advertisedPct: terms[b.brandId].pct })
+    return out
+  })()
+  const payRows = full && read && !brand ? whoPays(brands, facts).rows.filter((r) => r.earned > 0 || (r.approved ?? 0) > 0 || r.adVideos > 0).slice(0, 15) : []
+  const conc = full && read && !brand ? concentrationOf(read.videos) : null
   const nothingRead = full && !brand && t && Object.values(t).every((v) => v == null)
   // All: TRYBE's own totals when its analytics answer carried them; one
   // brand: that brand's totals for the period (useTrybeSubmissions).
@@ -240,6 +280,48 @@ export default function TrybeAds({ canRead, isAdmin, onPlan }: { canRead: boolea
       )}
       {full && read && read.totalsRead === false && read.videosRead !== false && (
         <p className="text-[12px] mt-1.5" style={{ color: AMBER }}>TRYBE&rsquo;s totals did not answer, so the numbers above are added up from up to 100 of your videos and may be low.</p>
+      )}
+
+      {/* WHO ACTUALLY PAYS YOU (Seb, 2026-11-20): how few videos made the money,
+          then each brand's dollars per approved video, whether it is running
+          the videos, what a $0 means yet, and its advertised rate against
+          what it paid, every verdict in its own numbers. */}
+      {(conc || payRows.length > 0) && (
+        <div className="mb-3 rounded-lg border p-3" style={{ borderColor: 'var(--border-2)' }} aria-label="Who actually pays you">
+          <p className="text-[13.5px] font-bold">Who actually pays you</p>
+          {conc && <p className="text-[13px] mt-1 font-semibold" style={{ color: 'var(--text)' }}>{concentrationWords(conc)}</p>}
+          {payRows.length > 0 && (
+            <div className="overflow-x-auto mt-2">
+              <table className="w-full text-[12.5px] tabular-nums">
+                <thead>
+                  <tr className="text-left" style={soft}>
+                    <th className="font-semibold py-1 pr-3">Brand</th>
+                    <th className="font-semibold py-1 pr-3">Earned</th>
+                    <th className="font-semibold py-1 pr-3">Per video</th>
+                    <th className="font-semibold py-1 pr-3">Impressions per ad</th>
+                    <th className="font-semibold py-1">Advertised</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {payRows.map((r) => (
+                    <tr key={r.brandId || r.brand} className="border-t align-top" style={{ borderColor: 'var(--border-2)' }}>
+                      <td className="py-1.5 pr-3">
+                        <span className="font-semibold" style={{ color: 'var(--text)' }}>{r.brand}</span>
+                        <span className="flex flex-wrap gap-1 mt-0.5">{DELIVERY_CHIP[r.delivery] && <Chip {...DELIVERY_CHIP[r.delivery]!} />}{r.zero && ZERO_CHIP[r.zero] && <Chip {...ZERO_CHIP[r.zero]!} />}</span>
+                        {r.says.length > 0 && <span className="block mt-1 text-[12px] max-w-[60ch]" style={{ color: 'var(--text-2)' }}>{r.says.join(' ')}</span>}
+                      </td>
+                      <td className="py-1.5 pr-3" style={{ color: r.earned > 0 ? GREEN : 'var(--text-2)' }}>${r.earned.toFixed(2)}</td>
+                      <td className="py-1.5 pr-3">{r.perVideo == null ? <span style={soft}>Not known</span> : <><b style={{ color: 'var(--text)' }}>${r.perVideo.toFixed(2)}</b><span className="block text-[11px]" style={soft}>{r.perBasis === 'approved' ? `per approved video (${r.approved})` : `per video with ad results (${r.adVideos})`}</span></>}</td>
+                      <td className="py-1.5 pr-3">{r.perAd == null ? <span style={soft}>Not sent</span> : <>{Math.round(r.perAd).toLocaleString('en-US')}<span className="block text-[11px]" style={soft}>{r.activeAds} active ad{r.activeAds === 1 ? '' : 's'}</span></>}</td>
+                      <td className="py-1.5" style={{ color: r.gap ? RED : 'var(--text-2)' }}>{r.advertised ?? <span style={soft}>Not listed</span>}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          <p className="text-[11.5px] mt-2" style={soft}>Per video divides what TRYBE says each brand paid you in {PERIOD_LABEL[period]} by its approved videos when TRYBE gave the count, else by your videos with ad results. Impressions per ad and every verdict compare with your own typical brand, never a fixed number.</p>
+        </div>
       )}
 
       {winners.length > 0 && (
