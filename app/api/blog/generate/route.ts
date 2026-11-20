@@ -17,6 +17,8 @@ import { fixBrandSpelling, fixBrandInSlug } from '@/lib/brand-spelling'
 import { fetchKeepaIdentity } from '@/services/keepa'
 import { createServerClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { queueCascade, type CascadeResult } from '@/lib/schedule-cascade'
+import type { SocialScheduleEntry } from '@/lib/schedule-types'
 import { fetchKeepaBasicsCached } from '@/lib/keepa-cache'
 import type { KeepaFacts } from '@/lib/product-signals-brief'
 import { getAuthAndOwner } from '@/lib/agency-auth'
@@ -284,6 +286,11 @@ async function handleGenerate(request: Request) {
     /** ISO 8601 timestamp the post should go live. Required when
      *  scheduleMode is set. */
     scheduledFor?: string
+    /** Set by /api/blog/schedule-publish: queue the schedule's cascade (the
+     *  draft-flip parent and these socials) right after the post is saved,
+     *  here, where it cannot be lost (lib/schedule-cascade). */
+    queueCascade?: boolean
+    socials?: SocialScheduleEntry[]
     /** Set by the daily auto-pilot. Its posts go out with nobody looking, so
      *  they are the ones the quality gate holds as drafts. */
     autopilot?: boolean
@@ -2525,6 +2532,18 @@ async function handleGenerate(request: Request) {
     savedPost = data
   }
 
+  // ── THE SCHEDULE'S CASCADE, QUEUED HERE (lib/schedule-cascade) ──────────
+  // schedule-publish used to write these rows after this route answered, and
+  // when writing ran past its budget it never did: the post went live and
+  // its socials were never queued (support, 2026-11-20). Queued in the same
+  // invocation that saved scheduled_for, they cannot be lost that way. A held
+  // draft carries no schedule, so it queues nothing.
+  let cascade: CascadeResult | null = null
+  if (body.queueCascade === true && savedPost?.id && isScheduled && !heldForReview && scheduleMode && scheduledForIso) {
+    cascade = await queueCascade(createAdminClient(), { userId: ownerId, blogPostId: savedPost.id as string, scheduleMode, scheduledFor: scheduledForIso, title: generated.title, socials: Array.isArray(body.socials) ? body.socials : [] })
+    if (cascade.error) console.error('[blog-generate] schedule cascade not queued', { postId: savedPost.id, error: cascade.error })
+  }
+
   // ── Shorten the blog link for social, per the creator's ONE Link style ────
   // direct = plain WordPress URL (free); geniuslink = branded geni.us (tracked,
   // costs per click); bitly = free Bitly short link. Passport maps to 'direct'
@@ -3506,6 +3525,8 @@ ${NO_BRAND_IMAGE_CLAUSE} Landscape 4:3, photorealistic editorial product photogr
     scheduled: isScheduled
       ? { mode: scheduleMode, scheduledFor: scheduledForIso ?? null, wpStatus }
       : null,
+    // What the cascade queued here, when schedule-publish asked (null otherwise).
+    cascade,
   })
 }
 

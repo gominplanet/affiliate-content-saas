@@ -9,6 +9,7 @@
 
 import { useState } from 'react'
 import { toast } from 'sonner'
+import { scheduleTooFar, SCHEDULE_TOO_FAR_WORDS } from '@/lib/schedule-types'
 import { X, Loader2, CalendarClock } from 'lucide-react'
 import { tzAbbrev } from '@/lib/format-schedule'
 
@@ -69,6 +70,7 @@ export default function ScheduleEditModal({
     const iso = when ? new Date(when).toISOString() : null
     if (when && (isNaN(new Date(when).getTime()))) { toast.error('Pick a valid date and time'); return }
     if (iso && new Date(iso).getTime() <= Date.now() + 60_000) { toast.error('Pick a time at least a minute from now'); return }
+    if (iso && scheduleTooFar(new Date(iso).getTime())) { toast.error(SCHEDULE_TOO_FAR_WORDS); return }
 
     const addPlatforms = [...selected].filter(p => !original.has(p))
     const removePlatforms = [...original].filter(p => !selected.has(p))

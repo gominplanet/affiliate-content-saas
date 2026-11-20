@@ -32,7 +32,7 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { toast } from 'sonner'
 import { Calendar, Loader2, X, SlidersHorizontal, ChevronLeft, ChevronRight } from 'lucide-react'
 import type { SchedulableSocial, ScheduleMode } from '@/lib/schedule-types'
-import { DEFAULT_SOCIAL_OFFSETS_MIN } from '@/lib/schedule-types'
+import { DEFAULT_SOCIAL_OFFSETS_MIN, scheduleTooFar, SCHEDULE_TOO_FAR_WORDS } from '@/lib/schedule-types'
 import { tierAllowsSocial, minTierForSocial, tierLabel, type Tier } from '@/lib/tier'
 import { formatScheduleTime, tzAbbrev } from '@/lib/format-schedule'
 import { BodyImageSlots } from '@/components/content/BodyImageSlots'
@@ -307,6 +307,10 @@ export default function ScheduleModal({
     }
     if (whenMs <= Date.now() + 60_000) {
       toast.error('Pick a time at least 1 minute in the future')
+      return
+    }
+    if (scheduleTooFar(whenMs)) {
+      toast.error(SCHEDULE_TOO_FAR_WORDS)
       return
     }
 

@@ -21,7 +21,7 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { getPublishContext } from '@/lib/agency-publish'
 import { tierAllowsSocial, normalizeTier, type Tier } from '@/lib/tier'
-import { DEFAULT_SOCIAL_OFFSETS_MIN, type SchedulableSocial } from '@/lib/schedule-types'
+import { DEFAULT_SOCIAL_OFFSETS_MIN, scheduleTooFar, SCHEDULE_TOO_FAR_WORDS, type SchedulableSocial } from '@/lib/schedule-types'
 import { getConnectedPlatforms } from '@/lib/channel-health'
 import { getWordPressCredentials } from '@/lib/wordpress-sites'
 import { createWordPressService } from '@/services/wordpress'
@@ -94,6 +94,7 @@ export async function PATCH(request: Request) {
       newBaseMs = new Date(body.scheduledFor).getTime()
       if (isNaN(newBaseMs)) return NextResponse.json({ error: 'scheduledFor is not a valid timestamp.' }, { status: 400 })
       if (newBaseMs <= Date.now() + 60_000) return NextResponse.json({ error: 'New time must be at least 1 minute in the future.' }, { status: 400 })
+      if (scheduleTooFar(newBaseMs)) return NextResponse.json({ error: SCHEDULE_TOO_FAR_WORDS }, { status: 400 })
 
       const newIso = new Date(newBaseMs).toISOString()
       await (supabase as any).from('blog_posts').update({ scheduled_for: newIso }).eq('id', blogPostId).eq('user_id', user.id)

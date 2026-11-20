@@ -21,7 +21,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { Calendar, Loader2, X, CheckCircle2, AlertCircle } from 'lucide-react'
 import type { SchedulableSocial, ScheduleMode } from '@/lib/schedule-types'
-import { DEFAULT_SOCIAL_OFFSETS_MIN } from '@/lib/schedule-types'
+import { DEFAULT_SOCIAL_OFFSETS_MIN, scheduleTooFar, SCHEDULE_TOO_FAR_WORDS } from '@/lib/schedule-types'
 import { tierAllowsSocial, minTierForSocial, tierLabel, type Tier } from '@/lib/tier'
 
 interface VideoItem {
@@ -131,6 +131,10 @@ export default function BulkScheduleVideosModal({
     const startMs = new Date(startIso).getTime()
     if (isNaN(startMs) || startMs <= Date.now() + 60_000) {
       toast.error('Pick a start time at least 1 minute in the future')
+      return
+    }
+    if (scheduleTooFar(startMs)) {
+      toast.error(SCHEDULE_TOO_FAR_WORDS)
       return
     }
     setRunning(true)

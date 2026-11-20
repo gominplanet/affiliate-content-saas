@@ -29,7 +29,7 @@ import { getPublishContext } from '@/lib/agency-publish'
 import { tierAllowsSocial, normalizeTier, TIERS, type Tier } from '@/lib/tier'
 import type { SocialScheduleEntry, SchedulableSocial } from '@/lib/schedule-types'
 import { getConnectedPlatforms } from '@/lib/channel-health'
-import { DEFAULT_SOCIAL_OFFSETS_MIN } from '@/lib/schedule-types'
+import { DEFAULT_SOCIAL_OFFSETS_MIN, scheduleTooFar, SCHEDULE_TOO_FAR_WORDS } from '@/lib/schedule-types'
 
 const SUPPORTED_SOCIALS: SchedulableSocial[] = ['facebook', 'threads', 'twitter', 'linkedin', 'bluesky', 'telegram', 'pinterest']
 
@@ -54,6 +54,7 @@ export async function POST(request: Request) {
     if (isNaN(whenMs)) {
       return NextResponse.json({ error: 'scheduledFor is not a valid ISO timestamp' }, { status: 400 })
     }
+    if (scheduleTooFar(whenMs)) return NextResponse.json({ error: SCHEDULE_TOO_FAR_WORDS }, { status: 400 })
     if (whenMs <= Date.now() + 30_000) {
       return NextResponse.json({ error: 'scheduledFor must be at least 30 seconds in the future' }, { status: 400 })
     }

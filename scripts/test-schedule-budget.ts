@@ -87,16 +87,25 @@ const RUNNER = live(read('lib/generation-job-runner.ts'))
     budget === runnerBudget, `schedule-publish ${budget}, worker ${runnerBudget}`)
 }
 
-// ── the call happens before the rows that matter ────────────────────────────
+// ── the rows that matter no longer wait on the call ──────────────────────────
 //
-// This is WHY a timeout here is silent rather than loud. Worth pinning so the
-// ordering cannot be shuffled without somebody reading this.
+// The ordering above is WHY a timeout here was silent: everything after the
+// await was lost when the await was cut short. It happened again from 9 Oct to
+// 20 Nov 2026 (support: "the blog post goes live, nothing gets posted to our
+// socials"), with the deadline right, because writing a post now runs up to the
+// 290 second budget. So the cascade is queued INSIDE generate, right after the
+// post is saved (lib/schedule-cascade queueCascade), and schedule-publish only
+// asks for it and calls the same idempotent function as a backup.
 {
-  const gen = SCHEDULE_LIVE.indexOf('const genRes = await fetchWithTimeout')
-  const parent = SCHEDULE_LIVE.indexOf("kind: 'blog_publish'")
-  check('the generate call really does precede the schedule rows',
-    gen !== -1 && parent !== -1 && gen < parent,
-    'everything after the await is lost when the await is cut short, and none of it is retried')
+  const GEN = readFileSync(join(process.cwd(), 'app', 'api', 'blog', 'generate', 'route.ts'), 'utf8')
+  const save = GEN.indexOf("const stripScheduleKeys")
+  const queue = GEN.indexOf('cascade = await queueCascade(createAdminClient()')
+  check('generate queues the cascade itself, after saving the post',
+    save !== -1 && queue > save && /body\.queueCascade === true && savedPost\?\.id && isScheduled && !heldForReview/.test(GEN),
+    'the rows that publish the post and fire the socials must be written in the invocation that cannot be cut short')
+  check('schedule-publish asks generate to queue it and only backs it up',
+    /queueCascade: true,\s*\n\s*socials,/.test(SCHEDULE_LIVE) && SCHEDULE_LIVE.indexOf('const cascade = await queueCascade(') > SCHEDULE_LIVE.indexOf('const genRes = await fetchWithTimeout') && !/from\('scheduled_posts'\)/.test(SCHEDULE_LIVE),
+    'no scheduled_posts write may depend on the generate call returning')
   check('the route still refuses to report success when generate did not return a post',
     /!genJson\.success \|\| !genJson\.postId \|\| !genJson\.wordpressPostId/.test(SCHEDULE_LIVE),
     'the one thing that worked here: it errored rather than claiming a schedule it had not written')

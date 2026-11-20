@@ -82,3 +82,16 @@ export interface SocialScheduleEntry {
 
 // Re-export Social so consumers don't need to import from both modules.
 export type { Social }
+
+/** The furthest ahead a post can be scheduled. A support case (2026-11-20)
+ *  had a post set for the year 3032: one wrong digit, accepted silently, and
+ *  the post would never have gone out. A year and a day catches the typo and
+ *  still allows any real plan. */
+export const MAX_SCHEDULE_DAYS = 366
+
+/** True when a time is further ahead than anyone plans a post. Pure. */
+export function scheduleTooFar(ms: number, now = Date.now()): boolean {
+  return Number.isFinite(ms) && ms > now + MAX_SCHEDULE_DAYS * 86_400_000
+}
+
+export const SCHEDULE_TOO_FAR_WORDS = 'That date is more than a year away. Check the year, then pick the time again.'
