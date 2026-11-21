@@ -118,6 +118,18 @@ void (async () => {
     ['components/content/ScheduleEditModal.tsx', /scheduleTooFar\(new Date\(iso\)\.getTime\(\)\)/],
     ['components/content/BulkScheduleVideosModal.tsx', /scheduleTooFar\(startMs\)/],
   ] as Array<[string, RegExp]>) check(`${f} refuses a date more than a year out`, re.test(read(f)))
+  // 5. A real cancel (support, 2026-11-21: "I don't see the option to delete the scheduled post")
+  const EDIT = read('app/api/blog/schedule-edit/route.ts')
+  const cancelBlock = EDIT.slice(EDIT.indexOf('if (body.cancel === true) {'), EDIT.indexOf('// ── 1. Reschedule'))
+  check('schedule-edit cancels a post outright', cancelBlock.length > 0 && /status: 'cancelled'/.test(cancelBlock) && /update\(\{ scheduled_for: null \}\)/.test(cancelBlock))
+  check('WordPress goes back to draft first for a post it holds as scheduled, and a refusal there changes nothing here', cancelBlock.indexOf("updatePost(post.wordpress_post_id as number, { status: 'draft' })") > -1 && cancelBlock.indexOf("updatePost(post.wordpress_post_id as number, { status: 'draft' })") < cancelBlock.indexOf("from('scheduled_posts')") && /status: 502/.test(cancelBlock))
+  check('the missed-schedule sweep only picks posts that still have a time, so clearing it stops the publish', /\.not\('scheduled_for', 'is', null\)/.test(read('lib/missed-schedule-heal.ts')))
+  const ROWCANCEL = read('app/api/blog/scheduled-cancel/route.ts')
+  check('cancelling a publish row clears the post\'s time too, and says so if it cannot', /row\.platform == null && row\.blog_post_id/.test(ROWCANCEL) && /update\(\{ scheduled_for: null \}\)/.test(ROWCANCEL) && /so it can still publish/.test(ROWCANCEL))
+  const PAGE = read('app/(dashboard)/content/page.tsx')
+  check('a post listed from itself, with nothing queued, now has a Cancel', /item\.status === 'pending' && item\.synthetic && item\.kind === 'blog_publish' && item\.blog_post_id && \(/.test(PAGE) && /onCancelPost\(item\.blog_post_id as string\)/.test(PAGE) && /body: JSON\.stringify\(\{ blogPostId, cancel: true \}\)/.test(PAGE))
+  check('the Edit schedule window has Cancel this schedule, and its dismiss button says Close', /Cancel this schedule/.test(read('components/content/ScheduleEditModal.tsx')) && /onCancelPost=\{onCancelPost\}/.test(PAGE) && />Close<\/button>/.test(read('components/content/ScheduleEditModal.tsx')))
+  check('the too far message says how to stop a post instead', /press Cancel on it in your Scheduled list/.test(read('lib/schedule-types.ts')))
   check('no dashes in the new words', !/[–—]/.test(read('lib/schedule-types.ts').split('MAX_SCHEDULE_DAYS')[1] || ''))
 
   if (failures.length) {

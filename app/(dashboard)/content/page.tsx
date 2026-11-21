@@ -2164,13 +2164,15 @@ const STATUS_PILL: Record<ScheduledItem['status'], { label: string; bg: string; 
 }
 
 function ScheduledList({
-  items, loading, error, onRefresh, onCancel, onPublishNow, publishingNow,
+  items, loading, error, onRefresh, onCancel, onCancelPost, onPublishNow, publishingNow,
 }: {
   items: ScheduledItem[] | null
   loading: boolean
   error: string | null
   onRefresh: () => void
   onCancel: (id: string) => void
+  /** Cancel a whole scheduled post: its publish and every queued social. */
+  onCancelPost: (blogPostId: string) => Promise<boolean>
   onPublishNow: (blogPostId: string) => Promise<void>
   publishingNow: string | null
 }) {
@@ -2284,6 +2286,7 @@ function ScheduledList({
           bodies={editSchedule.cascadeBodies ?? {}}
           onClose={() => setEditSchedule(null)}
           onSaved={onRefresh}
+          onCancelPost={onCancelPost}
         />
       )}
       <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
@@ -2473,6 +2476,18 @@ function ScheduledList({
               {item.status === 'pending' && !item.synthetic && (
                 <button
                   onClick={() => onCancel(item.id)}
+                  className="text-xs text-[#86868b] dark:text-[#8e8e93] hover:text-[#ff3b30] transition-colors"
+                >
+                  Cancel
+                </button>
+              )}
+              {/* A post scheduled with nothing queued is listed from the post
+                  itself and had no Cancel at all (support, 2026-11-21: a
+                  creator moved one to 3032 to stop it). This cancels the
+                  whole schedule, WordPress included. */}
+              {item.status === 'pending' && item.synthetic && item.kind === 'blog_publish' && item.blog_post_id && (
+                <button
+                  onClick={() => void onCancelPost(item.blog_post_id as string)}
                   className="text-xs text-[#86868b] dark:text-[#8e8e93] hover:text-[#ff3b30] transition-colors"
                 >
                   Cancel
@@ -3370,6 +3385,33 @@ export default function ContentPage() {
       toast.error(errText(e) || 'Could not publish it.')
     } finally {
       setPublishingNow(null)
+    }
+  }
+
+  /** Cancel a whole scheduled post (PATCH schedule-edit { cancel: true }):
+   *  WordPress back to draft for a post it holds as scheduled, every queued
+   *  row cancelled, and the post's time cleared so nothing publishes it. */
+  async function cancelScheduledPost(blogPostId: string): Promise<boolean> {
+    if (!(await confirm({
+      title: 'Cancel this scheduled post?',
+      description: 'It won\'t publish, and none of its social posts go out. The post stays as a draft on your WordPress site, where you can delete it.',
+      confirmLabel: 'Cancel post',
+      destructive: true,
+    }))) return false
+    try {
+      const res = await fetch('/api/blog/schedule-edit', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ blogPostId, cancel: true }),
+      })
+      const data = await res.json().catch(() => ({ error: `The server did not answer (HTTP ${res.status}). Refresh the list to see what changed.` }))
+      if (!res.ok || !data.ok) throw new Error(data.error || 'Could not cancel it')
+      toast.success('Cancelled. It will not publish, and its social posts will not go out.')
+      await loadScheduled()
+      return true
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not cancel it', { duration: 12000 })
+      return false
     }
   }
 
@@ -4786,6 +4828,7 @@ export default function ContentPage() {
           error={scheduledError}
           onRefresh={loadScheduled}
           onCancel={cancelScheduled}
+          onCancelPost={cancelScheduledPost}
           onPublishNow={publishNow}
           publishingNow={publishingNow}
         />

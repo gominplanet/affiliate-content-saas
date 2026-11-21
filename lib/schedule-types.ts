@@ -94,4 +94,4 @@ export function scheduleTooFar(ms: number, now = Date.now()): boolean {
   return Number.isFinite(ms) && ms > now + MAX_SCHEDULE_DAYS * 86_400_000
 }
 
-export const SCHEDULE_TOO_FAR_WORDS = 'That date is more than a year away. Check the year, then pick the time again.'
+export const SCHEDULE_TOO_FAR_WORDS = 'That date is more than a year away. Check the year, then pick the time again. To stop a post going out, press Cancel on it in your Scheduled list.'

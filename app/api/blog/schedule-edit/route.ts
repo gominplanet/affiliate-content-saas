@@ -4,7 +4,8 @@
 //   Edit an ALREADY-scheduled blog post without regenerating it:
 //     • move the scheduled date/time (shifts the social cascade with it), and/or
 //     • add social platforms (e.g. Facebook, now that it's connected), and/or
-//     • remove queued platforms.
+//     • remove queued platforms, and/or
+//     • cancel the schedule outright ({ cancel: true }).
 //
 // Body: {
 //   blogPostId: string,
@@ -59,6 +60,8 @@ export async function PATCH(request: Request) {
        *  to both newly-added rows and existing pending rows for that platform. */
       bodies?: Record<string, string>
       siteId?: string | null
+      /** Stop this post going out at all: its publish and every queued social. */
+      cancel?: boolean
     }
     const blogPostId = (body.blogPostId || '').trim()
     if (!blogPostId) return NextResponse.json({ error: 'blogPostId required' }, { status: 400 })
@@ -87,6 +90,39 @@ export async function PATCH(request: Request) {
       .select('id, kind, platform, scheduled_at')
       .eq('user_id', user.id).eq('blog_post_id', blogPostId).eq('status', 'pending')
     const pending = (pendingRows ?? []) as Array<{ id: string; kind: string | null; platform: string | null; scheduled_at: string }>
+
+    // ── 0. CANCEL THE SCHEDULE ─────────────────────────────────────────────
+    // Support, 2026-11-21: "I don't see the option to delete the scheduled
+    // post." A creator had moved one to the year 3032 because nothing would
+    // stop it. A post scheduled with nothing queued shows in the Scheduled list
+    // with no Cancel at all, and cancelling a queued publish row never stopped
+    // the post either: scheduled_for stayed, and the missed-schedule sweep
+    // (lib/missed-schedule-heal) publishes any draft-flip draft whose time has
+    // passed. A real cancel does three things, WordPress first so a refusal
+    // there changes nothing here: a post WordPress holds as scheduled
+    // (wp-native) goes back to draft, every pending row for it is cancelled,
+    // and its scheduled time is cleared so nothing publishes it later.
+    if (body.cancel === true) {
+      if (scheduleMode !== 'draft-flip' && post.wordpress_post_id) {
+        try {
+          const creds = await getWordPressCredentials(supabase, user.id, (post.wordpress_site_id as string) ?? body.siteId ?? null)
+          if (!creds) return NextResponse.json({ error: 'WordPress is not connected for this site, so MVP could not stop it: the post still publishes at its time. Reconnect WordPress and cancel again, or set the post to draft in WordPress.' }, { status: 502 })
+          const wp = createWordPressService(creds.wordpress_url, creds.wordpress_username, creds.wordpress_app_password, creds.wordpress_api_token ?? undefined)
+          await wp.updatePost(post.wordpress_post_id as number, { status: 'draft' })
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e)
+          return NextResponse.json({ error: `WordPress did not take the change (${msg.slice(0, 120)}), so the post still publishes at its time. Try again in a minute, or set it to draft in WordPress.` }, { status: 502 })
+        }
+      }
+      const { data: stopped, error: rowsErr } = await (supabase as any).from('scheduled_posts')
+        .update({ status: 'cancelled', updated_at: new Date().toISOString() })
+        .eq('user_id', user.id).eq('blog_post_id', blogPostId).eq('status', 'pending')
+        .select('id')
+      if (rowsErr) return NextResponse.json({ error: `The queued posts were not cancelled: ${rowsErr.message}. Nothing was changed; try again.` }, { status: 500 })
+      const { error: clearErr } = await (supabase as any).from('blog_posts').update({ scheduled_for: null }).eq('id', blogPostId).eq('user_id', user.id)
+      if (clearErr) return NextResponse.json({ error: `The queued social posts were cancelled, but the post's time was not cleared (${clearErr.message}), so it can still publish. Try again.` }, { status: 500 })
+      return NextResponse.json({ ok: true, cancelled: true, cancelledRows: ((stopped ?? []) as unknown[]).length, wpDraft: scheduleMode !== 'draft-flip' && !!post.wordpress_post_id })
+    }
 
     // ── 1. Reschedule ──────────────────────────────────────────────────────
     let newBaseMs = oldBaseMs

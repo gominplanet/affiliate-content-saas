@@ -29,7 +29,7 @@ export async function POST(request: Request) {
       .eq('id', id)
       .eq('user_id', user.id)
       .eq('status', 'pending')
-      .select('id')
+      .select('id, blog_post_id, platform')
       .maybeSingle()
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
@@ -60,6 +60,18 @@ export async function POST(request: Request) {
       // for rows scheduled before the migration ran. Drop the try/catch
       // once the migration has landed everywhere.
       console.warn('[scheduled-cancel] cascade skipped:', e instanceof Error ? e.message : String(e))
+    }
+
+    // A CANCELLED PUBLISH ROW MUST STOP THE PUBLISH. The missed-schedule sweep
+    // (lib/missed-schedule-heal) publishes any draft-flip draft whose
+    // scheduled_for has passed, row or no row, so a cancel that left the
+    // post's time in place still let it go live half an hour later
+    // (support, 2026-11-21). Clear it, and say so if that fails.
+    const row = data as { blog_post_id?: string | null; platform?: string | null }
+    if (row.platform == null && row.blog_post_id) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { error: clearErr } = await (supabase as any).from('blog_posts').update({ scheduled_for: null }).eq('id', row.blog_post_id).eq('user_id', user.id)
+      if (clearErr) return NextResponse.json({ error: `The publish was cancelled, but the post's time was not cleared (${clearErr.message}), so it can still publish. Try again.` }, { status: 500 })
     }
 
     return NextResponse.json({ ok: true, cascadedChildCount })

@@ -32,7 +32,7 @@ function isoToLocalInput(iso: string): string {
 }
 
 export default function ScheduleEditModal({
-  blogPostId, scheduledAt, platforms, title, link, bodies, onClose, onSaved,
+  blogPostId, scheduledAt, platforms, title, link, bodies, onClose, onSaved, onCancelPost,
 }: {
   blogPostId: string
   scheduledAt: string
@@ -43,6 +43,8 @@ export default function ScheduleEditModal({
   bodies?: Record<string, string>
   onClose: () => void
   onSaved: () => void
+  /** Cancel the whole schedule (asks first); true when it was cancelled. */
+  onCancelPost?: (blogPostId: string) => Promise<boolean>
 }) {
   const original = new Set(platforms)
   const defaultCaption = `${(title || 'New post').trim()}${link ? `\n\n${link}` : ''}`
@@ -216,7 +218,19 @@ export default function ScheduleEditModal({
 
         {/* Footer pinned below the scroll area — always reachable. */}
         <div className="flex items-center justify-end gap-2 border-t border-[var(--border-2,#e5e5e7)] px-5 py-3 flex-shrink-0">
-          <button onClick={onClose} className="px-3 py-2 rounded-lg text-xs font-medium text-[#6e6e73] dark:text-[#ebebf0] hover:bg-[var(--surface-hover,#f5f5f7)]">Cancel</button>
+          {/* Stop the post going out at all (support, 2026-11-21: there was no
+              way to, so a creator moved one to the year 3032). */}
+          {onCancelPost && (
+            <button
+              type="button"
+              disabled={saving}
+              onClick={async () => { if (await onCancelPost(blogPostId)) onClose() }}
+              className="mr-auto px-2 py-2 rounded-lg text-xs font-medium text-[#ff3b30] hover:bg-[#ff3b30]/10 disabled:opacity-60"
+            >
+              Cancel this schedule
+            </button>
+          )}
+          <button onClick={onClose} className="px-3 py-2 rounded-lg text-xs font-medium text-[#6e6e73] dark:text-[#ebebf0] hover:bg-[var(--surface-hover,#f5f5f7)]">Close</button>
           <button onClick={save} disabled={saving} className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-semibold bg-[#7C3AED] text-white hover:bg-[#6D28D9] disabled:opacity-60">
             {saving ? <Loader2 size={13} className="animate-spin" /> : null} Save changes
           </button>
