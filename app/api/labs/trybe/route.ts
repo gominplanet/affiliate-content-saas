@@ -1044,7 +1044,9 @@ export async function POST(request: Request) {
     // saves every day, with where this creator stands with each brand. Fit is
     // MVP's own pick, read by the page through 'browse' by ids, the same as
     // Find brands. Open to Pro (lib/labs-preview).
-    if (!canUsePreview('trybe_top_board', tier)) return NextResponse.json({ error: 'The Top 100 board is part of MVP Pro.', code: 'tier_not_allowed' }, { status: 403 })
+    // TRYBE Free has the Top 100 (lib/trybe-free FREE_ACTIONS): the page showed
+    // the board and this answered "part of MVP Pro" (found 2026-11-22).
+    if (!canUsePreview('trybe_top_board', tier) && g.access !== 'free') return NextResponse.json({ error: 'The Top 100 board is part of MVP Pro.', code: 'tier_not_allowed' }, { status: 403 })
     const shared = await topBoardShared(admin)
     if ('error' in shared) return NextResponse.json({ error: shared.error }, { status: 500 })
     const ids = shared.board.brands.filter(b => shared.info[b.id]).map(b => b.id)

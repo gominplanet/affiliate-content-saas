@@ -99,6 +99,8 @@ check('Match my TikTok stays Pro on the server too', /trybeAccess\(me\?\.tier\) 
 check('the pricing page says TRYBE is free, under the plan, with the no-card sign-up', /Only here for TRYBE\? TRYBE is free\./.test(read('app/pricing/page.tsx')) && /href=\{TRYBE_FREE_SIGNUP\}/.test(read('app/pricing/page.tsx')))
 check('Billing tells an account without a plan that TRYBE is free', /TRYBE is free without a plan: <a href="\/trybe"/.test(read('app/(dashboard)/billing/page.tsx')))
 
+check('the Top 100 board answers TRYBE Free, as the page shows it', /canUsePreview\('trybe_top_board', tier\) && g\.access !== 'free'/.test(readFileSync('app/api/labs/trybe/route.ts', 'utf8')) && FREE_ACTIONS.has('top_board'))
+
 if (failures.length) {
   console.error(`test-trybe-free: ${failures.length} failed`)
   for (const f of failures) console.error(`  ✗ ${f}`)
