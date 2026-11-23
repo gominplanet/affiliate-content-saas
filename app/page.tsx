@@ -1500,6 +1500,9 @@ const NAV_ANCHORS = [
   // Full public product tour — a standalone page (/tour), not an in-page
   // anchor. Sits before Pricing so prospects can see what it does, then price.
   { label: 'Tour', href: '/tour' },
+  // The free TRYBE feature's own landing page (/trybe-free). Surfaced in the
+  // nav so the one free door into MVP is one click from anywhere on the site.
+  { label: 'TRYBE Free', href: '/trybe-free' },
   { label: 'Pricing', href: '/pricing' },
   // The free Amazon Influencer guide. A lead magnet earns its place in the nav
   // ahead of the FAQ: it is the one link here that asks for nothing.
@@ -1932,6 +1935,7 @@ function Footer() {
             title="Product"
             links={[
               { label: 'Roles', href: '#roles' },
+              { label: 'TRYBE Free', href: '/trybe-free' },
               { label: 'TRYBE brand deals', href: '#trybe' },
               { label: 'Workflow', href: '#how-it-works' },
               { label: 'Videos', href: '#videos' },
