@@ -71,18 +71,32 @@ export const CC_HIDE_MIN_STAGED = 250_000
  *  export, passed the old 100,000 floor against 955,236 live campaigns, and
  *  "Hide missing" marked the other ~850,000 full. A whole export is about
  *  440,000 rows (Amazon leaves out what can no longer be joined, so it is
- *  less than half the catalogue), so the floor is now 250,000 rows AND 30% of
- *  the live catalogue, and a live count MVP cannot read blocks it.
+ *  less than half the catalogue), so the floor is now 250,000 rows (and, until
+ *  2026-11-23, 30% of the live catalogue: see CC_HIDE_LAST_SHARE).
  *
  *  Spot counts are NOT required: Amazon's export no longer has them. A
  *  campaign in the export is open (count unknown); that is what the hide uses. */
-export const CC_HIDE_MIN_SHARE = 0.3
+/** NOT AGAINST THE WHOLE CATALOGUE ANY MORE (Seb, 2026-11-23: "Amazon is
+ *  showing over 1 million campaigns but it is not true since most of them are
+ *  full.. we need to make sure MVP reflects that reality"). Add-only never
+ *  deletes, so the catalogue only grows (1,466,861 rows that day), and 30% of
+ *  it climbed past the size of a whole export, which shrinks as campaigns
+ *  fill. The rule that was meant to catch a partial upload ended up blocking
+ *  whole ones, and full campaigns kept showing open spots. An upload is now
+ *  compared with the last WHOLE export (the last upload whose hide ran): a
+ *  partial one is a fraction of it, a new whole one is close to it. Until one
+ *  has been recorded, the 250,000 row floor decides alone; a wrong hide is
+ *  undone by the next whole upload (nothing is deleted). */
+export const CC_HIDE_LAST_SHARE = 0.6
 
 export type CcHideFacts = {
   /** Live campaigns in the catalogue now (ends today or later). */
   live?: number | null
   /** Whether ANY staged row carries an open-slots value (reported, not required). */
   stagedHasSpots?: boolean | null
+  /** Rows in the last upload whose hide ran: the last whole export. Null
+   *  until one has been recorded. */
+  lastWhole?: number | null
 }
 
 /** Why missing campaigns must NOT be marked full, in words; null when it is
@@ -90,9 +104,12 @@ export type CcHideFacts = {
 export function ccHideMissingBlock(mode: CcMergeMode, stagedEstimate: number | null | undefined, facts: CcHideFacts = {}): string | null {
   if (mode !== 'add-only') return 'Replace mode removes missing campaigns instead.'
   if (typeof stagedEstimate !== 'number') return 'MVP could not count the upload.'
-  if (typeof facts.live !== 'number') return 'MVP could not count the live catalogue, so nothing was marked full.'
-  if (stagedEstimate < CC_HIDE_MIN_STAGED || stagedEstimate < facts.live * CC_HIDE_MIN_SHARE) {
-    return `The upload has ${stagedEstimate.toLocaleString('en-US')} rows against ${facts.live.toLocaleString('en-US')} live campaigns, so it looks like part of the export. Upload every ZIP of the export together, then try again.`
+  const rows = stagedEstimate.toLocaleString('en-US')
+  if (stagedEstimate < CC_HIDE_MIN_STAGED) {
+    return `The upload has ${rows} rows, under the ${CC_HIDE_MIN_STAGED.toLocaleString('en-US')} a whole export has, so it looks like part of the export. Upload every ZIP of the export together, then try again.`
+  }
+  if (typeof facts.lastWhole === 'number' && facts.lastWhole > 0 && stagedEstimate < facts.lastWhole * CC_HIDE_LAST_SHARE) {
+    return `The upload has ${rows} rows; the last whole export had ${facts.lastWhole.toLocaleString('en-US')}, so this looks like part of the export. Upload every ZIP of the export together, then try again.`
   }
   return null
 }

@@ -110,7 +110,12 @@ check('a live check sends every campaign Amazon returned, not only those with a 
   // 2026-10-10: 105,838 rows (one part of the export) marked the rest full.
   check('the partial upload that emptied the catalogue (105,838 of 955,236) hides nothing, and says why', !ccShouldHideMissing('add-only', 105838, live) && /looks like part of the export/.test(ccHideMissingBlock('add-only', 105838, live) || ''))
   check('Amazon\'s export without spot counts can still hide what it left out', ccShouldHideMissing('add-only', 442394, { live: 955236, stagedHasSpots: false }))
-  check('a live count MVP could not read blocks the hide', !ccShouldHideMissing('add-only', 900000, { live: null }))
+  // 2026-11-23 (Seb: most of Amazon's million campaigns are full): add-only
+  // grew the catalogue to 1,466,861 rows, and 30% of it outgrew a whole export.
+  check('a whole export is no longer blocked by the size the catalogue grew to', ccShouldHideMissing('add-only', 400000, { live: 1466861 }))
+  check('an upload is judged against the last whole export: part of it hides nothing, a new whole one hides', !ccShouldHideMissing('add-only', 260000, { live: 1466861, lastWhole: 440000 }) && /the last whole export had 440,000/.test(ccHideMissingBlock('add-only', 260000, { lastWhole: 440000 }) || '') && ccShouldHideMissing('add-only', 420000, { lastWhole: 440000 }))
+  const DR = read('app/api/cron/drain-cc-import/route.ts')
+  check('a finished hide records the upload as the last whole export, and the check reads it', /key: CC_LAST_WHOLE_KEY, active: false, value: \{ rows: stagedRows/.test(DR) && /stagedRows = staged/.test(DR) && /'cc_last_whole_export'/.test(read('lib/cc-hide-facts.ts')))
   const M424 = read('supabase/migrations/424_cc_export_without_counts.sql')
   check('migration 424: a campaign in the export with no count becomes open, count unknown; a real or recent live count is kept', /WHEN EXCLUDED\.available_slot IS NOT NULL THEN EXCLUDED\.available_slot WHEN c\.available_slot > 0 THEN c\.available_slot WHEN c\.last_live_at > now\(\) - interval '24 hours' THEN c\.available_slot ELSE NULL END/.test(M424))
   check('migration 424: missing from the export is full, count known or not', /AND \(c\.available_slot > 0 OR c\.available_slot IS NULL\)/.test(M424) && !/IF NOT EXISTS \(SELECT 1 FROM cc_campaign_catalog_import WHERE available_slot IS NOT NULL\)/.test(M424))

@@ -12,6 +12,7 @@ export async function ccHideFacts(admin: any): Promise<CcHideFacts> {
   const today = new Date().toISOString().slice(0, 10)
   let live: number | null = null
   let stagedHasSpots: boolean | null = null
+  let lastWhole: number | null = null
   try {
     const { count, error } = await admin.from('cc_campaign_catalog')
       .select('campaign_id', { count: 'estimated', head: true }).gte('ends_at', today)
@@ -22,5 +23,12 @@ export async function ccHideFacts(admin: any): Promise<CcHideFacts> {
       .select('campaign_id').not('available_slot', 'is', null).limit(1)
     if (!error) stagedHasSpots = Array.isArray(data) && data.length > 0
   } catch { /* unknown */ }
-  return { live, stagedHasSpots }
+  try {
+    // The last whole export (written when a hide pass finishes; see
+    // app/api/cron/drain-cc-import CC_LAST_WHOLE_KEY).
+    const { data } = await admin.from('system_flags').select('value').eq('key', 'cc_last_whole_export').maybeSingle()
+    const rows = Number((data?.value as { rows?: unknown } | null)?.rows)
+    if (Number.isFinite(rows) && rows > 0) lastWhole = rows
+  } catch { /* none recorded */ }
+  return { live, stagedHasSpots, lastWhole }
 }

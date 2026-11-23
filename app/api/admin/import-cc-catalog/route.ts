@@ -81,11 +81,14 @@ export async function GET() {
     } catch { return null }
   }
   const today = new Date().toISOString().slice(0, 10)
-  const [staged, live, enriched, enrichable, hasStaged, keepa, hasUnmerged] = await Promise.all([
+  const [staged, live, enriched, enrichable, hasStaged, keepa, hasUnmerged, open, full] = await Promise.all([
     countOf('cc_campaign_catalog_import'),
     countOf('cc_campaign_catalog'),
+    // ENRICHED OF THE SAME ROWS AS ENRICHABLE (live, with a rep ASIN). It
+    // counted every enriched row, ended campaigns too, against live ones only,
+    // and the card read 140% (Seb's screenshot, 2026-11-23).
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    countOf('cc_campaign_catalog', (q: any) => q.not('product_verified_at', 'is', null)),
+    countOf('cc_campaign_catalog', (q: any) => q.gte('ends_at', today).not('rep_asin', 'is', null).not('product_verified_at', 'is', null)),
     // ENRICHABLE = the rows enrichment can actually touch (live + has a rep ASIN).
     // The honest coverage % is enriched / enrichable, not enriched / all rows:
     // ended and ASIN-less campaigns are never enriched by design, so dividing by
@@ -97,6 +100,14 @@ export async function GET() {
     // the Product Finder all draw from. /token doesn't cost product tokens.
     fetchKeepaTokenStatus(),
     hasUnmergedCheck(),
+    // WHAT MEMBERS CAN JOIN (Seb, 2026-11-23: Amazon says a million campaigns,
+    // most are full). Open = still running and not marked full, the same rule
+    // as members' "Has open spots"; full = running, marked full because the
+    // last whole export left it out. Everything else MVP holds has ended.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    countOf('cc_campaign_catalog', (q: any) => q.gte('ends_at', today).or('available_slot.gt.0,available_slot.is.null')),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    countOf('cc_campaign_catalog', (q: any) => q.gte('ends_at', today).eq('available_slot', 0)),
   ])
   // Background-drain status (migration 251) so the UI can show "merging in the
   // background" progress even with the tab closed. Best-effort; absent → null.
@@ -110,7 +121,7 @@ export async function GET() {
     }
   } catch { /* pre-251 DB — no background status */ }
 
-  return NextResponse.json({ ok: true, staged, live, enriched, enrichable, hasStaged, hasUnmerged, keepa, drain })
+  return NextResponse.json({ ok: true, staged, live, open, full, enriched, enrichable, hasStaged, hasUnmerged, keepa, drain })
 }
 
 export async function POST(request: Request) {

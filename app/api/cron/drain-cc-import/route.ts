@@ -26,6 +26,9 @@ const ACTIVE_KEY = 'cc_import_active'
 const BATCH = 500
 const PURGE_SCAN = 5000
 const HIDE_SCAN = 5000
+/** The size of the last whole export, kept when a hide pass finishes, so the
+ *  next upload is judged against it (lib/cc-merge-mode CC_HIDE_LAST_SHARE). */
+const CC_LAST_WHOLE_KEY = 'cc_last_whole_export'
 
 const missing = (msg: string | undefined) =>
   /could not find the function|does not exist|schema cache|PGRST202/i.test(msg || '')
@@ -54,7 +57,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ ok: true, aborted: 'staging empty' })
   }
 
-  const s = (flag.value || {}) as { phase?: string; cursor?: string; upserted?: number; purged?: number; scanned?: number; mode?: string; hidden?: number }
+  const s = (flag.value || {}) as { phase?: string; cursor?: string; upserted?: number; purged?: number; scanned?: number; mode?: string; hidden?: number; staged?: number }
   // The admin's choice rides on the flag, set when the drain was armed. An older
   // flag with no mode reads as 'replace', which is what it was doing.
   const mode = ccMergeMode(s.mode)
@@ -64,6 +67,8 @@ export async function GET(request: Request) {
   let purged = Number(s.purged || 0)
   let scannedTotal = Number(s.scanned || 0)
   let hidden = Number(s.hidden || 0)
+  // The upload's size, counted when the hide pass starts, kept for its end.
+  let stagedRows: number | null = typeof s.staged === 'number' ? s.staged : null
 
   // Keep enrichment paused while we work (refresh so a stale flag can't linger).
   try {
@@ -76,7 +81,7 @@ export async function GET(request: Request) {
   const save = async (extra: any = {}) => {
     try {
       await admin.from('system_flags')
-        .update({ value: { phase, cursor, upserted, purged, scanned: scannedTotal, mode, hidden, ...extra }, updated_at: new Date().toISOString() })
+        .update({ value: { phase, cursor, upserted, purged, scanned: scannedTotal, mode, hidden, ...(stagedRows != null ? { staged: stagedRows } : {}), ...extra }, updated_at: new Date().toISOString() })
         .eq('key', DRAIN_KEY)
     } catch { /* best-effort */ }
   }
@@ -128,7 +133,7 @@ export async function GET(request: Request) {
       await finish({ purged: 0, purgeSkipped: true, hidden: 0, hideSkipped: block })
       return NextResponse.json({ ok: true, done: true, mode, upserted, purged: 0, purgeSkipped: true, hideSkipped: true })
     }
-    phase = 'hide'; cursor = ''; hidden = 0; scannedTotal = 0
+    phase = 'hide'; cursor = ''; hidden = 0; scannedTotal = 0; stagedRows = staged
     await save()
   }
 
@@ -153,7 +158,11 @@ export async function GET(request: Request) {
       if (scanned < HIDE_SCAN) { done = true; break }
     }
     if (done) {
-      await finish({ purged: 0, purgeSkipped: true, hidden, scanned: scannedTotal })
+      await finish({ purged: 0, purgeSkipped: true, hidden, scanned: scannedTotal, ...(stagedRows != null ? { staged: stagedRows } : {}) })
+      // This upload was a whole export: the next one is judged against it.
+      if (stagedRows != null && stagedRows > 0) {
+        try { await admin.from('system_flags').upsert({ key: CC_LAST_WHOLE_KEY, active: false, value: { rows: stagedRows, hidden, at: new Date().toISOString() }, updated_at: new Date().toISOString() }, { onConflict: 'key' }) } catch { /* the floor still applies */ }
+      }
       return NextResponse.json({ ok: true, done: true, mode, upserted, hidden })
     }
     await save()

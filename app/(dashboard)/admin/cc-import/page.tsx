@@ -17,7 +17,7 @@ import { nextStep, mergeLabel, backgroundLabel } from '@/lib/cc-import-steps'
 import { requestCcCatalogScan } from '@/lib/extension-frame'
 
 interface KeepaStatus { tokensLeft: number | null; refillRate: number | null; refillIn: number | null }
-interface Counts { staged: number | null; live: number | null; enriched: number | null; enrichable: number | null; hasStaged: boolean | null; hasUnmerged?: boolean | null; keepa: KeepaStatus | null }
+interface Counts { staged: number | null; live: number | null; open?: number | null; full?: number | null; enriched: number | null; enrichable: number | null; hasStaged: boolean | null; hasUnmerged?: boolean | null; keepa: KeepaStatus | null }
 
 export default function AdminCcImportPage() {
   const [counts, setCounts] = useState<Counts | null>(null)
@@ -56,7 +56,7 @@ export default function AdminCcImportPage() {
       const r = await fetch('/api/admin/import-cc-catalog')
       const d = await r.json()
       if (!r.ok) throw new Error(d.error || 'Failed to load')
-      setCounts({ staged: d.staged, live: d.live, enriched: d.enriched, enrichable: d.enrichable ?? null, hasStaged: d.hasStaged ?? null, hasUnmerged: d.hasUnmerged ?? null, keepa: d.keepa ?? null })
+      setCounts({ staged: d.staged, live: d.live, open: d.open ?? null, full: d.full ?? null, enriched: d.enriched, enrichable: d.enrichable ?? null, hasStaged: d.hasStaged ?? null, hasUnmerged: d.hasUnmerged ?? null, keepa: d.keepa ?? null })
       setDrain(d.drain ?? null)
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Failed to load')
@@ -368,7 +368,10 @@ export default function AdminCcImportPage() {
       {/* Counts */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-5">
         <StatCard label="Staged (this week's upload)" value={approx(counts?.staged)} icon={<Database size={16} />} accent="#7C3AED" hint="Total rows in staging. Merging flags them in place. This doesn't count down. Clears when you upload next week's CSV." />
-        <StatCard label="Live catalog" value={approx(counts?.live)} icon={<CheckCircle2 size={16} />} accent="#34c759" />
+        {/* What members can join, not every row MVP holds (Seb, 2026-11-23:
+            Amazon's million campaigns are mostly full). */}
+        <StatCard label="Open to join" value={approx(counts?.open ?? null)} icon={<CheckCircle2 size={16} />} accent="#34c759"
+          hint={counts?.live != null ? `Of ${approx(counts.live)} campaigns MVP holds: ${approx(counts?.full ?? null)} marked full (the last whole export left them out), the rest ended.` : undefined} />
         <StatCard
           label="Enriched (of enrichable)"
           value={counts?.enriched == null ? '—' : `${approx(counts.enriched)}${enrichedPct != null ? ` · ${enrichedPct}%` : ''}`}
