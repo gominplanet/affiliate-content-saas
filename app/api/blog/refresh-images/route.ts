@@ -27,6 +27,7 @@ import { fal } from '@fal-ai/client'
 import { credsForPost, checkSamePost } from '@/lib/post-site'
 import { fetchWithTimeout } from '@/lib/fetch-timeout'
 import { imagesStatusOf } from '@/lib/images-status'
+import { readUserPhotos } from '@/lib/place-user-photos'
 
 export const maxDuration = 300
 
@@ -44,7 +45,7 @@ export async function POST(request: Request) {
   // skip AI generation entirely — same rule as the immediate generate path. This
   // is what carries the creator's own photos onto a SCHEDULED post (the schedule
   // flow generates with images off, then calls this route). modernday.tech ticket.
-  const userImageUrls = Array.isArray(reqBody.userImageUrls)
+  let userImageUrls: string[] = Array.isArray(reqBody.userImageUrls)
     ? reqBody.userImageUrls.filter(u => typeof u === 'string' && /^https?:\/\//.test(u)).slice(0, 3)
     : []
 
@@ -64,6 +65,17 @@ export async function POST(request: Request) {
   }
   const post = (postRows ?? [])[0] as { id: string; video_id: string | null; title: string | null; slug: string | null; content: string | null; image_prompts: unknown; wordpress_site_id: string | null; wordpress_url: string | null } | undefined
   if (!post?.content) return NextResponse.json({ error: 'Post not found, or it has no stored content to update.' }, { status: 404 })
+  // THE CREATOR'S OWN PHOTOS, KEPT ON THE POST (migration 472, lib/place-user-photos):
+  // Retry images and Add images place THOSE again rather than AI pictures
+  // over them (support, 2026-11-23). Read on its own so a database without
+  // the column still loads the post.
+  if (!userImageUrls.length) {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: keptPhotos } = await (supabase as any).from('blog_posts').select('user_image_urls').eq('id', post.id).maybeSingle()
+      userImageUrls = readUserPhotos(keptPhotos?.user_image_urls)
+    } catch { /* before 472: nothing kept */ }
+  }
 
   // We STILL need the integrations row for tier + amazon_associates_tag —
   // those are per-user, not per-site. WP credentials come from the

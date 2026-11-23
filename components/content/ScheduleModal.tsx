@@ -367,6 +367,10 @@ export default function ScheduleModal({
               scheduledFor: localIso,
               socials,
               includeImages,
+              // The creator's own photos travel WITH the request and are placed
+              // where the post is written (lib/place-user-photos), so a slow
+              // write or a closed tab no longer loses them (support, 2026-11-23).
+              ...(includeImages && localUserImages.length ? { userImageUrls: localUserImages } : {}),
             }
         const res = await fetch(endpoint, {
           method: 'POST',
@@ -381,6 +385,8 @@ export default function ScheduleModal({
           wordpressPostId?: number
           warning?: string
           skippedPlatforms?: string[]
+          /** Own photos placed by the server: how many, or why not. */
+          photos?: { placed: number; hosted: number; status: string } | { error: string } | null
         }
         if (!res.ok || !json.ok) {
           toast.error(json.error || `Schedule failed (${res.status})`, { id: toastId, duration: 8_000 })
@@ -409,7 +415,14 @@ export default function ScheduleModal({
         // "Include photos" toggle + non-cascade mode (cascade has no fresh post).
         // The COUNT comes from Content Preferences (blog_image_count) server-side.
         const wpImgId = json.wordpressPostId
-        if (!cascadeOnly && includeImages && typeof wpImgId === 'number') {
+        // THE SERVER PLACED THE CREATOR'S PHOTOS ALREADY: say how many, and do
+        // not send them a second time. When it could not, the request below
+        // tries again with them, as before.
+        const placedPhotos = json.photos && 'placed' in json.photos ? json.photos : null
+        if (placedPhotos) {
+          toast.success(`Your ${placedPhotos.placed} photo${placedPhotos.placed === 1 ? ' is' : 's are'} in the scheduled post${placedPhotos.hosted < placedPhotos.placed ? `, ${placedPhotos.placed - placedPhotos.hosted} linked from MVP because your site did not take the upload` : ''}`, { duration: 6_000 })
+        }
+        if (!cascadeOnly && includeImages && typeof wpImgId === 'number' && !placedPhotos) {
           const imgToastId = `sch-img-${wpImgId}`
           toast.loading('Generating in-article images… (1-3 min, runs in the background)', { id: imgToastId, duration: Infinity })
           void fetch('/api/blog/refresh-images', {

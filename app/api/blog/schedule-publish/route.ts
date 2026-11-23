@@ -54,6 +54,7 @@ import { getPublishContext } from '@/lib/agency-publish'
 import { tierAllowsSocial, normalizeTier, type Tier } from '@/lib/tier'
 import type { ScheduleMode, SocialScheduleEntry, SchedulableSocial } from '@/lib/schedule-types'
 import { queueCascade } from '@/lib/schedule-cascade'
+import { readUserPhotos } from '@/lib/place-user-photos'
 import { scheduleTooFar, SCHEDULE_TOO_FAR_WORDS } from '@/lib/schedule-types'
 import { fetchWithTimeout } from '@/lib/fetch-timeout'
 
@@ -91,10 +92,15 @@ export async function POST(request: Request) {
       socials?: SocialScheduleEntry[]
       siteId?: string | null
       includeImages?: boolean
+      /** The creator's own photos from the Schedule window. */
+      userImageUrls?: string[]
     }
 
     const { videoId, scheduledFor, scheduleMode, siteId, includeImages } = body
     const socials = Array.isArray(body.socials) ? body.socials : []
+    // Placed by generate right after it saves the post (lib/place-user-photos),
+    // so a slow write no longer loses them.
+    const userImageUrls = includeImages ? readUserPhotos(body.userImageUrls) : []
 
     // ─── Validate input ─────────────────────────────────────────────────
     if (!videoId) return NextResponse.json({ error: 'videoId required' }, { status: 400 })
@@ -211,6 +217,7 @@ export async function POST(request: Request) {
         // socials are queued anyway.
         queueCascade: true,
         socials,
+        ...(userImageUrls.length ? { userImageUrls, placePhotosNow: true } : {}),
       }),
     })
     // Read response as text first so we can log the actual body when
@@ -328,6 +335,8 @@ export async function POST(request: Request) {
       // Channels dropped because they aren't connected — the UI surfaces this
       // so the schedule silently doing less than asked is never a surprise.
       skippedPlatforms,
+      // The creator's own photos, placed by generate (null when none were sent).
+      photos: (genJson as { photos?: unknown }).photos ?? null,
     })
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err)

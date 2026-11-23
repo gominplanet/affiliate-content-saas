@@ -18,6 +18,7 @@ import { fetchKeepaIdentity } from '@/services/keepa'
 import { createServerClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { queueCascade, type CascadeResult } from '@/lib/schedule-cascade'
+import { placeUserPhotos } from '@/lib/place-user-photos'
 import type { SocialScheduleEntry } from '@/lib/schedule-types'
 import { fetchKeepaBasicsCached } from '@/lib/keepa-cache'
 import type { KeepaFacts } from '@/lib/product-signals-brief'
@@ -291,6 +292,11 @@ async function handleGenerate(request: Request) {
      *  here, where it cannot be lost (lib/schedule-cascade). */
     queueCascade?: boolean
     socials?: SocialScheduleEntry[]
+    /** Set by /api/blog/schedule-publish: place the creator's own photos
+     *  (userImageUrls) right after the post is saved, here, instead of leaving
+     *  them to a browser request that a slow write used to lose
+     *  (lib/place-user-photos). */
+    placePhotosNow?: boolean
     /** Set by the daily auto-pilot. Its posts go out with nobody looking, so
      *  they are the ones the quality gate holds as drafts. */
     autopilot?: boolean
@@ -2544,6 +2550,35 @@ async function handleGenerate(request: Request) {
     if (cascade.error) console.error('[blog-generate] schedule cascade not queued', { postId: savedPost.id, error: cascade.error })
   }
 
+  // ── THE CREATOR'S OWN PHOTOS, PLACED HERE (lib/place-user-photos) ────────
+  // Support, 2026-11-23: photos added in the Schedule window never reached the
+  // post when scheduling ran long, because the browser placed them only after
+  // this route answered. Kept on the post first (migration 472) so Retry
+  // images can place them again; the outcome is the post's images_status.
+  let photos: { placed: number; hosted: number; status: string } | { error: string } | null = null
+  if (body.placePhotosNow === true && userImageUrls.length > 0 && savedPost?.id && !heldForReview) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const pdb = supabase as any
+    try {
+      const kept = await pdb.from('blog_posts').update({ user_image_urls: userImageUrls, images_status: 'pending' }).eq('id', savedPost.id)
+      if (kept?.error) await pdb.from('blog_posts').update({ images_status: 'pending' }).eq('id', savedPost.id)
+    } catch { /* before 472: placed anyway, just not kept for a retry */ }
+    const placedNow = await placeUserPhotos({ site: wpService, wordpressPostId: wpPost.id, content, title: generated.title, slug, urls: userImageUrls })
+    if (placedNow.ok) {
+      // Later steps in this route rebuild from `content`; they keep the photos.
+      content = placedNow.content
+      photos = { placed: placedNow.placed, hosted: placedNow.hosted, status: placedNow.status }
+      try {
+        const w = await pdb.from('blog_posts').update({ content: placedNow.content, body_images_count: placedNow.count, images_hosted_count: placedNow.hosted, images_status: placedNow.status }).eq('id', savedPost.id)
+        if (w?.error) await pdb.from('blog_posts').update({ content: placedNow.content, body_images_count: placedNow.count, images_status: placedNow.status }).eq('id', savedPost.id)
+      } catch { /* WordPress has them; the row catches up on the next refresh */ }
+    } else {
+      photos = { error: placedNow.error }
+      console.error('[blog-generate] own photos not placed', { postId: savedPost.id, error: placedNow.error })
+      try { await pdb.from('blog_posts').update({ images_status: 'failed' }).eq('id', savedPost.id) } catch { /* non-fatal */ }
+    }
+  }
+
   // ── Shorten the blog link for social, per the creator's ONE Link style ────
   // direct = plain WordPress URL (free); geniuslink = branded geni.us (tracked,
   // costs per click); bitly = free Bitly short link. Passport maps to 'direct'
@@ -3527,6 +3562,8 @@ ${NO_BRAND_IMAGE_CLAUSE} Landscape 4:3, photorealistic editorial product photogr
       : null,
     // What the cascade queued here, when schedule-publish asked (null otherwise).
     cascade,
+    // The creator's own photos placed here, when schedule-publish asked.
+    photos,
   })
 }
 

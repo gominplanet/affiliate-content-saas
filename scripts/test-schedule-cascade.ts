@@ -106,7 +106,7 @@ void (async () => {
   // 4. Wired in
   const GEN = read('app/api/blog/generate/route.ts')
   const SP = read('app/api/blog/schedule-publish/route.ts')
-  check('generate queues the cascade after saving the post, and answers with it', /cascade = await queueCascade\(createAdminClient\(\), \{ userId: ownerId, blogPostId: savedPost\.id as string/.test(GEN) && /\n    cascade,\n  \}\)\n\}/.test(GEN))
+  check('generate queues the cascade after saving the post, and answers with it', /cascade = await queueCascade\(createAdminClient\(\), \{ userId: ownerId, blogPostId: savedPost\.id as string/.test(GEN) && /\n    cascade,\n/.test(GEN))
   check('a held draft queues nothing', /body\.queueCascade === true && savedPost\?\.id && isScheduled && !heldForReview/.test(GEN))
   check('schedule-publish asks for it and backs it up with the same function', /queueCascade: true,/.test(SP) && /const cascade = await queueCascade\(supabase/.test(SP))
   check('a failed cascade still says so to the creator', /Blog generated, but \$\{cascade\.error\}/.test(SP))
