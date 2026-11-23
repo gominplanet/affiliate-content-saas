@@ -62,6 +62,8 @@ export const FUNNEL_ROUTES = [
   // The free week lives in clause form here, so it is part of the decision.
   '/terms',
   '/tour',
+  // TRYBE Free's own landing page: a prospect deciding whether to sign up.
+  '/trybe-free',
 ] as const
 
 /**

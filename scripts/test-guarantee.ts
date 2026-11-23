@@ -79,7 +79,9 @@ for (const f of SELLING) {
   check(`${f} reads the free week from lib/guarantee`, /from '@\/lib\/guarantee'/.test(src) && /FREE_WEEK_(LABEL|SHORT|SENTENCE|DAYS)/.test(body(src)))
   check(`${f} promises no refund or money back`, !/money.back|\brefund\b|no questions asked/i.test(body(src)), f)
   // TRYBE Free's own block is the one place no card is true (lib/trybe-free).
-  check(`${f} never says no card is needed`, !/No card to start|no card/i.test(body(src).replace(/\{TRYBE_FREE_LIVE && \([\s\S]*?\n      \)\}/, '')))
+  // The homepage band is marked on the raw source (// trybe-free-band:start/end),
+  // the same markers test-sales-page-facts strips.
+  check(`${f} never says no card is needed`, !/No card to start|no card/i.test(body(src.replace(/\/\/ trybe-free-band:start[\s\S]*?\/\/ trybe-free-band:end/, '')).replace(/\{TRYBE_FREE_LIVE && \([\s\S]*?\n      \)\}/, '')))
   // THE DEAD FREE TIER IS NOT A DOOR. tier="trial" skips checkout entirely,
   // which is how the promise and the payment screen came apart; and the
   // account it opens has a zero-day window, so there is nothing behind it
