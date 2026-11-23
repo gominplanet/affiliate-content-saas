@@ -65,7 +65,7 @@ function Nav() {
         <span className="text-[17px] font-extrabold tracking-tight" style={{ ...DISPLAY, color: C.text }}>MVP Affiliate</span>
       </a>
       <div className="hidden lg:flex items-center gap-3 absolute left-1/2 -translate-x-1/2">
-        {[{ label: 'Tour', href: '/tour' }, { label: 'Pricing', href: '/pricing' }, { label: 'Affiliates', href: '/affiliates' }].map(a => (
+        {[{ label: 'Tour', href: '/tour' }, { label: 'TRYBE Free', href: '/trybe-free' }, { label: 'Pricing', href: '/pricing' }, { label: 'Affiliates', href: '/affiliates' }].map(a => (
           <a key={a.href} href={a.href} className="px-3 py-2 rounded-lg text-[15px] font-medium transition-colors hover:opacity-70" style={{ color: C.muted }}>{a.label}</a>
         ))}
       </div>
