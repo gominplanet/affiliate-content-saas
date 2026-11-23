@@ -299,7 +299,7 @@ async function liveChecks() {
   // Reading a column the query never asked for silently yields undefined and
   // falls through to og:image, which looks exactly like the bug it replaced.
   check('the manual query selects it',
-    /youtube_videos\(thumbnail_url, blog_thumbnail_url\)/.test(post),
+    /youtube_videos\(thumbnail_url, blog_thumbnail_url[^)]*\)/.test(post),
     'a field not in the select is undefined, and the fallback chain hides that perfectly')
   check('and so does the cron query',
     /youtube_videos\(thumbnail_url,blog_thumbnail_url,youtube_video_id\)/.test(cron))

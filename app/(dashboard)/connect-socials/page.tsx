@@ -26,6 +26,7 @@ import InstagramPaidLabel from '@/components/instagram/InstagramPaidLabel'
 import VaConnections, { type WhoAmI } from '@/components/agency/VaConnections'
 import { ByLook } from '@/components/layout/teal-ui'
 import PageHero from '@/components/layout/PageHero'
+import SocialLinkSettings from '@/components/social/SocialLinkSettings'
 
 function ConnectSocialsInner() {
   // A Virtual Assistant sees the owner's connections, read only: they post
@@ -79,6 +80,10 @@ function ConnectSocialsInner() {
           than one account on a platform, which is the only case where there is
           a routing question to answer. See the component's own header. */}
       <SiteSocialRouting />
+      {/* WHAT EACH POST LINKS TO (Seb, 2026-11-23: "put in settings"): blog,
+          review video or none, and the affiliate link, per platform. The same
+          panel as the Library's Link settings window. */}
+      <SocialLinkSettings variant="card" />
     </div>
   )
 }

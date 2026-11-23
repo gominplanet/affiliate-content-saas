@@ -17,6 +17,9 @@ import { resolveBlogPostId } from '@/lib/resolve-post-id'
 import { recordSocialPermalink } from '@/lib/social-permalink'
 import { spendGate } from '@/lib/ai-spend'
 import { discloseSocialPost } from '@/lib/social-disclaimer'
+import { parseLinkPrefs, linkPrefFor, shortPostLinks, youtubeWatchUrl, threadsLinkLines } from '@/lib/social-link-mode'
+import { socialAffiliateLink } from '@/lib/social-affiliate'
+import { stripBlogLinks } from '@/lib/social-caption-clean'
 import { researchedTags } from '@/lib/hashtag-data'
 
 const DISCLAIMER = 'As an Amazon Associate I earn from qualifying purchases. #ad #sponsored'
@@ -55,7 +58,7 @@ export async function POST(request: NextRequest) {
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const [{ data: post }, { data: integration }] = await Promise.all([
-      supabase.from('blog_posts').select('*, youtube_videos(thumbnail_url)').eq('id', postId).eq('user_id', user.id).single(),
+      supabase.from('blog_posts').select('*, youtube_videos(thumbnail_url, youtube_video_id)').eq('id', postId).eq('user_id', user.id).single(),
       supabase.from('integrations').select('*').eq('user_id', user.id).single(),
     ])
 
@@ -134,7 +137,14 @@ Write ONLY the post text, nothing else. Do not include a disclaimer or #ad tag.`
     // text handed back to the modal — and saved as scheduled_posts.body_text
     // — still contained banned words.
     bodyText = scrubBanned(bodyText)
-    const fullText = capSocialText(bodyText, SOCIAL_LIMITS.threads, `${sep}${DISCLAIMER}`)
+    // THE CREATOR'S LINK CHOICE FOR THREADS (Link settings, 2026-11-23). The
+    // writer is asked to include the blog URL; it comes out of the text and
+    // the chosen links go after it, one per line, the store named.
+    const thPref = linkPrefFor(parseLinkPrefs(ig?.social_link_modes), 'threads')
+    const thAff = thPref.product ? await socialAffiliateLink(supabase, { post: p, userId: user.id, source: 'threads', apiKey: ig?.geniuslink_api_key, apiSecret: ig?.geniuslink_api_secret }) : { link: null, amazon: false }
+    bodyText = stripBlogLinks(bodyText, { urls: [thShareUrl, p.wordpress_url, p.geniuslink_blog_url], siteUrls: [p.wordpress_url] })
+    const thLinks = shortPostLinks(thPref, { blogUrl: thShareUrl, videoUrl: youtubeWatchUrl(p.youtube_videos?.youtube_video_id), affiliateLink: thAff.link, amazonDestination: thAff.amazon })
+    const fullText = capSocialText(bodyText, SOCIAL_LIMITS.threads, `${thLinks.length ? `${sep}${threadsLinkLines(thLinks)}` : ''}${sep}${DISCLAIMER}`)
 
     if (dryRun) {
       // THE PREVIEW IS WHAT POSTS: services/threads discloses the text it sends.

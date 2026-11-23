@@ -17,6 +17,9 @@ import { capSocialText } from '@/lib/social-cap'
 import { NextRequest, NextResponse } from 'next/server'
 import { scrubBanned } from '@/lib/scrub'
 import { ensureDisclaimer, AFFILIATE_DISCLAIMER_DEFAULT, discloseSocialPost } from '@/lib/social-disclaimer'
+import { parseLinkPrefs, linkPrefFor, shortPostLinks, youtubeWatchUrl } from '@/lib/social-link-mode'
+import { socialAffiliateLink } from '@/lib/social-affiliate'
+import { stripBlogLinks } from '@/lib/social-caption-clean'
 import { createServerClient } from '@/lib/supabase/server'
 import { getPublishContext } from '@/lib/agency-publish'
 import { createAnthropicClient } from '@/lib/anthropic'
@@ -47,7 +50,7 @@ export async function POST(request: NextRequest) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: tierRow } = await supabase
       .from('integrations')
-      .select('tier,telegram_channel_id,geniuslink_api_key,geniuslink_api_secret')
+      .select('tier,telegram_channel_id,geniuslink_api_key,geniuslink_api_secret,social_link_modes')
       .eq('user_id', user.id)
       .single()
     const tier = (tierRow?.tier as Tier) ?? 'trial'
@@ -82,7 +85,7 @@ export async function POST(request: NextRequest) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: postRow } = await supabase
       .from('blog_posts')
-      .select('id,title,excerpt,content,wordpress_url,geniuslink_blog_url,geniuslink_channel_urls,social_publish_counts,youtube_videos(thumbnail_url)')
+      .select('id,title,excerpt,content,wordpress_url,wordpress_site_id,geniuslink_code,geniuslink_blog_url,geniuslink_channel_urls,social_publish_counts,youtube_videos(thumbnail_url,youtube_video_id)')
       .eq('id', postId)
       .eq('user_id', user.id)
       .single()
@@ -186,13 +189,24 @@ Return ONLY the post text.`,
     // Build the final caption with a properly-escaped "Read the full review →"
     // CTA link in MarkdownV2. Everything user-derived (title, body, URL) must
     // be escaped to avoid 400 from the Telegram API.
+    // A blog link already in the text comes out, so the chosen links below are
+    // the only ones (support, 2026-11-23: two links to the blog).
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const tgKnown = post as any
+    captionText = stripBlogLinks(captionText, { urls: [tgKnown.wordpress_url, tgKnown.geniuslink_blog_url, ...Object.values((tgKnown.geniuslink_channel_urls || {}) as Record<string, unknown>).filter((v): v is string => typeof v === 'string')], siteUrls: [tgKnown.wordpress_url] })
     const escapedBody = escapeMarkdownV2(captionText)
     // Per-channel Geniuslink: the Telegram CTA link lands in MVP-TELEGRAM.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const tgShareUrl = (await channelShareUrl({ supabase, post: post as any, channel: 'telegram', userId: user.id, apiKey: maybeDecrypt(tierRow?.geniuslink_api_key) as string | undefined, apiSecret: maybeDecrypt(tierRow?.geniuslink_api_secret) as string | undefined })) || (((post as any).geniuslink_blog_url || post.wordpress_url) as string)
-    const escapedUrl = escapeMarkdownV2(tgShareUrl)
-    const linkLabel = escapeMarkdownV2('Read the full review on my blog')
-    const finalCaption = `${escapedBody}\n\n[${linkLabel}](${escapedUrl})`
+    // THE CREATOR'S LINK CHOICE FOR TELEGRAM (Link settings, 2026-11-23):
+    // each chosen link a labelled MarkdownV2 link that names where it goes.
+    const tgPref = linkPrefFor(parseLinkPrefs(tierRow?.social_link_modes), 'telegram')
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const tgAff = tgPref.product ? await socialAffiliateLink(supabase, { post: post as any, userId: user.id, source: 'telegram', apiKey: maybeDecrypt(tierRow?.geniuslink_api_key) as string | undefined, apiSecret: maybeDecrypt(tierRow?.geniuslink_api_secret) as string | undefined }) : { link: null, amazon: false }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const tgLinks = shortPostLinks(tgPref, { blogUrl: tgShareUrl, videoUrl: youtubeWatchUrl((post as any).youtube_videos?.youtube_video_id), affiliateLink: tgAff.link, amazonDestination: tgAff.amazon })
+    const tgLinkLines = tgLinks.map((l) => `[${escapeMarkdownV2(l.kind === 'blog' ? 'Read the full review on my blog' : l.label)}](${escapeMarkdownV2(l.url)})`).join('\n')
+    const finalCaption = tgLinkLines ? `${escapedBody}\n\n${tgLinkLines}` : escapedBody
 
     if (dryRun) {
       // Show the body the user can edit; finalText is the MarkdownV2 message

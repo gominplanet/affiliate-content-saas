@@ -13,7 +13,10 @@
 
 import { storeOf } from '@/lib/store-name'
 
-export const LINK_MODE_PLATFORMS = ['facebook', 'linkedin', 'bluesky'] as const
+// X, Threads and Telegram joined 2026-11-23 (a Pro creator: "It would be
+// helpful to choose which links appear on each social platform"). Before,
+// their links were fixed to the blog.
+export const LINK_MODE_PLATFORMS = ['facebook', 'linkedin', 'bluesky', 'twitter', 'threads', 'telegram'] as const
 export type LinkModePlatform = typeof LINK_MODE_PLATFORMS[number]
 
 export type ContentLink = 'blog' | 'video' | 'none'
@@ -159,4 +162,35 @@ export function composeCaption(opts: {
     return [head, writeUp, contentLine].filter(Boolean).join('\n\n').trim()
   }
   return [contentLine, writeUp, disc].filter(Boolean).join('\n\n').trim()
+}
+
+/** One link a short post carries, with the words that say where it goes. */
+export interface ShortPostLink { kind: 'product' | 'blog' | 'video'; url: string; label: string }
+
+/**
+ * The links a SHORT post carries (X, Threads, Telegram), from the creator's
+ * choice: the affiliate link first, its words naming the store (Amazon when
+ * the caller knows it lands there), then the content link: the blog, the
+ * review video (the blog when there is no video), or none. Pure.
+ */
+export function shortPostLinks(pref: PlatformLinkPref, o: { blogUrl: string | null; videoUrl: string | null; affiliateLink: string | null; amazonDestination?: boolean }): ShortPostLink[] {
+  const out: ShortPostLink[] = []
+  if (pref.product && o.affiliateLink) {
+    const store = o.amazonDestination || isAmazonLink(o.affiliateLink) ? 'Amazon' : storeOf(o.affiliateLink)
+    out.push({ kind: 'product', url: o.affiliateLink, label: store ? `Get it on ${store}` : 'Get it here' })
+  }
+  if (pref.content === 'video' && o.videoUrl) out.push({ kind: 'video', url: o.videoUrl, label: 'Watch the review' })
+  else if (pref.content !== 'none' && o.blogUrl) out.push({ kind: 'blog', url: o.blogUrl, label: 'Read the full review' })
+  return out
+}
+
+/** The links as X carries them: the store named before its link, the content
+ *  link bare (X shows a card for it). Empty when there are none. Pure. */
+export function xLinkTail(links: ShortPostLink[]): string {
+  return links.map((l) => (l.kind === 'product' ? `${l.label}: ${l.url}` : l.url)).join(' ')
+}
+
+/** The links as Threads carries them, one per line. Pure. */
+export function threadsLinkLines(links: ShortPostLink[]): string {
+  return links.map((l) => (l.kind === 'product' ? `🛒 ${l.label} 👉 ${l.url}` : `${l.kind === 'video' ? '🎬' : '🔗'} ${l.url}`)).join('\n')
 }

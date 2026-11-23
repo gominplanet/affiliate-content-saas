@@ -22,6 +22,9 @@ import { resolveBlogPostId } from '@/lib/resolve-post-id'
 import { recordSocialPermalink } from '@/lib/social-permalink'
 import { socialPermalink } from '@/lib/brand-recap'
 import { discloseSocialPost } from '@/lib/social-disclaimer'
+import { parseLinkPrefs, linkPrefFor, shortPostLinks, youtubeWatchUrl, xLinkTail } from '@/lib/social-link-mode'
+import { socialAffiliateLink } from '@/lib/social-affiliate'
+import { stripBlogLinks } from '@/lib/social-caption-clean'
 import { researchedTags } from '@/lib/hashtag-data'
 
 export const maxDuration = 60
@@ -67,7 +70,7 @@ export async function POST(request: NextRequest) {
     // on any database that has not run it.
     const { data: postRow } = await supabase
       .from('blog_posts')
-      .select('*, youtube_videos(thumbnail_url, blog_thumbnail_url)')
+      .select('*, youtube_videos(thumbnail_url, blog_thumbnail_url, youtube_video_id)')
       .eq('id', postId)
       .eq('user_id', user.id)
       .single()
@@ -226,7 +229,14 @@ Return ONLY the tweet text.`,
     // Per-channel Geniuslink: the X link lands in MVP-TWITTER. Best-effort.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const twShareUrl = (await channelShareUrl({ supabase, post: post as any, channel: 'twitter', userId: user.id, apiKey: integration?.geniuslink_api_key, apiSecret: integration?.geniuslink_api_secret })) || ((post as any).geniuslink_blog_url || post.wordpress_url)
-    const finalText = `${tweetText} ${twShareUrl}`
+    // THE CREATOR'S LINK CHOICE FOR X (Link settings, 2026-11-23): the blog,
+    // the review video or none, and the affiliate link with its store named.
+    // A blog link already in the text comes out first, so it is never twice.
+    const xPref = linkPrefFor(parseLinkPrefs(integration?.social_link_modes), 'twitter')
+    const xAff = xPref.product ? await socialAffiliateLink(supabase, { post, userId: user.id, source: 'twitter', apiKey: integration?.geniuslink_api_key, apiSecret: integration?.geniuslink_api_secret }) : { link: null, amazon: false }
+    tweetText = stripBlogLinks(tweetText, { urls: [twShareUrl, post.wordpress_url, post.geniuslink_blog_url], siteUrls: [post.wordpress_url] })
+    const xLinks = shortPostLinks(xPref, { blogUrl: twShareUrl, videoUrl: youtubeWatchUrl(post.youtube_videos?.youtube_video_id), affiliateLink: xAff.link, amazonDestination: xAff.amazon })
+    const finalText = xLinks.length ? `${tweetText} ${xLinkTail(xLinks)}` : tweetText
 
     if (dryRun) {
       // THE PREVIEW IS WHAT POSTS: createTweet discloses (and refits to 280).

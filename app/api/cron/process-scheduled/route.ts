@@ -59,7 +59,7 @@ import { getLinkStyle } from '@/lib/link-cloak'
 import { postProductAsin } from '@/lib/post-product-link'
 import { ensureAffiliateShareLink } from '@/lib/blog-share-url'
 import { channelShareUrl } from '@/lib/channel-share-url'
-import { parseLinkPrefs, linkPrefFor, composeCaption, primaryCardUrl, youtubeWatchUrl, isAmazonLink } from '@/lib/social-link-mode'
+import { parseLinkPrefs, linkPrefFor, composeCaption, primaryCardUrl, youtubeWatchUrl, isAmazonLink, shortPostLinks, xLinkTail, threadsLinkLines } from '@/lib/social-link-mode'
 import { stripBlogLinks, oneDisclosure, alreadyDiscloses } from '@/lib/social-caption-clean'
 import { buildPinAssets, composePinDescription } from '@/lib/pin-assets'
 import { isDesignedPin, describePinDowngrade, pinDesignTag } from '@/lib/pin-design-outcome'
@@ -745,7 +745,10 @@ async function publishOne(
       // Cap the body so the trailing link always survives — an un-capped
       // `${body} ${url}` on a near-280-char body pushed the tweet over the limit
       // and X rejected the whole scheduled post. Matches the immediate path.
-      const xSuffix = row.body_text.includes(url) ? '' : ` ${url}`
+      // THE CREATOR'S LINK CHOICE FOR X (Link settings, 2026-11-23): blog,
+      // review video or none, and the affiliate link with its store named.
+      const xLinks = shortPostLinks(linkPrefFor(linkPrefs, 'twitter'), { blogUrl: url, videoUrl: schedVideoUrl, affiliateLink: schedAffiliateLink, amazonDestination: schedAmazonDestination })
+      const xSuffix = xLinks.length ? ` ${xLinkTail(xLinks)}` : ''
       const finalText = capSocialText(stripLinkPlaceholders(row.body_text), SOCIAL_LIMITS.twitter, xSuffix)
       // The same image Telegram already attaches on this row: the video's
       // thumbnail, or the post's own og:image. Resolved AFTER the cap check
@@ -787,7 +790,10 @@ async function publishOne(
       }
       // Body → blog link → disclaimer, capped to the Threads limit. The link
       // was previously missing entirely (post had no way back to the blog).
-      const threadsSuffix = `${row.body_text.includes(url) ? '' : `\n\n🔗 ${url}`}${alreadyDiscloses(row.body_text) ? '' : `\n\n${oneDisclosure(brandLine, false)}`}`
+      // The creator's link choice for Threads (Link settings, 2026-11-23).
+      const thLinks = shortPostLinks(linkPrefFor(linkPrefs, 'threads'), { blogUrl: url, videoUrl: schedVideoUrl, affiliateLink: schedAffiliateLink, amazonDestination: schedAmazonDestination })
+      const thAmazon = thLinks.some((l) => l.kind === 'product') && schedAmazonDestination
+      const threadsSuffix = `${thLinks.length ? `\n\n${threadsLinkLines(thLinks)}` : ''}${alreadyDiscloses(row.body_text) ? '' : `\n\n${oneDisclosure(brandLine, thAmazon)}`}`
       const fullText = capSocialText(stripLinkPlaceholders(row.body_text), SOCIAL_LIMITS.threads, threadsSuffix)
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const imageUrl = (post as any).youtube_videos?.thumbnail_url ?? undefined
@@ -993,10 +999,13 @@ async function publishOne(
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       let imageUrl: string | null = (post as any).youtube_videos?.thumbnail_url ?? null
       if (!imageUrl) imageUrl = (await fetchOgImage(url)) || null
-      const escapedBody = escapeMarkdownV2(ensureDisclaimer(stripLinkPlaceholders(row.body_text), oneDisclosure(brandLine, false)))
-      const escapedUrl = escapeMarkdownV2(url)
-      const linkLabel = escapeMarkdownV2('Read the full review on my blog')
-      const finalCaption = `${escapedBody}\n\n[${linkLabel}](${escapedUrl})`
+      // The creator's link choice for Telegram (Link settings, 2026-11-23),
+      // each link a labelled MarkdownV2 link that names where it goes.
+      const tgLinks = shortPostLinks(linkPrefFor(linkPrefs, 'telegram'), { blogUrl: url, videoUrl: schedVideoUrl, affiliateLink: schedAffiliateLink, amazonDestination: schedAmazonDestination })
+      const tgAmazon = tgLinks.some((l) => l.kind === 'product') && schedAmazonDestination
+      const escapedBody = escapeMarkdownV2(ensureDisclaimer(stripLinkPlaceholders(row.body_text), oneDisclosure(brandLine, tgAmazon)))
+      const tgLinkLines = tgLinks.map((l) => `[${escapeMarkdownV2(l.kind === 'blog' ? 'Read the full review on my blog' : l.label)}](${escapeMarkdownV2(l.url)})`).join('\n')
+      const finalCaption = tgLinkLines ? `${escapedBody}\n\n${tgLinkLines}` : escapedBody
       const result = imageUrl
         ? await sendPhoto(tgToken, integration.telegram_channel_id, imageUrl, finalCaption)
         : await sendMessage(tgToken, integration.telegram_channel_id, finalCaption)
