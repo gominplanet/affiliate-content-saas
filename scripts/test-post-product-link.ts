@@ -247,12 +247,12 @@ const GENI = 'https://geni.us/cXNSl'
     'that silently downgraded every scheduled post to direct')
   check('the surface is passed for attribution', /source: row\.platform/.test(call))
 
-  // The select really does omit user_id — which is what makes the assertion
-  // above load-bearing rather than decorative. If it is ever added, this test
-  // should be revisited rather than quietly passing for a new reason.
+  // Revisited 2026-11-23: the select now asks for user_id (a scheduled pin
+  // read p.user_id for the creator's link style and got nothing). The share
+  // link keeps passing the row's owner, and the comment says why.
   const select = CRON.slice(CRON.indexOf("from('blog_posts')"), CRON.indexOf("from('blog_posts')") + 600)
-  check('the post query still does not select user_id', !/select\('[^']*\buser_id\b/.test(select),
-    'if it now does, the comment on that line needs updating')
+  check('the post query selects user_id, and the comment on the share link says so', /select\('[^']*\buser_id\b/.test(select) && /did not ask\s*\n?\s*\/\/ for user_id until 2026-11-23/.test(CRON),
+    'the comment on that line must match what the select does')
 }
 
 console.log(failures.length ? 'FAIL' : 'ALL PASS')

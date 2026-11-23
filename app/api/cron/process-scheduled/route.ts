@@ -59,11 +59,12 @@ import { getLinkStyle } from '@/lib/link-cloak'
 import { postProductAsin } from '@/lib/post-product-link'
 import { ensureAffiliateShareLink } from '@/lib/blog-share-url'
 import { channelShareUrl } from '@/lib/channel-share-url'
-import { parseLinkPrefs, linkPrefFor, composeCaption, primaryCardUrl, effectiveDisclosure, youtubeWatchUrl, isAmazonLink } from '@/lib/social-link-mode'
+import { parseLinkPrefs, linkPrefFor, composeCaption, primaryCardUrl, youtubeWatchUrl, isAmazonLink } from '@/lib/social-link-mode'
+import { stripBlogLinks, oneDisclosure, alreadyDiscloses } from '@/lib/social-caption-clean'
 import { buildPinAssets, composePinDescription } from '@/lib/pin-assets'
 import { isDesignedPin, describePinDowngrade, pinDesignTag } from '@/lib/pin-design-outcome'
 import { getAccountHeadlineStyle } from '@/lib/thumbnail-style'
-import { ensureDisclaimer, AFFILIATE_DISCLAIMER_DEFAULT, rememberLinkDestination } from '@/lib/social-disclaimer'
+import { ensureDisclaimer, rememberLinkDestination } from '@/lib/social-disclaimer'
 
 // Vercel cron functions run with a generous timeout but we still want
 // to cap the per-tick work — if the batch is huge we'll catch the
@@ -77,7 +78,6 @@ export const maxDuration = 240
 
 // Disclaimer used by Threads + Telegram + Facebook so the body the user
 // edited stays clean and we append ours at publish time.
-const THREADS_DISCLAIMER = 'As an Amazon Associate I earn from qualifying purchases. #ad #sponsored'
 
 // Long-form disclaimer guarantee (LinkedIn, Telegram) — see lib/social-disclaimer.
 // Short-form (X, Bluesky) carry the blog link; the full disclosure lives on the
@@ -482,7 +482,7 @@ async function publishOne(
   const [postRes, intRes] = await Promise.all([
     admin
       .from('blog_posts')
-      .select('id,title,wordpress_url,wordpress_post_id,wordpress_site_id,geniuslink_code,geniuslink_blog_url,geniuslink_channel_urls,content,twitter_post_id,threads_post_id,linkedin_post_id,facebook_post_id,bluesky_post_uri,pinterest_pin_id,telegram_message_id,youtube_videos(thumbnail_url,blog_thumbnail_url,youtube_video_id)')
+      .select('id,user_id,title,wordpress_url,wordpress_post_id,wordpress_site_id,geniuslink_code,geniuslink_blog_url,geniuslink_channel_urls,content,twitter_post_id,threads_post_id,linkedin_post_id,facebook_post_id,bluesky_post_uri,pinterest_pin_id,telegram_message_id,youtube_videos(thumbnail_url,blog_thumbnail_url,youtube_video_id)')
       .eq('id', row.blog_post_id)
       .single(),
     admin
@@ -558,6 +558,8 @@ async function publishOne(
   }
 
   let url = post.wordpress_url ?? ''
+  // The address the scheduled text may already carry (often a draft's ?p=123).
+  const storedBlogUrl = url
 
   // Repair an ugly ?p=123 URL before sharing. A post created as a draft or
   // scheduled had its plain permalink captured at create time; once it's live,
@@ -580,6 +582,8 @@ async function publishOne(
     } catch { /* keep the stored URL on any failure */ }
   }
 
+  const blogPermalink = url
+
   // Per-channel Geniuslink attribution: mint (or reuse) a channel-grouped
   // geni.us link for THIS post's blog URL so the Geniuslink dashboard splits
   // clicks by source (MVP-FACEBOOK vs MVP-PINTEREST vs …). row.platform IS the
@@ -599,6 +603,26 @@ async function publishOne(
     })
     if (chUrl) url = chUrl
   } catch { /* keep the plain url */ }
+
+  // ONE BLOG LINK (lib/social-caption-clean; support, 2026-11-23: "two links to
+  // the blog"). The scheduled text often carries the blog link already, by an
+  // address that has since changed (?p= to permalink, permalink to geni.us),
+  // so an exact-match check let every platform add it a second time. Every
+  // link to this post's blog is taken out here; each platform adds one.
+  {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const gp = post as any
+    const channelUrls = gp.geniuslink_channel_urls && typeof gp.geniuslink_channel_urls === 'object' ? Object.values(gp.geniuslink_channel_urls as Record<string, unknown>).filter((v): v is string => typeof v === 'string') : []
+    row.body_text = stripBlogLinks(row.body_text, { urls: [storedBlogUrl, blogPermalink, url, gp.geniuslink_blog_url, ...channelUrls], siteUrls: [storedBlogUrl, blogPermalink] })
+  }
+  // ONE DISCLOSURE (lib/social-caption-clean oneDisclosure): the creator's own
+  // line from Brand, else Amazon's sentence; #ad #sponsored come from the
+  // service. It used to be up to three on one post.
+  let brandLine: string | null = null
+  try {
+    const { data: bp } = await admin.from('brand_profiles').select('affiliate_disclaimer').eq('user_id', row.user_id).maybeSingle()
+    brandLine = ((bp as { affiliate_disclaimer?: string | null } | null)?.affiliate_disclaimer || '').trim() || null
+  } catch { /* no brand line: Amazon's sentence */ }
 
   // Per-user link prefs (affiliate on/off × content blog/video/none) for FB /
   // LinkedIn / Bluesky, plus the video URL + Amazon-tag flag for disclosure.
@@ -626,9 +650,10 @@ async function publishOne(
       postId: (post as any).id,
       link: schedAffiliateLink,
       title: post.title ?? '',
-      // row.user_id, NOT post.user_id. The blog_posts select above does not ask
-      // for user_id, so post.user_id was undefined on every scheduled post ever
-      // published. getLinkStyle then read nothing, decided the creator was on
+      // row.user_id, NOT post.user_id. The blog_posts select above did not ask
+      // for user_id until 2026-11-23 (it does now, for the scheduled pin's link
+      // style in lib/pin-publish), so post.user_id was undefined on every
+      // scheduled post published before then. getLinkStyle then read nothing, decided the creator was on
       // 'direct', and skipped the Passport branch entirely — so the one place
       // that could have caught a stale geni.us and re-minted it never ran.
       // The scheduled row always carries the owner, and it is the owner of
@@ -650,8 +675,6 @@ async function publishOne(
   if (schedAffiliateLink && schedAmazonDestination) rememberLinkDestination(schedAffiliateLink, 'amazon')
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const schedVideoUrl = youtubeWatchUrl((post as any).youtube_videos?.youtube_video_id)
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const schedHasAmazonTag = !!(integration as any).amazon_associates_tag
 
   switch (row.platform) {
     // ─────────────────────────── BLUESKY ──────────────────────────────────
@@ -764,7 +787,7 @@ async function publishOne(
       }
       // Body → blog link → disclaimer, capped to the Threads limit. The link
       // was previously missing entirely (post had no way back to the blog).
-      const threadsSuffix = `${row.body_text.includes(url) ? '' : `\n\n🔗 ${url}`}\n\n${THREADS_DISCLAIMER}`
+      const threadsSuffix = `${row.body_text.includes(url) ? '' : `\n\n🔗 ${url}`}${alreadyDiscloses(row.body_text) ? '' : `\n\n${oneDisclosure(brandLine, false)}`}`
       const fullText = capSocialText(stripLinkPlaceholders(row.body_text), SOCIAL_LIMITS.threads, threadsSuffix)
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const imageUrl = (post as any).youtube_videos?.thumbnail_url ?? undefined
@@ -798,7 +821,7 @@ async function publishOne(
       const liComposed = composeCaption({
         product: liPref.product, content: liPref.content, writeUp: stripLinkPlaceholders(row.body_text),
         blogUrl: url, videoUrl: schedVideoUrl, affiliateLink: schedAffiliateLink,
-        disclosure: effectiveDisclosure(AFFILIATE_DISCLAIMER_DEFAULT, schedAffiliateLink, schedHasAmazonTag), blogLabel: 'Read the full review',
+        disclosure: oneDisclosure(brandLine, liPref.product && !!schedAffiliateLink && schedAmazonDestination), blogLabel: 'Read the full review',
         amazonDestination: schedAmazonDestination,
       })
       const postText = capSocialText(liComposed, SOCIAL_LIMITS.linkedin)
@@ -853,14 +876,6 @@ async function publishOne(
       if (!fbPageId || !fbPageToken) {
         throw new Error('Facebook not connected')
       }
-      // Pull the disclaimer from the brand profile (same as the manual endpoint)
-      const { data: brand } = await admin
-        .from('brand_profiles')
-        .select('affiliate_disclaimer')
-        .eq('user_id', row.user_id)
-        .single()
-      const disclaimer = (brand as { affiliate_disclaimer?: string } | null)?.affiliate_disclaimer
-        || '⚠️ This post may contain affiliate links. We may earn a commission at no extra cost to you.'
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const ytId = (post as any).youtube_videos?.youtube_video_id
       // resolveBestThumbnail avoids the maxresdefault 404 that made Facebook
@@ -885,11 +900,15 @@ async function publishOne(
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         fbMedia = parseFacebookMediaChoice((fbOpt?.options as any)?.media)
       } catch { /* options column absent on an old DB — flag can't exist there */ }
-      const fbPref = linkPrefFor(linkPrefs, 'facebook')
+      // "Also add my affiliate link to Facebook" in the Schedule window: saved on
+      // the row and, until now, never read. It turns the product link on for
+      // this post.
+      const fbPrefSaved = linkPrefFor(linkPrefs, 'facebook')
+      const fbPref = fbIncludeAffiliate ? { ...fbPrefSaved, product: true } : fbPrefSaved
       const caption = composeCaption({
         product: fbPref.product, content: fbPref.content, writeUp: row.body_text,
         blogUrl: url, videoUrl: schedVideoUrl, affiliateLink: schedAffiliateLink,
-        disclosure: effectiveDisclosure(disclaimer, schedAffiliateLink, schedHasAmazonTag), blogLabel: 'Read the full post',
+        disclosure: oneDisclosure(brandLine, fbPref.product && !!schedAffiliateLink && schedAmazonDestination), blogLabel: 'Read the full post',
         amazonDestination: schedAmazonDestination,
       })
       const fbFallbackLink = primaryCardUrl(fbPref, schedAffiliateLink, url, schedVideoUrl) ?? url
@@ -974,7 +993,7 @@ async function publishOne(
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       let imageUrl: string | null = (post as any).youtube_videos?.thumbnail_url ?? null
       if (!imageUrl) imageUrl = (await fetchOgImage(url)) || null
-      const escapedBody = escapeMarkdownV2(ensureDisclaimer(stripLinkPlaceholders(row.body_text), AFFILIATE_DISCLAIMER_DEFAULT))
+      const escapedBody = escapeMarkdownV2(ensureDisclaimer(stripLinkPlaceholders(row.body_text), oneDisclosure(brandLine, false)))
       const escapedUrl = escapeMarkdownV2(url)
       const linkLabel = escapeMarkdownV2('Read the full review on my blog')
       const finalCaption = `${escapedBody}\n\n[${linkLabel}](${escapedUrl})`
