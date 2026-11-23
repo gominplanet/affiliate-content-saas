@@ -120,6 +120,11 @@ const publicPaths = [
   // boundaries: /join/amazon and any later /join/creator are whitelisted by
   // this one entry.
   '/features',
+  // TRYBE Free landing page (lib/trybe-free): a dedicated page that promotes
+  // the free TRYBE feature to logged-out visitors and sends them to the no-card
+  // sign-up (/signup?for=trybe). Reached from ads, so a 307 to /login would
+  // spend the click on a bounce. Caught by scripts/test-public-routes too.
+  '/trybe-free',
   '/amazon-influencer',
   // The paid-ads landing page. The same mistake as /amazon-influencer above
   // would be more expensive here: every click is bought, and a 307 to /login

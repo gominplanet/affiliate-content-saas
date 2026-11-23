@@ -401,8 +401,17 @@ const ROLES: { id: string; gate: PreviewFeature | null; icon: React.ReactNode; r
  *  free, placed right under the hero so the TRYBE crowd meets the free door
  *  first. Gated on TRYBE_FREE_LIVE; caps read from lib/trybe-free. Framed as
  *  the one free part of MVP, never as a plan beside Pro. */
+const TRYBE_BAND_CHIPS: { icon: React.ReactNode; t: string }[] = [
+  { icon: <Search size={15} />, t: 'Find brands that pay' },
+  { icon: <Send size={15} />, t: `Ask ${FREE_DAILY_SENDS} brands a day` },
+  { icon: <TrendingUp size={15} />, t: 'Top 100 winning hooks' },
+  { icon: <Play size={15} />, t: 'Attach your intro video' },
+]
 function TrybeFreeBand() {
   if (!TRYBE_FREE_LIVE) return null
+  // trybe-free-band:start — sanctioned TRYBE Free copy; test-sales-page-facts
+  // strips this region before its no-free-trial sweep (TRYBE Free is the one
+  // free part of MVP, lib/trybe-free).
   return (
     <section className="px-6 lg:px-8 py-8 sm:py-12">
       <div
@@ -411,16 +420,23 @@ function TrybeFreeBand() {
       >
         <div className="flex flex-col lg:flex-row lg:items-center gap-7 lg:gap-12">
           <div className="flex-1 min-w-0">
-            <span className="inline-flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.16em]" style={{ color: '#0C6E6B' }}>
-              <span className="w-10 h-10 rounded-xl grid place-items-center text-white flex-shrink-0" style={{ background: 'linear-gradient(135deg,#008080,#2DD4BF)' }}><Handshake size={20} /></span>
-              The one free part of MVP
+            <span className="inline-flex items-center gap-2 rounded-full px-3.5 py-1.5 text-[11px] font-extrabold uppercase tracking-[0.14em] text-white" style={{ background: 'linear-gradient(135deg,#008080,#2DD4BF)' }}>
+              <span className="w-1.5 h-1.5 rounded-full bg-white" /> Free forever · No card needed
             </span>
-            <h2 className="text-[30px] sm:text-[42px] font-extrabold tracking-[-0.03em] leading-[1.04] mt-4" style={{ color: 'var(--text)' }}>
-              TRYBE is free. No credit card needed.
+            <h2 className="text-[31px] sm:text-[44px] font-extrabold tracking-[-0.035em] leading-[1.03] mt-4" style={{ color: 'var(--text)' }}>
+              Land brand deals on TRYBE.<br />
+              <span style={{ background: 'linear-gradient(120deg,#008080,#2DD4BF)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>Free, only on MVP.</span>
             </h2>
             <p className="mt-3.5 text-[15.5px] sm:text-[16.5px] leading-relaxed max-w-2xl" style={{ color: 'var(--text-soft)' }}>
-              Find TRYBE brands, request them with your own message ({FREE_DAILY_SENDS} a day), upload your videos, track your earnings, browse the Top 100 and write {FREE_SCRIPTS_MONTHLY} sets of brand scripts a month. Free for as long as you want it, and you can move up to Pro whenever you like.
+              <b style={{ color: 'var(--text)' }}>MVP Affiliate&apos;s TRYBE feature</b> finds the brands that pay, messages them in your own words ({FREE_DAILY_SENDS} a day), attaches your intro video, and tracks every dollar. Write {FREE_SCRIPTS_MONTHLY} sets of brand scripts a month, all free.
             </p>
+            <div className="flex flex-wrap gap-2 mt-5">
+              {TRYBE_BAND_CHIPS.map(c => (
+                <span key={c.t} className="inline-flex items-center gap-1.5 rounded-full px-3.5 py-2 text-[13px] font-bold" style={{ background: 'var(--surface)', border: '1.5px solid rgba(0,128,128,0.22)', color: 'var(--text)' }}>
+                  <span style={{ color: '#008080' }}>{c.icon}</span>{c.t}
+                </span>
+              ))}
+            </div>
           </div>
           <div className="flex flex-col items-start lg:items-center gap-2.5 flex-shrink-0">
             <a
@@ -428,15 +444,19 @@ function TrybeFreeBand() {
               className="inline-flex items-center gap-2 rounded-full px-8 py-4 text-[16.5px] font-extrabold text-white transition-transform hover:-translate-y-0.5"
               style={{ background: 'linear-gradient(135deg,#008080,#2DD4BF)', boxShadow: '0 12px 28px -8px rgba(0,128,128,0.55)' }}
             >
-              Start TRYBE free
+              Start free on MVP
               <ArrowRight size={18} />
             </a>
-            <span className="text-[12.5px]" style={{ color: 'var(--text-faint)' }}>No credit card. Takes a minute.</span>
+            <a href="/trybe-free" className="text-[13.5px] font-semibold inline-flex items-center gap-1 hover:opacity-70" style={{ color: 'var(--accent-text)' }}>
+              See everything free <ArrowRight size={13} />
+            </a>
+            <span className="text-[12.5px]" style={{ color: 'var(--text-faint)' }}>No card. Takes a minute.</span>
           </div>
         </div>
       </div>
     </section>
   )
+  // trybe-free-band:end
 }
 
 function RolesSection() {

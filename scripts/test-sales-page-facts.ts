@@ -117,7 +117,17 @@ const split = strip(SPLIT)
   for (const [name, src] of [['landing', landing], ['pricing', pricing]] as const) {
     // TRYBE Free (2026-11-19, lib/trybe-free) is the one free part, said in its
     // own block; outside it there is no trial and no free plan.
-    check(`${name} offers no free trial`, !/free trial|no card|Start free|5 free|free posts/i.test(src.replace(/\{TRYBE_FREE_LIVE && \([\s\S]*?\n      \)\}/, '')),
+    // Strip the sanctioned TRYBE Free copy before the sweep: the pricing page's
+    // inline {TRYBE_FREE_LIVE && ( ... )} block, and the homepage's TRYBE Free
+    // band (bracketed by // trybe-free-band:start/end markers). TRYBE Free is
+    // the one free part of MVP (lib/trybe-free) and is allowed to say "free" and
+    // "no card"; everywhere else there is still no trial for new signups. This
+    // runs on the RAW source because strip() drops the // marker lines, so the
+    // band must be removed first, then stripped of comments.
+    const sansFree = strip((name === 'landing' ? LANDING : PRICING)
+      .replace(/\/\/ trybe-free-band:start[\s\S]*?\/\/ trybe-free-band:end/, '')
+      .replace(/\{TRYBE_FREE_LIVE && \([\s\S]*?\n      \)\}/, ''))
+    check(`${name} offers no free trial`, !/free trial|no card|Start free|5 free|free posts/i.test(sansFree),
       'there is no trial for new signups; every new member starts on Pro')
     // The free week on the monthly plan replaced the refund (Seb, 2026-10-19).
     check(`${name} reads the free week from lib/guarantee`, /FREE_WEEK_(LABEL|SENTENCE|SHORT)/.test(src),
