@@ -104,6 +104,24 @@ export function freeLeftWords(left: number, monthly: number, words: string): str
     : `Your ${monthly} free ${words} for this month are used. They come back on the 1st, or Pro writes as many as you need.`
 }
 
+/** WHAT TRYBE FREE INCLUDES, SAID UP FRONT on Brand scripts (Seb,
+ *  2026-11-25: "we need to make sure free users understand that 3 scripts a
+ *  month is included and only 3"). Pure. */
+export function freeScriptsTitle(monthly: number): string {
+  return `TRYBE Free includes ${monthly} sets of brand scripts a month, and only ${monthly}`
+}
+
+/** What is left, what a set is and when they come back. `left` is null when
+ *  MVP could not count it (an admin's View as Free has no count). Pure. */
+export function freeScriptsLine(left: number | null, monthly: number, perSet: number): string {
+  const what = `Each set is ${perSet} shooting scripts for one product, and writing one uses 1 of your ${monthly}.`
+  const back = 'Unused sets do not carry over; you get a fresh ' + monthly + ' on the 1st of each month.'
+  const pro = 'Pro writes as many sets as you need, and batches of up to 300.'
+  if (left == null) return `${what} ${back} ${pro}`
+  if (left <= 0) return `You have used all ${monthly} this month. Your next ${monthly} come on the 1st. ${pro}`
+  return `${left} of ${monthly} left this month. ${what} ${back} ${pro}`
+}
+
 const BRAND_TOKEN = /\{\{\s*brand(?:\s*name)?\s*\}\}|\{\s*brand(?:\s*name)?\s*\}|\[\s*brand(?:\s*name)?\s*\]/gi
 const GREETING = /^(hi|hello|hey|dear)\b[^\n]{0,40}$/i
 

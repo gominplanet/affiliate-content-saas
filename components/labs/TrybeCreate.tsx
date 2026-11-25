@@ -25,7 +25,7 @@ import type { LinksDigest } from '@/lib/trybe-message-links'
 import { AmazonLine, ProductAmazon, AmazonFilmedList } from '@/components/labs/TrybeFinderControls'
 import { useTrybeAmazon } from '@/components/labs/useTrybeAmazon'
 import { shrinkPicture } from '@/lib/buyer-read-client'
-import { freeLeftWords } from '@/lib/trybe-free'
+import { freeLeftWords, freeScriptsTitle, freeScriptsLine } from '@/lib/trybe-free'
 
 const PURPLE = 'var(--accent)'
 const GREEN = '#16A34A'
@@ -164,6 +164,21 @@ export default function TrybeCreate({ canRead, isAdmin, canEdit = false, onFind,
   const card = 'rounded-2xl border p-5'
   const cardStyle = { borderColor: 'var(--border)', background: 'var(--surface)' }
 
+
+  // WHAT TRYBE FREE INCLUDES, AT THE TOP (Seb, 2026-11-25: "we need to make
+  // sure free users understand that 3 scripts a month is included and only
+  // 3"). Said before a brand is picked, with what is left when MVP could
+  // count it, and on every view of this page.
+  const freeBanner = () => free ? (
+        <section className="rounded-2xl p-4 flex flex-wrap items-start gap-3" style={{ border: `1px solid ${free.left === 0 ? AMBER : 'var(--border)'}`, background: free.left === 0 ? 'rgba(217,119,6,0.08)' : 'rgb(var(--brand-rgb) / 0.05)' }} aria-label="Brand scripts on TRYBE Free">
+          <Wand2 size={18} className="mt-0.5 shrink-0" style={{ color: free.left === 0 ? AMBER : PURPLE }} />
+          <div className="flex-1 min-w-[14rem]">
+            <p className="text-[14.5px] font-bold">{freeScriptsTitle(free.monthly)}</p>
+            <p className="text-[13px] mt-0.5" style={{ color: 'var(--text-2)' }}>{freeScriptsLine(free.left, free.monthly, VIDEO_IDEAS)}</p>
+          </div>
+          <a href="/billing?plan=pro" className="self-center inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-[13px] font-semibold" style={free.left === 0 ? { background: PURPLE, color: '#fff' } : { border: `1px solid ${PURPLE}`, color: PURPLE }}>See Pro</a>
+        </section>
+  ) : null
 
   // WHICH BRAND: the brands you work with on TRYBE (both looks).
   const brandGrid = () => (
@@ -344,7 +359,7 @@ export default function TrybeCreate({ canRead, isAdmin, canEdit = false, onFind,
           <p className="text-[12px] font-bold uppercase tracking-wider" style={soft}>Film today</p>
           <h3 className="text-[19px] font-bold mt-1">{VIDEO_IDEAS} quick scripts</h3>
           <p className="text-[13.5px] mt-1.5 flex-1" style={soft}>{VIDEO_IDEAS} different videos for {product || 'the product you pick'}, from the brief, what its buyers say and TRYBE&rsquo;s top videos{context.trim() ? ', built around your context' : ''}. Each set is kept below until you clear it.</p>
-          {free && free.left != null && <p className="mt-3 text-[12.5px] font-semibold" style={{ color: free.left > 0 ? 'var(--text-2)' : AMBER }}>{freeLeftWords(free.left, free.monthly, 'sets of brand scripts')}</p>}
+          {free && <p className="mt-3 text-[12.5px] font-semibold" style={{ color: free.left === 0 ? AMBER : 'var(--text-2)' }}>{free.left != null ? freeLeftWords(free.left, free.monthly, 'sets of brand scripts') : `TRYBE Free: ${free.monthly} sets a month.`}{free.left !== 0 ? ' Writing this set uses 1.' : ''}</p>}
           <button disabled={!product || (!!free && free.left === 0)} onClick={() => setDoor('quick')} className="mt-4 self-start inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-[14px] font-semibold disabled:opacity-50" style={{ background: PURPLE, color: '#fff' }}><Wand2 size={15} /> Write quick scripts</button>
           {free && free.left === 0 && <a href="/billing?plan=pro" className="mt-2 self-start text-[13px] font-semibold underline" style={{ color: PURPLE }}>See Pro</a>}
         </section>
@@ -390,6 +405,7 @@ export default function TrybeCreate({ canRead, isAdmin, canEdit = false, onFind,
   if (!canRead) {
     return (
       <div className="space-y-4">
+        {freeBanner()}
         <div className={card} style={cardStyle}><p className="text-[15px] font-semibold">Make videos needs SCOUT on TRYBE</p><p className="text-[13.5px] mt-1" style={soft}>Install SCOUT, allow it on TRYBE and sign in to TRYBE in this Chrome. MVP then shows the brands you work with and the products they want videos of.</p></div>
         <TrybeSavedScripts />
         {/* Batch scripts need no SCOUT either: the brief is pasted or uploaded. */}
@@ -400,6 +416,7 @@ export default function TrybeCreate({ canRead, isAdmin, canEdit = false, onFind,
 
   return (
     <div className="space-y-4">
+      {freeBanner()}
       {/* A failed Amazon match is said, so it never reads as "not on Amazon". */}
       {amz.error && <p className="text-[12.5px] inline-flex items-start gap-1.5" style={{ color: AMBER }}><AlertTriangle size={13} className="mt-0.5 shrink-0" /> {amz.error.replace(/\.$/, '')}. The Amazon lines below may be missing.</p>}
       {!brand && brandGrid()}

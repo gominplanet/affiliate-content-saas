@@ -6,7 +6,7 @@
 // scripts, "I know it costs AI, but let's see how we can manage that").
 
 import { readFileSync } from 'node:fs'
-import { templateRequest, uploadNoteTemplate, freeAllows, freeLeftWords, monthStartUtc, FREE_TABS, FREE_ACTIONS, FREE_CAPPED, FREE_DAILY_SENDS, FREE_SCRIPTS_MONTHLY, TRYBE_FREE_LIVE, TRYBE_FREE_LANDING, TRYBE_FREE_SIGNUP } from '../lib/trybe-free'
+import { templateRequest, uploadNoteTemplate, freeAllows, freeLeftWords, freeScriptsTitle, freeScriptsLine, monthStartUtc, FREE_TABS, FREE_ACTIONS, FREE_CAPPED, FREE_DAILY_SENDS, FREE_SCRIPTS_MONTHLY, TRYBE_FREE_LIVE, TRYBE_FREE_LANDING, TRYBE_FREE_SIGNUP } from '../lib/trybe-free'
 import { trybeAccess } from '../lib/labs-preview'
 import { lockAllBut, freeOpenPath, proLockedBody, lockedPageAt } from '../lib/pro-locked-nav'
 
@@ -57,6 +57,18 @@ check('a Pro tab opens as what Pro adds, with a lock in the menu', /\(free && !F
 check('no daily find and no fit check on Free', /if \(preview \|\| free \|\| loading/.test(O) && /if \(free\) return \{ fit, no, failed \}/.test(O) && /\{!preview && !free && \(\n          <TrybeDailyBrands/.test(O))
 check('the banner says what Free has and what Pro adds', /<p className="text-\[15px\] font-bold">TRYBE Free<\/p>/.test(O) && /href="\/billing\?plan=pro"/.test(O))
 check('the inbox answers by hand on Free', /free=\{free\} \/>\}/.test(O) && /\{!free && <TrybeBrandLinks/.test(read('components/labs/TrybeInbox.tsx')) && /Suggested replies are on Pro/.test(read('components/labs/TrybeInbox.tsx')))
+// Seb, 2026-11-25: "we need to make sure free users understand that 3
+// scripts a month is included and only 3".
+check('Brand scripts says up front: 3 a month, and only 3', freeScriptsTitle(3) === 'TRYBE Free includes 3 sets of brand scripts a month, and only 3')
+check('what is left, what a set is, and that unused sets do not carry over', /^2 of 3 left this month\. Each set is 10 shooting scripts for one product, and writing one uses 1 of your 3\./.test(freeScriptsLine(2, 3, 10)) && /do not carry over/.test(freeScriptsLine(2, 3, 10)) && /fresh 3 on the 1st/.test(freeScriptsLine(2, 3, 10)))
+check('used up says so, and when they come back', /^You have used all 3 this month\. Your next 3 come on the 1st\./.test(freeScriptsLine(0, 3, 10)))
+check('not counted (View as Free) still says the limit, never a number it does not have', !/left this month/.test(freeScriptsLine(null, 3, 10)) && /uses 1 of your 3/.test(freeScriptsLine(null, 3, 10)))
+check('no dashes in the Free scripts words', ![freeScriptsTitle(3), freeScriptsLine(2, 3, 10), freeScriptsLine(0, 3, 10), freeScriptsLine(null, 3, 10)].some((w) => /[\u2013\u2014]| - /.test(w)))
+{
+  const C = read('components/labs/TrybeCreate.tsx')
+  check('the banner is at the top of Brand scripts, with or without SCOUT', (C.match(/\{freeBanner\(\)\}/g) || []).length === 2 && /aria-label="Brand scripts on TRYBE Free"/.test(C))
+  check('the quick scripts card says writing a set uses 1, even when the count is not known', /Writing this set uses 1\./.test(C) && /`TRYBE Free: \$\{free\.monthly\} sets a month\.`/.test(C))
+}
 check('Make videos says the scripts left, and a batch is Pro', /freeLeftWords\(free\.left, free\.monthly, 'sets of brand scripts'\)/.test(read('components/labs/TrybeCreate.tsx')) && /\{!free && <TrybeBatchScripts \/>\}/.test(read('components/labs/TrybeCreate.tsx')))
 check('the planner PDF is Pro on Free', /Weekly planner \(PDF\) is on Pro/.test(read('components/labs/TrybeWeek.tsx')))
 check('the page asks for your own message on Free, so View as Free shows the real thing', /\.\.\.\(free \? \{ template: true \} : \{\}\)/.test(O))
