@@ -9,7 +9,7 @@
 // has a 91 MVP pick. And I'm not sure that's right."
 
 import { readFileSync, existsSync } from 'node:fs'
-import { readScoreParts, readSavedParts, partOf, partWord, PART_LABEL, readPageFacts, withPageFacts } from '../lib/trybe-score'
+import { readScoreParts, readSavedParts, partOf, partWord, PART_LABEL, readPageFacts, withPageFacts, readStarsOf } from '../lib/trybe-score'
 import { pickScore, weighScore, DEFAULT_PRIORITIES, FACTORS, type PickInput } from '../lib/trybe-pick'
 import { scorecard, readLiveBrand } from '../lib/trybe-dossier'
 import { ratingOf } from '../lib/trybe-finder'
@@ -108,6 +108,20 @@ check('migration 473 adds both columns, safe to run twice', existsSync(MIG) && /
   check('the results table says TRYBE\'s parts where members have no results yet', /const tp = readSavedParts\(b\.trybe_parts\)/.test(T) && /Reviews <Dot/.test(T) && /Chats <Dot/.test(T) && /\[\.\.\.members, \.\.\.trybeSays\]/.test(T))
   const M4 = 'supabase/migrations/474_trybe_page_facts.sql'
   check('migration 474 adds the column, safe to run twice', existsSync(M4) && /add column if not exists trybe_page jsonb/.test(read(M4)))
+}
+
+// 6. Its stars and how many rated it, wherever its page keeps them (Chef
+//    Preserve: "4.9 (146 reviews)" on TRYBE; the page read found neither).
+{
+  const st = (j: unknown) => { const r = readStarsOf(j); return [r.rating, r.count] }
+  check('flat names that mean stars and a count', same(st({ data: { avgRating: '4.9', totalReviews: 146 } }), [4.9, 146]))
+  check('inside a review summary', same(st({ data: { brand: { reviewSummary: { average: 4.9, count: 146 } } } }), [4.9, 146]) && same(st({ data: { stats: { ratings: { avg: 4.9, totalCount: 146 } } } }), [4.9, 146]))
+  check('a reviews number is the count', same(st({ rating: 4.9, reviews: 146 }), [4.9, 146]))
+  check('TRYBE\'s speed scores are never read as stars', same(st({ reviewScore: 16, chatScore: 98 }), [null, null]))
+  check('a list of reviews is one page of them, never the count', same(st({ reviews: [{ rating: 5 }, { rating: 4 }] }), [null, null]))
+  const live = readLiveBrand({ data: { brand: { reviewSummary: { average: 4.9, count: 146 } } } })
+  check('the page read uses it, and tells the team where it looked', live.ratingCount === 146 && live.numbers.some((n) => n.id === 'rating' && n.value.startsWith('4.9')) && (live.ratingPaths || []).includes('data.brand.reviewSummary'))
+  check('the team sees the rating fields on the brand page', /For the team, rating and review fields:/.test(read('components/labs/TrybeDossier.tsx')))
 }
 
 if (failures.length) {

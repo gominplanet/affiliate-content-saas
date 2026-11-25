@@ -19,7 +19,7 @@
 //
 // Pure, so the page, the server and the tests read one copy.
 
-import { partWord, type TrybeScoreParts } from './trybe-score'
+import { partWord, readStarsOf, type TrybeScoreParts } from './trybe-score'
 import { POOL_MIN, POOL_MAX_SHARE, type ChangeKind, changeLine } from '@/lib/trybe-changes'
 import { SAMPLE_WAIT_DAYS } from '@/lib/trybe-top100'
 
@@ -417,6 +417,8 @@ export interface LiveBrandRead {
   createdAt?: string | null
   /** How many creators rated it, as a number, when its page says. */
   ratingCount?: number | null
+  /** Where its page keeps anything named like a rating or review, for the team. */
+  ratingPaths?: string[]
   program: string | null
   approval: string | null
   keys: string[]
@@ -460,8 +462,12 @@ export function readLiveBrand(json: unknown): LiveBrandRead {
   if (score != null && score <= 100) numbers.push({ id: 'score', label: 'TRYBE score', value: `${Math.round(score)}`, sub: 'Of 100: how fast it reviews, launches ads and replies' })
   const pd = num(find(['payoutDays', 'payoutFrequencyDays', 'paidEveryDays', 'paymentTermsDays']))
   if (pd != null && pd > 0 && pd <= 90) numbers.push({ id: 'payout', label: 'Pays every', value: `${Math.round(pd)} day${pd === 1 ? '' : 's'}`, sub: pd <= 7 ? 'Weekly, the TRYBE norm' : 'Slower than weekly' })
-  const rating = num(find(['reviewRating', 'averageRating']))
-  const rc = num(find(['reviewCount', 'ratingsCount', 'ratingCount']))
+  // Its stars and how many rated it: the names MVP knew, then any name that
+  // means them, deeper down (lib/trybe-score readStarsOf; Chef Preserve's
+  // page shows 146 reviews that the old names missed).
+  const deepStars = readStarsOf(json)
+  const rating = num(find(['reviewRating', 'averageRating'])) ?? deepStars.rating
+  const rc = num(find(['reviewCount', 'ratingsCount', 'ratingCount'])) ?? deepStars.count
   if (rating != null && rating > 0 && rating <= 5) numbers.push({ id: 'rating', label: 'Rating', value: `${rating.toFixed(1)} ★`, sub: rc != null ? `From ${rc} creator review${rc === 1 ? '' : 's'}` : 'Creators’ stars' })
   // WHAT ITS CREATORS HAVE EARNED, as TRYBE says it ("$30K+").
   const ev = findDeep(['creatorEarnings', 'creatorEarningsLabel', 'earningsLabel', 'totalCreatorEarnings', 'earningsBucket'])
@@ -481,6 +487,7 @@ export function readLiveBrand(json: unknown): LiveBrandRead {
     numbers,
     createdAt,
     ratingCount: rating != null && rc != null ? Math.round(rc) : null,
+    ratingPaths: deepStars.paths,
     program: typeof prog === 'string' && prog.trim() ? prog.trim().slice(0, 80) : null,
     approval: auto === true ? 'Approves creators automatically' : auto === false ? 'Reviews each creator who asks to join' : typeof ap === 'string' ? (/auto/i.test(ap) ? 'Approves creators automatically' : /manual|review/i.test(ap) ? 'Reviews each creator who asks to join' : null) : null,
     keys: Object.keys(o).slice(0, 80),

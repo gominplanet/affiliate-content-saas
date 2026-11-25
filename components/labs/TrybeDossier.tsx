@@ -384,6 +384,7 @@ export default function TrybeDossier({ brandId, name, onClose, actions, scout = 
                   {live.briefUrl && <a href={live.briefUrl} target="_blank" rel="noopener noreferrer" className="text-[13px] font-semibold inline-flex items-center gap-1 hover:underline" style={{ color: ui.accentText }}>Open its brief on {siteName(live.briefUrl)} <ExternalLink size={12} /></a>}
                   {!live.brief && !live.briefUrl && <p className="text-[12.5px]" style={ui.soft}>It has no creative brief on TRYBE.</p>}
                   {isAdmin && <p className="text-[11px]" style={ui.soft}>For the team: TRYBE sent {live.read.keys.join(', ') || 'nothing'}.</p>}
+                  {isAdmin && <p className="text-[11px]" style={ui.soft}>For the team, rating and review fields: {live.read.ratingPaths?.length ? live.read.ratingPaths.join(', ') : 'none named like a rating or review'}. Read as {live.read.numbers.find((x) => x.id === 'rating')?.value ?? 'no rating'}{live.read.ratingCount != null ? ` from ${live.read.ratingCount} reviews` : ', no review count'}.</p>}
                 </>)}
               </div>
             </Section>

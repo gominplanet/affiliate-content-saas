@@ -137,3 +137,50 @@ export function withPageFacts<T extends Record<string, any>>(row: T): T {
   if (p.earnings && (labelDollars(p.earnings) ?? 0) >= (labelDollars(row.earnings_bucket) ?? 0)) out.earnings_bucket = p.earnings
   return out as T
 }
+
+// ITS STARS AND HOW MANY RATED IT, FROM ITS OWN PAGE (Seb, 2026-11-25: Chef
+// Preserve's page shows "4.9 (146 reviews)" and MVP read neither from it).
+// The page keeps them under names MVP had not looked for, possibly inside a
+// summary object, so they are found by what the name means, nearest first,
+// up to four levels down. A count is only read from a count field, never from
+// the length of a list of reviews, which is one page of them.
+
+const norm = (k: string) => k.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/[_-]+/g, ' ').toLowerCase().trim()
+const STAR_KEY = /^(average |avg |mean )?(review |reviews |creator )?(rating|ratings|stars?)( average| avg| value| score)?$|^(average|avg) (review|reviews)$|^review (average|avg|score)$/
+const COUNT_KEY = /^(review|reviews|rating|ratings) (count|total|number)$|^(total|num|number of|count) (reviews|ratings)$|^(reviews|ratings)$/
+const BOX_KEY = /^(reviews?|ratings?|review (summary|stats|data|info)|rating (summary|stats|data|info)|stars)$/
+const AVG_IN_BOX = /^(average|avg|mean|rating|value|score|stars)$/
+const COUNT_IN_BOX = /^(count|total|total reviews|total count|number|num)$/
+
+/** Its star rating and how many rated it, from the brand details. Pure. */
+export function readStarsOf(json: unknown): { rating: number | null; count: number | null; paths: string[] } {
+  let rating: number | null = null
+  let count: number | null = null
+  const paths: string[] = []
+  const asNum = (v: unknown) => { const n = typeof v === 'number' ? v : typeof v === 'string' && /^\s*\d+(\.\d+)?\s*$/.test(v) ? parseFloat(v) : NaN; return Number.isFinite(n) ? n : null }
+  const star = (v: unknown) => { const n = asNum(v); return n != null && n > 0 && n <= 5 ? Math.round(n * 10) / 10 : null }
+  const cnt = (v: unknown) => { const n = asNum(v); return n != null && n >= 0 && n % 1 === 0 && n <= 10_000_000 ? n : null }
+  let level: Array<{ o: Obj; at: string }> = isObj(json) ? [{ o: json, at: '' }] : []
+  for (let depth = 0; depth <= 4 && level.length; depth++) {
+    const next: Array<{ o: Obj; at: string }> = []
+    for (const { o, at } of level) {
+      for (const [k, v] of Object.entries(o)) {
+        const n = norm(k)
+        const path = at ? `${at}.${k}` : k
+        if (/rat|review|star/.test(n) && paths.length < 30) paths.push(path)
+        if (rating == null && STAR_KEY.test(n)) rating = star(v)
+        if (count == null && COUNT_KEY.test(n)) count = cnt(v)
+        if (isObj(v) && BOX_KEY.test(n)) {
+          for (const [ik, iv] of Object.entries(v)) {
+            const inn = norm(ik)
+            if (rating == null && AVG_IN_BOX.test(inn)) rating = star(iv)
+            if (count == null && COUNT_IN_BOX.test(inn)) count = cnt(iv)
+          }
+        }
+        if (isObj(v)) next.push({ o: v, at: path })
+      }
+    }
+    level = next
+  }
+  return { rating, count, paths }
+}
