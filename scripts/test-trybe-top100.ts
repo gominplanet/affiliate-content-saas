@@ -139,9 +139,11 @@ check('no products on TRYBE is its own count, said on the page', /else if \(sm\.
 check('apps are told to the page, counted, and need no product list read', /digital: digitalOf\(id\)/.test(R) && /if \(isKnown\(id\) \|\| digitalOf\(id\)\) return false/.test(R) && /app: !!sm\.app/.test(R) && /apps: kept\.slice\(0, TOP100\)\.filter\(k => k\.app\)\.length/.test(R))
 {
   const O = read('components/labs/TrybeOutreach.tsx'), T = read('components/labs/TrybeBrandTable.tsx'), UI = read('components/labs/trybe-ui.tsx')
+  // Since 2026-11-25 a row's pay hue (green % of sales, red % of ad spend only)
+  // comes first; an app keeps its chip in words either way.
   check('apps show apart at a glance: blue card, blue row, and a chip in words', /export const APP = \{ color: '#2563EB'/.test(UI) && /export function AppChip/.test(UI)
     && /b\.proof\?\.app \? APP\.line/.test(O) && /\{b\.proof\?\.app && <AppChip \/>\}/.test(O) && /shown in blue: nothing to ship/.test(O)
-    && /sweet \? SWEET\.soft : isApp \? APP\.soft/.test(T) && /const edgeColor = sweet \? SWEET\.color : isApp \? APP\.color : null/.test(T) && /inset 3px 0 0 \$\{edgeColor\}/.test(T) && /App, none needed/.test(T))
+    && /sweet \? SWEET\.soft : isApp \? APP\.soft/.test(T) && /const edgeColor = basis \? PAY_BASIS\[basis\]\.color : sweet \? SWEET\.color : isApp \? APP\.color : null/.test(T) && /inset \$\{edgeW\}px 0 0 \$\{edgeColor\}/.test(T) && /App, none needed/.test(T))
 }
 check('samples are read from every MVP creator\'s records, not only this one', /from\('trybe_samples'\)\.select\('brand_id, requested_at, received_at'\)\.in\('brand_id'/.test(R))
 check('fit first, quality next, proven samples last', /0\.6 \* \(x\.match \/ maxMatch\) \+ 0\.3 \* /.test(R) && /\(b\.proven \? 0\.1 : 0\)/.test(R))

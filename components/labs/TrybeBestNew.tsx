@@ -13,13 +13,14 @@ import TrybeLink from '@/components/labs/TrybeLink'
 import { BrandName, useBrandOpen } from '@/components/labs/trybe-dossier-context'
 import TrybeBrandPeek, { type PeekActions } from '@/components/labs/TrybeBrandPeek'
 import { VerdictChip, RoomPayChip, PayChip, type LivePayEst } from '@/components/labs/TrybeFinderControls'
+import { payBasisOf, payBasisCard, payBasisTitle } from '@/components/labs/trybe-ui'
 import type { CrowdRead, RoomPayRead } from '@/lib/trybe-finder'
 import type { PickReason } from '@/lib/trybe-pick'
 
 const PURPLE = 'var(--accent)'
 const AMBER = '#B45309'
 
-interface NewBrand { brand_id: string; name: string; pick?: number; pick_read?: number; pick_reasons?: PickReason[]; crowd?: CrowdRead | null; room_pay?: RoomPayRead | null; pay_est?: LivePayEst | null; pay_text?: string | null; categories?: string[] }
+interface NewBrand { brand_id: string; name: string; pick?: number; pick_read?: number; pick_reasons?: PickReason[]; crowd?: CrowdRead | null; room_pay?: RoomPayRead | null; pay_est?: LivePayEst | null; pay_text?: string | null; pay_basis?: 'sales' | 'adSpend' | null; categories?: string[] }
 
 export default function TrybeBestNew({ scoutOpens, onSeeAll, actions }: { scoutOpens: boolean; onSeeAll?: () => void; actions?: PeekActions }) {
   const [open, setOpen] = useState<string | null>(null)
@@ -60,7 +61,7 @@ export default function TrybeBestNew({ scoutOpens, onSeeAll, actions }: { scoutO
           {list.map((b, i) => {
             const why = (b.pick_reasons || []).find((r) => r.tone === 'good')?.text
             return (
-              <li key={b.brand_id} className={`py-2 flex flex-wrap items-center gap-x-2 gap-y-1${onOpen ? ' cursor-pointer transition-colors hover:bg-[rgb(var(--brand-rgb)/0.05)]' : ''}`} style={{ borderColor: 'var(--border)' }} onClick={onOpen?.(b.brand_id, b.name)}>
+              <li key={b.brand_id} className={`py-2 flex flex-wrap items-center gap-x-2 gap-y-1${onOpen ? ' cursor-pointer transition-colors hover:bg-[rgb(var(--brand-rgb)/0.05)]' : ''}`} title={payBasisTitle(payBasisOf(b.pay_basis))} style={{ borderColor: 'var(--border)', ...(payBasisOf(b.pay_basis) ? { ...payBasisCard(payBasisOf(b.pay_basis)), borderRadius: 10, paddingLeft: 8, paddingRight: 8 } : {}) }} onClick={onOpen?.(b.brand_id, b.name)}>
                 <span className="text-[12px] font-bold tabular-nums w-4" style={soft}>{i + 1}</span>
                 <BrandName id={b.brand_id} name={b.name} className="text-[13.5px] font-semibold" />
                 <VerdictChip score={b.pick} read={b.pick_read} />

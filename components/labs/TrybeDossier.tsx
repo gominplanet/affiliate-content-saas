@@ -23,7 +23,7 @@ import { requestTrybeApi } from '@/lib/extension-frame'
 import { scorecard, verdictOf, seriesMove, readLiveBrand, type LiveBrandRead, type Dimension, type SamplePool, type ReplyPool, type DossierProduct, type TimelineItem, type SeriesPoint } from '@/lib/trybe-dossier'
 import { adLibraryUrl } from '@/lib/trybe-pick'
 import { CHANGE_WORDS } from '@/lib/trybe-changes'
-import { GRADE, ui, Section, Tag, Meter, ScoreRing, Figure, AreaChart, Btn, TEST } from '@/components/labs/trybe-ui'
+import { GRADE, ui, Section, Tag, Meter, ScoreRing, Figure, AreaChart, Btn, TEST, payBasisOf, payBasisCard, payBasisTitle } from '@/components/labs/trybe-ui'
 import TrybeLink from '@/components/labs/TrybeLink'
 import { BrandProof, RetainerBadge } from '@/components/labs/TrybeFinderControls'
 import { BrandName } from '@/components/labs/trybe-dossier-context'
@@ -371,7 +371,8 @@ export default function TrybeDossier({ brandId, name, onClose, actions, scout = 
           {/* ── ITS NUMBERS ON TRYBE ─────────────────────────────────────── */}
           {listing && (
             <Section title="Its numbers on TRYBE" aside="From TRYBE&rsquo;s brand list and MVP&rsquo;s daily reads">
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-5 rounded-2xl p-5" style={ui.card}>
+              {/* The card's hue: green for a % of sales, red for a % of ad spend only (Seb, 2026-11-25). */}
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-5 rounded-2xl p-5" style={{ ...ui.card, ...payBasisCard(payBasisOf(listing.pay_basis)) }} title={payBasisTitle(payBasisOf(listing.pay_basis))}>
                 <Figure label="Pay" value={listing.pay_est?.short || listing.pay_text || 'Not shown'} sub={listing.pay_est?.plus?.length ? listing.pay_est.plus.slice(0, 2).join('; ') : listing.pay_est?.guaranteed ? 'Part of it is guaranteed' : undefined} />
                 <Figure label="Creators earned" value={listing.earnings_bucket || 'Not shown'} sub={listing.tier_up ? `Up from ${listing.tier_up.before || 'less'} on ${day(listing.tier_up.at)}` : 'TRYBE’s payout range'} tone={listing.tier_up ? 'strong' : undefined} />
                 <Figure label="Rating" value={typeof listing.review_rating === 'number' ? `${listing.review_rating.toFixed(1)} ★` : 'No rating'} sub={typeof listing.review_count === 'number' ? `${listing.review_count} creator review${listing.review_count === 1 ? '' : 's'}` : 'Creators have not rated it'} />

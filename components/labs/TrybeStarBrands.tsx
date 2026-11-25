@@ -29,6 +29,7 @@ import { toast } from 'sonner'
 import { Loader2, Megaphone, Sparkles, RotateCcw, Users, Globe, ExternalLink } from 'lucide-react'
 import TrybeLink from '@/components/labs/TrybeLink'
 import { BrandName } from '@/components/labs/trybe-dossier-context'
+import { payBasisOf, payBasisCard, payBasisTitle } from '@/components/labs/trybe-ui'
 import { BrandMark, PayChip, StarButton, PopularityChips, RatingChip, NO_FILTERS, type LivePayEst, type LivePopularity } from '@/components/labs/TrybeFinderControls'
 import { readMetaAdsAll, metaAdsWords, metaBrandOf } from '@/components/labs/metaAdsRead'
 import { metaTrustWords, adLibraryUrl, type MetaTrust } from '@/lib/trybe-pick'
@@ -46,6 +47,8 @@ interface StarBrand extends LivePopularity {
   brand_id: string; name: string; website: string | null
   trybe_score: number | null; total_creators: number | null
   pay_text: string | null; pay_est?: LivePayEst | null
+  /** % of sales (green) or % of ad spend only (red). */
+  pay_basis?: 'sales' | 'adSpend' | null
   meta_ads?: number | null; meta_ads_checked_at?: string | null; meta_fresh?: boolean
   /** Whether the count is the brand's own (lib/trybe-pick metaTrustOf). */
   meta_trust?: MetaTrust | null; meta_ads_own?: number | null; meta_ads_sample?: number | null
@@ -271,7 +274,7 @@ export default function TrybeStarBrands({ canCount, cards, scoutVersion, hasCore
                 <li key={b.brand_id}>
                   {first && i > 0 && notOwn && <p className="text-[12px] font-semibold uppercase tracking-wide mt-3 mb-1.5" style={soft}>Counts that include other advertisers&rsquo; ads</p>}
                   {first && !known && counted.length > 0 && <p className="text-[12px] font-semibold uppercase tracking-wide mt-3 mb-1.5" style={soft}>Meta ads not counted yet</p>}
-                  <label className="flex gap-3 rounded-xl border p-3 cursor-pointer" style={{ borderColor: picked.has(b.brand_id) ? COLOR : 'var(--border)', background: 'var(--surface)' }}>
+                  <label className="flex gap-3 rounded-xl border p-3 cursor-pointer" title={payBasisTitle(payBasisOf(b.pay_basis))} style={{ borderColor: picked.has(b.brand_id) ? COLOR : 'var(--border)', background: 'var(--surface)', ...payBasisCard(payBasisOf(b.pay_basis)), ...(picked.has(b.brand_id) ? { borderColor: COLOR } : {}) }}>
                     <input type="checkbox" className="mt-1 accent-[#C026D3]" checked={picked.has(b.brand_id)}
                       onChange={(e) => setPicked((s) => { const n = new Set(s); if (e.target.checked) n.add(b.brand_id); else n.delete(b.brand_id); return n })} />
                     <span className="w-7 shrink-0 text-[13px] font-bold tabular-nums mt-0.5" style={{ color: known && !notOwn ? COLOR : 'var(--text-3)' }}>#{i + 1}</span>

@@ -13,7 +13,7 @@ import { ArrowDown, ArrowUp, ArrowUpRight, Trophy } from 'lucide-react'
 import { BrandMark, proofTitle, MaxPerChip } from '@/components/labs/TrybeFinderControls'
 import { retainerSource } from '@/lib/trybe-evidence'
 import { BrandName, useBrandOpen } from '@/components/labs/trybe-dossier-context'
-import { GRADE, APP, AppChip, SWEET, SweetChip, TestChip } from '@/components/labs/trybe-ui'
+import { GRADE, APP, AppChip, SWEET, SweetChip, TestChip, PAY_BASIS, payBasisOf, payBasisTitle } from '@/components/labs/trybe-ui'
 import { testCallOf } from '@/lib/trybe-test-call'
 import { sweetSpot, sweetWords } from '@/lib/trybe-daily'
 
@@ -191,24 +191,29 @@ export default function TrybeBrandTable({ brands, picked, onPick, taken, preview
             // THE SWEET SPOT (lib/trybe-daily, Seb 2026-11-18): under 500
             // creators and $10K+ paid out, in gold, before the app blue.
             const sweet = sweetSpot(b)
-            const edgeColor = sweet ? SWEET.color : isApp ? APP.color : null
-            const edge: CSSProperties | undefined = edgeColor ? { boxShadow: `inset 3px 0 0 ${edgeColor}` } : undefined
+            // HOW IT PAYS, AS THE WHOLE ROW'S HUE (Seb, 2026-11-25): green for a
+            // percent of sales, red for a percent of ad spend only. The sweet spot
+            // and app marks keep their own chips in the brand cell.
+            const basis = payBasisOf(b.pay_basis)
+            const edgeColor = basis ? PAY_BASIS[basis].color : sweet ? SWEET.color : isApp ? APP.color : null
+            const edgeW = basis ? 4 : 3
+            const edge: CSSProperties | undefined = edgeColor ? { boxShadow: `inset ${edgeW}px 0 0 ${edgeColor}` } : undefined
             // The pinned cells need a solid ground over what scrolls under them.
-            const ground = on ? 'color-mix(in srgb, var(--accent) 6%, var(--surface))' : sweet ? `color-mix(in srgb, ${SWEET.color} 8%, var(--surface))` : isApp ? `color-mix(in srgb, ${APP.color} 7%, var(--surface))` : 'var(--surface)'
+            const ground = on ? 'color-mix(in srgb, var(--accent) 6%, var(--surface))' : basis ? `color-mix(in srgb, ${PAY_BASIS[basis].color} ${PAY_BASIS[basis].pct}%, var(--surface))` : sweet ? `color-mix(in srgb, ${SWEET.color} 8%, var(--surface))` : isApp ? `color-mix(in srgb, ${APP.color} 7%, var(--surface))` : 'var(--surface)'
             // Members' results that MVP has, each short; none says so once.
             const members: ReactNode[] = []
             if (typeof b.approval === 'number') members.push(<span key="a" style={hl('approves')}>Approves <Dot c={b.approval >= 0.6 ? 'strong' : b.approval >= 0.35 ? 'fair' : 'weak'} small>{`${Math.round(b.approval * 100)}%`}</Dot></span>)
             if (typeof b.replies?.rate === 'number') members.push(<span key="r" style={hl('answers')} title={b.replies.days != null ? `Middle wait for an answer: about ${b.replies.days} days` : undefined}>Answers <Dot c={b.replies.rate >= 0.5 ? 'strong' : b.replies.rate >= 0.2 ? 'fair' : 'weak'} small>{`${Math.round(b.replies.rate * 100)}%${b.replies.days != null ? `, ${Math.round(b.replies.days)}d` : ''}`}</Dot></span>)
             if (typeof b.review?.reviewDays === 'number') members.push(<span key="d" style={hl('decides')}>Decides in {b.review.reviewDays}d</span>)
             return (
-              <tr key={b.brand_id} className={`transition-colors hover:bg-[rgb(var(--brand-rgb)/0.04)]${onOpen ? ' cursor-pointer' : ''}`} onClick={onOpen?.(b.brand_id, b.name)} style={{ borderTop: '1px solid var(--border)', background: on ? 'rgb(var(--brand-rgb) / 0.06)' : sweet ? SWEET.soft : isApp ? APP.soft : undefined, opacity: isTaken ? 0.62 : 1 }}>
+              <tr key={b.brand_id} className={`transition-colors hover:bg-[rgb(var(--brand-rgb)/0.04)]${onOpen ? ' cursor-pointer' : ''}`} onClick={onOpen?.(b.brand_id, b.name)} title={payBasisTitle(basis)} style={{ borderTop: '1px solid var(--border)', background: on ? 'rgb(var(--brand-rgb) / 0.06)' : basis ? PAY_BASIS[basis].soft : sweet ? SWEET.soft : isApp ? APP.soft : undefined, opacity: isTaken ? 0.62 : 1 }}>
                 {!preview && (
                   <td className="pl-4 pr-1 py-2.5 align-top sticky left-0 z-[1]" style={{ ...edge, background: ground, width: 40, minWidth: 40, maxWidth: 40, boxSizing: 'border-box' }} data-own-click>
                     <input type="checkbox" className="w-4 h-4 mt-1.5" style={{ accentColor: 'var(--accent)' }} checked={on} disabled={isTaken} aria-label={`Pick ${b.name}`} onChange={(e) => onPick(b.brand_id, e.target.checked)} />
                   </td>
                 )}
                 {/* BRAND, with its MVP pick */}
-                <td className="px-2.5 py-2.5 align-top" style={{ ...(preview ? edge : undefined), position: 'sticky', left: preview ? 0 : 40, zIndex: 1, background: ground, boxShadow: `${preview && edgeColor ? `inset 3px 0 0 ${edgeColor}, ` : ''}1px 0 0 var(--border)` }}>
+                <td className="px-2.5 py-2.5 align-top" style={{ ...(preview ? edge : undefined), position: 'sticky', left: preview ? 0 : 40, zIndex: 1, background: ground, boxShadow: `${preview && edgeColor ? `inset ${edgeW}px 0 0 ${edgeColor}, ` : ''}1px 0 0 var(--border)` }}>
                   <div className="flex items-start gap-2.5 min-w-0">
                     <BrandMark name={b.name} website={b.website} size={30} />
                     <div className="min-w-0 flex-1">

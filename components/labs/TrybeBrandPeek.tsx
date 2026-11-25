@@ -15,6 +15,7 @@
 
 import { useEffect, useState } from 'react'
 import { Loader2, AlertTriangle, MessageCircle, Send, Globe, ExternalLink, ArrowRight } from 'lucide-react'
+import { payBasisOf, payBasisCard, payBasisTitle } from '@/components/labs/trybe-ui'
 import { BrandExtras, PayChip, RoomPayChip, NewChip, StaticsChip, SellsChip, VerdictChip, ReviewChip, type LiveAmazon, type LivePayEst } from '@/components/labs/TrybeFinderControls'
 import { adLibraryUrl, type PickReason } from '@/lib/trybe-pick'
 import type { DirStats, CrowdRead, RoomPayRead } from '@/lib/trybe-finder'
@@ -52,6 +53,7 @@ interface PeekBrand {
   products: string[]; status: PeekStatus | null
   pick?: number; pick_reasons?: PickReason[]; pick_read?: number
   amazon?: LiveAmazon | null; stats?: DirStats | null
+  pay_basis?: 'sales' | 'adSpend' | null
   pay_est?: LivePayEst | null; crowd?: CrowdRead | null; room_pay?: RoomPayRead | null; is_new?: boolean; statics?: boolean | null
   review?: { reviewDays: number | null; slowShare: number | null } | null
   sells?: import('@/lib/trybe-sells').SellsRead | null
@@ -123,7 +125,8 @@ export default function TrybeBrandPeek({ brandId, name, actions }: { brandId: st
   const reasons = (brand.pick_reasons || []).slice(0, 6)
 
   return (
-    <div className={box} style={boxStyle}>
+    // The whole box's hue: green for a % of sales, red for a % of ad spend only (Seb, 2026-11-25).
+    <div className={box} style={{ ...boxStyle, ...payBasisCard(payBasisOf(brand.pay_basis)) }} title={payBasisTitle(payBasisOf(brand.pay_basis))}>
       <div className="flex flex-wrap items-center gap-1.5">
         <NewChip on={brand.is_new} />
         <VerdictChip score={brand.pick} read={brand.pick_read} />

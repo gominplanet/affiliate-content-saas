@@ -25,7 +25,7 @@ import { outreachNiche } from '@/lib/outreach-niche'
 import { pickScore, creatorProgramOf, readTopCreatives, tallyTop, META_ADS_FRESH_MS, readPriorities, weighScore, staticsOf, bucketDollars, metaTrustOf, metaUsable } from '@/lib/trybe-pick'
 import { adsPerCreator, adsPerReview, STAR_MIN_REVIEWS } from '@/lib/brand-popularity'
 import { ratingOf, readDirStats, rawKeys, amazonOf, nameVariants, readFilters, anyFilterOn, filterCheck, spendingOf, productOnAmazon, filmedProducts, mergeSnapshot, pickBaseline, crowdOf, creatorSpendOf, roomPayOf, snapshotKey, isNewBrand, mixPick, mixOf, SNAPSHOT_KEEP_DAYS, type AmazonOf, type DirStats, type AmazonFilmed, type AmazonVideoProduct, type CcCampaign, type FilterId, type Snapshot } from '@/lib/trybe-finder'
-import { payLines, payReadOf, estimatePay } from '@/lib/trybe-pay'
+import { payLines, payReadOf, estimatePay, payHighlight } from '@/lib/trybe-pay'
 import { readTopWords, firstHook, keepHooks, readHooksBody, hooksBlock, type TopHook } from '@/lib/trybe-hooks'
 import { readRetainers } from '@/lib/trybe-retainer'
 import { amazonVideoPage } from '@/lib/brand-content'
@@ -2631,7 +2631,9 @@ Weigh posts pushed to social, and TRYBE brands they earned with or submitted to,
         const m = mineBy.get(r.brand_id)
         return {
           brand_id: r.brand_id, name: r.name, website: r.website, categories: r.categories || [], about: r.about,
-          pay_text: (linesBy.get(r.brand_id) || []).join(' · ') || r.pay_text || null, pay_kind: pay.kind, trybe_score: r.trybe_score, total_creators: r.total_creators, match,
+          pay_text: (linesBy.get(r.brand_id) || []).join(' · ') || r.pay_text || null, pay_kind: pay.kind,
+          // Green for a percent of sales, red for a percent of ad spend only (lib/trybe-pay payHighlight).
+          pay_basis: payHighlight(pay.kinds), trybe_score: r.trybe_score, total_creators: r.total_creators, match,
           pay_est: (() => { const e = estBy.get(r.brand_id); return e ? { dollars: e.dollars, basis: e.basis, short: e.short, math: e.math, plus: e.plus, capped: e.capped, guaranteed: e.guaranteed, percent: e.percent, maxPer: e.maxPer } : null })(),
           crowd: crowdBy.get(r.brand_id) ?? null,
           spend: spendBy.get(r.brand_id) ?? null,

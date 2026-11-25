@@ -297,3 +297,25 @@ export function payReadOf(lines: string[]): PayRead {
   const kind = dollars != null && percent != null ? 'both' : dollars != null ? 'flat' : percent != null ? 'percent' : null
   return { kind, dollars, percent, kinds: est.kinds }
 }
+
+/** GREEN OR RED IN THE BRAND LISTS (Seb, 2026-11-25: "highlight for users the
+ *  brands on Trybe that offer % of GMV and not % of adspend"). 'sales': it
+ *  pays a percent of the SALES the creator's videos make (green), whatever
+ *  else it pays too. 'adSpend': it pays a percent of what the brand spends on
+ *  ads with the videos and no percent of sales (red): the creator earns only
+ *  while the brand keeps paying to run them, and a brand that shelves a video
+ *  pays nothing for it. Null for everything else (a flat fee, per order, a
+ *  retainer, or terms MVP could not read): no colour, never a guess. Pure. */
+export type PayHighlight = 'sales' | 'adSpend' | null
+export function payHighlight(kinds: readonly (TermKind | string)[] | null | undefined): PayHighlight {
+  const k = kinds || []
+  if (k.includes('gmv')) return 'sales'
+  if (k.includes('adSpend')) return 'adSpend'
+  return null
+}
+
+/** The words beside the colour. Pure. */
+export const PAY_HIGHLIGHT_WORDS: Record<'sales' | 'adSpend', { chip: string; why: string }> = {
+  sales: { chip: '% of sales', why: 'Pays you a share of the sales your videos make.' },
+  adSpend: { chip: '% of ad spend only', why: 'Pays only a share of what the brand spends on ads with your videos. If it stops running them, you earn nothing from them.' },
+}

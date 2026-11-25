@@ -62,7 +62,7 @@ import type { ClaimProof, RetainerRead } from '@/lib/trybe-evidence'
 import TrybeBrandTable from '@/components/labs/TrybeBrandTable'
 import { morningWords, autoRunWords, type AutoRunRecord } from '@/lib/trybe-morning'
 import { plainServerError, isPassingTrouble, PASSING_WAITS_MS } from '@/lib/upstream-words'
-import { APP, AppChip, SWEET, SweetChip, TestChip } from '@/components/labs/trybe-ui'
+import { APP, AppChip, SWEET, SweetChip, TestChip, PAY_BASIS, payBasisOf, payBasisTitle, PayBasisKey } from '@/components/labs/trybe-ui'
 import { testCallOf } from '@/lib/trybe-test-call'
 import { DossierCtx, BrandName } from '@/components/labs/trybe-dossier-context'
 import TrybeWorking from '@/components/labs/TrybeWorking'
@@ -146,6 +146,8 @@ export type Tab = 'home' | 'create' | 'upload' | 'find' | 'stars' | 'top100' | '
 interface LiveBrand {
   brand_id: string; name: string; website: string | null; categories: string[]; about: string | null
   pay_text: string | null; pay_kind?: 'flat' | 'percent' | 'both' | null; trybe_score: number | null; total_creators: number | null; match: number
+  /** % of sales (green) or % of ad spend only (red), lib/trybe-pay payHighlight. */
+  pay_basis?: 'sales' | 'adSpend' | null
   first_seen_at?: string | null
   /** Looked up by name, and not seen on TRYBE's list at the last whole collection. */
   not_listed?: boolean
@@ -3233,6 +3235,8 @@ export default function TrybeOutreach({ preview = false, free = false, v2 = fals
             {v2 && (live?.brands || []).length > 0 && (
               <div className="flex items-center justify-between gap-2 flex-wrap">
                 <span className="text-[12px]" style={soft}>{listView === 'table' ? 'Press a heading to sort. Press a name to see everything MVP knows about the brand.' : 'Press a name to see everything MVP knows about the brand.'}</span>
+                {/* WHAT GREEN AND RED MEAN (Seb, 2026-11-25). */}
+                <PayBasisKey />
                 {/* THE SWEET SPOT, SAID (Seb, 2026-11-18): what the gold means. */}
                 <span className="text-[12px] inline-flex items-center gap-1.5" style={soft}><span className="inline-block w-3 h-3 rounded-sm" style={{ background: SWEET.soft, boxShadow: `inset 3px 0 0 ${SWEET.color}` }} aria-hidden /> Gold: under 500 creators and $10K+ paid out to creators</span>
                 <div role="tablist" aria-label="Show brands as" className="inline-flex rounded-xl p-1 gap-1" style={{ border: '1px solid var(--border)', background: 'var(--surface)' }}>
@@ -3257,7 +3261,8 @@ export default function TrybeOutreach({ preview = false, free = false, v2 = fals
                 const where = liveWhere(b)
                 const hits = (p: string) => kws.some(k => p.toLowerCase().includes(k.toLowerCase()))
                 return (
-                  <label key={b.brand_id} className={`flex gap-3 rounded-xl border p-3.5 ${taken ? 'opacity-60' : 'cursor-pointer'}`} style={{ borderColor: on ? PURPLE : sweetSpot(b) ? SWEET.color : b.proof?.app ? APP.line : 'var(--border)', borderWidth: b.proof?.app || sweetSpot(b) ? 1.5 : undefined, background: on ? 'rgb(var(--brand-rgb) / 0.04)' : sweetSpot(b) ? SWEET.soft : b.proof?.app ? APP.soft : undefined }}>
+                  // The whole card's hue: green for a % of sales, red for a % of ad spend only (Seb, 2026-11-25).
+                  <label key={b.brand_id} title={payBasisTitle(payBasisOf(b.pay_basis))} className={`flex gap-3 rounded-xl border p-3.5 ${taken ? 'opacity-60' : 'cursor-pointer'}`} style={{ borderColor: on ? PURPLE : payBasisOf(b.pay_basis) ? PAY_BASIS[payBasisOf(b.pay_basis)!].line : sweetSpot(b) ? SWEET.color : b.proof?.app ? APP.line : 'var(--border)', borderWidth: payBasisOf(b.pay_basis) || b.proof?.app || sweetSpot(b) ? 1.5 : undefined, background: on ? 'rgb(var(--brand-rgb) / 0.04)' : payBasisOf(b.pay_basis) ? PAY_BASIS[payBasisOf(b.pay_basis)!].soft : sweetSpot(b) ? SWEET.soft : b.proof?.app ? APP.soft : undefined }}>
                     {!preview && <input type="checkbox" className="mt-3 accent-[#7C3AED]" checked={on} disabled={taken} aria-label={`Pick ${b.name}`}
                       onChange={e => setLivePick(p => { const n = new Set(p); if (e.target.checked) n.add(b.brand_id); else n.delete(b.brand_id); return n })} />}
                     <BrandMark name={b.name} website={b.website} />
