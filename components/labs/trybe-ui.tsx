@@ -51,10 +51,13 @@ export function TestChip({ call }: { call: { why: string[]; caveats: string[] } 
 /** HOW A BRAND PAYS, AS THE WHOLE CARD'S HUE (Seb, 2026-11-25: "I want the
  *  whole card to be either green... or a red hue"). Green when it pays a
  *  percent of the sales your videos make, red when it pays a percent of its
- *  ad spend and no percent of sales (lib/trybe-pay payHighlight). Nothing for
+ *  ad spend and no percent of sales, blue when it offers a retainer (first:
+ *  "blue being any brand that offers retainers") (lib/trybe-pay payHighlight).
+ *  An app keeps its App label in words; the hue is always how a brand pays. Nothing for
  *  anything else: no colour is ever a guess. The reason is the card's hover
  *  text, and PayBasisKey says what the colours mean above the list. */
 export const PAY_BASIS = {
+  retainer: { color: '#2563EB', soft: 'rgba(37,99,235,0.12)', line: 'rgba(37,99,235,0.55)', pct: 12 },
   sales: { color: '#16A34A', soft: 'rgba(22,163,74,0.13)', line: 'rgba(22,163,74,0.55)', pct: 13 },
   adSpend: { color: '#DC2626', soft: 'rgba(220,38,38,0.11)', line: 'rgba(220,38,38,0.50)', pct: 11 },
 } as const
@@ -62,7 +65,7 @@ export type PayBasis = keyof typeof PAY_BASIS
 
 /** A brand's pay_basis as sent by the server, or null. */
 export function payBasisOf(v: unknown): PayBasis | null {
-  return v === 'sales' || v === 'adSpend' ? v : null
+  return v === 'retainer' || v === 'sales' || v === 'adSpend' ? v : null
 }
 
 /** The card's hue: its ground and its border. Undefined when it has none. */
@@ -80,6 +83,7 @@ export function PayBasisKey() {
   const sw = (b: PayBasis) => <span className="inline-block w-3 h-3 rounded-sm" style={{ background: PAY_BASIS[b].soft, border: `1px solid ${PAY_BASIS[b].line}` }} aria-hidden="true" />
   return (
     <span className="text-[12px] inline-flex flex-wrap items-center gap-x-3 gap-y-1" style={{ color: 'var(--text-2)' }}>
+      <span className="inline-flex items-center gap-1.5" title={PAY_HIGHLIGHT_WORDS.retainer.why}>{sw('retainer')} Blue: offers a retainer</span>
       <span className="inline-flex items-center gap-1.5" title={PAY_HIGHLIGHT_WORDS.sales.why}>{sw('sales')} Green: pays a % of sales</span>
       <span className="inline-flex items-center gap-1.5" title={PAY_HIGHLIGHT_WORDS.adSpend.why}>{sw('adSpend')} Red: pays a % of ad spend only</span>
     </span>

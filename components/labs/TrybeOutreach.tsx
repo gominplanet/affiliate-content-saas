@@ -3076,7 +3076,7 @@ export default function TrybeOutreach({ preview = false, free = false, v2 = fals
                   </p>
                   {!!t?.apps && (
                     <p className="text-[12px] mt-1.5 inline-flex items-center gap-1.5 rounded-lg px-2 py-1" style={{ background: APP.soft, border: `1px solid ${APP.line}`, color: 'var(--text)' }}>
-                      <AppChip short /> {t.apps} of these {t.apps === 1 ? 'is an app or online service' : 'are apps or online services'}, shown in blue: nothing to ship, so no sample to wait for. Ask for access when you message.
+                      <AppChip short /> {t.apps} of these {t.apps === 1 ? 'is an app or online service' : 'are apps or online services'}, each marked App: nothing to ship, so no sample to wait for. Ask for access when you message.
                     </p>
                   )}
                   {out && <p className="text-[12px] mt-1" style={soft}>Left out of {t?.considered.toLocaleString()} that fit you: {out}.</p>}
@@ -3262,7 +3262,7 @@ export default function TrybeOutreach({ preview = false, free = false, v2 = fals
                 const hits = (p: string) => kws.some(k => p.toLowerCase().includes(k.toLowerCase()))
                 return (
                   // The whole card's hue: green for a % of sales, red for a % of ad spend only (Seb, 2026-11-25).
-                  <label key={b.brand_id} title={payBasisTitle(payBasisOf(b.pay_basis))} className={`flex gap-3 rounded-xl border p-3.5 ${taken ? 'opacity-60' : 'cursor-pointer'}`} style={{ borderColor: on ? PURPLE : payBasisOf(b.pay_basis) ? PAY_BASIS[payBasisOf(b.pay_basis)!].line : sweetSpot(b) ? SWEET.color : b.proof?.app ? APP.line : 'var(--border)', borderWidth: payBasisOf(b.pay_basis) || b.proof?.app || sweetSpot(b) ? 1.5 : undefined, background: on ? 'rgb(var(--brand-rgb) / 0.04)' : payBasisOf(b.pay_basis) ? PAY_BASIS[payBasisOf(b.pay_basis)!].soft : sweetSpot(b) ? SWEET.soft : b.proof?.app ? APP.soft : undefined }}>
+                  <label key={b.brand_id} title={payBasisTitle(payBasisOf(b.pay_basis))} className={`flex gap-3 rounded-xl border p-3.5 ${taken ? 'opacity-60' : 'cursor-pointer'}`} style={{ borderColor: on ? PURPLE : payBasisOf(b.pay_basis) ? PAY_BASIS[payBasisOf(b.pay_basis)!].line : sweetSpot(b) ? SWEET.color : 'var(--border)', borderWidth: payBasisOf(b.pay_basis) || sweetSpot(b) ? 1.5 : undefined, background: on ? 'rgb(var(--brand-rgb) / 0.04)' : payBasisOf(b.pay_basis) ? PAY_BASIS[payBasisOf(b.pay_basis)!].soft : sweetSpot(b) ? SWEET.soft : undefined }}>
                     {!preview && <input type="checkbox" className="mt-3 accent-[#7C3AED]" checked={on} disabled={taken} aria-label={`Pick ${b.name}`}
                       onChange={e => setLivePick(p => { const n = new Set(p); if (e.target.checked) n.add(b.brand_id); else n.delete(b.brand_id); return n })} />}
                     <BrandMark name={b.name} website={b.website} />

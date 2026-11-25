@@ -306,16 +306,22 @@ export function payReadOf(lines: string[]): PayRead {
  *  while the brand keeps paying to run them, and a brand that shelves a video
  *  pays nothing for it. Null for everything else (a flat fee, per order, a
  *  retainer, or terms MVP could not read): no colour, never a guess. Pure. */
-export type PayHighlight = 'sales' | 'adSpend' | null
-export function payHighlight(kinds: readonly (TermKind | string)[] | null | undefined): PayHighlight {
+// BLUE FOR A RETAINER, FIRST (Seb, 2026-11-25: "blue being any brand that
+// offers retainers"; a guaranteed retainer is the strongest pay signal, so it
+// wins over green and red). `hasRetainer` is a retainer MVP read anywhere:
+// its TRYBE terms, its own words on TRYBE, or its website.
+export type PayHighlight = 'retainer' | 'sales' | 'adSpend' | null
+export function payHighlight(kinds: readonly (TermKind | string)[] | null | undefined, hasRetainer = false): PayHighlight {
   const k = kinds || []
+  if (hasRetainer || k.includes('retainer')) return 'retainer'
   if (k.includes('gmv')) return 'sales'
   if (k.includes('adSpend')) return 'adSpend'
   return null
 }
 
 /** The words beside the colour. Pure. */
-export const PAY_HIGHLIGHT_WORDS: Record<'sales' | 'adSpend', { chip: string; why: string }> = {
+export const PAY_HIGHLIGHT_WORDS: Record<'retainer' | 'sales' | 'adSpend', { chip: string; why: string }> = {
+  retainer: { chip: 'Retainer', why: 'Offers a retainer: a guaranteed amount when you deliver its videos. The Retainer badge says where MVP read it; one mentioned only in the brand\u2019s own words is worth confirming with the brand.' },
   sales: { chip: '% of sales', why: 'Pays you a share of the sales your videos make.' },
   adSpend: { chip: '% of ad spend only', why: 'Pays only a share of what the brand spends on ads with your videos. If it stops running them, you earn nothing from them.' },
 }

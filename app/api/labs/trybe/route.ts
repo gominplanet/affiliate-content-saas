@@ -2632,8 +2632,8 @@ Weigh posts pushed to social, and TRYBE brands they earned with or submitted to,
         return {
           brand_id: r.brand_id, name: r.name, website: r.website, categories: r.categories || [], about: r.about,
           pay_text: (linesBy.get(r.brand_id) || []).join(' · ') || r.pay_text || null, pay_kind: pay.kind,
-          // Green for a percent of sales, red for a percent of ad spend only (lib/trybe-pay payHighlight).
-          pay_basis: payHighlight(pay.kinds), trybe_score: r.trybe_score, total_creators: r.total_creators, match,
+          // Blue for a retainer, green for a percent of sales, red for a percent of ad spend only (lib/trybe-pay payHighlight).
+          pay_basis: payHighlight(pay.kinds, !!retainerBy.get(r.brand_id)), trybe_score: r.trybe_score, total_creators: r.total_creators, match,
           pay_est: (() => { const e = estBy.get(r.brand_id); return e ? { dollars: e.dollars, basis: e.basis, short: e.short, math: e.math, plus: e.plus, capped: e.capped, guaranteed: e.guaranteed, percent: e.percent, maxPer: e.maxPer } : null })(),
           crowd: crowdBy.get(r.brand_id) ?? null,
           spend: spendBy.get(r.brand_id) ?? null,

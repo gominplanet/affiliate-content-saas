@@ -20,19 +20,24 @@ check('"15% of GMV" is green', of(['15% of GMV']) === 'sales')
 check('"20% of ad spend" is red', of(['20% of ad spend']) === 'adSpend')
 check('a brand paying both a % of sales and a % of ad spend is green: it pays on sales', of(['10% of GMV', '5% of ad spend']) === 'sales')
 check('a flat fee plus a % of sales is green', of(['$25 per approved video plus 5% of sales']) === 'sales')
-check('a flat fee only, a fee per order or a retainer gets no colour', of(['$50 per video']) === null && of(['$5 per order']) === null && of(['Guaranteed $500 this period if you submit 10 videos']) === null)
+check('a flat fee only or a fee per order gets no colour', of(['$50 per video']) === null && of(['$5 per order']) === null)
+// Seb, 2026-11-25: "Could we make blue being any brand that offers retainers?" Blue wins.
+check('a retainer in its terms is blue', of(['Guaranteed $500 this period if you submit 10 videos']) === 'retainer')
+check('a retainer read anywhere else (its own words, its website) is blue too', payHighlight(['flat'], true) === 'retainer')
+check('blue wins over green and red', of(['Guaranteed $500 this period if you submit 10 videos', '15% of GMV']) === 'retainer' && payHighlight(['adSpend'], true) === 'retainer')
 check('terms MVP cannot read get no colour, never a guess', of(['Ask the brand']) === null && of([]) === null && payHighlight(undefined) === null)
-check('the words say what each colour means, no dashes', PAY_HIGHLIGHT_WORDS.sales.chip === '% of sales' && PAY_HIGHLIGHT_WORDS.adSpend.chip === '% of ad spend only' && /stops running them/.test(PAY_HIGHLIGHT_WORDS.adSpend.why) && !/[–—]/.test(JSON.stringify(PAY_HIGHLIGHT_WORDS)))
+check('the words say what each colour means, no dashes', PAY_HIGHLIGHT_WORDS.sales.chip === '% of sales' && PAY_HIGHLIGHT_WORDS.adSpend.chip === '% of ad spend only' && /stops running them/.test(PAY_HIGHLIGHT_WORDS.adSpend.why) && PAY_HIGHLIGHT_WORDS.retainer.chip === 'Retainer' && !/[–—]/.test(JSON.stringify(PAY_HIGHLIGHT_WORDS)))
 
 // 2. Sent with every brand in the search
 const ROUTE = read('app/api/labs/trybe/route.ts')
-check('Find brands sends each brand\'s colour', /pay_basis: payHighlight\(pay\.kinds\)/.test(ROUTE))
+check('Find brands sends each brand\'s colour, with any retainer MVP read', /pay_basis: payHighlight\(pay\.kinds, !!retainerBy\.get\(r\.brand_id\)\)/.test(ROUTE))
 
 // 3. The whole card's hue wherever brands are listed (Seb: "I don't want it to
 //    be a chip. I want the whole card to be either green... or a red hue.")
 const UI = read('components/labs/trybe-ui.tsx')
 check('one hue each, green or red, as the card\'s ground and border, with the reason on hover', /sales: \{ color: '#16A34A'/.test(UI) && /adSpend: \{ color: '#DC2626'/.test(UI) && /export function payBasisCard/.test(UI) && /export function payBasisTitle/.test(UI))
 check('no chip', !/PayBasisChip/.test(UI) && !/PayBasisChip/.test(read('components/labs/TrybeBrandTable.tsx')))
+check('blue for a retainer, and the key says so', /retainer: \{ color: '#2563EB'/.test(UI) && /Blue: offers a retainer/.test(UI) && /v === 'retainer' \|\| v === 'sales' \|\| v === 'adSpend'/.test(UI))
 check('a key above the list says what green and red mean', /export function PayBasisKey/.test(UI) && /Green: pays a % of sales/.test(UI) && /Red: pays a % of ad spend only/.test(UI) && /<PayBasisKey \/>/.test(read('components/labs/TrybeOutreach.tsx')))
 const TABLE = read('components/labs/TrybeBrandTable.tsx')
 check('the results table tints the whole row, its pinned cells too, and says why on hover', /basis \? PAY_BASIS\[basis\]\.soft/.test(TABLE) && /\$\{PAY_BASIS\[basis\]\.pct\}%, var\(--surface\)\)/.test(TABLE) && /title=\{payBasisTitle\(basis\)\}/.test(TABLE))
