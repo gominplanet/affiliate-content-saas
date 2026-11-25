@@ -14,6 +14,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { BrandName } from '@/components/labs/trybe-dossier-context'
 import { ExternalLink, Globe, Handshake, Loader2, FileText, ChevronDown, Megaphone, Search } from 'lucide-react'
 import { requestTrybeApi } from '@/lib/extension-frame'
+import { keepTrybeFacts } from '@/lib/trybe-score-keep'
 import { readBrandStats } from '@/lib/trybe-mybrands'
 import { brandIdFromChat, brandPageUrl, matchBrand, readBrandCard, type BrandCard, type BrandRef } from '@/lib/trybe-brand-page'
 import { adLibraryUrl } from '@/lib/trybe-pick'
@@ -40,7 +41,8 @@ function loadDetails(id: string): Promise<BrandCard | null> {
   let p = detailsCache.get(id)
   if (!p) {
     p = requestTrybeApi('GET', `/backend/api/creator/v2/brands/${encodeURIComponent(id)}/details`)
-      .then((r) => (r.ok ? readBrandCard(r.json) : null))
+      // What its page said is kept for the MVP pick too (lib/trybe-score-keep).
+      .then((r) => { if (r.ok) keepTrybeFacts(id, r.json); return r.ok ? readBrandCard(r.json) : null })
       .catch(() => null)
     detailsCache.set(id, p)
     void p.then((c) => { if (!c) detailsCache.delete(id) })

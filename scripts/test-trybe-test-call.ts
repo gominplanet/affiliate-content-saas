@@ -54,7 +54,7 @@ check('a number it could not read says why, never a blank', /SCOUT could not rea
 check('not a fit says the fit check’s reason', /status === 'not_fit' && \(/.test(D) && /Why: \{d\.you\.fitReason/.test(D) && /The fit check gave no reason\./.test(D))
 check('the worth a test card sits before MVP’s read', D.indexOf('{test && (') > 0 && D.indexOf('{test && (') < D.indexOf('── VERDICT'))
 check('the cap from its own page reaches the pay box', /maxPer: listing\?\.pay_est\?\.maxPer \?\? livePay\?\.maxPer \?\? null, earned/.test(D))
-check('the numbers read are kept for the lists', /void post\(\{ action: 'live_facts', brandId, creators: n\('creators'\), score: n\('score'\) \}\)/.test(D))
+check('the numbers read are kept for the lists', /keepTrybeFacts\(brandId, r\.json\)/.test(D) && /action: 'live_facts', brandId, \.\.\.facts/.test(read('lib/trybe-score-keep.ts')))
 check('the cards and the table in Find brands show it, with the reasons on hover', /const tc = testCallOf\(b\); return tc \? <TestChip call=\{tc\} \/> : null/.test(read('components/labs/TrybeOutreach.tsx')) && /const tc = testCallOf\(b\); return tc \? <span className="block mt-0\.5"><TestChip call=\{tc\} \/><\/span> : null/.test(read('components/labs/TrybeBrandTable.tsx')) && /title=\{`Worth a test of 5 to 10 videos\. \$\{\[\.\.\.call\.why, \.\.\.call\.caveats\]\.join\(' '\)\}`\}/.test(read('components/labs/trybe-ui.tsx')))
 check('the card and the brand page share one colour, apart from the gold and the blue', /export const TEST = \{ color: '#059669'/.test(read('components/labs/trybe-ui.tsx')) && /background: TEST\.soft, border: `1px solid \$\{TEST\.line\}`/.test(D))
 const R = read('app/api/labs/trybe/route.ts')

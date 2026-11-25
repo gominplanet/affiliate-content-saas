@@ -19,6 +19,7 @@
 //
 // Pure, so the page, the server and the tests read one copy.
 
+import { partWord, type TrybeScoreParts } from './trybe-score'
 import { POOL_MIN, POOL_MAX_SHARE, type ChangeKind, changeLine } from '@/lib/trybe-changes'
 import { SAMPLE_WAIT_DAYS } from '@/lib/trybe-top100'
 
@@ -214,7 +215,7 @@ export interface Dimension {
  *  its creators, its rating, its TRYBE score and the videos it approved, from
  *  MVP's copy of TRYBE's list and the brand's own page read through SCOUT.
  *  Each box uses these when MVP creators' own results are not there yet. */
-export interface TrybeFacts { creators: number | null; rating: number | null; reviews: number | null; score: number | null; approvedVideos: number | null }
+export interface TrybeFacts { creators: number | null; rating: number | null; reviews: number | null; score: number | null; approvedVideos: number | null; parts?: TrybeScoreParts | null }
 
 export interface ScoreInput {
   /** percent: its % of sales; maxPer: the most one video can earn (lib/trybe-pay); earned: TRYBE's payout range. */
@@ -348,7 +349,14 @@ export function scorecard(s: ScoreInput): Dimension[] {
     let source = d == null ? 'Open it on TRYBE through SCOUT to read its TRYBE score' : `Middle wait for a decision, ${POOL_MIN}+ MVP creators${s.pool?.slowShare != null ? `; ${Math.round(s.pool.slowShare * 100)}% still waited after a week` : ''}`
     // Before MVP creators have timed it: TRYBE's own score, which is how fast
     // it reviews, launches ads and replies.
-    if (d == null && ts != null && ts > 0 && ts <= 100) {
+    const parts = s.trybe?.parts ?? null
+    // Its own part for reviewing videos, when SCOUT read it (lib/trybe-score):
+    // arrae's overall 46 hid a 16 for submission reviews.
+    if (d == null && parts?.reviews != null) {
+      score = clamp(parts.reviews)
+      value = `${partWord(parts.reviews)} to review, ${parts.reviews} of 100`
+      source = `TRYBE’s own score for submission reviews${parts.chat != null ? `; answers chats ${partWord(parts.chat).toLowerCase()}, ${parts.chat} of 100` : ''}`
+    } else if (d == null && ts != null && ts > 0 && ts <= 100) {
       score = clamp(ts)
       value = `TRYBE score ${Math.round(ts)}`
       source = 'TRYBE’s own score of 100: how fast it reviews videos, launches ads and replies'

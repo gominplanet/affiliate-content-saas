@@ -59,11 +59,17 @@ export interface PickInput {
   /** The brand on Amazon (lib/trybe-finder amazonOf): videos the creator
    *  already made of its products, and its Creator Connections campaigns. */
   amazon?: { yourVideos: number; ccCampaigns: number; ccBestPct: number | null; storefront: number } | null
+  /** TRYBE's own score of 100, and its three parts when read (lib/trybe-score):
+   *  how fast it reviews videos, launches ads and answers chats. */
+  trybeScore?: { overall: number | null; reviews: number | null; ads: number | null; chat: number | null } | null
+  /** Its creators' star rating on TRYBE, and how many rated it. */
+  rating?: number | null
+  ratingCount?: number | null
 }
 
 /** What a creator can say matters to them (Seb, 2026-10-14, after Rob's Oink
  *  Blue video: "build all 4"). Each part of the score belongs to one. */
-export type Factor = 'competition' | 'adSpend' | 'perVideo' | 'percent' | 'paysCreators' | 'samples' | 'newBrand' | 'amazon' | 'program' | 'statics'
+export type Factor = 'competition' | 'adSpend' | 'perVideo' | 'percent' | 'paysCreators' | 'samples' | 'newBrand' | 'amazon' | 'program' | 'statics' | 'easyToWork'
 export const FACTORS: Array<{ id: Factor; label: string; says: string }> = [
   { id: 'competition', label: 'Less competition', says: 'Fewer creators and not on TikTok Shop means more of the budget for you. While TRYBE gives no creator counts, only TikTok Shop is weighed.' },
   { id: 'adSpend', label: 'Spends on ads', says: 'Meta ads running now and videos in TRYBE\u2019s Top 100.' },
@@ -74,6 +80,7 @@ export const FACTORS: Array<{ id: Factor; label: string; says: string }> = [
   { id: 'newBrand', label: 'New on TRYBE', says: 'Joined in the last month: few creators have found it yet.' },
   { id: 'amazon', label: 'On Amazon too', says: 'Videos you already made of its products, and its Creator Connections campaigns.' },
   { id: 'program', label: 'Looks after creators', says: 'Retainers, calls and briefs, from its own words.' },
+  { id: 'easyToWork', label: 'Easy to work with', says: 'TRYBE\u2019s own score: how fast it reviews your videos, launches them as ads and answers your messages, and its creators\u2019 star rating.' },
   { id: 'statics', label: 'Takes statics', says: 'Brands that also take photo (static) ads, from their own words. Set by What you make.' },
 ]
 /** What you make (Oink's Videos, Statics or Both): the weight of 'statics'. */
@@ -87,7 +94,7 @@ export const GRID_FACTORS = FACTORS.filter((f) => f.id !== 'statics')
 /** 0: does not matter, 1: normal, 2: matters a lot. */
 export type Weight = 0 | 1 | 2
 export type Priorities = Record<Factor, Weight>
-export const DEFAULT_PRIORITIES: Priorities = { competition: 1, adSpend: 1, perVideo: 1, percent: 1, paysCreators: 1, samples: 1, newBrand: 1, amazon: 1, program: 1, statics: 0 }
+export const DEFAULT_PRIORITIES: Priorities = { competition: 1, adSpend: 1, perVideo: 1, percent: 1, paysCreators: 1, samples: 1, newBrand: 1, amazon: 1, program: 1, statics: 0, easyToWork: 1 }
 
 /** A saved priorities object, read safely: anything missing or odd is normal. Pure. */
 export function readPriorities(v: unknown): Priorities {
@@ -242,6 +249,37 @@ export function pickScore(p: PickInput): Pick {
     if (p.program.discord) reasons.push({ text: 'Has a Discord: brands like this often pick creators there, so join it too', tone: 'info' })
   }
   if (p.statics === true) { add('statics', 10); reasons.push({ text: 'Takes statics (photo ads)', tone: 'good' }) }
+  // EASY TO WORK WITH (Seb, 2026-11-25: arrae was an MVP pick of 91 with
+  // TRYBE scoring its reviews and chat 16 of 100, slow). TRYBE's own parts when
+  // read, else its overall score; a slow review queue costs the most, since a
+  // video that waits for approval earns nothing meanwhile.
+  const ts = p.trybeScore
+  if (ts && (ts.reviews != null || ts.ads != null || ts.chat != null)) {
+    read++
+    if (ts.reviews != null) {
+      if (ts.reviews < 40) { add('easyToWork', -18); reasons.push({ text: `Slow to review videos (TRYBE: ${ts.reviews} of 100): yours wait for approval`, tone: 'bad' }) }
+      else if (ts.reviews >= 70) { add('easyToWork', 8); reasons.push({ text: `Reviews videos fast (TRYBE: ${ts.reviews} of 100)`, tone: 'good' }) }
+    }
+    if (ts.ads != null) {
+      if (ts.ads < 40) { add('easyToWork', -10); reasons.push({ text: `Slow to launch videos as ads (TRYBE: ${ts.ads} of 100)`, tone: 'bad' }) }
+      else if (ts.ads >= 70) { add('easyToWork', 6); reasons.push({ text: `Launches videos as ads fast (TRYBE: ${ts.ads} of 100)`, tone: 'good' }) }
+    }
+    if (ts.chat != null) {
+      if (ts.chat < 40) { add('easyToWork', -8); reasons.push({ text: `Slow to answer messages (TRYBE: ${ts.chat} of 100)`, tone: 'bad' }) }
+      else if (ts.chat >= 70) { add('easyToWork', 4); reasons.push({ text: `Answers messages fast (TRYBE: ${ts.chat} of 100)`, tone: 'good' }) }
+    }
+  } else if (ts && ts.overall != null) {
+    read++
+    if (ts.overall < 50) { add('easyToWork', -15); reasons.push({ text: `TRYBE score ${ts.overall} of 100: slow to review, launch ads or reply`, tone: 'bad' }) }
+    else if (ts.overall >= 75) { add('easyToWork', 10); reasons.push({ text: `TRYBE score ${ts.overall} of 100: quick to work with`, tone: 'good' }) }
+    else reasons.push({ text: `TRYBE score ${ts.overall} of 100`, tone: 'info' })
+  }
+  const stars = p.rating
+  if (typeof stars === 'number' && stars > 0 && stars <= 5 && (p.ratingCount ?? 0) >= 5) {
+    read++
+    if (stars < 4) { add('easyToWork', -12); reasons.push({ text: `Creators rate it ${stars.toFixed(1)}\u2605 from ${p.ratingCount} reviews`, tone: 'bad' }) }
+    else if (stars >= 4.6) { add('easyToWork', 6); reasons.push({ text: `Creators rate it ${stars.toFixed(1)}\u2605 from ${p.ratingCount} reviews`, tone: 'good' }) }
+  }
   if (p.tiktokShop === true) { read++; add('competition', -10); reasons.push({ text: 'Sells on TikTok Shop too: more creators competing', tone: 'bad' }) }
   else if (p.tiktokShop === false) {
     read++

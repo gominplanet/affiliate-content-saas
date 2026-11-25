@@ -22,6 +22,8 @@ import { testCall } from '@/lib/trybe-test-call'
 import { requestTrybeApi } from '@/lib/extension-frame'
 import { scorecard, verdictOf, seriesMove, readLiveBrand, type LiveBrandRead, type Dimension, type SamplePool, type ReplyPool, type DossierProduct, type TimelineItem, type SeriesPoint } from '@/lib/trybe-dossier'
 import { adLibraryUrl } from '@/lib/trybe-pick'
+import { readScoreParts, readSavedParts, partWord, PART_LABEL, type TrybeScoreParts } from '@/lib/trybe-score'
+import { keepTrybeFacts } from '@/lib/trybe-score-keep'
 import { CHANGE_WORDS } from '@/lib/trybe-changes'
 import { GRADE, ui, Section, Tag, Meter, ScoreRing, Figure, AreaChart, Btn, TEST, payBasisOf, payBasisCard, payBasisTitle } from '@/components/labs/trybe-ui'
 import TrybeLink from '@/components/labs/TrybeLink'
@@ -101,7 +103,7 @@ export default function TrybeDossier({ brandId, name, onClose, actions, scout = 
   const [busy, setBusy] = useState<'message' | 'send' | null>(null)
   const panel = useRef<HTMLDivElement>(null)
   // LIVE FROM TRYBE: the brand's own page, read through SCOUT just now.
-  const [live, setLive] = useState<{ state: 'reading' | 'read' | 'failed'; read?: LiveBrandRead; rules?: string[]; brief?: string | null; briefUrl?: string | null; error?: string } | null>(null)
+  const [live, setLive] = useState<{ state: 'reading' | 'read' | 'failed'; read?: LiveBrandRead; rules?: string[]; brief?: string | null; briefUrl?: string | null; parts?: TrybeScoreParts | null; error?: string } | null>(null)
   const readLive = useCallback(async () => {
     if (!canDetails) return
     setLive({ state: 'reading' })
@@ -109,12 +111,15 @@ export default function TrybeDossier({ brandId, name, onClose, actions, scout = 
     if (!r.ok || r.json == null) { setLive({ state: 'failed', error: ('error' in r && r.error) || 'no answer' }); return }
     const card = readBrandCard(r.json)
     const read = readLiveBrand(r.json)
-    setLive({ state: 'read', read, rules: payLines(r.json), brief: card.brief, briefUrl: card.briefUrl })
+    // ITS SCORE IN THREE PARTS (Seb, 2026-11-25): reviews, ads, chats.
+    const parts = readScoreParts(r.json)
+    setLive({ state: 'read', read, rules: payLines(r.json), brief: card.brief, briefUrl: card.briefUrl, parts })
     // KEPT FOR THE LISTS TOO (Seb, 2026-11-20): TRYBE's list no longer carries
     // a brand's creators or score; its page does. Best effort: a page that
     // shows them here still does when the save fails.
-    const n = (id: string) => { const v = read.numbers.find((x) => x.id === id)?.value; const f = v ? parseFloat(v.replace(/[^0-9.]/g, '')) : NaN; return Number.isFinite(f) ? f : null }
-    if (n('creators') != null || n('score') != null) void post({ action: 'live_facts', brandId, creators: n('creators'), score: n('score') }).catch(() => null)
+    // The score's parts are kept too, so the MVP pick in every list weighs
+    // them (lib/trybe-score-keep).
+    keepTrybeFacts(brandId, r.json)
   }, [brandId, canDetails])
   useEffect(() => { void readLive() }, [readLive])
 
@@ -148,6 +153,8 @@ export default function TrybeDossier({ brandId, name, onClose, actions, scout = 
     reviews: typeof listing?.review_count === 'number' ? listing.review_count : null,
     score: liveNum('score'),
     approvedVideos: typeof listing?.stats?.videosApproved === 'number' ? listing.stats.videosApproved : null,
+    // Read just now, else the parts MVP kept from the last read.
+    parts: live?.parts ?? readSavedParts(listing?.trybe_parts),
   }
   // ITS PAY RULES FROM ITS OWN PAGE: TRYBE's list can leave out the cap per
   // video ("max $5000.00 per submission") that its page says.
@@ -271,6 +278,18 @@ export default function TrybeDossier({ brandId, name, onClose, actions, scout = 
                   </div>
                 ))}
               </div>
+              {trybeFacts.parts && (
+                <div className="flex flex-wrap gap-x-5 gap-y-1 mt-2 text-[12.5px]" aria-label="TRYBE score, in its three parts">
+                  <span style={ui.soft}>Its TRYBE score:</span>
+                  {(['reviews', 'ads', 'chat'] as const).map((k) => {
+                    const v = trybeFacts.parts?.[k]
+                    if (v == null) return null
+                    const w = partWord(v)
+                    const tone = w === 'Fast' ? GRADE.strong.color : w === 'Slow' ? GRADE.weak.color : GRADE.fair.color
+                    return <span key={k} style={ui.text}>{PART_LABEL[k]} <b style={{ color: tone }}>{w.toLowerCase()}</b> <span style={{ ...ui.num, ...ui.soft }}>{v}</span></span>
+                  })}
+                </div>
+              )}
               {missingFacts.length > 0 && (
                 <p className="text-[12px] mt-1.5" style={ui.soft}>
                   {live?.state === 'failed' ? `SCOUT could not read its page on TRYBE (${live.error}), so its ${missingFacts.join(' and ')} ${missingFacts.length === 1 ? 'is' : 'are'} missing here.`

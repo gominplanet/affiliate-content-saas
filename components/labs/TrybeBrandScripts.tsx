@@ -14,6 +14,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { Loader2, RotateCcw, Copy, Check, ChevronDown, ChevronUp, Play, FileText, AlertTriangle } from 'lucide-react'
 import { requestTrybeApi } from '@/lib/extension-frame'
+import { keepTrybeFacts } from '@/lib/trybe-score-keep'
 import { readTopVideos, type MyBrand } from '@/lib/trybe-mybrands'
 import { wordsFrom, scriptCounts, BRAND_SCRIPTS_MAX_BRANDS, BRAND_SCRIPTS_PER_BRAND, type ScriptRow } from '@/lib/trybe-brand-scripts'
 
@@ -59,7 +60,7 @@ export default function TrybeBrandScripts({ brands, isAdmin }: { brands: MyBrand
     for (let i = 0; i < list.length; i++) {
       const b = list[i]
       const d = await requestTrybeApi('GET', `/backend/api/creator/v2/brands/${encodeURIComponent(b.id)}/details`)
-      if (d.ok) filed.push({ brandId: b.id, brandName: b.name, videos: readTopVideos(d.json).slice(0, BRAND_SCRIPTS_PER_BRAND) })
+      if (d.ok) { filed.push({ brandId: b.id, brandName: b.name, videos: readTopVideos(d.json).slice(0, BRAND_SCRIPTS_PER_BRAND) }); keepTrybeFacts(b.id, d.json) }
       else if (d.status === 401 || /not open/i.test(d.error || '')) { stop = d.error || 'TRYBE is signed out in this Chrome'; break }
       else failed++
       setReading({ done: i + 1, of: list.length })

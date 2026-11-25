@@ -26,6 +26,7 @@ import { pickScore, creatorProgramOf, readTopCreatives, tallyTop, META_ADS_FRESH
 import { adsPerCreator, adsPerReview, STAR_MIN_REVIEWS } from '@/lib/brand-popularity'
 import { ratingOf, readDirStats, rawKeys, amazonOf, nameVariants, readFilters, anyFilterOn, filterCheck, spendingOf, productOnAmazon, filmedProducts, mergeSnapshot, pickBaseline, crowdOf, creatorSpendOf, roomPayOf, snapshotKey, isNewBrand, mixPick, mixOf, SNAPSHOT_KEEP_DAYS, type AmazonOf, type DirStats, type AmazonFilmed, type AmazonVideoProduct, type CcCampaign, type FilterId, type Snapshot } from '@/lib/trybe-finder'
 import { payLines, payReadOf, estimatePay, payHighlight } from '@/lib/trybe-pay'
+import { readSavedParts } from '@/lib/trybe-score'
 import { readTopWords, firstHook, keepHooks, readHooksBody, hooksBlock, type TopHook } from '@/lib/trybe-hooks'
 import { readRetainers } from '@/lib/trybe-retainer'
 import { amazonVideoPage } from '@/lib/brand-content'
@@ -1988,8 +1989,10 @@ Weigh posts pushed to social, and TRYBE brands they earned with or submitted to,
     const POP_COLS = ', web_domain, web_rank, web_rank_was, web_rank_days, web_rank_checked_at, google_searches, google_phrases, google_checked_at'
     // Whether each Meta count is the brand's own (migration 453).
     const OWN_COLS = ', meta_ads_own, meta_ads_sample'
+    // TRYBE's score in its three parts (migration 473, lib/trybe-score).
+    const SCORE_COLS = ', trybe_score_parts, trybe_score_at'
     let COLS = BASE_COLS
-    for (const cols of [BASE_COLS + PICK_COLS + POP_COLS + OWN_COLS, BASE_COLS + PICK_COLS + POP_COLS, BASE_COLS + PICK_COLS]) {
+    for (const cols of [BASE_COLS + PICK_COLS + POP_COLS + OWN_COLS + SCORE_COLS, BASE_COLS + PICK_COLS + POP_COLS + OWN_COLS, BASE_COLS + PICK_COLS + POP_COLS, BASE_COLS + PICK_COLS]) {
       const probe = await admin.from('trybe_directory').select(cols).limit(1)
       if (!probe.error || !/does not exist|schema cache/i.test(probe.error.message)) { COLS = cols; break }
     }
@@ -2278,6 +2281,11 @@ Weigh posts pushed to social, and TRYBE brands they earned with or submitted to,
       daysOnTrybe: (() => { const j = statsBy.get(r.brand_id)?.joinedAt; return j ? Math.max(0, Math.floor((Date.now() - Date.parse(j)) / 86_400_000)) : null })(),
       paidOut: statsBy.get(r.brand_id)?.paidOut ?? null,
       amazon: amazonBy.get(r.brand_id) ?? null,
+      // Easy to work with (Seb, 2026-11-25): TRYBE's own score and its parts,
+      // and its creators' stars.
+      trybeScore: { overall: typeof r.trybe_score === 'number' ? r.trybe_score : null, ...(readSavedParts(r.trybe_score_parts) ?? { reviews: null, ads: null, chat: null }) },
+      rating: ratingOf(r)?.stars ?? null,
+      ratingCount: ratingOf(r)?.reviews ?? null,
     })
     const matchedAll = rows
       .map(r => ({ r, match: terms.length ? nicheScore({ name: r.name, categories: r.categories || [], about: r.about, siteText: r.site_text, products: r.site_products || [] }, cats, kws) : 0, pay: payBy.get(r.brand_id) ?? readPay(r.pay_text), pick: pickOf(r) }))
@@ -2634,6 +2642,8 @@ Weigh posts pushed to social, and TRYBE brands they earned with or submitted to,
           pay_text: (linesBy.get(r.brand_id) || []).join(' · ') || r.pay_text || null, pay_kind: pay.kind,
           // Blue for a retainer, green for a percent of sales, red for a percent of ad spend only (lib/trybe-pay payHighlight).
           pay_basis: payHighlight(pay.kinds, !!retainerBy.get(r.brand_id)), trybe_score: r.trybe_score, total_creators: r.total_creators, match,
+          // TRYBE's score parts (lib/trybe-score), and when they were read.
+          trybe_parts: readSavedParts(r.trybe_score_parts), trybe_score_at: r.trybe_score_at ?? null,
           pay_est: (() => { const e = estBy.get(r.brand_id); return e ? { dollars: e.dollars, basis: e.basis, short: e.short, math: e.math, plus: e.plus, capped: e.capped, guaranteed: e.guaranteed, percent: e.percent, maxPer: e.maxPer } : null })(),
           crowd: crowdBy.get(r.brand_id) ?? null,
           spend: spendBy.get(r.brand_id) ?? null,
@@ -3664,13 +3674,18 @@ Weigh posts pushed to social, and TRYBE brands they earned with or submitted to,
     const int = (v: unknown, max: number) => { const n = typeof v === 'number' ? v : NaN; return Number.isFinite(n) && n >= 0 && n <= max ? Math.round(n) : null }
     const creators = int(body.creators, 10_000_000)
     const score = int(body.score, 100)
-    const patch: Record<string, number> = {}
+    // ITS THREE PARTS (Seb, 2026-11-25; lib/trybe-score): reviews, launching
+    // ads, chat. Migration 473; a database without it keeps the rest.
+    const parts = readSavedParts(body.parts)
+    const patch: Record<string, unknown> = {}
     if (creators != null) patch.total_creators = creators
     if (score != null) patch.trybe_score = score
-    if (!brandId || !Object.keys(patch).length) return NextResponse.json({ ok: true, saved: false })
-    const { error: lfErr } = await admin.from('trybe_directory').update(patch).eq('brand_id', brandId)
+    if (!brandId || (!Object.keys(patch).length && !parts)) return NextResponse.json({ ok: true, saved: false })
+    const withParts = parts || score != null ? { ...patch, ...(parts ? { trybe_score_parts: parts } : {}), trybe_score_at: new Date().toISOString() } : patch
+    let { error: lfErr } = await admin.from('trybe_directory').update(withParts).eq('brand_id', brandId)
+    if (lfErr && /trybe_score_(parts|at)/.test(lfErr.message) && Object.keys(patch).length) lfErr = (await admin.from('trybe_directory').update(patch).eq('brand_id', brandId)).error
     if (lfErr) return NextResponse.json({ error: dbWords(lfErr.message) }, { status: 500 })
-    return NextResponse.json({ ok: true, saved: true })
+    return NextResponse.json({ ok: true, saved: true, parts: !!parts })
   }
 
   if (action === 'brand_top_seen') {

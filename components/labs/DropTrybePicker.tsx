@@ -10,6 +10,7 @@
 import { useEffect, useState } from 'react'
 import { Loader2 } from 'lucide-react'
 import { requestTrybeApi } from '@/lib/extension-frame'
+import { keepTrybeFacts } from '@/lib/trybe-score-keep'
 import { readBrandOptions, type BrandOptions } from '@/lib/trybe-submit'
 import { byBrandName, type MyBrand } from '@/lib/trybe-mybrands'
 import { groupProducts, productAudience, worthGrouping, type Audience } from '@/lib/trybe-product-groups'
@@ -67,6 +68,7 @@ export default function DropTrybePicker({ brands, brandsError, value, onChange }
       if (gone) return
       if (!d.ok) { setOptsError(`TRYBE did not show this brand's details${d.status ? ` (${d.status})` : ''}. Are you signed in to TRYBE in this Chrome?`); setOpts(null); return }
       const o = readBrandOptions(d.json, p.ok ? p.json : null)
+      keepTrybeFacts(value.brandId, d.json)
       setOpts(o)
       // The first program and nothing else picked, until the creator says.
       const programId = value.programId && o.programs.some((x) => x.id === value.programId) ? value.programId : (o.programs[0]?.id ?? null)
