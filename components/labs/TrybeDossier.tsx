@@ -149,8 +149,10 @@ export default function TrybeDossier({ brandId, name, onClose, actions, scout = 
   const liveNum = (id: string): number | null => { const v = live?.read?.numbers.find((x) => x.id === id)?.value; const n = v ? parseFloat(v.replace(/[^0-9.]/g, '')) : NaN; return Number.isFinite(n) ? n : null }
   const trybeFacts = {
     creators: liveNum('creators') ?? (typeof listing?.total_creators === 'number' ? listing.total_creators : null),
-    rating: typeof listing?.review_rating === 'number' ? listing.review_rating : liveNum('rating'),
-    reviews: typeof listing?.review_count === 'number' ? listing.review_count : null,
+    // Its own page first: MVP's copy of the list can be behind (Chef
+    // Preserve: 146 reviews on its page, 22 in the list).
+    rating: liveNum('rating') ?? (typeof listing?.review_rating === 'number' ? listing.review_rating : null),
+    reviews: live?.read?.ratingCount ?? (typeof listing?.review_count === 'number' ? listing.review_count : null),
     score: liveNum('score'),
     approvedVideos: typeof listing?.stats?.videosApproved === 'number' ? listing.stats.videosApproved : null,
     // Read just now, else the parts MVP kept from the last read.

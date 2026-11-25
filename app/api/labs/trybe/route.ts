@@ -26,7 +26,7 @@ import { pickScore, creatorProgramOf, readTopCreatives, tallyTop, META_ADS_FRESH
 import { adsPerCreator, adsPerReview, STAR_MIN_REVIEWS } from '@/lib/brand-popularity'
 import { ratingOf, readDirStats, rawKeys, amazonOf, nameVariants, readFilters, anyFilterOn, filterCheck, spendingOf, productOnAmazon, filmedProducts, mergeSnapshot, pickBaseline, crowdOf, creatorSpendOf, roomPayOf, snapshotKey, isNewBrand, mixPick, mixOf, SNAPSHOT_KEEP_DAYS, type AmazonOf, type DirStats, type AmazonFilmed, type AmazonVideoProduct, type CcCampaign, type FilterId, type Snapshot } from '@/lib/trybe-finder'
 import { payLines, payReadOf, estimatePay, payHighlight } from '@/lib/trybe-pay'
-import { readSavedParts } from '@/lib/trybe-score'
+import { readSavedParts, readPageFacts, withPageFacts } from '@/lib/trybe-score'
 import { readTopWords, firstHook, keepHooks, readHooksBody, hooksBlock, type TopHook } from '@/lib/trybe-hooks'
 import { readRetainers } from '@/lib/trybe-retainer'
 import { amazonVideoPage } from '@/lib/brand-content'
@@ -1991,8 +1991,10 @@ Weigh posts pushed to social, and TRYBE brands they earned with or submitted to,
     const OWN_COLS = ', meta_ads_own, meta_ads_sample'
     // TRYBE's score in its three parts (migration 473, lib/trybe-score).
     const SCORE_COLS = ', trybe_score_parts, trybe_score_at'
+    // What the brand's own page said (migration 474, lib/trybe-score withPageFacts).
+    const PAGE_COLS = ', trybe_page'
     let COLS = BASE_COLS
-    for (const cols of [BASE_COLS + PICK_COLS + POP_COLS + OWN_COLS + SCORE_COLS, BASE_COLS + PICK_COLS + POP_COLS + OWN_COLS, BASE_COLS + PICK_COLS + POP_COLS, BASE_COLS + PICK_COLS]) {
+    for (const cols of [BASE_COLS + PICK_COLS + POP_COLS + OWN_COLS + SCORE_COLS + PAGE_COLS, BASE_COLS + PICK_COLS + POP_COLS + OWN_COLS + SCORE_COLS, BASE_COLS + PICK_COLS + POP_COLS + OWN_COLS, BASE_COLS + PICK_COLS + POP_COLS, BASE_COLS + PICK_COLS]) {
       const probe = await admin.from('trybe_directory').select(cols).limit(1)
       if (!probe.error || !/does not exist|schema cache/i.test(probe.error.message)) { COLS = cols; break }
     }
@@ -2202,6 +2204,10 @@ Weigh posts pushed to social, and TRYBE brands they earned with or submitted to,
         rows.push(...((got || []) as Array<Record<string, any>>)) // eslint-disable-line @typescript-eslint/no-explicit-any
       }
     }
+    // WHAT ITS OWN PAGE SAID wins over MVP's copy of TRYBE's list: its rating,
+    // how many rated it, and its earnings when not lower (Seb, 2026-11-25,
+    // Chef Preserve: 146 reviews and $500K+ on its page, 22 and $50K+ here).
+    rows = rows.map(withPageFacts)
     // THE BRAND ON AMAZON (amazonContext): said as not read when a read
     // fails, never as "not on Amazon".
     const today = now.slice(0, 10)
@@ -3677,15 +3683,21 @@ Weigh posts pushed to social, and TRYBE brands they earned with or submitted to,
     // ITS THREE PARTS (Seb, 2026-11-25; lib/trybe-score): reviews, launching
     // ads, chat. Migration 473; a database without it keeps the rest.
     const parts = readSavedParts(body.parts)
+    // Its rating, how many rated it and its earnings, as its page says them,
+    // in their own column (migration 474) so a collection never undoes them.
+    const page = readPageFacts({ rating: body.rating, reviews: body.reviews, earnings: body.earnings })
     const patch: Record<string, unknown> = {}
     if (creators != null) patch.total_creators = creators
     if (score != null) patch.trybe_score = score
-    if (!brandId || (!Object.keys(patch).length && !parts)) return NextResponse.json({ ok: true, saved: false })
-    const withParts = parts || score != null ? { ...patch, ...(parts ? { trybe_score_parts: parts } : {}), trybe_score_at: new Date().toISOString() } : patch
+    if (!brandId || (!Object.keys(patch).length && !parts && !page)) return NextResponse.json({ ok: true, saved: false })
+    const withParts: Record<string, unknown> = parts || score != null ? { ...patch, ...(parts ? { trybe_score_parts: parts } : {}), trybe_score_at: new Date().toISOString() } : { ...patch }
+    if (page) withParts.trybe_page = { ...page, at: new Date().toISOString() }
     let { error: lfErr } = await admin.from('trybe_directory').update(withParts).eq('brand_id', brandId)
+    // A database without migration 474 or 473 keeps what it has columns for.
+    if (lfErr && /trybe_page/.test(lfErr.message)) { delete withParts.trybe_page; lfErr = Object.keys(withParts).length ? (await admin.from('trybe_directory').update(withParts).eq('brand_id', brandId)).error : null }
     if (lfErr && /trybe_score_(parts|at)/.test(lfErr.message) && Object.keys(patch).length) lfErr = (await admin.from('trybe_directory').update(patch).eq('brand_id', brandId)).error
     if (lfErr) return NextResponse.json({ error: dbWords(lfErr.message) }, { status: 500 })
-    return NextResponse.json({ ok: true, saved: true, parts: !!parts })
+    return NextResponse.json({ ok: true, saved: true, parts: !!parts, page: !!page })
   }
 
   if (action === 'brand_top_seen') {

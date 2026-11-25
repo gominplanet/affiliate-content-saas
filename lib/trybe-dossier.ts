@@ -415,6 +415,8 @@ export interface LiveBrandRead {
   numbers: Array<{ id: 'creators' | 'subs30' | 'subsTotal' | 'score' | 'payout' | 'rating' | 'earnings'; label: string; value: string; sub: string }>
   /** When the brand joined TRYBE, when its page says. */
   createdAt?: string | null
+  /** How many creators rated it, as a number, when its page says. */
+  ratingCount?: number | null
   program: string | null
   approval: string | null
   keys: string[]
@@ -463,7 +465,9 @@ export function readLiveBrand(json: unknown): LiveBrandRead {
   if (rating != null && rating > 0 && rating <= 5) numbers.push({ id: 'rating', label: 'Rating', value: `${rating.toFixed(1)} ★`, sub: rc != null ? `From ${rc} creator review${rc === 1 ? '' : 's'}` : 'Creators’ stars' })
   // WHAT ITS CREATORS HAVE EARNED, as TRYBE says it ("$30K+").
   const ev = findDeep(['creatorEarnings', 'creatorEarningsLabel', 'earningsLabel', 'totalCreatorEarnings', 'earningsBucket'])
-  const earned = typeof ev === 'string' && /\d/.test(ev) && ev.trim().length <= 20 ? ev.trim() : typeof ev === 'number' && Number.isFinite(ev) && ev > 0 ? '$' + Math.round(ev).toLocaleString('en-US') : null
+  // TRYBE's own label says "$500K+ earned"; the word is MVP's to add, once
+  // (Chef Preserve's page read "creators have already earned $500K+ earned").
+  const earned = typeof ev === 'string' && /\d/.test(ev) && ev.trim().length <= 20 ? ev.trim().replace(/\s*earned\s*$/i, '') : typeof ev === 'number' && Number.isFinite(ev) && ev > 0 ? '$' + Math.round(ev).toLocaleString('en-US') : null
   if (earned) numbers.push({ id: 'earnings', label: 'Creator earnings', value: earned, sub: 'Paid to its creators on TRYBE' })
   // WHEN IT JOINED TRYBE, from its own page; a date in the future is not one.
   const ca = find(['createdAt', 'launchedAt', 'joinedAt', 'listedAt'])
@@ -476,6 +480,7 @@ export function readLiveBrand(json: unknown): LiveBrandRead {
   return {
     numbers,
     createdAt,
+    ratingCount: rating != null && rc != null ? Math.round(rc) : null,
     program: typeof prog === 'string' && prog.trim() ? prog.trim().slice(0, 80) : null,
     approval: auto === true ? 'Approves creators automatically' : auto === false ? 'Reviews each creator who asks to join' : typeof ap === 'string' ? (/auto/i.test(ap) ? 'Approves creators automatically' : /manual|review/i.test(ap) ? 'Reviews each creator who asks to join' : null) : null,
     keys: Object.keys(o).slice(0, 80),

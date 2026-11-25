@@ -88,3 +88,52 @@ export function partWord(n: number): 'Fast' | 'Okay' | 'Slow' {
 }
 
 export const PART_LABEL: Record<keyof TrybeScoreParts, string> = { reviews: 'Reviews videos', ads: 'Launches ads', chat: 'Answers chats' }
+
+// WHAT THE BRAND'S OWN PAGE SAYS, OVER MVP'S COPY OF TRYBE'S LIST (Seb,
+// 2026-11-25, Chef Preserve: its page said 4.9 from 146 reviews and $500K+
+// earned; MVP's lists said 22 reviews and paid out $50K+). The list copy is
+// replaced whole by each admin collection, so what a page said is kept in its
+// own column (trybe_page, migration 474) and laid over the row when brands
+// are listed. Earnings all time never fall, so a lower figure never wins.
+
+export interface TrybePageFacts {
+  /** Stars of 5, from its page. */
+  rating: number | null
+  /** How many creators rated it, from its page. */
+  reviews: number | null
+  /** What its creators have earned, as TRYBE says it ("$500K+"). */
+  earnings: string | null
+}
+
+const isNum = (v: unknown, max: number) => (typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= max ? v : null)
+
+/** Page facts, read safely from a request or a saved column. Pure. */
+export function readPageFacts(raw: unknown): TrybePageFacts | null {
+  if (!isObj(raw)) return null
+  const r = isNum(raw.rating, 5)
+  const n = isNum(raw.reviews, 10_000_000)
+  const e = typeof raw.earnings === 'string' && /\d/.test(raw.earnings) && raw.earnings.trim().length <= 20 ? raw.earnings.trim().replace(/\s*earned\s*$/i, '') : null
+  const out = { rating: r != null && r > 0 ? Math.round(r * 10) / 10 : null, reviews: n != null ? Math.round(n) : null, earnings: e }
+  return out.rating == null && out.reviews == null && out.earnings == null ? null : out
+}
+
+/** Dollars from an earnings label ("$500K+", "50k+"): the lower end. Pure. */
+function labelDollars(raw: string | null | undefined): number | null {
+  const m = String(raw || '').toLowerCase().replace(/,/g, '').match(/\$?\s*(\d+(?:\.\d+)?)\s*([km])?/)
+  if (!m) return null
+  const n = parseFloat(m[1]) * (m[2] === 'k' ? 1_000 : m[2] === 'm' ? 1_000_000 : 1)
+  return Number.isFinite(n) && n > 0 ? n : null
+}
+
+/** The directory row with what its own page said laid over it: its rating,
+ *  its review count and its earnings (only when not lower). Pure. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function withPageFacts<T extends Record<string, any>>(row: T): T {
+  const p = readPageFacts(row.trybe_page)
+  if (!p) return row
+  const out: Record<string, unknown> = { ...row }
+  if (p.rating != null) out.rating = p.rating
+  if (p.reviews != null) out.raw = { ...(isObj(row.raw) ? row.raw : {}), reviewCount: p.reviews, ...(p.rating != null ? { reviewRating: p.rating } : {}) }
+  if (p.earnings && (labelDollars(p.earnings) ?? 0) >= (labelDollars(row.earnings_bucket) ?? 0)) out.earnings_bucket = p.earnings
+  return out as T
+}

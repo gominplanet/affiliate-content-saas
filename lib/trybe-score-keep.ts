@@ -17,10 +17,12 @@ import { readLiveBrand } from './trybe-dossier'
 const kept = new Set<string>()
 
 /** Creators and score as numbers, from the live read's figures. Pure. */
-export function liveFactsOf(json: unknown): { creators: number | null; score: number | null; parts: ReturnType<typeof readScoreParts> } {
+export function liveFactsOf(json: unknown): { creators: number | null; score: number | null; parts: ReturnType<typeof readScoreParts>; rating: number | null; reviews: number | null; earnings: string | null } {
   const read = readLiveBrand(json)
   const n = (id: string) => { const v = read.numbers.find((x) => x.id === id)?.value; const f = v ? parseFloat(v.replace(/[^0-9.]/g, '')) : NaN; return Number.isFinite(f) ? f : null }
-  return { creators: n('creators'), score: n('score'), parts: readScoreParts(json) }
+  // Its rating, how many rated it, and its earnings: newer on its page than
+  // in MVP's copy of TRYBE's list (Chef Preserve: 146 reviews there, 22 here).
+  return { creators: n('creators'), score: n('score'), parts: readScoreParts(json), rating: n('rating'), reviews: read.ratingCount ?? null, earnings: read.numbers.find((x) => x.id === 'earnings')?.value ?? null }
 }
 
 /** Send what the page showed, once per brand per visit. */
@@ -28,7 +30,7 @@ export function keepTrybeFacts(brandId: string | null | undefined, json: unknown
   if (!brandId || kept.has(brandId) || typeof fetch === 'undefined') return
   let facts: ReturnType<typeof liveFactsOf>
   try { facts = liveFactsOf(json) } catch { return }
-  if (facts.creators == null && facts.score == null && !facts.parts) return
+  if (facts.creators == null && facts.score == null && !facts.parts && facts.rating == null && !facts.earnings) return
   kept.add(brandId)
   // A refusal (TRYBE Free, signed out) is not tried again this visit; a
   // server that failed is.

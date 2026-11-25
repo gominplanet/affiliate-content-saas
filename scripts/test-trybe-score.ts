@@ -9,9 +9,10 @@
 // has a 91 MVP pick. And I'm not sure that's right."
 
 import { readFileSync, existsSync } from 'node:fs'
-import { readScoreParts, readSavedParts, partOf, partWord, PART_LABEL } from '../lib/trybe-score'
+import { readScoreParts, readSavedParts, partOf, partWord, PART_LABEL, readPageFacts, withPageFacts } from '../lib/trybe-score'
 import { pickScore, weighScore, DEFAULT_PRIORITIES, FACTORS, type PickInput } from '../lib/trybe-pick'
-import { scorecard } from '../lib/trybe-dossier'
+import { scorecard, readLiveBrand } from '../lib/trybe-dossier'
+import { ratingOf } from '../lib/trybe-finder'
 
 const failures: string[] = []
 const check = (name: string, ok: boolean) => { if (!ok) failures.push(name) }
@@ -80,6 +81,34 @@ const D = read('components/labs/TrybeDossier.tsx')
 check('the brand page shows the three parts, worded and coloured', /aria-label="TRYBE score, in its three parts"/.test(D) && /PART_LABEL\[k\]/.test(D) && /parts: live\?\.parts \?\? readSavedParts\(listing\?\.trybe_parts\)/.test(D))
 const MIG = 'supabase/migrations/473_trybe_score_parts.sql'
 check('migration 473 adds both columns, safe to run twice', existsSync(MIG) && /add column if not exists trybe_score_parts jsonb/.test(read(MIG)) && /add column if not exists trybe_score_at timestamptz/.test(read(MIG)))
+
+// 5. What its own page says wins over MVP's copy of the list (Seb, 2026-11-25,
+//    Chef Preserve: 4.9 from 146 reviews and $500K+ earned on its page; 22
+//    reviews and paid out $50K+ in MVP's lists; "earned $500K+ earned").
+{
+  const live = readLiveBrand({ data: { reviewRating: 4.9, reviewCount: 146, creatorEarnings: '$500K+ earned' } })
+  check('its earnings read once, without TRYBE\'s own "earned"', live.numbers.find((n) => n.id === 'earnings')?.value === '$500K+')
+  check('how many rated it is kept as a number', live.ratingCount === 146)
+  check('page facts are read safely', same(readPageFacts({ rating: 4.9, reviews: 146, earnings: '$500K+ earned' }), { rating: 4.9, reviews: 146, earnings: '$500K+' }) && readPageFacts({ rating: 9, reviews: -1, earnings: 'lots' }) === null && readPageFacts(null) === null)
+  const row = { brand_id: 'cp', rating: 4.9, earnings_bucket: '$50K+', raw: { reviewCount: 22, reviewRating: 4.9, other: 1 }, trybe_page: { rating: 4.9, reviews: 146, earnings: '$500K+' } }
+  const laid = withPageFacts(row)
+  check('the list shows 146 reviews and $500K+, the rest of its entry kept', ratingOf(laid)?.reviews === 146 && laid.earnings_bucket === '$500K+' && (laid.raw as Record<string, unknown>).other === 1)
+  check('earnings all time never fall: a lower page figure leaves the list\'s', withPageFacts({ ...row, earnings_bucket: '$1M+', trybe_page: { earnings: '$500K+' } }).earnings_bucket === '$1M+')
+  const unread = { ...row, trybe_page: null }
+  check('a brand its page was never read for is left as it is', withPageFacts(unread) === unread && unread.earnings_bucket === '$50K+')
+}
+{
+  const R2 = read('app/api/labs/trybe/route.ts')
+  check('Find brands lays the page over each row before anything is weighed', /rows = rows\.map\(withPageFacts\)/.test(R2) && R2.indexOf('rows = rows.map(withPageFacts)') < R2.indexOf('const amazonBy = new Map(rows.map'))
+  check('and still lists brands before migration 474', /\+ SCORE_COLS \+ PAGE_COLS, BASE_COLS \+ PICK_COLS \+ POP_COLS \+ OWN_COLS \+ SCORE_COLS,/.test(R2))
+  check('live_facts keeps the page facts in their own column, and the rest without it', /readPageFacts\(\{ rating: body\.rating, reviews: body\.reviews, earnings: body\.earnings \}\)/.test(R2) && /withParts\.trybe_page = /.test(R2) && /\/trybe_page\/\.test\(lfErr\.message\)/.test(R2))
+  check('the page sends its rating, review count and earnings', /rating: n\('rating'\), reviews: read\.ratingCount/.test(read('lib/trybe-score-keep.ts')))
+  check('the brand page counts the reviews its page shows first', /reviews: live\?\.read\?\.ratingCount \?\? /.test(read('components/labs/TrybeDossier.tsx')))
+  const T = read('components/labs/TrybeBrandTable.tsx')
+  check('the results table says TRYBE\'s parts where members have no results yet', /const tp = readSavedParts\(b\.trybe_parts\)/.test(T) && /Reviews <Dot/.test(T) && /Chats <Dot/.test(T) && /\[\.\.\.members, \.\.\.trybeSays\]/.test(T))
+  const M4 = 'supabase/migrations/474_trybe_page_facts.sql'
+  check('migration 474 adds the column, safe to run twice', existsSync(M4) && /add column if not exists trybe_page jsonb/.test(read(M4)))
+}
 
 if (failures.length) {
   console.error(`test-trybe-score: ${failures.length} failed`)

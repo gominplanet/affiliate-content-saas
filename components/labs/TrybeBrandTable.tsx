@@ -9,6 +9,7 @@
 // its page; the box picks it for Write messages, as on the cards.
 
 import { useMemo, useState, type CSSProperties, type ReactNode } from 'react'
+import { readSavedParts, partWord } from '@/lib/trybe-score'
 import { ArrowDown, ArrowUp, ArrowUpRight, Trophy } from 'lucide-react'
 import { BrandMark, proofTitle, MaxPerChip } from '@/components/labs/TrybeFinderControls'
 import { retainerSource } from '@/lib/trybe-evidence'
@@ -206,6 +207,14 @@ export default function TrybeBrandTable({ brands, picked, onPick, taken, preview
             if (typeof b.approval === 'number') members.push(<span key="a" style={hl('approves')}>Approves <Dot c={b.approval >= 0.6 ? 'strong' : b.approval >= 0.35 ? 'fair' : 'weak'} small>{`${Math.round(b.approval * 100)}%`}</Dot></span>)
             if (typeof b.replies?.rate === 'number') members.push(<span key="r" style={hl('answers')} title={b.replies.days != null ? `Middle wait for an answer: about ${b.replies.days} days` : undefined}>Answers <Dot c={b.replies.rate >= 0.5 ? 'strong' : b.replies.rate >= 0.2 ? 'fair' : 'weak'} small>{`${Math.round(b.replies.rate * 100)}%${b.replies.days != null ? `, ${Math.round(b.replies.days)}d` : ''}`}</Dot></span>)
             if (typeof b.review?.reviewDays === 'number') members.push(<span key="d" style={hl('decides')}>Decides in {b.review.reviewDays}d</span>)
+            // TRYBE'S OWN SCORE, IN ITS PARTS (Seb, 2026-11-25), where MVP
+            // members have not timed or messaged it enough yet.
+            const tp = readSavedParts(b.trybe_parts)
+            const tone = (v: number) => (v >= 70 ? 'strong' : v >= 40 ? 'fair' : 'weak') as 'strong' | 'fair' | 'weak'
+            const trybeSays: ReactNode[] = []
+            if (tp?.reviews != null && typeof b.review?.reviewDays !== 'number') trybeSays.push(<span key="tr" style={hl('decides')} title={`TRYBE’s own score for submission reviews: ${tp.reviews} of 100`}>Reviews <Dot c={tone(tp.reviews)} small>{`${partWord(tp.reviews).toLowerCase()} ${tp.reviews}`}</Dot></span>)
+            if (tp?.ads != null) trybeSays.push(<span key="ta" title={`TRYBE’s own score for launching ads: ${tp.ads} of 100`}>Ads <Dot c={tone(tp.ads)} small>{`${partWord(tp.ads).toLowerCase()} ${tp.ads}`}</Dot></span>)
+            if (tp?.chat != null && typeof b.replies?.rate !== 'number') trybeSays.push(<span key="tc" style={hl('answers')} title={`TRYBE’s own score for chat responsiveness: ${tp.chat} of 100`}>Chats <Dot c={tone(tp.chat)} small>{`${partWord(tp.chat).toLowerCase()} ${tp.chat}`}</Dot></span>)
             return (
               <tr key={b.brand_id} className={`transition-colors hover:bg-[rgb(var(--brand-rgb)/0.04)]${onOpen ? ' cursor-pointer' : ''}`} onClick={onOpen?.(b.brand_id, b.name)} title={payBasisTitle(basis)} style={{ borderTop: '1px solid var(--border)', background: on ? 'rgb(var(--brand-rgb) / 0.06)' : basis ? PAY_BASIS[basis].soft : sweet ? SWEET.soft : undefined, opacity: isTaken ? 0.62 : 1 }}>
                 {!preview && (
@@ -275,7 +284,7 @@ export default function TrybeBrandTable({ brands, picked, onPick, taken, preview
                   <div className={sub} style={muted}>
                     <span style={hl('rating')}>{typeof b.review_rating === 'number' ? <><span className="font-semibold" style={{ color: 'var(--text)' }}>{b.review_rating.toFixed(1)}</span>{'★'} ({b.review_count ?? 0})</> : 'No rating'}</span>
                     <span style={hl('samples')}>{isApp ? <span title={b.proof?.samples}>App, none needed</span> : b.stats?.samples === true ? <Dot c="strong" small>Samples</Dot> : b.stats?.samples === false ? <Dot c="weak" small>No samples</Dot> : 'Samples not known'}</span>
-                    {members.length ? members : <span>Members&rsquo; results not yet</span>}
+                    {members.length || trybeSays.length ? [...members, ...trybeSays] : <span>Members&rsquo; results not yet</span>}
                   </div>
                 </td>
               </tr>
