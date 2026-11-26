@@ -21,9 +21,11 @@ const read = (p: string) => readFileSync(p, 'utf8')
   check('up to two moods, one tempo, the styles, the length and the engine', ok.ok && ok.ask.moods.length === 2 && ok.ask.tempo === 'fast' && ok.ask.seconds === 45 && ok.ask.model === 'medium')
   check('nothing ticked says what to tick', !readAsk({ moods: [], tempo: 'fast', styles: ['pop'], seconds: 30 }).ok && !readAsk({ moods: ['upbeat'], tempo: 'nope', styles: ['pop'], seconds: 30 }).ok && !readAsk({ moods: ['upbeat'], tempo: 'slow', styles: [], seconds: 30 }).ok)
   check('a length past the engine says so', (() => { const r = readAsk({ moods: ['upbeat'], tempo: 'slow', styles: ['pop'], seconds: 200, model: 'small' }); return !r.ok && /up to 120 seconds/.test(r.error) })())
-  // Seb, 2026-11-26: "Medium's a little bit better".
-  check('Medium is the default, and an unknown engine is Medium', DEFAULT_MODEL === 'medium' && (readAsk({ moods: ['upbeat'], tempo: 'slow', styles: ['pop'], seconds: 30, model: 'x' }) as { ask: { model: string } }).ask.model === 'medium')
-  check('the slower Medium and Studio 2.5 are there to compare', BED_MODELS.base.id === 'fal-ai/stable-audio-3/medium/base/text-to-audio' && BED_MODELS.sa25.id === 'fal-ai/stable-audio-25/text-to-audio' && BED_MODELS.sa25.maxSec === 190)
+  // Seb, 2026-11-26: "The Studio 2.5 sounds incredible ... The medium slow did
+  // not work at all. It's all garbled."
+  check('Studio 2.5 is the default, and an unknown engine is Studio 2.5', DEFAULT_MODEL === 'sa25' && (readAsk({ moods: ['upbeat'], tempo: 'slow', styles: ['pop'], seconds: 30, model: 'x' }) as { ask: { model: string } }).ask.model === 'sa25')
+  check('Studio 2.5 is Stability\'s commercial model, up to 190 seconds', BED_MODELS.sa25.id === 'fal-ai/stable-audio-25/text-to-audio' && BED_MODELS.sa25.maxSec === 190 && BED_MODELS.sa25.usd === 0.2)
+  check('the garbled Medium, slow is gone', !('base' in BED_MODELS) && (readAsk({ moods: ['upbeat'], tempo: 'slow', styles: ['pop'], seconds: 30, model: 'base' }) as { ask: { model: string } }).ask.model === 'sa25')
   check('the engines are Stable Audio 3 on fal, Small to 2 minutes and Medium to 6', BED_MODELS.small.id === 'fal-ai/stable-audio-3/small/music/text-to-audio' && BED_MODELS.small.maxSec === 120 && BED_MODELS.medium.id === 'fal-ai/stable-audio-3/medium/text-to-audio' && BED_MODELS.medium.maxSec === 380)
 }
 
@@ -37,8 +39,7 @@ const read = (p: string) => readFileSync(p, 'utf8')
 
 // 2b. What each engine is sent, and how each answers
 {
-  const slow = engineInput('base', 'p', 30)
-  check('the slower Medium takes 50 steps and guidance 7, with voices asked against', slow.num_inference_steps === 50 && slow.guidance_scale === 7 && slow.negative_prompt === NEGATIVE_PROMPT && slow.duration === 30)
+  check('Small and Medium get the voices asked against, at the length asked', engineInput('medium', 'p', 30).negative_prompt === NEGATIVE_PROMPT && engineInput('medium', 'p', 30).duration === 30)
   const s25 = engineInput('sa25', 'p', 30.4)
   check('Studio 2.5 gets whole seconds, and its prompt says no voices itself (it has no negative prompt)', s25.seconds_total === 30 && /No singing, no voices, no speech\./.test(String(s25.prompt)) && !('negative_prompt' in s25))
   check('the fast engines keep their own settings', !('num_inference_steps' in engineInput('medium', 'p', 30)) && engineInput('small', 'p', 30).output_format === 'mp3')

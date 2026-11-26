@@ -24,17 +24,18 @@
 // Pure, so it is tested (scripts/test-music-bed.ts).
 
 // Seb, 2026-11-26: "Both small and medium work very well. Medium's a little
-// bit better ... It's not at the highest level just yet." Medium is the
-// default; the team also compares Medium's slower base checkpoint (50 steps,
-// guidance 7) and Stability's commercial Stable Audio 2.5.
-export type BedModel = 'small' | 'medium' | 'base' | 'sa25'
+// bit better ... It's not at the highest level just yet." Then, comparing:
+// "The Studio 2.5 sounds incredible. It's a little expensive though ... The
+// medium slow did not work at all. It's all garbled." Studio 2.5 is the
+// default; Medium's base checkpoint (sent fal's own 50 steps and guidance 7)
+// is gone. Small and Medium stay for the team to compare.
+export type BedModel = 'small' | 'medium' | 'sa25'
 export const BED_MODELS: Record<BedModel, { id: string; name: string; maxSec: number; usd: number; usage: string; says: string }> = {
   small: { id: 'fal-ai/stable-audio-3/small/music/text-to-audio', name: 'Small', maxSec: 120, usd: 0.0217, usage: 'stable-audio-3-small', says: 'Made for music, up to 2 minutes' },
   medium: { id: 'fal-ai/stable-audio-3/medium/text-to-audio', name: 'Medium', maxSec: 380, usd: 0.0376, usage: 'stable-audio-3-medium', says: 'Fuller sound, trained on licensed music' },
-  base: { id: 'fal-ai/stable-audio-3/medium/base/text-to-audio', name: 'Medium, slow', maxSec: 380, usd: 0.0479, usage: 'stable-audio-3-medium-base', says: 'The same model taking more care: 50 steps, follows the prompt closer' },
   sa25: { id: 'fal-ai/stable-audio-25/text-to-audio', name: 'Studio 2.5', maxSec: 190, usd: 0.2, usage: 'stable-audio-25', says: 'Stability’s commercial model, trained on licensed music' },
 }
-export const DEFAULT_MODEL: BedModel = 'medium'
+export const DEFAULT_MODEL: BedModel = 'sa25'
 export const isBedModel = (v: unknown): v is BedModel => typeof v === 'string' && v in BED_MODELS
 
 export interface Choice { id: string; label: string; words: string }
@@ -114,8 +115,7 @@ export function bedPrompt(ask: BedAsk): string {
  *  negative prompt, so its prompt says the no-voices part itself. Pure. */
 export function engineInput(model: BedModel, prompt: string, seconds: number): Record<string, unknown> {
   if (model === 'sa25') return { prompt: `${prompt} No singing, no voices, no speech.`, seconds_total: Math.round(seconds) }
-  const base = { prompt, negative_prompt: NEGATIVE_PROMPT, duration: seconds, output_format: 'mp3', bitrate: '320k' }
-  return model === 'base' ? { ...base, num_inference_steps: 50, guidance_scale: 7 } : base
+  return { prompt, negative_prompt: NEGATIVE_PROMPT, duration: seconds, output_format: 'mp3', bitrate: '320k' }
 }
 
 /** The track's link, from either answer shape: { audio: { url } } or, from
