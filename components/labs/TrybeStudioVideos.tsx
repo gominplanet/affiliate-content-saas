@@ -78,7 +78,11 @@ export default function TrybeStudioVideos({ brand, brands, brandsError, canSend,
       setErr(null)
       setEdits((d.edits || []) as StudioEdit[])
       if (d.trybeAllowance) setAllowance(d.trybeAllowance)
-      if (d.defaults && !adopted.current) { adopted.current = true; setLook({ ...cleanSettings(d.defaults), kind: 'trybe', formats: ['vertical'], logo: null, captions: true }) }
+      // Your saved look's style (title look, colour, size) is kept, but not its
+      // words or pictures: a disclosure like "Product provided in exchange for
+      // review #ad" is for your own reviews, not a TRYBE ad the brand runs
+      // (Seb, 2026-11-26: "This is not necessary").
+      if (d.defaults && !adopted.current) { adopted.current = true; const saved = cleanSettings(d.defaults); setLook({ ...saved, kind: 'trybe', formats: ['vertical'], logo: null, pictures: [], callouts: [], captions: true, title: { ...saved.title, on: false, text: '' } }) }
     } catch { setErr('Your videos for this brand could not be read. Check your connection.') }
   }, [brand.id])
   useEffect(() => { setEdits(null); void load() }, [load])

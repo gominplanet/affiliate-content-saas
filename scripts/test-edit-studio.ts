@@ -103,6 +103,8 @@ check('Send makes the same record and send as Upload', /action: 'create'/.test(V
 check('a video that breaks a rule asks first', /needsConfirm\(e\) && !window\.confirm/.test(VID))
 check('the options are ticked by the creator', ['label="Captions"', 'label="B-roll over the talk"', 'label="Zooms"', 'label="Colour boost"', 'label="Title"'].every((x) => VID.includes(x)))
 check('every studio video is a vertical TRYBE ad with no logo', /kind: 'trybe', formats: \['vertical'\], logo: null/.test(VID))
+// Seb, 2026-11-26, on the saved "Product provided in exchange for review #ad" title: "This is not necessary."
+check('your saved review title and pictures are not carried into a TRYBE ad', /pictures: \[\], callouts: \[\], captions: true, title: \{ \.\.\.saved\.title, on: false, text: '' \}/.test(VID))
 const RULES = read('components/labs/TrybeStudioRules.tsx')
 check('the rules panel adds links, PDFs or pictures, pasted words and the chat', /Add a link/.test(RULES) && /Add a PDF or picture/.test(RULES) && /Paste words/.test(RULES) && /Add what they sent in chat/.test(RULES))
 check('TRYBE\'s brief is read again only when it changed', /kept\.hash !== hashText\(c\.brief\.trim\(\)\)/.test(RULES))
