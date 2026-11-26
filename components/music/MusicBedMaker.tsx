@@ -10,7 +10,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { Loader2, Music2, Check, RefreshCw, X, AlertTriangle, ShieldCheck } from 'lucide-react'
-import { BED_MODELS, MOODS, TEMPOS, STYLES, MAX_MOODS, MAX_STYLES, MIN_SECONDS, canAccept, voiceWords, type BedModel, type VoiceCheck } from '@/lib/music-bed'
+import { BED_MODELS, DEFAULT_MODEL, MOODS, TEMPOS, STYLES, MAX_MOODS, MAX_STYLES, MIN_SECONDS, canAccept, voiceWords, type BedModel, type VoiceCheck } from '@/lib/music-bed'
 
 interface Bed {
   id: string; model: BedModel; moods: string[]; tempo: string | null; styles: string[]; seconds: number; prompt: string
@@ -90,7 +90,7 @@ export default function MusicBedMaker({ showEngine = false, defaultSeconds = 30 
   const [tempo, setTempo] = useState('medium')
   const [styles, setStyles] = useState<string[]>(['pop'])
   const [seconds, setSeconds] = useState(defaultSeconds)
-  const [model, setModel] = useState<BedModel>('small')
+  const [model, setModel] = useState<BedModel>(DEFAULT_MODEL)
   const [beds, setBeds] = useState<Bed[] | null>(null)
   const [loadErr, setLoadErr] = useState<string | null>(null)
   const [making, setMaking] = useState(false)
@@ -144,8 +144,11 @@ export default function MusicBedMaker({ showEngine = false, defaultSeconds = 30 
         </Group>
         {showEngine && (
           <Group title="Engine" hint="for the team: compare them">
-            {(Object.keys(BED_MODELS) as BedModel[]).map((k) => <Chip key={k} on={model === k} onClick={() => { setModel(k); setSeconds((s) => Math.min(s, BED_MODELS[k].maxSec)) }}>{BED_MODELS[k].name} <span className="font-normal opacity-75">${BED_MODELS[k].usd.toFixed(3)} a track</span></Chip>)}
+            {(Object.keys(BED_MODELS) as BedModel[]).map((k) => <Chip key={k} on={model === k} onClick={() => { setModel(k); setSeconds((s) => Math.min(s, BED_MODELS[k].maxSec)) }}>{BED_MODELS[k].name} <span className="font-normal opacity-75">${BED_MODELS[k].usd < 0.1 ? BED_MODELS[k].usd.toFixed(3) : BED_MODELS[k].usd.toFixed(2)} a track</span></Chip>)}
           </Group>
+        )}
+        {showEngine && (
+          <p className="text-[12.5px] -mt-3" style={{ color: 'var(--text-soft)' }}>{BED_MODELS[model].says}. Up to {BED_MODELS[model].maxSec} seconds.</p>
         )}
         <div className="flex flex-wrap items-center gap-3">
           <button type="button" onClick={() => void make()} disabled={making} className="inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-[14px] font-semibold disabled:opacity-60" style={{ background: 'var(--accent)', color: '#fff' }}>

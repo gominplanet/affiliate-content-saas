@@ -117,6 +117,8 @@ export const PRICING: Record<string, Pricing> = {
   // Music beds on fal, per track as fal lists them (2026-11-26).
   'stable-audio-3-small':  { in: 0, out: 0, imageCost: 0.0217 },
   'stable-audio-3-medium': { in: 0, out: 0, imageCost: 0.0376 },
+  'stable-audio-3-medium-base': { in: 0, out: 0, imageCost: 0.0479 },
+  'stable-audio-25':       { in: 0, out: 0, imageCost: 0.20 },
   'youtube-ingest': { in: 0, out: 0, imageCost: 0.06 },
   'ffmpeg-ass':     { in: 0, out: 0, imageCost: 0.01 },
   'cloudinary':     { in: 0, out: 0, imageCost: 0.02 },

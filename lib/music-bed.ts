@@ -23,11 +23,19 @@
 //
 // Pure, so it is tested (scripts/test-music-bed.ts).
 
-export type BedModel = 'small' | 'medium'
+// Seb, 2026-11-26: "Both small and medium work very well. Medium's a little
+// bit better ... It's not at the highest level just yet." Medium is the
+// default; the team also compares Medium's slower base checkpoint (50 steps,
+// guidance 7) and Stability's commercial Stable Audio 2.5.
+export type BedModel = 'small' | 'medium' | 'base' | 'sa25'
 export const BED_MODELS: Record<BedModel, { id: string; name: string; maxSec: number; usd: number; usage: string; says: string }> = {
   small: { id: 'fal-ai/stable-audio-3/small/music/text-to-audio', name: 'Small', maxSec: 120, usd: 0.0217, usage: 'stable-audio-3-small', says: 'Made for music, up to 2 minutes' },
   medium: { id: 'fal-ai/stable-audio-3/medium/text-to-audio', name: 'Medium', maxSec: 380, usd: 0.0376, usage: 'stable-audio-3-medium', says: 'Fuller sound, trained on licensed music' },
+  base: { id: 'fal-ai/stable-audio-3/medium/base/text-to-audio', name: 'Medium, slow', maxSec: 380, usd: 0.0479, usage: 'stable-audio-3-medium-base', says: 'The same model taking more care: 50 steps, follows the prompt closer' },
+  sa25: { id: 'fal-ai/stable-audio-25/text-to-audio', name: 'Studio 2.5', maxSec: 190, usd: 0.2, usage: 'stable-audio-25', says: 'Stability’s commercial model, trained on licensed music' },
 }
+export const DEFAULT_MODEL: BedModel = 'medium'
+export const isBedModel = (v: unknown): v is BedModel => typeof v === 'string' && v in BED_MODELS
 
 export interface Choice { id: string; label: string; words: string }
 
@@ -79,7 +87,7 @@ const pick = (list: Choice[], ids: unknown, max: number): Choice[] => {
 
 /** A request from the page, read safely: an error in words, or the ask. Pure. */
 export function readAsk(body: Record<string, unknown>): { ok: true; ask: BedAsk } | { ok: false; error: string } {
-  const model: BedModel = body.model === 'medium' ? 'medium' : 'small'
+  const model: BedModel = isBedModel(body.model) ? body.model : DEFAULT_MODEL
   const moods = pick(MOODS, body.moods, MAX_MOODS)
   const styles = pick(STYLES, body.styles, MAX_STYLES)
   const tempo = TEMPOS.find((t) => t.id === body.tempo)
@@ -100,6 +108,23 @@ export function bedPrompt(ask: BedAsk): string {
   const moods = ask.moods.map((id) => MOODS.find((m) => m.id === id)?.words).filter(Boolean).join(', ')
   const tempo = TEMPOS.find((t) => t.id === ask.tempo)
   return `${styles}. ${moods}. ${tempo ? `${tempo.bpm} BPM, ${tempo.words}. ` : ''}Instrumental background music for a short product video, no vocals, the melody played on instruments, steady energy that sits under a voice, polished mix, ends cleanly.`
+}
+
+/** What each engine is sent. Stable Audio 2.5 takes whole seconds and has no
+ *  negative prompt, so its prompt says the no-voices part itself. Pure. */
+export function engineInput(model: BedModel, prompt: string, seconds: number): Record<string, unknown> {
+  if (model === 'sa25') return { prompt: `${prompt} No singing, no voices, no speech.`, seconds_total: Math.round(seconds) }
+  const base = { prompt, negative_prompt: NEGATIVE_PROMPT, duration: seconds, output_format: 'mp3', bitrate: '320k' }
+  return model === 'base' ? { ...base, num_inference_steps: 50, guidance_scale: 7 } : base
+}
+
+/** The track's link, from either answer shape: { audio: { url } } or, from
+ *  Stable Audio 2.5, { audio: "https://..." }. Pure. */
+export function audioUrlOf(data: unknown): string {
+  const a = data && typeof data === 'object' ? (data as Record<string, unknown>).audio : null
+  if (typeof a === 'string') return /^https?:\/\//.test(a) ? a : ''
+  const u = a && typeof a === 'object' ? (a as Record<string, unknown>).url : null
+  return typeof u === 'string' && /^https?:\/\//.test(u) ? u : ''
 }
 
 /** Words a transcriber invents over music, which are not voices. */

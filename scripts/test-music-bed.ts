@@ -8,7 +8,7 @@
 // rules); a voice check that could not run is never read as clean.
 
 import { readFileSync, existsSync } from 'node:fs'
-import { BED_MODELS, MOODS, TEMPOS, STYLES, NEGATIVE_PROMPT, readAsk, bedPrompt, voiceVerdict, voiceWords, canAccept } from '../lib/music-bed'
+import { BED_MODELS, DEFAULT_MODEL, MOODS, TEMPOS, STYLES, NEGATIVE_PROMPT, readAsk, bedPrompt, voiceVerdict, voiceWords, canAccept, engineInput, audioUrlOf } from '../lib/music-bed'
 import { canUsePreview } from '../lib/labs-preview'
 
 const failures: string[] = []
@@ -21,7 +21,9 @@ const read = (p: string) => readFileSync(p, 'utf8')
   check('up to two moods, one tempo, the styles, the length and the engine', ok.ok && ok.ask.moods.length === 2 && ok.ask.tempo === 'fast' && ok.ask.seconds === 45 && ok.ask.model === 'medium')
   check('nothing ticked says what to tick', !readAsk({ moods: [], tempo: 'fast', styles: ['pop'], seconds: 30 }).ok && !readAsk({ moods: ['upbeat'], tempo: 'nope', styles: ['pop'], seconds: 30 }).ok && !readAsk({ moods: ['upbeat'], tempo: 'slow', styles: [], seconds: 30 }).ok)
   check('a length past the engine says so', (() => { const r = readAsk({ moods: ['upbeat'], tempo: 'slow', styles: ['pop'], seconds: 200, model: 'small' }); return !r.ok && /up to 120 seconds/.test(r.error) })())
-  check('an unknown engine is Small, never a guess at a price', readAsk({ moods: ['upbeat'], tempo: 'slow', styles: ['pop'], seconds: 30, model: 'x' }).ok && (readAsk({ moods: ['upbeat'], tempo: 'slow', styles: ['pop'], seconds: 30, model: 'x' }) as { ask: { model: string } }).ask.model === 'small')
+  // Seb, 2026-11-26: "Medium's a little bit better".
+  check('Medium is the default, and an unknown engine is Medium', DEFAULT_MODEL === 'medium' && (readAsk({ moods: ['upbeat'], tempo: 'slow', styles: ['pop'], seconds: 30, model: 'x' }) as { ask: { model: string } }).ask.model === 'medium')
+  check('the slower Medium and Studio 2.5 are there to compare', BED_MODELS.base.id === 'fal-ai/stable-audio-3/medium/base/text-to-audio' && BED_MODELS.sa25.id === 'fal-ai/stable-audio-25/text-to-audio' && BED_MODELS.sa25.maxSec === 190)
   check('the engines are Stable Audio 3 on fal, Small to 2 minutes and Medium to 6', BED_MODELS.small.id === 'fal-ai/stable-audio-3/small/music/text-to-audio' && BED_MODELS.small.maxSec === 120 && BED_MODELS.medium.id === 'fal-ai/stable-audio-3/medium/text-to-audio' && BED_MODELS.medium.maxSec === 380)
 }
 
@@ -31,6 +33,16 @@ const read = (p: string) => readFileSync(p, 'utf8')
   check('the prompt names the style, the mood and the BPM, and asks for instruments only', /funk groove/.test(p) && /upbeat/.test(p) && /124 BPM/.test(p) && /no vocals/.test(p) && /melody played on instruments/.test(p))
   check('voices and 8-bit are always asked against', ['vocals', 'singing', 'speech', 'lyrics', 'vocal chops', '8-bit', 'chiptune'].every((w) => NEGATIVE_PROMPT.includes(w)))
   check('every choice has words for the page and the prompt, no dashes', [...MOODS, ...TEMPOS, ...STYLES].every((c) => c.label && c.words && !/[–—]/.test(c.label + c.words)))
+}
+
+// 2b. What each engine is sent, and how each answers
+{
+  const slow = engineInput('base', 'p', 30)
+  check('the slower Medium takes 50 steps and guidance 7, with voices asked against', slow.num_inference_steps === 50 && slow.guidance_scale === 7 && slow.negative_prompt === NEGATIVE_PROMPT && slow.duration === 30)
+  const s25 = engineInput('sa25', 'p', 30.4)
+  check('Studio 2.5 gets whole seconds, and its prompt says no voices itself (it has no negative prompt)', s25.seconds_total === 30 && /No singing, no voices, no speech\./.test(String(s25.prompt)) && !('negative_prompt' in s25))
+  check('the fast engines keep their own settings', !('num_inference_steps' in engineInput('medium', 'p', 30)) && engineInput('small', 'p', 30).output_format === 'mp3')
+  check('both answer shapes give the link', audioUrlOf({ audio: { url: 'https://v3.fal.media/a.mp3' } }) === 'https://v3.fal.media/a.mp3' && audioUrlOf({ audio: 'https://v3.fal.media/b.wav' }) === 'https://v3.fal.media/b.wav' && audioUrlOf({ audio: 'nope' }) === '' && audioUrlOf(null) === '')
 }
 
 // 3. The voice check
@@ -44,7 +56,8 @@ const read = (p: string) => readFileSync(p, 'utf8')
 
 // 4. Wired in
 const R = read('app/api/music-bed/route.ts')
-check('the route calls the engine with the voices asked against, at the length asked, with a deadline', /negative_prompt: NEGATIVE_PROMPT, duration: ask\.seconds/.test(R) && /abortSignal: AbortSignal\.timeout\(110_000\)/.test(R))
+check('the route calls the engine with its own settings, with a deadline', /input: engineInput\(ask\.model, prompt, ask\.seconds\)/.test(R) && /audioUrl = audioUrlOf\(data\)/.test(R) && /abortSignal: AbortSignal\.timeout\(110_000\)/.test(R))
+check('a wav is kept as a wav', /contentType: wav \? 'audio\/wav' : 'audio\/mpeg'/.test(R))
 check('the voice check is its own call that tells a failure apart', /async function checkVoices/.test(R) && /check: 'unchecked'/.test(R) && !/import[^\n]*transcribeToCues/.test(R))
 check('a track with voices is never offered, and Accept refuses anything not clean', /status: v\.check === 'voices' \? 'rejected' : 'preview'/.test(R) && /if \(!canAccept\(bed\.voice_check, bed\.status\)\)/.test(R))
 check('the track is kept in MVP storage, since fal links do not last', /storage\.from\(BUCKET\)\.upload\(path, buf/.test(R) && /fetch\(audioUrl, \{ signal: AbortSignal\.timeout\(/.test(R))

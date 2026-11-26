@@ -17,7 +17,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { canUsePreview } from '@/lib/labs-preview'
 import { recordUsage } from '@/lib/ai-usage'
-import { BED_MODELS, NEGATIVE_PROMPT, bedPrompt, canAccept, readAsk, voiceVerdict, type VoiceCheck } from '@/lib/music-bed'
+import { BED_MODELS, audioUrlOf, bedPrompt, canAccept, engineInput, readAsk, voiceVerdict, type VoiceCheck } from '@/lib/music-bed'
 
 export const maxDuration = 300
 
@@ -95,13 +95,13 @@ export async function POST(req: Request) {
     let seed: number | null = null
     try {
       const r = await fal.subscribe(model.id, {
-        input: { prompt, negative_prompt: NEGATIVE_PROMPT, duration: ask.seconds, output_format: 'mp3', bitrate: '320k' },
+        input: engineInput(ask.model, prompt, ask.seconds),
         abortSignal: AbortSignal.timeout(110_000),
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
       } as any)
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const data = ((r as any)?.data ?? r) as { audio?: { url?: unknown }; seed?: unknown }
-      audioUrl = typeof data?.audio?.url === 'string' ? data.audio.url : ''
+      const data = ((r as any)?.data ?? r) as { seed?: unknown }
+      audioUrl = audioUrlOf(data)
       seed = typeof data?.seed === 'number' ? data.seed : null
     } catch (e) {
       const msg = e instanceof Error ? e.message : ''
@@ -111,14 +111,16 @@ export async function POST(req: Request) {
     recordUsage({ userId: g.userId, tier: g.tier, feature: 'music_bed', model: model.usage, images: 1 })
 
     // Kept in MVP's own storage: fal's link does not last.
+    // Stable Audio 2.5 answers with a wav; the others with an mp3.
     const id = crypto.randomUUID()
-    const path = `music-beds/${g.userId}/${id}.mp3`
+    const wav = /\.wav(\?|$)/i.test(audioUrl)
+    const path = `music-beds/${g.userId}/${id}.${wav ? 'wav' : 'mp3'}`
     let url: string
     try {
       const a = await fetch(audioUrl, { signal: AbortSignal.timeout(45_000) })
       if (!a.ok) throw new Error(`fal answered ${a.status}`)
       const buf = Buffer.from(await a.arrayBuffer())
-      const up = await admin.storage.from(BUCKET).upload(path, buf, { contentType: 'audio/mpeg', upsert: true })
+      const up = await admin.storage.from(BUCKET).upload(path, buf, { contentType: wav ? 'audio/wav' : 'audio/mpeg', upsert: true })
       if (up.error) throw new Error(up.error.message)
       url = admin.storage.from(BUCKET).getPublicUrl(path).data.publicUrl as string
     } catch (e) {
