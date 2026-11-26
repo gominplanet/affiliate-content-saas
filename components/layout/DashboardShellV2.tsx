@@ -881,6 +881,7 @@ export default function DashboardShellV2({
         { href: '/admin/scout-quiet', icon: <ShieldCheck size={15} />, label: 'SCOUT out of sight (try)' },
         { href: '/admin/encrypt-secrets', icon: <ShieldCheck size={15} />, label: 'Encrypt Secrets' },
         { href: '/admin/cc-import', icon: <Database size={15} />, label: 'CC Catalog Import' },
+        { href: '/admin/music-beds', icon: <Clapperboard size={15} />, label: 'Music beds (Edit Studio test)' },
       ],
     }] : []),
     ]

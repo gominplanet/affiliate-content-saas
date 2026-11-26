@@ -111,6 +111,12 @@ export const PRICING: Record<string, Pricing> = {
   //    youtube-ingest pulls a full video through the metered proxy; the render
   //    engines are self-hosted ffmpeg (near-free) or a Cloudinary transform.
   'fal-whisper':    { in: 0, out: 0, imageCost: 0.10 },
+  // A voice check of one music bed (lib/music-bed): a track of two minutes or
+  // less, so far under a whole video's Whisper. An estimate.
+  'fal-whisper-clip': { in: 0, out: 0, imageCost: 0.01 },
+  // Music beds on fal, per track as fal lists them (2026-11-26).
+  'stable-audio-3-small':  { in: 0, out: 0, imageCost: 0.0217 },
+  'stable-audio-3-medium': { in: 0, out: 0, imageCost: 0.0376 },
   'youtube-ingest': { in: 0, out: 0, imageCost: 0.06 },
   'ffmpeg-ass':     { in: 0, out: 0, imageCost: 0.01 },
   'cloudinary':     { in: 0, out: 0, imageCost: 0.02 },
