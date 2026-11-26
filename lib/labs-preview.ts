@@ -10,7 +10,7 @@ import { normalizeTier } from '@/lib/tier'
 import { canSeeNav } from '@/lib/feature-access'
 import { TRYBE_FREE_LIVE, TRYBE_FREE_TIERS } from '@/lib/trybe-free'
 
-export type PreviewFeature = 'on_sale' | 'amazon_live' | 'comparison' | 'shorts_mode' | 'first_comment' | 'brand_recap' | 'deal_aftercare' | 'post_refresh' | 'facebook_reels' | 'whole_video' | 'sold_campaigns' | 'liftoff_split' | 'earnings' | 'live_followup' | 'video_plan' | 'studio_upload' | 'facebook_setup' | 'group_queue' | 'trybe_outreach' | 'hashtag_trends' | 'drop' | 'video_qr' | 'deals_import' | 'product_scripts' | 'review_edit' | 'creator_look' | 'new_look' | 'trybe_v2' | 'section_nav' | 'trybe_layout' | 'menu_v2' | 'trybe_batch' | 'trybe_top_board' | 'trybe_edit' | 'live_trybe' | 'music_beds'
+export type PreviewFeature = 'on_sale' | 'amazon_live' | 'comparison' | 'shorts_mode' | 'first_comment' | 'brand_recap' | 'deal_aftercare' | 'post_refresh' | 'facebook_reels' | 'whole_video' | 'sold_campaigns' | 'liftoff_split' | 'earnings' | 'live_followup' | 'video_plan' | 'studio_upload' | 'facebook_setup' | 'group_queue' | 'trybe_outreach' | 'hashtag_trends' | 'drop' | 'video_qr' | 'deals_import' | 'product_scripts' | 'review_edit' | 'creator_look' | 'new_look' | 'trybe_v2' | 'section_nav' | 'trybe_layout' | 'menu_v2' | 'trybe_batch' | 'trybe_top_board' | 'trybe_edit' | 'live_trybe' | 'music_beds' | 'trybe_studio'
 
 /** Who may use each preview feature: 'admin' while testing, 'labs' once open to Pro. */
 const OPEN_TO: Record<PreviewFeature, 'admin' | 'labs'> = {
@@ -167,6 +167,12 @@ const OPEN_TO: Record<PreviewFeature, 'admin' | 'labs'> = {
   // and style, and then be able to preview it and accept"): Stable Audio 3 on
   // fal, checked for voices (lib/music-bed). Admin first, then the Edit Studio.
   music_beds: 'admin',
+  // THE EDIT STUDIO (Seb, 2026-11-26: "this whole entire build is for users
+  // who submit content to brands through trybe"): the brand's rules read from
+  // every source, vertical uploads edited as TRYBE ads with the options the
+  // creator ticks, each checked against the rules, and sent in one press
+  // (components/labs/TrybeStudio). Admin first.
+  trybe_studio: 'admin',
 }
 
 /** Every preview feature. A check can then ask which are still admin only

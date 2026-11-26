@@ -12,7 +12,7 @@
 // on a phone), each saying what waits in it, and the pages of the open job sit
 // under them as tabs that wrap. Nothing is hidden off the edge.
 
-import { LayoutDashboard, Search, Rocket, ScanSearch, Send, Inbox, Clapperboard, UploadCloud, CalendarDays, Lightbulb, BarChart3, ListChecks, Bell, Megaphone, ChevronRight, MessageCircle, Check, Star, Trophy, Lock, type LucideIcon } from 'lucide-react'
+import { LayoutDashboard, Search, Rocket, ScanSearch, Send, Inbox, Clapperboard, UploadCloud, CalendarDays, Lightbulb, BarChart3, ListChecks, Bell, Megaphone, ChevronRight, MessageCircle, Check, Star, Trophy, Lock, Wand2, type LucideIcon } from 'lucide-react'
 import type { Tab } from '@/components/labs/TrybeOutreach'
 
 type Item = { label: string; icon: LucideIcon; tabs: Tab[]; count?: 'queue' | 'unread' }
@@ -31,6 +31,7 @@ const GROUPS: Group[] = [
     // ONE SCRIPT TAB (Seb, 2026-11-06: "Under Tribe, it should only be brand
     // scripts"): pick the brand, pick the product, and the script agent writes.
     { label: 'Brand scripts', icon: Clapperboard, tabs: ['create'] },
+    { label: 'Edit Studio', icon: Wand2, tabs: ['studio'] },
     { label: 'Upload', icon: UploadCloud, tabs: ['upload'] },
     { label: 'This week', icon: CalendarDays, tabs: ['week'] },
     { label: 'What’s working', icon: Lightbulb, tabs: ['working'] },
@@ -78,6 +79,7 @@ export const GROUPS_V3: Group[] = [
   ] },
   { id: 'videos', label: 'Videos', icon: Clapperboard, hint: 'Script to approval', items: [
     { label: 'Brand scripts', icon: Clapperboard, tabs: ['create'] },
+    { label: 'Edit Studio', icon: Wand2, tabs: ['studio'] },
     { label: 'Upload', icon: UploadCloud, tabs: ['upload'] },
     { label: 'Submissions', icon: ListChecks, tabs: ['submissions'] },
     { label: 'What\u2019s working', icon: Lightbulb, tabs: ['working'] },
@@ -101,9 +103,9 @@ export function groupOf(tab: Tab, layout = false): string {
 }
 
 /** `locked`: a tab that is Pro on this plan (TRYBE Free), drawn with a lock. */
-export default function TrybeNav({ tab, queue, unread, go, layout = false, topBoard = false, locked }: { tab: Tab; queue: number; unread: number; go: (t: Tab) => void; layout?: boolean; topBoard?: boolean; locked?: (t: Tab) => boolean }) {
+export default function TrybeNav({ tab, queue, unread, go, layout = false, topBoard = false, studio = false, locked }: { tab: Tab; queue: number; unread: number; go: (t: Tab) => void; layout?: boolean; topBoard?: boolean; studio?: boolean; locked?: (t: Tab) => boolean }) {
   // The Top 100 board only where Labs opens it (labs-preview trybe_top_board).
-  const groups = (layout ? GROUPS_V3 : GROUPS).map((g) => ({ ...g, items: g.items.filter((it) => topBoard || !it.tabs.includes('top100')) }))
+  const groups = (layout ? GROUPS_V3 : GROUPS).map((g) => ({ ...g, items: g.items.filter((it) => (topBoard || !it.tabs.includes('top100')) && (studio || !it.tabs.includes('studio'))) }))
   const open = groupOf(tab, layout)
   const countOf = (it: Item) => (it.count === 'queue' ? queue : it.count === 'unread' ? unread : 0)
   const firstOf = (it: Item): Tab => (it.count === 'queue' && it.tabs.includes('sent') ? (queue ? 'queue' : 'sent') : it.tabs[0])

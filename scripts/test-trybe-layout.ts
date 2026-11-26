@@ -26,9 +26,10 @@ check('five jobs in the order a creator works', GROUPS_V3.map((g) => g.label).jo
 check('Home holds what is happening', shape[0] === 'Home: Today[home] This week[week] What changed[changes]')
 check('Find brands holds the searching, the Top 100 board, and the brands you already filmed', shape[1] === 'Find brands: Find brands[find] Star brands[stars] Top 100[top100] Match my TikTok[filmed]')
 check('Messages holds every word to and from a brand', shape[2] === 'Messages: Inbox[inbox] Ready to send[queue] Sent[sent]')
-check('Videos holds a video from script to approval', shape[3] === 'Videos: Brand scripts[create] Upload[upload] Submissions[submissions] What’s working[working]')
+// The Edit Studio (Seb, 2026-11-26) sits between the scripts and the upload; the menu shows it only where Labs opens it.
+check('Videos holds a video from script to approval', shape[3] === 'Videos: Brand scripts[create] Edit Studio[studio] Upload[upload] Submissions[submissions] What’s working[working]')
 check('Earnings holds what came of it', shape[4] === 'Earnings: Earnings[analytics] By brand[brands]')
-const ALL = ['home', 'create', 'upload', 'find', 'stars', 'top100', 'filmed', 'queue', 'sent', 'inbox', 'analytics', 'submissions', 'brands', 'week', 'changes', 'working']
+const ALL = ['home', 'create', 'upload', 'find', 'stars', 'top100', 'filmed', 'queue', 'sent', 'inbox', 'analytics', 'submissions', 'brands', 'week', 'changes', 'working', 'studio']
 const seen = GROUPS_V3.flatMap((g) => g.items.flatMap((it) => it.tabs))
 check('every page is in exactly one job, and each is its own button', ALL.every((t) => seen.filter((x) => x === t).length === 1) && seen.length === ALL.length && GROUPS_V3.every((g) => g.items.every((it) => it.tabs.length === 1)))
 check('the red number sits on the Inbox, the queue count on Ready to send', GROUPS_V3[2].items[0].count === 'unread' && GROUPS_V3[2].items[1].count === 'queue')
@@ -39,7 +40,7 @@ check('short hints, no dashes', GROUPS_V3.every((g) => g.hint.length <= 20 && !/
 // ── THE PAGE ──
 const O = read('components/labs/TrybeOutreach.tsx')
 const P = read('app/(dashboard)/trybe/page.tsx')
-check('the page follows the switch', /layout=\{canUsePreview\('trybe_layout', tier\)\}/.test(P) && /<TrybeNav tab=\{tab\} queue=\{queue\.length\} unread=\{navUnread\} go=\{go\} layout=\{layout\} topBoard=\{topBoard\}( locked=\{free \? proOnly : undefined\})? \/>/.test(O))
+check('the page follows the switch', /layout=\{canUsePreview\('trybe_layout', tier\)\}/.test(P) && /<TrybeNav tab=\{tab\} queue=\{queue\.length\} unread=\{navUnread\} go=\{go\} layout=\{layout\} topBoard=\{topBoard\}( studio=\{studio\})?( locked=\{free \? proOnly : undefined\})? \/>/.test(O))
 check('the Top 100 page shows only where Labs opens it', /topBoard=\{canUsePreview\('trybe_top_board', tier\)\}/.test(P) && /topBoard \|\| !it\.tabs\.includes\('top100'\)/.test(read('components/labs/TrybeNav.tsx')) && /tab === 'top100' && topBoard && !lockedTab/.test(O))
 check('no page carries a second switch inside it in the new menu', /const pair = !layout && tile && tile\.tabs\.length > 1 \? tile\.tabs : null/.test(O))
 check('one search row: what you review, or a brand by name', /htmlFor="trybe-kw"/.test(O) && /htmlFor="trybe-name"/.test(O) && /\{layout \? \(\n\s*\/\/ ONE SEARCH ROW/.test(O))

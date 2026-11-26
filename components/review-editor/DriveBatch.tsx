@@ -29,7 +29,7 @@ const PURPLE = 'var(--accent)'
 const BLUE = '#1a73e8'
 const soft = { color: 'var(--text-3)' }
 
-export default function DriveBatch({ drive, loadDrive, settings, onAdded, left = null, trybeLeft = null, trybe = null }: {
+export default function DriveBatch({ drive, loadDrive, settings, onAdded, left = null, trybeLeft = null, trybe = null, studio = null }: {
   drive: DriveState
   loadDrive: () => Promise<DriveState | null>
   /** The look chosen above (logo, zooms, colour...), used for every video. */
@@ -42,8 +42,10 @@ export default function DriveBatch({ drive, loadDrive, settings, onAdded, left =
   /** A TRYBE batch these takes are for (lib/trybe-edit): every video is a
    *  TRYBE ad, and MVP finds each one's script from what is said. */
   trybe?: { campaignId: string } | null
+  /** An Edit Studio brand: every video is a TRYBE ad for it, vertical 9:16 only. */
+  studio?: { brandId: string } | null
 }) {
-  const kindOf = (v: BatchVideo) => (trybe ? 'trybe' as const : v.kind)
+  const kindOf = (v: BatchVideo) => (trybe || studio ? 'trybe' as const : v.kind)
   const capOf = (k: 'review' | 'trybe') => (k === 'trybe' ? trybeLeft : left)
   /** More videos of a kind than its allowance has left: said before adding. */
   const overWords = (vs: BatchVideo[]): string | null => {
@@ -102,11 +104,14 @@ export default function DriveBatch({ drive, loadDrive, settings, onAdded, left =
       const used = new Set(d.used ?? [])
       setSkipped((d.files ?? []).filter((f) => used.has(f.id)).map((f) => f.name))
       setFilmedRead(d.filmedRead !== false)
-      const files = (d.files ?? []).filter((f) => !used.has(f.id))
+      const all = (d.files ?? []).filter((f) => !used.has(f.id))
+      // THE EDIT STUDIO TAKES VERTICAL 9:16 ONLY: a sideways file is left out and named.
+      const sideways = studio ? all.filter((f) => f.width && f.height && f.width > f.height) : []
+      const files = all.filter((f) => !sideways.includes(f))
       const aIds = new Set(a.map((f) => f.id)), bIds = new Set(b.map((f) => f.id))
       const aT = files.filter((f) => aIds.has(f.id)), bT = files.filter((f) => bIds.has(f.id))
       const named = new Map([...a, ...b].map((f) => [f.id, f.name]))
-      setProblems((d.problems ?? []).map((p) => `${named.get(p.id) || 'A file'}: ${p.error}`))
+      setProblems([...(d.problems ?? []).map((p) => `${named.get(p.id) || 'A file'}: ${p.error}`), ...sideways.map((f) => `${f.name}: filmed sideways. The Edit Studio takes vertical 9:16 video only.`)])
       setPool(bT)
       setVideos(batchVideos(aT, bT))
     } catch (e) { toast.error(e instanceof Error ? e.message : 'Google’s picker did not open.') } finally { setBusy(null) }
@@ -130,7 +135,7 @@ export default function DriveBatch({ drive, loadDrive, settings, onAdded, left =
         const look = cleanSettings({ ...settings, kind: kindOf(v), callouts: v.callouts ?? [] }, settings)
         const r = await fetch('/api/review-edit', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'add', name: v.product || v.a[0].name.replace(/\.[^.]+$/, ''), ...addBody(v), product: v.product, settings: look, ...(trybe ? { trybe: { campaignId: trybe.campaignId } } : {}) }),
+          body: JSON.stringify({ action: 'add', name: v.product || v.a[0].name.replace(/\.[^.]+$/, ''), ...addBody(v), product: v.product, settings: look, ...(trybe ? { trybe: { campaignId: trybe.campaignId } } : {}), ...(studio ? { studio: { brandId: studio.brandId } } : {}) }),
         })
         const d = await r.json().catch(() => ({}))
         if (r.ok) ok++

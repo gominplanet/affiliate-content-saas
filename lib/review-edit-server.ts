@@ -30,6 +30,7 @@ import { introCap, introNote } from '@/lib/intro-allowance'
 import { normalizeTier } from '@/lib/tier'
 import { readCampaign, scriptFromRow, type Campaign, type Script } from '@/lib/trybe-batch'
 import { matchScript, scriptText, checkCut, type CutCheck } from '@/lib/trybe-edit'
+import { readSheet, sheetToCampaign } from '@/lib/studio-rules'
 
 export const EDIT_BUCKET = 'instagram-videos'
 /** Videos on the video server at once, across everyone. */
@@ -110,6 +111,17 @@ export interface EditRow {
   /** A TRYBE ad from a batch (migration 468): its batch, its script once
    *  known, and the finished video checked against the brief. */
   trybe_campaign_id?: string | null; trybe_script_idx?: number | null; trybe_check?: CutCheck | null
+  /** An Edit Studio video (migration 476): its TRYBE brand, whose rules
+   *  check it, and what happened when it was sent to that brand. */
+  studio_brand_id?: string | null; studio_send?: Record<string, unknown> | null
+}
+
+/** A studio video's brand rules as the cut check reads them (lib/studio-rules), or null. */
+export async function studioOf(db: Db, row: Pick<EditRow, 'user_id' | 'studio_brand_id'>): Promise<Campaign | null> {
+  if (!row.studio_brand_id) return null
+  const { data } = await db.from('trybe_brand_rules').select('brand_id, brand_name, sheet').eq('user_id', row.user_id).eq('brand_id', row.studio_brand_id).maybeSingle()
+  if (!data?.sheet) return null
+  return sheetToCampaign(readSheet(data.sheet), { id: String(data.brand_id), name: String(data.brand_name || '') })
 }
 
 /** A TRYBE ad's batch and scripts (migration 468), or null for any other video. */
@@ -210,6 +222,8 @@ export async function readTakes(db: Db, row: EditRow): Promise<void> {
     const kindNow = cleanSettings(row.settings).kind
     const upright = probe.data.height > probe.data.width
     if (kindNow === 'review' && upright) return await fail('This take was filmed upright. An Amazon and YouTube review is filmed sideways: film it again sideways, or add it as a TRYBE ad.')
+    // THE EDIT STUDIO TAKES VERTICAL 9:16 ONLY (Seb, 2026-11-26).
+    if (row.studio_brand_id && !upright) return await fail('The Edit Studio takes vertical 9:16 video only, and this take is sideways. Film it upright, or edit it in the Review Editor.')
     const sideNote = kindNow === 'trybe' && !upright ? ' It was filmed sideways, so the upright ad is cut from the middle of the picture.' : ''
     // The sound alone, small, for the transcript; deleted straight after.
     // The sound, and where it is quiet (the dead air, lib/review-edit PACE).
@@ -455,6 +469,10 @@ export async function startMaking(db: Db, row: EditRow): Promise<void> {
   if (row.trybe_campaign_id) {
     const tb = await trybeOf(db, row).catch(() => null)
     if (tb) await db.from('review_edits').update({ trybe_check: checkCut({ words: outputWords(words, spec.segments), seconds: spec.seconds, campaign: tb.campaign }) }).eq('id', row.id)
+  } else if (row.studio_brand_id) {
+    // An Edit Studio video: checked against its brand's rules (lib/studio-rules).
+    const rules = await studioOf(db, row).catch(() => null)
+    if (rules) await db.from('review_edits').update({ trybe_check: checkCut({ words: outputWords(words, spec.segments), seconds: spec.seconds, campaign: rules }) }).eq('id', row.id)
   }
   const job = makeRenderJob({ shortId: `edit-${row.id}`, userId: row.user_id, reservationId: null })
   if (!job) return set(db, row.id, { status: 'failed', note: 'MVP’s video server is not set up for background work.' })

@@ -81,7 +81,7 @@ type Step =
   | { state: 'failed'; why: string }
   | { state: 'skipped'; why: string }
 
-export default function ComputerBatch({ settings, onAdded, left = null, trybeLeft = null, trybe = null }: {
+export default function ComputerBatch({ settings, onAdded, left = null, trybeLeft = null, trybe = null, studio = null }: {
   /** The look chosen above (logo, zooms, colour...), used for every video. */
   settings: EditSettings
   onAdded: () => Promise<void>
@@ -92,8 +92,11 @@ export default function ComputerBatch({ settings, onAdded, left = null, trybeLef
   /** A TRYBE batch these takes are for (lib/trybe-edit): every video is a
    *  TRYBE ad, and MVP finds each one's script from what is said. */
   trybe?: { campaignId: string } | null
+  /** An Edit Studio brand (components/labs/TrybeStudio): every video is a
+   *  TRYBE ad for it, and only vertical 9:16 files are taken. */
+  studio?: { brandId: string } | null
 }) {
-  const kindOf = (v: BatchVideo) => (trybe ? 'trybe' as const : v.kind)
+  const kindOf = (v: BatchVideo) => (trybe || studio ? 'trybe' as const : v.kind)
   const capOf = (k: 'review' | 'trybe') => (k === 'trybe' ? trybeLeft : left)
   /** More videos of a kind than its allowance has left: said before uploading. */
   const overWords = (vs: BatchVideo[]): string | null => {
@@ -153,11 +156,15 @@ export default function ComputerBatch({ settings, onAdded, left = null, trybeLef
       } catch { /* not known: none are left out */ }
       const fresh = ok.filter((f) => !used.has(uploadKey(f.name, f.size)))
       for (const id of [...files.current.keys()]) if (id.startsWith(`${which}:`)) files.current.delete(id)
-      const takes = await Promise.all(fresh.map((f, i) => {
+      const read = await Promise.all(fresh.map((f, i) => {
         const id = `${which}:${i}:${f.size}:${f.name}`
         files.current.set(id, f)
         return asTake(f, id)
       }))
+      // THE EDIT STUDIO TAKES VERTICAL 9:16 ONLY (Seb, 2026-11-26): a sideways
+      // file is left out and said, before a byte goes up.
+      const takes = studio ? read.filter((t) => !(t.width && t.height && t.width > t.height)) : read
+      if (studio) for (const t of read) if (!takes.includes(t)) { bad.push(`${t.name}: filmed sideways. The Edit Studio takes vertical 9:16 video only.`); files.current.delete(t.id) }
       const nextTalk = which === 'a' ? takes : talk
       const nextRoll = which === 'b' ? takes : roll
       if (which === 'a') setTalk(takes); else setRoll(takes)
@@ -230,7 +237,7 @@ export default function ComputerBatch({ settings, onAdded, left = null, trybeLef
         const look = cleanSettings({ ...settings, kind: kindOf(v), callouts: v.callouts ?? [] }, settings)
         const r = await fetch('/api/review-edit', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'add', name: v.product || v.a[0].name.replace(/\.[^.]+$/, ''), review: take(v.a), ...(v.b.length ? { broll: take(v.b) } : {}), product: v.product, settings: look, ...(trybe ? { trybe: { campaignId: trybe.campaignId } } : {}) }),
+          body: JSON.stringify({ action: 'add', name: v.product || v.a[0].name.replace(/\.[^.]+$/, ''), review: take(v.a), ...(v.b.length ? { broll: take(v.b) } : {}), product: v.product, settings: look, ...(trybe ? { trybe: { campaignId: trybe.campaignId } } : {}), ...(studio ? { studio: { brandId: studio.brandId } } : {}) }),
         })
         const d = await r.json().catch(() => ({})) as { error?: string; allowanceFull?: boolean }
         if (r.ok) {
@@ -317,7 +324,7 @@ export default function ComputerBatch({ settings, onAdded, left = null, trybeLef
         {pickTile('a', 'Talking takes', 'You talking about each product')}
         {pickTile('b', 'B-roll', 'Optional')}
       </div>
-      <p className="text-[12px] mt-2" style={soft}>Upright takes become TRYBE ads; sideways ones, Amazon and YouTube reviews. They use your look above. Your takes are deleted from MVP two days after each video is made.</p>
+      <p className="text-[12px] mt-2" style={soft}>{studio ? 'Vertical 9:16 files only: a sideways file is left out and named. Each video uses the options above.' : 'Upright takes become TRYBE ads; sideways ones, Amazon and YouTube reviews. They use your look above.'} Your takes are deleted from MVP two days after each video is made.</p>
 
       {allSkipped.length > 0 && <p className="mt-2 text-[12.5px]" style={soft}>Left out, already in a video ({allSkipped.length}): {allSkipped.join(', ')}.</p>}
       {noTimes && <p className="mt-2 text-[12.5px] inline-flex items-start gap-1.5" style={{ color: AMBER }}><AlertTriangle size={13} className="mt-0.5 shrink-0" /> These files do not say when they were filmed, so MVP paired them by name and by when each file was saved. Check each video.</p>}

@@ -1,0 +1,120 @@
+// © 2026 Gominplanet / MVP Affiliate — proprietary & confidential.
+//
+// The Edit Studio, phases 1 and 2.
+//
+// Seb, 2026-11-26: "MVP needs to always check briefs and Google Docs and web
+// pages and PDFs ... or images ... to understand what the brand is looking
+// for, the do's and don'ts ... we need to have a spot where users can upload
+// PDFs, upload documents, or share links"; "only vertical, 9:16"; "we should
+// be able to have a one button send to the tribe brand directly"; "this whole
+// entire build is for users who submit content to brands through trybe".
+
+import { readFileSync, existsSync } from 'node:fs'
+import { hashText, upsertSource, sheetInput, readSheet, readQuestions, sheetFromReply, sheetToCampaign, emptySheet, sheetCount, SHEET_SYSTEM, MAX_HISTORY, type RuleSource, type OldSource } from '../lib/studio-rules'
+import { studioStage, canSendNow, needsConfirm, studioFileName, allowanceWords, outputOf, type StudioEdit } from '../lib/studio'
+import { checkCut } from '../lib/trybe-edit'
+import { canUsePreview } from '../lib/labs-preview'
+import type { Word } from '../lib/review-edit'
+
+const failures: string[] = []
+const check = (name: string, ok: boolean) => { if (!ok) failures.push(name) }
+const read = (p: string) => readFileSync(p, 'utf8')
+const NOW = '2026-11-26T12:00:00.000Z'
+const src = (id: string, text: string, readAt = '2026-11-20T00:00:00.000Z'): RuleSource => ({ id, kind: 'text', label: id, text, readAt, hash: hashText(text), error: null })
+
+// 1. Every source, with the day it was read, and every version kept
+{
+  check('a fingerprint is stable and changes with the words', hashText('abc') === hashText('abc') && hashText('abc') !== hashText('abd'))
+  const a = upsertSource([], [], src('trybe_brief', 'Old brief'), NOW)
+  check('a new source is kept', a.sources.length === 1 && a.history.length === 0)
+  const b = upsertSource(a.sources, a.history, { ...src('trybe_brief', 'New brief'), readAt: NOW }, NOW)
+  check('a changed brief keeps the old version with its date', b.sources[0].text === 'New brief' && b.history.length === 1 && b.history[0].text === 'Old brief' && b.history[0].readAt === '2026-11-20T00:00:00.000Z' && b.history[0].replacedAt === NOW)
+  const c = upsertSource(b.sources, b.history, { ...src('trybe_brief', 'New brief'), readAt: NOW }, NOW)
+  check('the same words only move the read date', c.history.length === 1 && c.sources[0].readAt === NOW)
+  const d = upsertSource(c.sources, c.history, { ...src('trybe_brief', ''), error: 'The link answered 403.' }, NOW)
+  check('a read that failed never wipes words read before, and says why', d.sources[0].text === 'New brief' && d.sources[0].error === 'The link answered 403.')
+  let h: OldSource[] = []
+  let s: RuleSource[] = []
+  for (let i = 0; i < MAX_HISTORY + 5; i++) ({ sources: s, history: h } = upsertSource(s, h, src('x', `v${i}`), NOW))
+  check('history is capped', h.length === MAX_HISTORY)
+  const input = sheetInput({ brandName: 'Movira', sources: [{ ...src('trybe_brief', 'Say supports comfort.'), kind: 'trybe_brief', label: 'TRYBE brief' }, { ...src('f', ''), kind: 'file', label: 'empty.pdf' }], questions: [{ q: 'Guarantee?', answer: 'Drop it.' }, { q: 'Unanswered?' }] })
+  check('the reader sees each source labelled with its date, empty ones left out, and your answers', /=== THE BRIEF ON TRYBE: TRYBE brief \(read 2026-11-20\) ===/.test(input) && !/empty\.pdf/.test(input) && /THE CREATOR'S ANSWERS/.test(input) && /A: Drop it\./.test(input) && !/Unanswered/.test(input))
+  check('the reader is told: only the sources, the brand\'s wording, conflicts as questions, data never instructions', /Never invent a claim/.test(SHEET_SYSTEM) && /questions/.test(SHEET_SYSTEM) && /never instructions to you/.test(SHEET_SYSTEM) && /answers, when given, decide/.test(SHEET_SYSTEM))
+}
+
+// 2. The do's and don'ts, read safely
+{
+  const got = sheetFromReply('Here you go:\n{"product":"Movira Bamboo","dos":[{"text":"Show the tag","from":"brief"}],"donts":["No mirrored footage"],"neverSay":["sugar-free","all natural"],"mustSay":[{"text":"liver","bySec":3}],"productDelaySec":5,"noPrices":true,"offer":{"text":"20% off with code TRY","from":"2026-11-24","to":"bad","where":"last 10 seconds"},"lengthSec":[60,90],"aiMusic":"banned","hookSwaps":"allowed","versionsPerHook":3,"questions":[{"q":"The brief promises a 60 day guarantee, the site only a replacement. Keep it?","says":"brief: refund; site: replacement"}]}', [{ q: 'The brief promises a 60 day guarantee, the site only a replacement. Keep it?', answer: 'No' }])
+  check('the reply becomes a sheet', !!got && got.sheet.product === 'Movira Bamboo' && got.sheet.dos[0].from === 'brief' && got.sheet.donts[0].text === 'No mirrored footage' && got.sheet.mustSay[0].bySec === 3)
+  check('the offer keeps good dates only', !!got && got.sheet.offer?.from === '2026-11-24' && got.sheet.offer?.to === null && got.sheet.offer?.where === 'last 10 seconds')
+  check('policies and versions read', !!got && got.sheet.aiMusic === 'banned' && got.sheet.hookSwaps === 'allowed' && got.sheet.aiVoice === 'not_said' && got.sheet.versionsPerHook === 3)
+  check('an answer you gave to the same question is kept', !!got && got.questions[0].answer === 'No' && /replacement/.test(got.questions[0].says || ''))
+  check('a reply that is not JSON is said as a failure, not an empty sheet', sheetFromReply('sorry, no') === null && sheetFromReply('{bad json') === null)
+  check('odd values fall back safely', readSheet({ lengthSec: [-3, 'x'], aiVoice: 'maybe', versionsPerHook: 99, offer: { text: '' } }).aiVoice === 'not_said' && readSheet({ lengthSec: [-3] }).lengthSec[0] === 15 && readSheet({ versionsPerHook: 99 }).versionsPerHook === null && readSheet({ offer: { text: '' } }).offer === null)
+  check('questions are read safely', readQuestions([{ q: '' }, 'A plain question?']).length === 1)
+  check('an empty sheet counts nothing', sheetCount(emptySheet()) === 0)
+}
+
+// 3. The finished video checked against the brand's sheet (lib/trybe-edit checkCut)
+{
+  const sheet = readSheet({ product: 'NOBL Tracker', neverSay: ['Tile'], noPrices: true, productDelaySec: 5, lengthSec: [20, 40] })
+  const camp = sheetToCampaign(sheet, { id: 'brand1', name: 'NOBL' })
+  const w = (text: string, start: number): Word => ({ text, start, end: start + 0.3 } as Word)
+  const bad = checkCut({ words: [w('my', 0), w('NOBL', 1), w('beats', 2), w('Tile', 3), w('for', 4), w('$20', 5)], seconds: 12, campaign: camp, now: NOW })
+  check('a brand word too early, a banned name, a price and a short cut are all caught', bad.state === 'red' && bad.items.some((i) => /before the 5 second mark/.test(i.text)) && bad.items.some((i) => /"Tile" is said/.test(i.text)) && bad.items.some((i) => /A price is said/.test(i.text)) && bad.items.some((i) => /12 seconds: the brief asks for 20 to 40/.test(i.text)))
+  const good = checkCut({ words: [w('this', 0), w('changed', 1), w('my', 2), w('trips', 3), w('NOBL', 8)], seconds: 30, campaign: camp, now: NOW })
+  check('a video inside the rules is green', good.state === 'green')
+}
+
+// 4. Where each video stands, in words
+{
+  const e = (o: Partial<StudioEdit>): StudioEdit => ({ id: 'e1', name: 'Take 1', status: 'done', note: null, outputs: { vertical: { url: 'https://x/y.mp4', seconds: 30 } }, studio: { brandId: 'b', check: null, send: null }, ...o })
+  check('being made, said as such', studioStage(e({ status: 'making' })).tone === 'wait' && studioStage(e({ status: 'failed' })).word === 'Not edited')
+  check('not checked says the rules were not read', /not checked against the brand's rules/.test(studioStage(e({})).word))
+  check('a broken rule is red and asks before sending', studioStage(e({ studio: { brandId: 'b', check: { state: 'red', items: [], seconds: 30, at: NOW }, send: null } })).tone === 'bad' && needsConfirm(e({ studio: { brandId: 'b', check: { state: 'red', items: [], seconds: 30, at: NOW }, send: null } })))
+  check('sent says the brand is reviewing it', studioStage(e({ studio: { brandId: 'b', check: null, send: { state: 'in_review' } } }), 'NOBL').word === 'Sent: NOBL is reviewing it')
+  check('a send TRYBE did not confirm says so, never "sent"', studioStage(e({ studio: { brandId: 'b', check: null, send: { state: 'sent_unconfirmed' } } })).word === 'Sent, not confirmed by TRYBE yet')
+  check('Send is offered once: not again after a send, not again when unconfirmed, again after a failure', canSendNow(e({})) && !canSendNow(e({ studio: { brandId: 'b', check: null, send: { state: 'in_review' } } })) && !canSendNow(e({ studio: { brandId: 'b', check: null, send: { state: 'sent_unconfirmed' } } })) && canSendNow(e({ studio: { brandId: 'b', check: null, send: { state: 'failed' } } })) && !canSendNow(e({ outputs: null })))
+  check('the file is named by brand and video', studioFileName('Taste Flavor Co.', 'Black Friday take 2', 4) === 'taste-flavor-co-black-friday-take-2.mp4' && studioFileName('NOBL', null, 3) === 'nobl-video-3.mp4')
+  check('the allowance in words', allowanceWords({ used: 12, limit: 200, left: 188 }) === '12 of 200 TRYBE ad edits used this month' && /All 200/.test(allowanceWords({ used: 200, limit: 200, left: 0, resetLabel: 'Dec 1' }) || ''))
+  check('the finished file is found', outputOf(e({}))?.seconds === 30 && outputOf(e({ outputs: null })) === null)
+}
+
+// 5. Wired in
+const API = read('app/api/labs/trybe-studio/route.ts')
+check('the rules API is for the team first', /canUsePreview\('trybe_studio'/.test(API) && canUsePreview('trybe_studio', 'admin') && !canUsePreview('trybe_studio', 'pro'))
+check('a link, a file, pasted words, TRYBE\'s brief and the chat are all sources', ["kind === 'trybe_brief'", "kind === 'link'", "kind === 'text'", "action === 'chat'", "action === 'file'"].every((x) => API.includes(x)))
+check('an uploaded file is read, then deleted', /readFileBytes\(bytes/.test(API) && /remove\(\[path\]\)/.test(API))
+check('reading the rules is costed and gated', /spendGate\(g\.userId, g\.tier\)/.test(API) && /feature: 'studio_rules'/.test(API))
+const READ = read('lib/studio-read.ts')
+check('links are read with every redirect checked, Google docs through their text export, PDFs and pictures by Claude', /assertPublicHttpUrl\(next\)/.test(READ) && /readUrlFor\(link\)/.test(READ) && /type: 'document', source/.test(READ) && /AbortSignal\.timeout/.test(READ))
+const RE = read('app/api/review-edit/route.ts')
+check('a studio video carries its brand, and is listed by it', /studio_brand_id: studio\.brandId/.test(RE) && /q\.eq\('studio_brand_id', forStudio\)/.test(RE))
+check('what TRYBE said is kept on the video', /action === 'studio_sent'/.test(RE) && /studio_send: send/.test(RE))
+const SRV = read('lib/review-edit-server.ts')
+check('the studio takes vertical 9:16 only, said in words', /if \(row\.studio_brand_id && !upright\) return await fail\('The Edit Studio takes vertical 9:16 video only/.test(SRV))
+check('every studio video is checked against its brand\'s rules when it is made', /else if \(row\.studio_brand_id\)/.test(SRV) && /campaign: rules/.test(SRV))
+for (const f of ['components/review-editor/ComputerBatch.tsx', 'components/review-editor/DriveBatch.tsx']) {
+  const src2 = read(f)
+  check(`${f}: sideways files are left out and named before uploading`, /filmed sideways\. The Edit Studio takes vertical 9:16 video only\./.test(src2) && /studio: \{ brandId: studio\.brandId \}/.test(src2))
+}
+const VID = read('components/labs/TrybeStudioVideos.tsx')
+check('Send makes the same record and send as Upload', /action: 'create'/.test(VID) && /sendDropToTrybe\(/.test(VID) && /toTrybe: true/.test(VID) && /requestTrybePutFile/.test(VID))
+check('a video that breaks a rule asks first', /needsConfirm\(e\) && !window\.confirm/.test(VID))
+check('the options are ticked by the creator', ['label="Captions"', 'label="B-roll over the talk"', 'label="Zooms"', 'label="Colour boost"', 'label="Title"'].every((x) => VID.includes(x)))
+check('every studio video is a vertical TRYBE ad with no logo', /kind: 'trybe', formats: \['vertical'\], logo: null/.test(VID))
+const RULES = read('components/labs/TrybeStudioRules.tsx')
+check('the rules panel adds links, PDFs or pictures, pasted words and the chat', /Add a link/.test(RULES) && /Add a PDF or picture/.test(RULES) && /Paste words/.test(RULES) && /Add what they sent in chat/.test(RULES))
+check('TRYBE\'s brief is read again only when it changed', /kept\.hash !== hashText\(c\.brief\.trim\(\)\)/.test(RULES))
+check('questions from disagreeing sources go to the creator', /The sources disagree\. You decide:/.test(RULES))
+check('a tab under Videos, only where Labs opens it', /\{ label: 'Edit Studio', icon: Wand2, tabs: \['studio'\] \}/.test(read('components/labs/TrybeNav.tsx')) && /\(studio \|\| !it\.tabs\.includes\('studio'\)\)/.test(read('components/labs/TrybeNav.tsx')) && /tab === 'studio' && studio && !lockedTab/.test(read('components/labs/TrybeOutreach.tsx')) && /studio=\{canUsePreview\('trybe_studio', tier\)\}/.test(read('app/(dashboard)/trybe/page.tsx')))
+for (const f of ['components/labs/TrybeStudio.tsx', 'components/labs/TrybeStudioRules.tsx', 'components/labs/TrybeStudioVideos.tsx', 'lib/studio.ts']) check(`${f}: no dashes in what the creator reads`, !/[–—]/.test(read(f).replace(/\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '')))
+const MIG = 'supabase/migrations/476_edit_studio.sql'
+check('migration 476: the rules table and the two video columns, safe to run twice', existsSync(MIG) && /create table if not exists public\.trybe_brand_rules/.test(read(MIG)) && /add column if not exists studio_brand_id text/.test(read(MIG)) && /add column if not exists studio_send jsonb/.test(read(MIG)))
+
+if (failures.length) {
+  console.error(`test-edit-studio: ${failures.length} failed`)
+  for (const f of failures) console.error(`  ✗ ${f}`)
+  process.exit(1)
+}
+console.log('test-edit-studio: all checks passed')

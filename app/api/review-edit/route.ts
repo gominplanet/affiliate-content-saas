@@ -62,6 +62,9 @@ const missing = (m?: string) => !!m && /review_edits/.test(m) && /does not exist
 /** TRYBE ads edited from a batch need their columns (migration 468). */
 const TRYBE_SQL = 'Editing from a TRYBE batch needs migration 468 in Supabase first.'
 const trybeMissing = (m?: string) => !!m && /trybe_campaign_id|trybe_script_idx|trybe_check/.test(m)
+/** Edit Studio videos need their columns (migration 476). */
+const STUDIO_SQL = 'The Edit Studio needs migration 476 in Supabase first.'
+const studioMissing = (m?: string) => !!m && /studio_brand_id|studio_send/.test(m)
 
 async function gate() {
   const supabase = await createServerClient()
@@ -128,6 +131,9 @@ function view(r: EditRow, server?: ServerView | null, dropAsin?: string | null, 
     /** A TRYBE ad from a batch (migration 468): its batch, its script once
      *  known, and the finished video checked against the brief. */
     trybe: r.trybe_campaign_id ? { campaignId: r.trybe_campaign_id, idx: r.trybe_script_idx ?? null, check: r.trybe_check ?? null } : null,
+    /** An Edit Studio video (migration 476): checked against its brand's
+     *  rules, and what happened when it was sent to the brand. */
+    studio: r.studio_brand_id ? { brandId: r.studio_brand_id, check: r.trybe_check ?? null, send: r.studio_send ?? null } : null,
     onServer,
   }
 }
@@ -150,13 +156,18 @@ export async function GET(request: Request) {
   // ONE TRYBE BATCH'S VIDEOS (?campaign=, migration 468): all of them, for its tracker.
   const asked = new URL(request.url).searchParams.get('campaign')
   const forBatch = asked && /^[0-9a-f-]{36}$/i.test(asked) ? asked : null
+  // ONE BRAND'S EDIT STUDIO VIDEOS (?studio=, migration 476).
+  const askedStudio = new URL(request.url).searchParams.get('studio')
+  const forStudio = askedStudio && /^[A-Za-z0-9_-]{4,80}$/.test(askedStudio) ? askedStudio : null
   const listQ = () => {
     let q = db.from('review_edits').select('*').eq('user_id', g.userId)
     if (forBatch) q = q.eq('trybe_campaign_id', forBatch)
-    return q.order('created_at', { ascending: false }).limit(forBatch ? 300 : 40)
+    if (forStudio) q = q.eq('studio_brand_id', forStudio)
+    return q.order('created_at', { ascending: false }).limit(forBatch || forStudio ? 300 : 40)
   }
   const { data, error } = await listQ()
   if (error && forBatch && trybeMissing(error.message)) return NextResponse.json({ error: TRYBE_SQL, needsSql: true }, { status: 503 })
+  if (error && forStudio && studioMissing(error.message)) return NextResponse.json({ error: STUDIO_SQL, needsSql: true }, { status: 503 })
   if (error) return NextResponse.json({ error: missing(error.message) ? NEEDS_SQL : error.message, needsSql: missing(error.message) }, { status: missing(error.message) ? 503 : 500 })
   // The settings a new video starts from: the creator's saved look, else the
   // last ones used. lookSaved says which, so the page never calls a borrowed
@@ -273,6 +284,16 @@ export async function POST(request: Request) {
       trybe = { campaignId: cid, idx: Number.isInteger(idx) && idx > 0 ? idx : null }
       settings.kind = 'trybe'
     }
+    // AN EDIT STUDIO VIDEO (migration 476): a TRYBE ad for one brand, checked
+    // against that brand's rules when it is made.
+    let studio: { brandId: string } | null = null
+    if (body.studio && typeof body.studio === 'object' && !trybe) {
+      if (!canUsePreview('trybe_studio', g.tier)) return NextResponse.json({ error: 'The Edit Studio is still being tested by the MVP team.', code: 'tier_not_allowed' }, { status: 403 })
+      const b = (body.studio as { brandId?: unknown }).brandId
+      if (typeof b !== 'string' || !/^[A-Za-z0-9_-]{4,80}$/.test(b)) return NextResponse.json({ error: 'Which TRYBE brand is this video for?' }, { status: 400 })
+      studio = { brandId: b }
+      settings.kind = 'trybe'
+    }
     const allowance = await editAllowance(db, g.userId, g.tier, settings.kind)
     if (allowance.left !== null && allowance.left <= 0) return NextResponse.json({ error: allowanceFullWords(allowance), allowanceFull: true, allowance }, { status: 429 })
     // A take picked in Google Drive is checked with Google first: MVP can
@@ -335,8 +356,10 @@ export async function POST(request: Request) {
       user_id: g.userId, name: String(body.name || review.name || 'Review').slice(0, 120), status: 'queued', note: 'In line to be read',
       review_src: review, broll_src: broll, product: typeof body.product === 'string' ? body.product.trim().slice(0, 300) || null : null, settings,
       ...(trybe ? { trybe_campaign_id: trybe.campaignId, trybe_script_idx: trybe.idx } : {}),
+      ...(studio ? { studio_brand_id: studio.brandId } : {}),
     }).select('*').single()
     if (error && trybe && trybeMissing(error.message)) return NextResponse.json({ error: TRYBE_SQL, needsSql: true }, { status: 503 })
+    if (error && studio && studioMissing(error.message)) return NextResponse.json({ error: STUDIO_SQL, needsSql: true }, { status: 503 })
     if (error || !data) return NextResponse.json({ error: missing(error?.message) ? NEEDS_SQL : error?.message || 'Not saved.' }, { status: missing(error?.message) ? 503 : 500 })
     // Start now; the cron carries on with anything this does not finish.
     after(async () => { try { await moveQueue(db, { userId: g.userId, readBudget: 1 }) } catch { /* the cron picks it up */ } })
@@ -420,6 +443,24 @@ export async function POST(request: Request) {
     await db.from('review_edits').update({ status: 'queued', attempts: 0, note: 'In line to be read and cut again', updated_at: now }).eq('id', row.id)
     after(async () => { try { await moveQueue(db, { userId: g.userId, readBudget: 1 }) } catch { /* the cron picks it up */ } })
     return NextResponse.json({ ok: true })
+  }
+
+  // SENT TO THE BRAND FROM THE EDIT STUDIO (migration 476): what TRYBE said,
+  // kept on the video so the studio says it after a reload, never "not sent"
+  // for a video that went.
+  if (action === 'studio_sent') {
+    if (!row.studio_brand_id) return NextResponse.json({ error: 'That video is not in the Edit Studio.' }, { status: 400 })
+    const s = (body.send && typeof body.send === 'object' ? body.send : {}) as Record<string, unknown>
+    const state = ['in_review', 'sent_unconfirmed', 'failed', 'sending'].includes(String(s.state)) ? String(s.state) : null
+    if (!state) return NextResponse.json({ error: 'What happened to the send?' }, { status: 400 })
+    const send = {
+      state, at: now,
+      itemId: typeof s.itemId === 'string' ? s.itemId.slice(0, 64) : null,
+      note: typeof s.note === 'string' ? s.note.slice(0, 400) : null,
+    }
+    const { error } = await db.from('review_edits').update({ studio_send: send }).eq('id', row.id)
+    if (error) return NextResponse.json({ error: studioMissing(error.message) ? STUDIO_SQL : error.message }, { status: 500 })
+    return NextResponse.json({ ok: true, send })
   }
 
   if (action === 'finish') {

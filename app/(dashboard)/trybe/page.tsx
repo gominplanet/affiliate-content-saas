@@ -19,7 +19,7 @@ export default function TrybeOutreachPage() {
 
   // An admin viewing as Free sees TRYBE Free before it is live (lib/trybe-free).
   const access = tier !== null ? trybeAccess(tier, { adminPreview: getViewAsTier() !== null }) : null
-  if (access === 'full') return <TrybeOutreach v2={canUsePreview('trybe_v2', tier)} layout={canUsePreview('trybe_layout', tier)} topBoard={canUsePreview('trybe_top_board', tier)} trybeEdit={canUsePreview('trybe_edit', tier)} />
+  if (access === 'full') return <TrybeOutreach v2={canUsePreview('trybe_v2', tier)} layout={canUsePreview('trybe_layout', tier)} topBoard={canUsePreview('trybe_top_board', tier)} trybeEdit={canUsePreview('trybe_edit', tier)} studio={canUsePreview('trybe_studio', tier)} />
   // The Amazon plan: Find brands to browse, the rest shown as Pro (Seb, 2026-10-14).
   if (access === 'preview') return <TrybeOutreach preview />
   // TRYBE FREE (Seb, 2026-11-19): the same TRYBE as Pro, with what costs AI

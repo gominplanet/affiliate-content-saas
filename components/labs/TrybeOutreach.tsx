@@ -67,6 +67,7 @@ import { testCallOf } from '@/lib/trybe-test-call'
 import { DossierCtx, BrandName } from '@/components/labs/trybe-dossier-context'
 import TrybeWorking from '@/components/labs/TrybeWorking'
 import TrybeCreate from '@/components/labs/TrybeCreate'
+import TrybeStudio from '@/components/labs/TrybeStudio'
 import TrybeStage from '@/components/labs/TrybeStage'
 import TrybeChallenges from '@/components/labs/TrybeChallenges'
 import TrybeAds from '@/components/labs/TrybeAds'
@@ -141,7 +142,7 @@ type Access = 'checking' | 'granted' | 'not-granted' | 'no-scout' | 'old' | 'no-
 interface Directory { brands: number; listed?: number | null; firstCountAt?: string | null; joinedSinceFirst?: number | null; joinedStillListed?: number | null; withWebsite: number; websitesRead: number; lastCollectedAt: string | null; lastPartial?: { at: string; pages: number | null; totalPages: number | null } | null; categories: string[]; top100?: { at?: string; entries?: number; brands?: number; matched?: number } | null }
 /** The whole list is collected again after this long. */
 const RECOLLECT_MS = 20 * 3600_000
-export type Tab = 'home' | 'create' | 'upload' | 'find' | 'stars' | 'top100' | 'filmed' | 'queue' | 'sent' | 'inbox' | 'analytics' | 'submissions' | 'brands' | 'week' | 'changes' | 'working'
+export type Tab = 'home' | 'create' | 'upload' | 'find' | 'stars' | 'top100' | 'filmed' | 'queue' | 'sent' | 'inbox' | 'analytics' | 'submissions' | 'brands' | 'week' | 'changes' | 'working' | 'studio'
 /** One brand from MVP's copy of TRYBE, as the live list shows it. */
 interface LiveBrand {
   brand_id: string; name: string; website: string | null; categories: string[]; about: string | null
@@ -405,6 +406,8 @@ const TABS: Array<{ id: Tab; label: string; icon: LucideIcon; group: TabGroup; s
   { id: 'home', label: 'TRYBE home', icon: LayoutDashboard, group: 'brands', says: 'What needs you today, and what moved on TRYBE this week.' },
   { id: 'create', label: 'Make videos', icon: Clapperboard, group: 'create', says: 'Pick a brand, pick the product you have, and get ten shooting scripts that follow its brief.' },
   { id: 'upload', label: 'Upload videos', icon: UploadCloud, group: 'create', says: 'Add the videos you filmed and send each one to its TRYBE brand, without leaving this page.' },
+  // THE EDIT STUDIO (Seb, 2026-11-26; labs-preview trybe_studio).
+  { id: 'studio', label: 'Edit Studio', icon: Wand2, group: 'create', says: 'The brand\u2019s rules read from everything it gave you, your vertical takes edited as TRYBE ads with the options you tick, each checked against the rules, and sent in one press.' },
   // (How they win, once a team-only tab here, was removed 2026-10-18: its
   // words now show in Make videos, under Their best videos.)
   { id: 'week', label: 'This week', icon: CalendarDays, group: 'create', says: 'Your samples, ticked as they arrive, and your next 7 days planned from them.' },
@@ -578,7 +581,7 @@ function sentShows(r: { b: { name: string; status: string }; reply: string; rq?:
 }
 
 /** `free`: TRYBE Free (lib/trybe-free): the tabs in FREE_TABS open, the rest shown as Pro. */
-export default function TrybeOutreach({ preview = false, free = false, v2 = false, layout = false, topBoard = false, trybeEdit = false }: { preview?: boolean; free?: boolean; v2?: boolean; layout?: boolean; topBoard?: boolean; trybeEdit?: boolean } = {}) {
+export default function TrybeOutreach({ preview = false, free = false, v2 = false, layout = false, topBoard = false, trybeEdit = false, studio = false }: { preview?: boolean; free?: boolean; v2?: boolean; layout?: boolean; topBoard?: boolean; trybeEdit?: boolean; studio?: boolean } = {}) {
   // What TRYBE Free has left this month, from the server (null on Pro).
   const [freeInfo, setFreeInfo] = useState<{ scriptsLeft: number | null; scriptsMonthly: number; sendsPerDay: number } | null>(null)
   /** A tab that is Pro on this plan. */
@@ -620,9 +623,11 @@ export default function TrybeOutreach({ preview = false, free = false, v2 = fals
     if (t === 'home' && !v2) return
     // The Top 100 board only where Labs opens it.
     if (t === 'top100' && !topBoard) return
+    // The Edit Studio only where Labs opens it.
+    if (t === 'studio' && !studio) return
     if (proOnly(t as Tab)) { setLockedTab(t as Tab); return }
     setLockedTab(null); setTab(t as Tab)
-  }, [proOnly, v2, topBoard])
+  }, [proOnly, v2, topBoard, studio])
   // Switched off while on the home (View as a member): back to the page's usual first tab, never a blank page.
   useEffect(() => { if (!v2 && tab === 'home') setTab(preview ? 'find' : 'create') }, [v2, tab, preview])
   const [core, setCore] = useState('')
@@ -2678,7 +2683,7 @@ export default function TrybeOutreach({ preview = false, free = false, v2 = fals
       )}
 
       {v2
-        ? <TrybeNav tab={tab} queue={queue.length} unread={navUnread} go={go} layout={layout} topBoard={topBoard} locked={free ? proOnly : undefined} />
+        ? <TrybeNav tab={tab} queue={queue.length} unread={navUnread} go={go} layout={layout} topBoard={topBoard} studio={studio} locked={free ? proOnly : undefined} />
         : <TrybeMenu tab={tab} lockedTab={lockedTab} preview={preview} queue={queue} history={history} unread={navUnread} changes={changes} go={go} />}
       {/* Where you are, and what it is for. */}
       {(() => {
@@ -2735,6 +2740,7 @@ export default function TrybeOutreach({ preview = false, free = false, v2 = fals
       {tab === 'create' && <TrybeCreate canRead={canMyBrands} isAdmin={isAdmin} canEdit={trybeEdit} onFind={() => setTab('find')} start={scriptsFor} onStarted={() => setScriptsFor(null)}
         free={free ? { left: freeInfo?.scriptsLeft ?? null, monthly: freeInfo?.scriptsMonthly ?? FREE_SCRIPTS_MONTHLY, onUsed: () => void load() } : null} />}
 
+      {tab === 'studio' && studio && !lockedTab && <TrybeStudio canRead={canMyBrands} />}
       {tab === 'upload' && <TrybeUpload inbox={inbox} canChat={canInbox} onOpenChat={(id) => { setOpenChat(o => ({ id, n: (o?.n ?? 0) + 1 })); setTab('inbox') }} />}
 
       {tab === 'filmed' && !lockedTab && (
