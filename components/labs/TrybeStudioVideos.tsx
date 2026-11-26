@@ -18,6 +18,7 @@ import { toast } from 'sonner'
 import { Loader2, AlertTriangle, Check, Download, Film, UploadCloud, HardDrive, RotateCcw, Send, SlidersHorizontal } from 'lucide-react'
 import ComputerBatch from '@/components/review-editor/ComputerBatch'
 import DriveBatch from '@/components/review-editor/DriveBatch'
+import StudioMixer from '@/components/labs/StudioMixer'
 import type { DriveState } from '@/components/review-editor/drive-picker'
 import DropTrybePicker, { emptyChoice, choiceBlocker, type TrybeChoice } from '@/components/labs/DropTrybePicker'
 import { DEFAULT_SETTINGS, TITLE_LOOKS, TITLE_COLORS, cleanSettings, type EditSettings, type TitleLook, type TitleColor, type LogoSize } from '@/lib/review-edit'
@@ -161,7 +162,7 @@ export default function TrybeStudioVideos({ brand, brands, brandsError, canSend,
       <div className="flex flex-wrap items-start gap-2">
         <div className="flex-1 min-w-[16rem]">
           <h3 className="text-[17px] font-bold inline-flex items-center gap-1.5"><Film size={17} style={{ color: ACCENT }} /> Your {brand.name} videos</h3>
-          <p className="text-[12.5px]" style={soft}>Tick what you want, drop your vertical takes, and MVP edits each one as a TRYBE ad{hasRules ? `, checks it against ${brand.name}'s rules` : ''} and sends it to {brand.name} when you press Send.</p>
+          <p className="text-[12.5px]" style={soft}>Tick what you want, add your hooks, bodies, CTAs and B-roll, and MVP puts them together into every combination, edits each as a TRYBE ad{hasRules ? `, checks it against ${brand.name}'s rules` : ''} and sends it to {brand.name} when you press Send.</p>
         </div>
         {aw && <span className="rounded-full px-3 py-1 text-[12px] font-bold" style={allowance?.left === 0 ? { background: 'rgb(220 38 38 / 0.10)', color: RED } : { background: 'rgb(var(--brand-rgb) / 0.10)', color: ACCENT }}>{aw}</span>}
       </div>
@@ -187,11 +188,16 @@ export default function TrybeStudioVideos({ brand, brands, brandsError, canSend,
             <label className="inline-flex items-center gap-1.5">For <select value={look.title.seconds} onChange={(e) => setTitle({ seconds: Number(e.target.value) })} className="rounded-lg border bg-transparent px-2 py-1" style={{ borderColor: 'var(--border)' }}>{[2, 3, 4, 5, 6, 8, 0].map((n) => <option key={n} value={n}>{n === 0 ? 'the whole video' : `${n} seconds`}</option>)}</select></label>
           </div>
         )}
-        <p className="text-[12px] mt-2" style={soft}>Coming next in the studio: caption styles, music beds, end cues, the hook, body and CTA mixer, and a voiceover over your B-roll.</p>
+        <p className="text-[12px] mt-2" style={soft}>Coming next in the studio: caption styles, music beds, end cues and fine print, and a voiceover over your B-roll.</p>
       </div>
 
-      {/* THE TAKES: vertical only, from this computer or Google Drive. */}
-      <div className="flex flex-wrap gap-2">
+      {/* HOOKS × BODIES × CTAs, WITH B-ROLL (Seb, 2026-11-26): the studio's way in. */}
+      <StudioMixer brand={brand} settings={settings} trybeLeft={allowance?.left ?? null} onAdded={load} />
+
+      {/* A WHOLE VIDEO IN ONE TAKE: the review editor's own batch, vertical only. */}
+      <details className="rounded-xl border px-3 py-2" style={{ borderColor: 'var(--border)' }}>
+      <summary className="cursor-pointer text-[13px] font-semibold">A whole video filmed in one take? Add it here instead</summary>
+      <div className="flex flex-wrap gap-2 mt-2">
         <button className={btn} style={from === 'computer' ? { background: 'rgb(var(--brand-rgb) / 0.10)', color: ACCENT, border: '1px solid transparent' } : btnSoft} onClick={() => setFrom(from === 'computer' ? null : 'computer')} aria-expanded={from === 'computer'}><UploadCloud size={14} /> From this computer</button>
         <button className={btn} style={from === 'drive' ? { background: 'rgb(var(--brand-rgb) / 0.10)', color: ACCENT, border: '1px solid transparent' } : btnSoft} onClick={() => setFrom(from === 'drive' ? null : 'drive')} aria-expanded={from === 'drive'}><HardDrive size={14} /> From Google Drive</button>
       </div>
@@ -201,10 +207,11 @@ export default function TrybeStudioVideos({ brand, brands, brandsError, canSend,
         : drive.connected
           ? <DriveBatch drive={drive} loadDrive={loadDrive} settings={settings} onAdded={load} left={null} trybeLeft={allowance?.left ?? null} studio={{ brandId: brand.id }} />
           : <p className="text-[13px]" style={soft}>{drive.error ? `${drive.error} ` : ''}Google Drive is not connected yet. <a href="/review-editor" className="font-semibold underline" style={{ color: ACCENT }}>Connect it in the Review Editor</a>, then come back here.</p>)}
+      </details>
 
       {err && <p className="text-[13px] inline-flex items-start gap-1.5" style={{ color: AMBER }}><AlertTriangle size={14} className="mt-0.5 shrink-0" /> {err} <button onClick={() => void load()} className="ml-1 inline-flex items-center gap-1 font-semibold" style={{ color: ACCENT }}><RotateCcw size={12} /> Try again</button></p>}
       {!edits && !err && <p className="text-[13px] inline-flex items-center gap-1.5" style={soft}><Loader2 size={13} className="animate-spin" /> Reading your {brand.name} videos...</p>}
-      {edits && edits.length === 0 && <p className="text-[13px]" style={soft}>No {brand.name} videos yet. Drop your vertical takes above.</p>}
+      {edits && edits.length === 0 && <p className="text-[13px]" style={soft}>No {brand.name} videos yet. Add your hooks and bodies above, then press Process.</p>}
 
       {edits && edits.some((e) => canSendNow(e)) && (
         <div className="rounded-xl border p-3 space-y-2" style={{ borderColor: 'var(--border)' }}>

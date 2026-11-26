@@ -560,10 +560,20 @@ export async function finishMaking(db: Db, id: string, userId: string, body: Rec
 }
 
 /** Delete a video's raw uploads now. */
-export async function deleteRaw(db: Db, row: Pick<EditRow, 'id' | 'user_id' | 'review_src' | 'broll_src' | 'raw_deleted_at'>): Promise<void> {
+export async function deleteRaw(db: Db, row: Pick<EditRow, 'id' | 'user_id' | 'review_src' | 'broll_src' | 'raw_deleted_at' | 'studio_brand_id'>): Promise<void> {
   if (row.raw_deleted_at) return
   // Only takes uploaded to MVP: a Drive file is the creator's, never touched.
-  const paths = [...takeFiles(row.review_src), ...takeFiles(row.broll_src)].map((s) => (s?.kind === 'upload' ? ownPath(s.url, row.user_id) : null)).filter((p): p is string => !!p)
+  let paths = [...takeFiles(row.review_src), ...takeFiles(row.broll_src)].map((s) => (s?.kind === 'upload' ? ownPath(s.url, row.user_id) : null)).filter((p): p is string => !!p)
+  // A STUDIO CLIP IS SHARED (lib/studio-mix): one hook is in many videos, so a
+  // file still in another studio video not finished stays until that one is.
+  // When MVP cannot tell, nothing is deleted now; the next pass tries again.
+  if (paths.length && row.studio_brand_id) {
+    const { data: others, error } = await db.from('review_edits').select('id, review_src, broll_src').eq('user_id', row.user_id).not('studio_brand_id', 'is', null).is('raw_deleted_at', null).neq('id', row.id).limit(2000)
+    if (error) return
+    const inUse = new Set<string>()
+    for (const o of (others ?? []) as Array<Pick<EditRow, 'review_src' | 'broll_src'>>) for (const f of [...takeFiles(o.review_src), ...takeFiles(o.broll_src)]) { const p = f?.kind === 'upload' ? ownPath(f.url, row.user_id) : null; if (p) inUse.add(p) }
+    paths = paths.filter((p) => !inUse.has(p))
+  }
   if (paths.length) await db.storage.from(EDIT_BUCKET).remove(paths)
   await set(db, row.id, { raw_deleted_at: now() })
 }

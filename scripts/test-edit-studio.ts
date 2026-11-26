@@ -13,6 +13,7 @@ import { readFileSync, existsSync } from 'node:fs'
 import { hashText, upsertSource, sheetInput, readSheet, readQuestions, sheetFromReply, sheetToCampaign, emptySheet, sheetCount, SHEET_SYSTEM, MAX_HISTORY, type RuleSource, type OldSource } from '../lib/studio-rules'
 import { studioStage, canSendNow, needsConfirm, studioFileName, allowanceWords, outputOf, type StudioEdit } from '../lib/studio'
 import { checkCut } from '../lib/trybe-edit'
+import { mixCombos, mixCounts, brollFor, mixLabel } from '../lib/studio-mix'
 import { canUsePreview } from '../lib/labs-preview'
 import type { Word } from '../lib/review-edit'
 
@@ -80,6 +81,21 @@ const src = (id: string, text: string, readAt = '2026-11-20T00:00:00.000Z'): Rul
   check('the finished file is found', outputOf(e({}))?.seconds === 30 && outputOf(e({ outputs: null })) === null)
 }
 
+// 4b. Hooks × bodies × CTAs (Seb, 2026-11-26: "I'm uploading 3 different hooks, and then ... 3 different
+//     bodies, and then ... 3 different CTAs, and then I could upload some B-roll ... and then having MVP put
+//     together everything")
+{
+  check('3 hooks, 3 bodies and 3 CTAs make 27, 9 or 3 videos', JSON.stringify(mixCounts(3, 3, 3)) === JSON.stringify({ all: 27, pairs: 9, once: 3 }))
+  const pairs = mixCombos(3, 3, 3, 'pairs')
+  check('each hook with each body once, the CTAs taking turns', new Set(pairs.map((c) => `${c.h}${c.b}`)).size === 9 && [0, 1, 2].every((c) => pairs.filter((x) => x.c === c).length === 3))
+  const once = mixCombos(3, 2, 4, 'once')
+  check('each clip once: every clip is used', once.length === 4 && new Set(once.map((c) => c.h)).size === 3 && new Set(once.map((c) => c.b)).size === 2 && new Set(once.map((c) => c.c)).size === 4)
+  check('no CTAs: the body ends the video', mixCombos(2, 2, 0, 'all').length === 4 && mixCombos(2, 2, 0, 'all').every((c) => c.c === null) && mixLabel(0, 1, null) === 'H1 · B2')
+  check('each video is named by what is in it', mixCombos(3, 3, 3, 'all')[5].label === 'H1 · B2 · C3')
+  check('no hook or no body makes nothing', mixCombos(0, 3, 3, 'all').length === 0 && mixCombos(3, 0, 3, 'pairs').length === 0)
+  check('B-roll: all of it when it fits, else 6 taking turns', JSON.stringify(brollFor(0, 4)) === '[0,1,2,3]' && brollFor(0, 10).length === 6 && JSON.stringify(brollFor(1, 10)) === '[6,7,8,9,0,1]' && brollFor(3, 0).length === 0)
+}
+
 // 5. Wired in
 const API = read('app/api/labs/trybe-studio/route.ts')
 check('the rules API is for the team first', /canUsePreview\('trybe_studio'/.test(API) && canUsePreview('trybe_studio', 'admin') && !canUsePreview('trybe_studio', 'pro'))
@@ -111,6 +127,13 @@ check('TRYBE\'s brief is read again only when it changed', /kept\.hash !== hashT
 check('questions from disagreeing sources go to the creator', /The sources disagree\. You decide:/.test(RULES))
 check('a tab under Videos, only where Labs opens it', /\{ label: 'Edit Studio', icon: Wand2, tabs: \['studio'\] \}/.test(read('components/labs/TrybeNav.tsx')) && /\(studio \|\| !it\.tabs\.includes\('studio'\)\)/.test(read('components/labs/TrybeNav.tsx')) && /tab === 'studio' && studio && !lockedTab/.test(read('components/labs/TrybeOutreach.tsx')) && /studio=\{canUsePreview\('trybe_studio', tier\)\}/.test(read('app/(dashboard)/trybe/page.tsx')))
 for (const f of ['components/labs/TrybeStudio.tsx', 'components/labs/TrybeStudioRules.tsx', 'components/labs/TrybeStudioVideos.tsx', 'lib/studio.ts']) check(`${f}: no dashes in what the creator reads`, !/[–—]/.test(read(f).replace(/\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '')))
+const MIX = read('components/labs/StudioMixer.tsx')
+check('the mixer has four columns, vertical only', /title: 'Hooks'/.test(MIX) && /title: 'Bodies'/.test(MIX) && /title: 'CTAs'/.test(MIX) && /title: 'B-roll'/.test(MIX) && /filmed sideways\. The Edit Studio takes vertical 9:16 video only\./.test(MIX))
+check('each clip is uploaded once, then each combination is one video: hook, body and CTA joined, B-roll over it', /const up = new Map/.test(MIX) && /review: take\(parts\)/.test(MIX) && /broll: take\(roll\)/.test(MIX) && /studio: \{ brandId: brand\.id \}/.test(MIX) && /more: fs\.slice\(1\)/.test(MIX))
+check('never more videos than the TRYBE ad edits left, and said', /combos\.slice\(0, Math\.max\(0, trybeLeft\)\)/.test(MIX) && /only the first \{trybeLeft\} of these/.test(MIX))
+check('the mixer comes first in the studio', /<StudioMixer brand=\{brand\}/.test(VID) && VID.indexOf('<StudioMixer') < VID.indexOf('A whole video filmed in one take'))
+check('a clip shared by many videos stays until every one of them is done', /A STUDIO CLIP IS SHARED/.test(SRV) && /paths = paths\.filter\(\(p\) => !inUse\.has\(p\)\)/.test(SRV) && /if \(error\) return/.test(SRV))
+check('no dashes in the mixer', !/[–—]/.test(MIX.replace(/\/\/.*$/gm, '')))
 const MIG = 'supabase/migrations/476_edit_studio.sql'
 check('migration 476: the rules table and the two video columns, safe to run twice', existsSync(MIG) && /create table if not exists public\.trybe_brand_rules/.test(read(MIG)) && /add column if not exists studio_brand_id text/.test(read(MIG)) && /add column if not exists studio_send jsonb/.test(read(MIG)))
 
