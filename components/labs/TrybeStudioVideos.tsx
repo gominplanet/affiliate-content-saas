@@ -28,7 +28,7 @@ import { DEFAULT_SETTINGS, TITLE_LOOKS, TITLE_COLORS, cleanSettings, type EditSe
 import { browserHttp, sendDropToTrybe } from '@/lib/drop-run'
 import { requestTrybeApi, requestTrybePutFile } from '@/lib/extension-frame'
 import type { MyBrand } from '@/lib/trybe-mybrands'
-import { studioStage, canSendNow, needsConfirm, outputOf, studioFileName, allowanceWords, type StudioEdit, type StudioTone } from '@/lib/studio'
+import { studioStage, canSendNow, needsConfirm, outputOf, studioFileName, allowanceWords, clipWord, byLabel, type StudioEdit, type StudioTone } from '@/lib/studio'
 
 const ACCENT = 'var(--accent)'
 const GREEN = '#16A34A'
@@ -97,6 +97,20 @@ export default function TrybeStudioVideos({ brand, brands, brandsError, canSend,
   }, [brand.id, project?.id]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { setEdits(null); void load() }, [load])
   const busy = (edits ?? []).some((e) => e.status !== 'done' && e.status !== 'failed')
+  // CLIP FIRST (lib/studio-clips): the clips each video is put together from, and the videos.
+  const clipRows = byLabel((edits ?? []).filter((e) => e.studio?.role === 'clip'))
+  const videos = (edits ?? []).filter((e) => e.studio?.role !== 'clip')
+  const [retrying, setRetrying] = useState<string | null>(null)
+  const retryClip = async (e: StudioEdit) => {
+    setRetrying(e.id)
+    try {
+      const r = await fetch('/api/review-edit', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'retry', id: e.id }), signal: AbortSignal.timeout(30_000) })
+      const d = await r.json().catch(() => ({})) as { error?: string }
+      if (!r.ok) toast.error(d.error || `MVP answered ${r.status}.`)
+      await load()
+    } catch { toast.error('No answer from MVP. Check your connection.') }
+    setRetrying(null)
+  }
   useEffect(() => {
     if (!busy) return
     const t = setInterval(() => { void load() }, 20_000)
@@ -221,7 +235,7 @@ export default function TrybeStudioVideos({ brand, brands, brandsError, canSend,
 
       {/* HOOKS × BODIES × CTAs, WITH B-ROLL (Seb, 2026-11-26): the studio's way in. */}
       {/* MUSIC (Seb, 2026-11-27: "this is also where we choose if we want music or not and what type of music"). */}
-      <StudioMusic picked={music} onPick={(m) => void saveOptions({ settings, music: m })} disabled={!project} />
+      <StudioMusic picked={music} onPick={(m) => void saveOptions({ settings, music: m })} disabled={!project} brandId={brand.id} brandName={brand.name} />
 
       {/* VOICEOVER SETS (Seb, 2026-11-27: "we need to update.."): your voice for each part, your B-roll for the picture. */}
       {voiceover && <p className="text-[12.5px]" style={soft}>This set is {VIDEO_TYPES.voiceover.label.toLowerCase()}: add your recorded voice for each hook, body and CTA, and the B-roll that makes the picture. To make talking to camera videos instead, pick {VIDEO_TYPES.talking.label} in the Scripts step.</p>}
@@ -246,7 +260,31 @@ export default function TrybeStudioVideos({ brand, brands, brandsError, canSend,
       {!edits && !err && <p className="text-[13px] inline-flex items-center gap-1.5" style={soft}><Loader2 size={13} className="animate-spin" /> Reading your {brand.name} videos...</p>}
       {edits && edits.length === 0 && <p className="text-[13px]" style={soft}>No {brand.name} videos yet. Add your hooks and bodies above, then press Process.</p>}
 
-      {edits && edits.some((e) => canSendNow(e)) && (
+      {/* THE CLIPS (clip first): each edited once, every video below put together from them. */}
+      {clipRows.length > 0 && (
+        <div className="rounded-xl border p-3 space-y-2" style={{ borderColor: 'var(--border)' }}>
+          <p className="text-[13px] font-semibold">Clips: {clipRows.filter((c) => c.status === 'done').length} of {clipRows.length} edited{clipRows.some((c) => c.status === 'failed') ? `, ${clipRows.filter((c) => c.status === 'failed').length} not` : ''}</p>
+          <p className="text-[12px]" style={soft}>Each hook, body and CTA is edited once, and every video below is put together from them. To change a clip&rsquo;s cuts, open it in the <a href="/review-editor" className="font-semibold underline" style={{ color: ACCENT }}>Review Editor</a> and press Make it again: every video with it is put together again by itself, except one already sent.</p>
+          <ul className="flex flex-wrap gap-2">
+            {clipRows.map((c) => {
+              const w = clipWord(c.status)
+              const out = outputOf(c)
+              return (
+                <li key={c.id} className="rounded-lg border px-2 py-1 text-[12.5px] inline-flex items-center gap-1.5" style={{ borderColor: w.tone === 'bad' ? RED : 'var(--border)' }} title={c.note || undefined}>
+                  <span className="font-bold" style={{ color: ACCENT }}>{c.studio?.part}</span>
+                  {w.tone === 'wait' && <Loader2 size={11} className="animate-spin" style={soft} />}
+                  <span style={{ color: TONE[w.tone] }}>{w.word}</span>
+                  {out && <a href={out.url} target="_blank" rel="noopener noreferrer" className="font-semibold" style={{ color: ACCENT }}>Watch</a>}
+                  {c.status === 'failed' && <button onClick={() => void retryClip(c)} disabled={retrying === c.id} className="font-semibold underline" style={{ color: ACCENT }}>{retrying === c.id ? 'Trying' : 'Try again'}</button>}
+                </li>
+              )
+            })}
+          </ul>
+          {clipRows.filter((c) => c.status === 'failed' && c.note).map((c) => <p key={c.id} className="text-[12.5px]" style={{ color: RED }}>{c.studio?.part}: {c.note}</p>)}
+        </div>
+      )}
+
+      {videos.some((e) => canSendNow(e)) && (
         <div className="rounded-xl border p-3 space-y-2" style={{ borderColor: 'var(--border)' }}>
           <p className="text-[13px] font-semibold inline-flex items-center gap-1.5"><Send size={14} style={{ color: ACCENT }} /> How they go to {brand.name}</p>
           {!canSend
@@ -255,22 +293,22 @@ export default function TrybeStudioVideos({ brand, brands, brandsError, canSend,
         </div>
       )}
 
-      {edits && edits.length > 0 && (
+      {videos.length > 0 && (
         <ul className="space-y-2">
-          {edits.map((e, i) => {
+          {videos.map((e, i) => {
             const st = studioStage(e, brand.name)
             const out = outputOf(e)
             const now = sending[e.id]
             return (
               <li key={e.id} className="rounded-xl border px-3 py-2.5 space-y-1.5" style={{ borderColor: st.tone === 'bad' ? RED : 'var(--border)' }}>
                 <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                  <span className="text-[14px] font-semibold">{e.name || `Video ${edits.length - i}`}</span>
+                  <span className="text-[14px] font-semibold">{e.name || `Video ${videos.length - i}`}</span>
                   <span className="text-[11.5px] font-bold rounded-full px-2 py-0.5" style={{ background: 'var(--surface-2)', color: TONE[st.tone] }}>{now ?? st.word}</span>
                   {out && <span className="text-[12px] tabular-nums" style={soft}>{Math.round(out.seconds)}s</span>}
                   <span className="ml-auto inline-flex items-center gap-3">
                     {out && <a href={out.url} target="_blank" rel="noopener noreferrer" className="text-[12.5px] font-semibold inline-flex items-center gap-1" style={{ color: ACCENT }}><Film size={12} /> Watch</a>}
-                    {out && <a href={out.url} download={studioFileName(brand.name, e.name, edits.length - i)} className="text-[12.5px] font-semibold inline-flex items-center gap-1" style={{ color: ACCENT }}><Download size={12} /> Download</a>}
-                    {canSendNow(e) && canSend && <button disabled={!!now} onClick={() => void sendOne(e, edits.length - i)} className={btn} style={{ background: ACCENT, color: '#fff', padding: '6px 12px' }}>{now ? <Loader2 size={13} className="animate-spin" /> : <Send size={13} />} Send to {brand.name}</button>}
+                    {out && <a href={out.url} download={studioFileName(brand.name, e.name, videos.length - i)} className="text-[12.5px] font-semibold inline-flex items-center gap-1" style={{ color: ACCENT }}><Download size={12} /> Download</a>}
+                    {canSendNow(e) && canSend && <button disabled={!!now} onClick={() => void sendOne(e, videos.length - i)} className={btn} style={{ background: ACCENT, color: '#fff', padding: '6px 12px' }}>{now ? <Loader2 size={13} className="animate-spin" /> : <Send size={13} />} Send to {brand.name}</button>}
                   </span>
                 </div>
                 {e.status !== 'done' && e.note && <p className="text-[12.5px] inline-flex items-center gap-1.5" style={{ color: e.status === 'failed' ? RED : 'var(--text-3)' }}>{e.status !== 'failed' && <Loader2 size={12} className="animate-spin" />} {e.note}</p>}
@@ -286,7 +324,9 @@ export default function TrybeStudioVideos({ brand, brands, brandsError, canSend,
                     ))}
                   </ul>
                 )}
-                {e.status === 'done' && <a href="/review-editor" className="text-[12px] font-semibold" style={{ color: ACCENT }}>Change the cuts in the Review Editor</a>}
+                {e.status === 'done' && (e.studio?.role === 'combo'
+                  ? <p className="text-[12px]" style={soft}>To change its cuts, change its clips in the Review Editor; it is put together again by itself.</p>
+                  : <a href="/review-editor" className="text-[12px] font-semibold" style={{ color: ACCENT }}>Change the cuts in the Review Editor</a>)}
               </li>
             )
           })}

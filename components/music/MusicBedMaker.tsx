@@ -15,6 +15,8 @@ import { BED_MODELS, DEFAULT_MODEL, MOODS, TEMPOS, STYLES, MAX_MOODS, MAX_STYLES
 interface Bed {
   id: string; model: BedModel; moods: string[]; tempo: string | null; styles: string[]; seconds: number; prompt: string
   url: string | null; voice_check: VoiceCheck; heard: string[]; status: 'preview' | 'accepted' | 'rejected'; error: string | null; created_at: string
+  /** In the MVP music library (migration 478); undefined before it. */
+  shared?: boolean
 }
 
 const GREEN = '#16A34A'
@@ -58,7 +60,7 @@ function VoiceLine({ bed }: { bed: Bed }) {
   return <p className="text-[12.5px] inline-flex items-start gap-1.5" style={{ color }}><Icon size={13} className="mt-0.5 shrink-0" />{voiceWords(bed.voice_check, bed.heard, bed.error)}</p>
 }
 
-function BedCard({ bed, busy, onAct, showPrompt }: { bed: Bed; busy: boolean; onAct: (action: 'accept' | 'reject' | 'check', id: string) => void; showPrompt: boolean }) {
+function BedCard({ bed, busy, onAct, showPrompt, onShare }: { bed: Bed; busy: boolean; onAct: (action: 'accept' | 'reject' | 'check', id: string) => void; showPrompt: boolean; onShare?: (id: string, shared: boolean) => void }) {
   const words = [...bed.moods.map((m) => labelOf(MOODS, m)), labelOf(TEMPOS, bed.tempo), ...bed.styles.map((s) => labelOf(STYLES, s))].filter(Boolean).join(' · ')
   return (
     <div className="rounded-2xl p-4 flex flex-col gap-2.5" style={{ border: `1px solid ${bed.status === 'accepted' ? GREEN : 'var(--border)'}`, background: 'var(--surface)' }}>
@@ -74,6 +76,13 @@ function BedCard({ bed, busy, onAct, showPrompt }: { bed: Bed; busy: boolean; on
           {bed.voice_check === 'unchecked' && <button type="button" disabled={busy} onClick={() => onAct('check', bed.id)} className="inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-[13px] font-semibold disabled:opacity-40" style={{ border: `1px solid ${AMBER}`, color: AMBER }}><ShieldCheck size={14} /> Check it again</button>}
           <button type="button" disabled={busy} onClick={() => onAct('reject', bed.id)} className="inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-[13px] font-semibold disabled:opacity-40" style={{ border: '1px solid var(--border)', color: 'var(--text)' }}><X size={14} /> Not this one</button>
         </div>
+      )}
+      {/* THE MVP MUSIC LIBRARY (migration 478): an accepted track is offered to other members, never with who made it. */}
+      {bed.status === 'accepted' && typeof bed.shared === 'boolean' && onShare && (
+        <label className="inline-flex items-center gap-2 text-[12.5px]" style={{ color: 'var(--text-soft)' }}>
+          <input type="checkbox" checked={bed.shared} disabled={busy} onChange={(e) => onShare(bed.id, e.target.checked)} style={{ accentColor: 'var(--accent)' }} />
+          {bed.shared ? 'In the MVP music library: other members can use it in their videos. It never says who made it.' : 'Kept to you: not in the MVP music library.'}
+        </label>
       )}
       {showPrompt && <details className="text-[12px]" style={{ color: 'var(--text-soft)' }}><summary className="cursor-pointer">What MVP asked Stable Audio for</summary><p className="mt-1">{bed.prompt}</p></details>}
     </div>
@@ -96,9 +105,15 @@ export default function MusicBedMaker({ showEngine = false, defaultSeconds = 30 
   const [making, setMaking] = useState(false)
   const [busy, setBusy] = useState<string | null>(null)
   const [err, setErr] = useState<string | null>(null)
+  // The month's new tracks (lib/music-bed MUSIC_TRACKS_MONTHLY_CAP).
+  const [allow, setAllow] = useState<{ left: number | null; words: string } | null>(null)
 
   const load = useCallback(async () => {
-    try { const j = await call(null, 30_000); setBeds(j.beds || []); setLoadErr(null) } catch (e) { setLoadErr(e instanceof Error ? e.message : 'No answer') }
+    try {
+      const j = await call(null, 30_000)
+      setBeds(j.beds || []); setLoadErr(null)
+      if (j.allowance) setAllow({ left: j.allowance.left ?? null, words: String(j.allowanceWords || '') })
+    } catch (e) { setLoadErr(e instanceof Error ? e.message : 'No answer') }
   }, [])
   useEffect(() => { void load() }, [load])
 
@@ -112,10 +127,18 @@ export default function MusicBedMaker({ showEngine = false, defaultSeconds = 30 
     try {
       const j = await call({ action: 'make', moods, tempo, styles, seconds, model }, 240_000)
       setBeds((b) => [j.bed as Bed, ...(b || [])])
+      void load()
     } catch (e) {
       setErr(e instanceof Error ? (/timeout|abort/i.test(e.message) ? 'No answer in four minutes. Your list below shows whether it was made.' : e.message) : 'No answer')
       void load()
     } finally { setMaking(false) }
+  }
+
+  async function share(id: string, shared: boolean) {
+    setBusy(id); setErr(null)
+    try { const j = await call({ action: 'share', id, shared }, 30_000); setBeds((b) => (b || []).map((x) => (x.id === id ? (j.bed as Bed) : x))) }
+    catch (e) { setErr(e instanceof Error ? e.message : 'No answer') }
+    finally { setBusy(null) }
   }
 
   async function act(action: 'accept' | 'reject' | 'check', id: string) {
@@ -151,11 +174,12 @@ export default function MusicBedMaker({ showEngine = false, defaultSeconds = 30 
           <p className="text-[12.5px] -mt-3" style={{ color: 'var(--text-soft)' }}>{BED_MODELS[model].says}. Up to {BED_MODELS[model].maxSec} seconds.</p>
         )}
         <div className="flex flex-wrap items-center gap-3">
-          <button type="button" onClick={() => void make()} disabled={making} className="inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-[14px] font-semibold disabled:opacity-60" style={{ background: 'var(--accent)', color: '#fff' }}>
+          <button type="button" onClick={() => void make()} disabled={making || allow?.left === 0} className="inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-[14px] font-semibold disabled:opacity-60" style={{ background: 'var(--accent)', color: '#fff' }}>
             {making ? <Loader2 size={15} className="animate-spin" /> : latest ? <RefreshCw size={15} /> : <Music2 size={15} />} {making ? 'Making your track' : latest ? 'Make another' : 'Make a preview'}
           </button>
           <span className="text-[12.5px]" style={{ color: 'var(--text-soft)' }}>{making ? 'Usually 10 to 40 seconds, then MVP checks it for voices.' : 'Always instrumental. Every track is checked for voices before you hear it.'}</span>
         </div>
+        {allow?.words && <p className="text-[12.5px]" style={{ color: allow.left === 0 ? AMBER : 'var(--text-soft)' }}>{allow.words}</p>}
         {err && <p className="text-[13px] inline-flex items-start gap-1.5" style={{ color: RED }}><AlertTriangle size={14} className="mt-0.5 shrink-0" /> {err}</p>}
       </section>
 
@@ -169,7 +193,7 @@ export default function MusicBedMaker({ showEngine = false, defaultSeconds = 30 
       {accepted.length > 0 && (
         <section className="flex flex-col gap-2">
           <h2 className="text-[16px] font-bold" style={{ color: 'var(--text)' }}>Accepted</h2>
-          {accepted.map((b) => <BedCard key={b.id} bed={b} busy={busy === b.id} onAct={act} showPrompt={showEngine} />)}
+          {accepted.map((b) => <BedCard key={b.id} bed={b} busy={busy === b.id} onAct={act} showPrompt={showEngine} onShare={(id, on) => void share(id, on)} />)}
         </section>
       )}
       {earlier.length > 0 && (

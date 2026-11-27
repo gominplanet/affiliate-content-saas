@@ -17,6 +17,9 @@ import { mixCombos, mixCounts, brollFor, mixLabel } from '../lib/studio-mix'
 import { scriptsSystem, scriptsInput, parseScripts, checkScripts, sheetText, secondsOf, VIDEO_TYPES } from '../lib/studio-scripts'
 import { canUsePreview } from '../lib/labs-preview'
 import { musicAfterAccept, musicAfterFinish, musicWords, voiceoverWords, VOICE_NAME } from '../lib/studio-render'
+import { neededClips, comboLabels, clipBroll, clipSettings, comboState, remakeOnClip, joinWords } from '../lib/studio-clips'
+import { musicCapFor, musicAllowanceWords, brandUseWords, MUSIC_TRACKS_MONTHLY_CAP } from '../lib/music-bed'
+import { DEFAULT_SETTINGS } from '../lib/review-edit'
 import type { Word } from '../lib/review-edit'
 
 const failures: string[] = []
@@ -134,7 +137,7 @@ check('a studio video carries its brand, and is listed by it', /studio_brand_id:
 check('what TRYBE said is kept on the video', /action === 'studio_sent'/.test(RE) && /studio_send: send/.test(RE))
 const SRV = read('lib/review-edit-server.ts')
 check('the studio takes vertical 9:16 only, said in words', /if \(row\.studio_brand_id && !upright\) return await fail\('The Video Builder takes vertical 9:16 video only/.test(SRV))
-check('every studio video is checked against its brand\'s rules when it is made', /else if \(row\.studio_brand_id\)/.test(SRV) && /campaign: rules/.test(SRV))
+check('every studio video is checked against its brand\'s rules when it is made, a clip-first one as a whole', /else if \(row\.studio_brand_id && row\.studio_role !== 'clip'\)/.test(SRV) && /campaign: rules/.test(SRV) && /checkCut\(\{ words: all\.words, seconds: all\.seconds, campaign: rules \}\)/.test(SRV))
 for (const f of ['components/review-editor/ComputerBatch.tsx', 'components/review-editor/DriveBatch.tsx']) {
   const src2 = read(f)
   check(`${f}: sideways files are left out and named before uploading`, /filmed sideways\. The Video Builder takes vertical 9:16 video only\./.test(src2) && /studio: \{ brandId: studio\.brandId \}/.test(src2))
@@ -154,7 +157,7 @@ check('a tab under Videos, only where Labs opens it', /\{ label: 'Video Builder'
 for (const f of ['components/labs/TrybeStudio.tsx', 'components/labs/TrybeStudioRules.tsx', 'components/labs/TrybeStudioVideos.tsx', 'lib/studio.ts']) check(`${f}: no dashes in what the creator reads`, !/[–—]/.test(read(f).replace(/\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '')))
 const MIX = read('components/labs/StudioMixer.tsx')
 check('the mixer has four columns, vertical only', /title: 'Hooks'/.test(MIX) && /title: 'Bodies'/.test(MIX) && /title: 'CTAs'/.test(MIX) && /title: 'B-roll'/.test(MIX) && /filmed sideways\. The Video Builder takes vertical 9:16 video only\./.test(MIX))
-check('each clip is uploaded once, then each combination is one video: hook, body and CTA joined, B-roll over it', /const up = new Map/.test(MIX) && /review: take\(parts\)/.test(MIX) && /broll: take\(roll\)/.test(MIX) && /studio: \{ brandId: brand\.id, /.test(MIX) && /more: fs\.slice\(1\)/.test(MIX))
+check('each file is uploaded once, then one call makes the clips and the videos from them', /const up = new Map/.test(MIX) && /action: 'studio_set'/.test(MIX) && /clips: need\.map\(/.test(MIX) && /combos: list\.map\(\(cb\) => \(\{ label: cb\.label, parts: comboLabels\(cb\) \}\)\)/.test(MIX) && /studio: \{ brandId: brand\.id, /.test(MIX) && /more: fs\.slice\(1\)/.test(MIX))
 check('never more videos than the TRYBE ad edits left, and said', /combos\.slice\(0, Math\.max\(0, trybeLeft\)\)/.test(MIX) && /only the first \{trybeLeft\} of these/.test(MIX))
 check('the mixer comes first in the studio', /<StudioMixer [^>]*brand=\{brand\}/.test(VID) && VID.indexOf('<StudioMixer') < VID.indexOf('A whole video filmed in one take'))
 check('a clip shared by many videos stays until every one of them is done', /A STUDIO CLIP IS SHARED/.test(SRV) && /paths = paths\.filter\(\(p\) => !inUse\.has\(p\)\)/.test(SRV) && /if \(error\) return/.test(SRV))
@@ -201,6 +204,58 @@ check('migration 477: the sets, and the video column, safe to run twice', exists
 for (const f of ['components/labs/TrybeStudioScripts.tsx', 'components/labs/StudioMusic.tsx', 'lib/studio-scripts.ts', 'lib/studio-render.ts']) check(`${f}: no dashes in what the creator reads`, !/[–—]/.test(read(f).replace(/\/\/.*$/gm, '')))
 const MIG = 'supabase/migrations/476_edit_studio.sql'
 check('migration 476: the rules table and the two video columns, safe to run twice', existsSync(MIG) && /create table if not exists public\.trybe_brand_rules/.test(read(MIG)) && /add column if not exists studio_brand_id text/.test(read(MIG)) && /add column if not exists studio_send jsonb/.test(read(MIG)))
+
+// CLIP FIRST (Seb, 2026-11-27: "start the faster clip first method. So we can render faster")
+{
+  const combos = mixCombos(3, 3, 3, 'all')
+  const need = neededClips(combos)
+  check('clip first: 27 videos from 3 hooks, 3 bodies and 3 CTAs need 9 clips, each once, in column order', combos.length === 27 && need.length === 9 && need.map((c) => c.label).join(' ') === 'H1 H2 H3 B1 B2 B3 C1 C2 C3')
+  check('clip first: a clip no chosen video uses is not edited', neededClips(mixCombos(3, 3, 3, 'once')).length <= 9 && neededClips([{ h: 0, b: 1, c: null }]).map((c) => c.label).join(' ') === 'H1 B2')
+  check('clip first: a video is its hook, body and CTA, in that order', comboLabels({ h: 1, b: 0, c: 2 }).join(' ') === 'H2 B1 C3' && comboLabels({ h: 0, b: 0, c: null }).join(' ') === 'H1 B1')
+  check('clip first: a talking hook stays on the face; bodies and CTAs get B-roll, taking turns', clipBroll(0, 'hook', 4, false).length === 0 && clipBroll(3, 'body', 4, false).length > 0 && clipBroll(3, 'body', 4, false)[0] !== clipBroll(4, 'body', 4, false)[0] && clipBroll(0, 'body', 0, false).length === 0)
+  check('clip first: every voiceover clip has B-roll, its picture', clipBroll(0, 'hook', 2, true).length > 0)
+  const t = { ...DEFAULT_SETTINGS, title: { ...DEFAULT_SETTINGS.title, on: true, text: 'Hi', seconds: 4 } }
+  check('clip first: the title is on the hook only, unless it is on for the whole video', clipSettings(t, 'hook').title.on && !clipSettings(t, 'body').title.on && !clipSettings(t, 'cta').title.on && clipSettings({ ...t, title: { ...t.title, seconds: 0 } }, 'cta').title.on)
+  const cs = (label: string, status: string, out = status === 'done', note: string | null = null) => ({ label, status, note, hasOutput: out })
+  check('clip first: a video is put together once every clip is edited', comboState([cs('H1', 'done'), cs('B1', 'done')]).state === 'ready')
+  const w = comboState([cs('H1', 'done'), cs('B1', 'making'), cs('C1', 'queued')])
+  check('clip first: a video waiting says on what', w.state === 'waiting' && 'note' in w && w.note === 'Waiting for its clips: H1 edited, B1 being made, C1 in line.')
+  const f = comboState([cs('H1', 'done'), cs('B2', 'failed', false, 'MVP heard almost nothing in your review take.')])
+  check('clip first: a clip that failed stops its videos, named, with why and what to press', f.state === 'failed' && 'note' in f && /^B2 could not be edited: MVP heard almost nothing in your review take\. Press Try again on B2 below/.test(f.note))
+  check('clip first: a removed clip stops its video, said', comboState([cs('H1', 'done'), null]).state === 'failed')
+  check('clip first: a clip done but without its file is not taken for ready', comboState([cs('H1', 'done', false)]).state === 'waiting')
+  check('clip first: a clip made again puts its videos together again, never one sent', remakeOnClip({ status: 'done', made_at: '2026-11-27T10:00:00Z' }, '2026-11-27T11:00:00Z') && !remakeOnClip({ status: 'done', made_at: '2026-11-27T10:00:00Z', studio_send: { state: 'in_review' } }, '2026-11-27T11:00:00Z') && !remakeOnClip({ status: 'done', made_at: '2026-11-27T12:00:00Z' }, '2026-11-27T11:00:00Z') && !remakeOnClip({ status: 'waiting', made_at: null }, '2026-11-27T11:00:00Z'))
+  const jw = joinWords([{ words: [{ start: 0.5, end: 1, text: 'a' }], seconds: 4 }, { words: [{ start: 0.2, end: 0.6, text: 'b' }], seconds: 6.5 }])
+  check('clip first: the whole video\u2019s words, each clip moved by the ones before it, for the rules check', jw.seconds === 10.5 && jw.words[1].start === 4.2 && jw.words[1].end === 4.6 && jw.words[0].start === 0.5)
+  const RT2 = read('app/api/review-edit/route.ts')
+  check('clip first: one call makes the clips and the videos; only the videos are counted', /action === 'studio_set'/.test(RT2) && /studio_role: 'clip', studio_part: label/.test(RT2) && /studio_role: 'combo', studio_parts: c\.parts\.map/.test(RT2) && /info: \{ counted: true, \.\.\.\(studio\.voiceover/.test(RT2) && /for \(let k = 0; k < vids\.length; k\+\+\) recordUsage/.test(RT2))
+  check('clip first: never half a set, and the SQL said when migration 478 is missing', /Not half a set: the clips go again/.test(RT2) && /CLIP_SQL/.test(RT2))
+  check('clip first: a video put together from clips is not re-cut on its own; a clip in videos is not removed', /This video is put together from its clips/.test(RT2) && /Remove \$\{count === 1 \? 'that video' : 'those videos'\} first/.test(RT2) && /Its clips, once no other video uses them/.test(RT2))
+  check('clip first: the Review Editor\u2019s own list leaves the joined videos out, and works before migration 478', /q = q\.or\('studio_role\.is\.null,studio_role\.neq\.combo'\)/.test(RT2) && /Before migration 478 there are none to leave out/.test(RT2))
+  check('clip first: a clip is made ready to join, the videos go to the server in one batch, a done clip moves its videos on', /\.\.\.\(clip \? \{ clip: true \} : \{\}\)/.test(SRV) && /'\/assemble-edit'/.test(SRV) && /ASSEMBLE_AT_ONCE = 30/.test(SRV) && /if \(row\.studio_role === 'clip'\) await releaseCombos\(/.test(SRV) && /await sweepCombos\(db\)\.catch/.test(SRV))
+  check('clip first: an old server answers 404 and the videos wait, said', /A server from before clip first answers 404/.test(SRV))
+  check('clip first: the Make step shows the clips apart from the videos, with Try again on one that failed', /const clipRows = byLabel\(/.test(VID) && /Clips: \{clipRows\.filter/.test(VID) && /retryClip\(c\)/.test(VID) && /\{videos\.map\(\(e, i\) =>/.test(VID))
+  const MIG8 = 'supabase/migrations/478_clip_first_music_library.sql'
+  check('migration 478: clip columns and the shared library, safe to run twice', existsSync(MIG8) && /add column if not exists studio_role text/.test(read(MIG8)) && /add column if not exists studio_parts uuid\[\]/.test(read(MIG8)) && /add column if not exists shared boolean not null default true/.test(read(MIG8)) && /create index if not exists/.test(read(MIG8)))
+  const SV2 = read('ingest-service/server.js')
+  check('the video server puts videos together from clips, each clip downloaded once for the batch', /app\.post\('\/assemble-edit'/.test(SV2) && /if \(!files\.has\(ci\)\)/.test(SV2) && /joinClips\(\{ clips: local, music/.test(SV2) && /stereo: clip, edgeFade: clip/.test(SV2) && /\.\.\.\(clip \? CLIP_VIDEO_ARGS : \[\]\)/.test(SV2))
+  for (const f of ['lib/studio-clips.ts', 'lib/studio.ts']) check(`${f}: no dashes in what the creator reads`, !/[\u2013\u2014]/.test(read(f).replace(/\/\/.*$/gm, '')))
+}
+
+// THE MONTH'S NEW TRACKS AND THE MUSIC LIBRARY (Seb, 2026-11-27)
+{
+  check('music: 20 new tracks a month, admin unlimited', MUSIC_TRACKS_MONTHLY_CAP === 20 && musicCapFor('pro') === 20 && musicCapFor('admin') === null)
+  check('music: tracks left in words, the library free', musicAllowanceWords({ used: 8, limit: 20, left: 12, resetLabel: 'Dec 15', introNote: null }) === '12 of your 20 new tracks left this month. Tracks from the MVP music library are free.')
+  check('music: none left says when more come and points to the library', /^You have made your 20 new tracks this month\. More on Dec 15\. Pick one from the MVP music library meanwhile/.test(musicAllowanceWords({ used: 20, limit: 20, left: 0, resetLabel: 'Dec 15', introNote: null })))
+  check('music: how many other creators use a library track for this brand', brandUseWords(0, 'Chef Preserve') === 'Fresh for Chef Preserve: no other creator uses it for them.' && brandUseWords(2, 'Chef Preserve') === 'Used by 2 other creators for Chef Preserve.')
+  const MB = read('app/api/music-bed/route.ts')
+  check('music: a track past the month\u2019s limit is refused before it is made', MB.indexOf('allowance.left <= 0') > 0 && MB.indexOf('allowance.left <= 0') < MB.indexOf('fal.subscribe(model.id'))
+  check('music: the library is other members\u2019 accepted, voice-checked, shared tracks, never who made them', /\.eq\('status', 'accepted'\)\.eq\('shared', true\)\.eq\('voice_check', 'clean'\)\.neq\('user_id', userId\)/.test(MB) && !/LIBRARY_COLS = '[^']*user_id/.test(MB))
+  check('music: a maker can keep a track to themselves', /action === 'share'/.test(MB) && /Kept to you: not in the MVP music library/.test(read('components/music/MusicBedMaker.tsx')))
+  check('music: a set can use a library track, and a track kept back is no longer used for others', /read\.data\.user_id === row\.user_id \|\| read\.data\.shared === true/.test(SRV))
+  check('music: the picker offers the library with how fresh each is for the brand', /From the MVP music library/.test(MUS) && /brandUseWords\(usedForBrand\[b\.id\] \?\? 0, brandName\)/.test(MUS) && /brandId=\{brand\.id\} brandName=\{brand\.name\}/.test(VID))
+  check('music: the maker says how many new tracks are left, and stops at none', /disabled=\{making \|\| allow\?\.left === 0\}/.test(read('components/music/MusicBedMaker.tsx')))
+}
 
 if (failures.length) {
   console.error(`test-edit-studio: ${failures.length} failed`)

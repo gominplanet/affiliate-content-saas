@@ -11,6 +11,11 @@
 // hook, body and CTA joined in that order, B-roll laid over it, the ticked
 // options on it, checked against the brand's rules when it is made.
 //
+// CLIP FIRST (Seb, 2026-11-27: "start the faster clip first method"): each
+// hook, body and CTA a video uses is uploaded and edited once, as a clip, and
+// every video is its clips joined on the video server (lib/studio-clips).
+// B-roll goes over the bodies and CTAs; a talking hook stays on the face.
+//
 // A VOICEOVER SET (Seb, 2026-11-26: "only voiceover type videos"): the hooks,
 // bodies and CTAs are the creator's voice (a voice memo, or a video whose
 // sound is used), and the B-roll is required, because it is the whole
@@ -24,7 +29,8 @@ import { createBrowserClient } from '@/lib/supabase/client'
 import { readVideoFacts } from '@/lib/video-file-facts'
 import { BULK_VIDEO_MAX_BYTES, tooBigWords } from '@/lib/clip-source-limits'
 import { uploadTake } from '@/components/review-editor/upload-take'
-import { mixCombos, mixCounts, brollFor, MIX_WORDS, type MixMode } from '@/lib/studio-mix'
+import { mixCombos, mixCounts, MIX_WORDS, type MixMode } from '@/lib/studio-mix'
+import { neededClips, clipBroll, comboLabels } from '@/lib/studio-clips'
 import type { EditSettings } from '@/lib/review-edit'
 import { VOICE_NAME } from '@/lib/studio-render'
 
@@ -79,7 +85,7 @@ export default function StudioMixer({ brand, settings, trybeLeft, onAdded, proje
   const [reading, setReading] = useState<Part | null>(null)
   const [mode, setMode] = useState<MixMode>('all')
   const [running, setRunning] = useState<string | null>(null)
-  const [result, setResult] = useState<{ added: number; failed: string[]; skipped: number } | null>(null)
+  const [result, setResult] = useState<{ added: number; clips: number; failed: string[]; skipped: number } | null>(null)
   const stop = useRef(false)
 
   async function pick(part: Part, list: FileList | null) {
@@ -117,6 +123,7 @@ export default function StudioMixer({ brand, settings, trybeLeft, onAdded, proje
   const counts = mixCounts(clips.hook.length, clips.body.length, clips.cta.length)
   const combos = useMemo(() => mixCombos(clips.hook.length, clips.body.length, clips.cta.length, mode), [clips.hook.length, clips.body.length, clips.cta.length, mode])
   const tooMany = trybeLeft !== null && combos.length > trybeLeft
+  const need = useMemo(() => neededClips(trybeLeft !== null ? combos.slice(0, Math.max(0, trybeLeft)) : combos), [combos, trybeLeft])
   const ready = clips.hook.length > 0 && clips.body.length > 0 && (!voiceover || clips.broll.length > 0)
 
   async function process() {
@@ -127,17 +134,15 @@ export default function StudioMixer({ brand, settings, trybeLeft, onAdded, proje
     setResult(null)
     const list = trybeLeft !== null ? combos.slice(0, Math.max(0, trybeLeft)) : combos
     const skipped = combos.length - list.length
-    // 1. Each clip a video uses, uploaded once.
+    // 1. The clips the videos use (lib/studio-clips), and their B-roll, each file uploaded once.
+    const need = neededClips(list)
+    const brollOf = need.map((c, k) => clipBroll(k, c.part, clips.broll.length, voiceover))
     const needed = new Set<string>()
-    list.forEach((cb, k) => {
-      needed.add(clips.hook[cb.h].key); needed.add(clips.body[cb.b].key)
-      if (cb.c != null) needed.add(clips.cta[cb.c].key)
-      for (const r of brollFor(k, clips.broll.length)) needed.add(clips.broll[r].key)
-    })
+    need.forEach((c, k) => { needed.add(clips[c.part][c.i].key); for (const r of brollOf[k]) needed.add(clips.broll[r].key) })
     const all = [...clips.hook, ...clips.body, ...clips.cta, ...clips.broll].filter((c) => needed.has(c.key))
     const up = new Map<string, { url: string; bytes: number; name: string }>()
     for (let i = 0; i < all.length; i++) {
-      if (stop.current) break
+      if (stop.current) { setRunning(null); setResult({ added: 0, clips: 0, failed: ['Nothing was made: you stopped.'], skipped }); return }
       const c = all[i]
       setRunning(`Uploading ${i + 1} of ${all.length}: ${c.name}`)
       try {
@@ -149,29 +154,27 @@ export default function StudioMixer({ brand, settings, trybeLeft, onAdded, proje
         return
       }
     }
-    // 2. Each combination, one video: hook, body and CTA joined in order, B-roll over it.
-    let added = 0
+    // 2. One call: the clips, each edited once, and the videos put together from them.
+    setRunning(`Sending ${need.length} clips and ${list.length} ${list.length === 1 ? 'video' : 'videos'} to MVP`)
+    const take = (fs: Array<{ url: string; bytes: number; name: string }>) => ({ url: fs[0].url, name: fs[0].name, bytes: fs[0].bytes, ...(fs.length > 1 ? { more: fs.slice(1).map((f) => ({ url: f.url, name: f.name, bytes: f.bytes })) } : {}) })
+    let added = 0, made = 0
     const failed: string[] = []
-    for (let k = 0; k < list.length; k++) {
-      if (stop.current) { failed.push(`${list.length - k} not made: you stopped.`); break }
-      const cb = list[k]
-      setRunning(`Making ${k + 1} of ${list.length}: ${cb.label}`)
-      const parts = [clips.hook[cb.h], clips.body[cb.b], ...(cb.c != null ? [clips.cta[cb.c]] : [])].map((c) => up.get(c.key)!)
-      const roll = brollFor(k, clips.broll.length).map((r) => up.get(clips.broll[r].key)!).filter(Boolean)
-      const take = (fs: Array<{ url: string; bytes: number; name: string }>) => ({ url: fs[0].url, name: fs[0].name, bytes: fs[0].bytes, ...(fs.length > 1 ? { more: fs.slice(1).map((f) => ({ url: f.url, name: f.name, bytes: f.bytes })) } : {}) })
-      try {
-        const r = await fetch('/api/review-edit', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: AbortSignal.timeout(90_000),
-          body: JSON.stringify({ action: 'add', name: `${namePrefix || brand.name} ${cb.label}`.slice(0, 120), review: take(parts), ...(roll.length ? { broll: take(roll) } : {}), settings, studio: { brandId: brand.id, ...(projectId ? { projectId } : {}), ...(voiceover ? { voiceover: true } : {}) } }),
-        })
-        const d = await r.json().catch(() => ({})) as { error?: string; allowanceFull?: boolean }
-        if (r.ok) { added++; continue }
-        failed.push(`${cb.label}: ${d.error || `MVP answered ${r.status}`}`)
-        if (d.allowanceFull) { failed.push(`${list.length - k - 1} more not made: no TRYBE ad edits left this month.`); break }
-      } catch (e) { failed.push(`${cb.label}: ${e instanceof Error ? e.message : 'no answer'}`) }
-    }
+    try {
+      const r = await fetch('/api/review-edit', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: AbortSignal.timeout(180_000),
+        body: JSON.stringify({
+          action: 'studio_set', namePrefix: namePrefix || brand.name, settings,
+          studio: { brandId: brand.id, ...(projectId ? { projectId } : {}), ...(voiceover ? { voiceover: true } : {}) },
+          clips: need.map((c, k) => ({ label: c.label, review: take([up.get(clips[c.part][c.i].key)!]), ...(brollOf[k].length ? { broll: take(brollOf[k].map((x) => up.get(clips.broll[x].key)!)) } : {}) })),
+          combos: list.map((cb) => ({ label: cb.label, parts: comboLabels(cb) })),
+        }),
+      })
+      const d = await r.json().catch(() => ({})) as { error?: string; clips?: number; videos?: number }
+      if (r.ok) { added = d.videos ?? list.length; made = d.clips ?? need.length }
+      else failed.push(d.error || `MVP answered ${r.status}. Nothing was made: press Process again.`)
+    } catch (e) { failed.push(`${e instanceof Error ? e.message : 'No answer from MVP'}. Nothing may have been made: reload this page before pressing Process again.`) }
     setRunning(null)
-    setResult({ added, failed, skipped })
+    setResult({ added, clips: made, failed, skipped })
     await onAdded()
   }
 
@@ -218,9 +221,10 @@ export default function StudioMixer({ brand, settings, trybeLeft, onAdded, proje
           </div>
           <p className="text-[12.5px]" style={soft}>
             {combos.slice(0, 12).map((c) => c.label).join(', ')}{combos.length > 12 ? ` and ${combos.length - 12} more` : ''}.
+            {' '}MVP edits each hook, body and CTA once ({need.length} {need.length === 1 ? 'clip' : 'clips'}), then puts every video together from them.
             {voiceover
-              ? ` Your B-roll is the whole picture of each, the clips taking turns over your voice${clips.broll.length > 6 ? ', 6 clips each' : ''}.`
-              : clips.broll.length > 0 ? ` Each gets B-roll laid over it${clips.broll.length > 6 ? ', 6 clips each, taking turns' : ''}.` : ''}
+              ? ` Your B-roll is the whole picture, the clips taking turns over your voice${clips.broll.length > 6 ? ', 6 for each part' : ''}.`
+              : clips.broll.length > 0 ? ` B-roll goes over the bodies and CTAs${clips.broll.length > 6 ? ', 6 clips each, taking turns' : ''}; the hooks stay on your face.` : ''}
             {' '}Each video uses one of your TRYBE ad edits.
           </p>
           {tooMany && <p className="text-[12.5px]" style={{ color: AMBER }}>You have {trybeLeft} TRYBE ad edits left this month, so only the first {trybeLeft} of these {combos.length} will be made.</p>}
@@ -235,7 +239,7 @@ export default function StudioMixer({ brand, settings, trybeLeft, onAdded, proje
       {!ready && <p className="text-[12.5px] inline-flex items-center gap-1.5" style={soft}><Film size={13} /> {voiceover ? 'Add at least one hook, one body and one B-roll clip to start. CTAs are optional.' : 'Add at least one hook and one body to start. CTAs and B-roll are optional.'}</p>}
       {result && (
         <div className="text-[13px] space-y-1">
-          <p style={{ color: result.added ? 'var(--text)' : RED }}>{result.added} {result.added === 1 ? 'video is' : 'videos are'} in line to be made. Each shows below as it is edited and checked{result.skipped ? `; ${result.skipped} not made, no TRYBE ad edits left` : ''}.</p>
+          <p style={{ color: result.added ? 'var(--text)' : RED }}>{result.added ? `${result.clips} ${result.clips === 1 ? 'clip is' : 'clips are'} in line to be edited, then ${result.added} ${result.added === 1 ? 'video is' : 'videos are'} put together from them. Each shows below as it goes` : 'Nothing was made'}{result.skipped ? `; ${result.skipped} not made, no TRYBE ad edits left` : ''}.</p>
           {result.failed.length > 0 && <ul className="text-[12.5px] space-y-0.5" style={{ color: RED }}>{result.failed.map((t) => <li key={t}>{t}</li>)}</ul>}
         </div>
       )}

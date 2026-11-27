@@ -153,3 +153,39 @@ export function voiceWords(check: VoiceCheck, heard: string[], error?: string | 
 export function canAccept(check: VoiceCheck, status: string): boolean {
   return check === 'clean' && status === 'preview'
 }
+
+// ── THE MONTH'S NEW TRACKS, AND THE SHARED LIBRARY (Seb, 2026-11-27: "add the
+// limit of 20 new music tracks a month per member"; "Could these tracks become
+// an available catalog of music for all MVP members?") ─────────────────────
+// Every track made costs (Stable Audio 2.5 is $0.20), so 20 a billing month,
+// a quarter in the first 7 days (lib/intro-allowance), counted when Stable
+// Audio hands one back (ai_usage music_bed), kept or not. An accepted track,
+// checked with no voices, joins the MVP music library (migration 478,
+// music_beds.shared) unless its maker keeps it to themselves. Picking one
+// from the library is free and is not one of the 20. The library never says
+// who made a track.
+
+/** New tracks a member makes per billing month. Admin unlimited. */
+export const MUSIC_TRACKS_MONTHLY_CAP = 20
+export function musicCapFor(tier: string | null | undefined): number | null {
+  return tier === 'admin' ? null : MUSIC_TRACKS_MONTHLY_CAP
+}
+
+export interface MusicAllowance { used: number; limit: number | null; left: number | null; resetLabel: string; introNote: string | null }
+
+/** The month's new tracks in words. Pure. */
+export function musicAllowanceWords(a: MusicAllowance | null): string {
+  if (!a) return ''
+  if (a.limit === null) return 'No limit on new tracks for the MVP team. Members get 20 a month; tracks from the library are free.'
+  const when = a.resetLabel ? ` More on ${a.resetLabel}.` : ''
+  if (a.left === 0) return `You have made your ${a.limit} new tracks this month.${when} Pick one from the MVP music library meanwhile: those are free.`
+  return `${a.left} of your ${a.limit} new tracks left this month. Tracks from the MVP music library are free.${a.introNote ? ` ${a.introNote}` : ''}`
+}
+
+/** How often other creators already use a library track for this brand, in
+ *  words, so a creator can pick one that keeps their videos apart. Pure. */
+export function brandUseWords(others: number, brandName: string): string {
+  if (!brandName) return ''
+  if (others <= 0) return `Fresh for ${brandName}: no other creator uses it for them.`
+  return `Used by ${others} other ${others === 1 ? 'creator' : 'creators'} for ${brandName}.`
+}

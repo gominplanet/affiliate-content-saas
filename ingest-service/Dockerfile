@@ -39,7 +39,7 @@ WORKDIR /app
 COPY package.json ./
 RUN npm install --omit=dev
 # server.js requires these at runtime: every one must be in the image.
-COPY server.js render-filters.js edit-filters.js join-takes.js ./
+COPY server.js render-filters.js edit-filters.js join-takes.js clip-join.js ./
 
 ENV PORT=8080
 EXPOSE 8080

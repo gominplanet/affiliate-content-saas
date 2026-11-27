@@ -32,6 +32,7 @@ import { readCampaign, scriptFromRow, type Campaign, type Script } from '@/lib/t
 import { matchScript, scriptText, checkCut, type CutCheck } from '@/lib/trybe-edit'
 import { readSheet, sheetToCampaign } from '@/lib/studio-rules'
 import { musicAfterAccept, musicAfterFinish, musicWords, voiceoverWords, type MusicPlaced } from '@/lib/studio-render'
+import { comboState, remakeOnClip, joinWords, type ClipState } from '@/lib/studio-clips'
 
 export const EDIT_BUCKET = 'instagram-videos'
 /** Videos on the video server at once, across everyone. */
@@ -120,6 +121,10 @@ export interface EditRow {
   studio_brand_id?: string | null; studio_send?: Record<string, unknown> | null
   /** Its Video Builder set (migration 477): the set's music is under it. */
   studio_project_id?: string | null
+  /** Clip first (migration 478, lib/studio-clips): a 'clip' (one hook, body
+   *  or CTA, studio_part its label) or a 'combo' (a video put together from
+   *  the clips in studio_parts, in order). */
+  studio_role?: 'clip' | 'combo' | null; studio_part?: string | null; studio_parts?: string[] | null
 }
 
 /** A studio video's brand rules as the cut check reads them (lib/studio-rules), or null. */
@@ -393,7 +398,10 @@ async function musicFor(db: Db, row: Pick<EditRow, 'user_id' | 'studio_project_i
   const m = (proj?.options as { music?: { bedId?: unknown; label?: unknown } | null } | null)?.music
   if (!m || typeof m.bedId !== 'string') return null
   const label = typeof m.label === 'string' && m.label.trim() ? m.label.trim().slice(0, 120) : 'Your music bed'
-  const { data: bed } = await db.from('music_beds').select('id, url, status').eq('id', m.bedId).eq('user_id', row.user_id).maybeSingle()
+  // The creator's own track, or one from the shared library (migration 478).
+  let read = await db.from('music_beds').select('id, url, status, user_id, shared').eq('id', m.bedId).maybeSingle()
+  if (read.error) read = await db.from('music_beds').select('id, url, status, user_id').eq('id', m.bedId).eq('user_id', row.user_id).maybeSingle()
+  const bed = read.data && (read.data.user_id === row.user_id || read.data.shared === true) ? read.data : null
   if (!bed?.url) return { label, missed: 'The music picked for this set is gone, so this video was made without music. Pick music again, then press Make it again.' }
   if (bed.status !== 'accepted') return { label, missed: 'The music picked for this set is no longer accepted, so this video was made without music. Pick music again, then press Make it again.' }
   return { label, url: String(bed.url) }
@@ -494,6 +502,8 @@ async function calloutImage(db: Db, row: EditRow, text: string, k: number, cl: C
 
 /** Send a planned video to the video server. Claims the row first. */
 export async function startMaking(db: Db, row: EditRow): Promise<void> {
+  // A Video Builder video put together from its clips (clip first).
+  if (row.studio_role === 'combo') return startAssembling(db, row)
   const { data: claimed } = await db.from('review_edits')
     .update({ status: 'making', note: 'Being made on MVP’s video server', attempts: (row.attempts || 0) + 1, updated_at: now() })
     .eq('id', row.id).eq('status', 'ready_to_make').select('id')
@@ -529,8 +539,9 @@ export async function startMaking(db: Db, row: EditRow): Promise<void> {
   if (row.trybe_campaign_id) {
     const tb = await trybeOf(db, row).catch(() => null)
     if (tb) await db.from('review_edits').update({ trybe_check: checkCut({ words: outputWords(words, spec.segments), seconds: spec.seconds, campaign: tb.campaign }) }).eq('id', row.id)
-  } else if (row.studio_brand_id) {
-    // An Video Builder video: checked against its brand's rules (lib/studio-rules).
+  } else if (row.studio_brand_id && row.studio_role !== 'clip') {
+    // A Video Builder video: checked against its brand's rules (lib/studio-rules).
+    // A clip is checked as part of each video it is in (startAssembling).
     const rules = await studioOf(db, row).catch(() => null)
     if (rules) await db.from('review_edits').update({ trybe_check: checkCut({ words: outputWords(words, spec.segments), seconds: spec.seconds, campaign: rules }) }).eq('id', row.id)
   }
@@ -554,7 +565,9 @@ export async function startMaking(db: Db, row: EditRow): Promise<void> {
   }
   // THE SET'S MUSIC, under the voice (lib/studio-render): asked for here,
   // said as in only once the video server reports it mixed it.
-  const music = await musicFor(db, row).catch(() => null)
+  // A clip has none: the music goes under each whole video it is in.
+  const clip = row.studio_role === 'clip'
+  const music = clip ? null : await musicFor(db, row).catch(() => null)
   const placed: Placed = {
     title: !settings.title.on || !settings.title.text ? null
       : title ? { from: settings.title.seconds === 0 ? 0 : 0.3, to: Math.min(spec.seconds, titleTo) }
@@ -573,6 +586,8 @@ export async function startMaking(db: Db, row: EditRow): Promise<void> {
     ...(broll ? (joined(broll) ? { brollParts: broll.parts } : { brollUrl: broll.url, brollAuth: broll.auth }) : {}),
     ...(voiceover && src.broll ? { voiceover: { clips: joined(src.broll) ? src.broll.parts : [src.broll] } } : {}),
     ...(music && 'url' in music ? { music: { url: music.url, volume: 0.2 } } : {}),
+    // Made ready to be joined to the set's other clips (ingest-service clip-join).
+    ...(clip ? { clip: true } : {}),
     userId: row.user_id, job, callbackUrl: `${appUrl()}/api/review-edit/callback`,
     segments: spec.segments, inserts: spec.inserts, zooms: spec.zooms, color: settings.color,
     formats: settings.formats, cropX: settings.cropX, words: spec.words,
@@ -612,9 +627,126 @@ export async function startMaking(db: Db, row: EditRow): Promise<void> {
   }
 }
 
+// ── CLIP FIRST: THE VIDEOS PUT TOGETHER FROM CLIPS (lib/studio-clips) ───────
+/** How many of one member's videos go to the video server in one batch: its
+ *  clips are downloaded once for all of them. */
+export const ASSEMBLE_AT_ONCE = 30
+type PartRow = Pick<EditRow, 'id' | 'status' | 'note' | 'outputs' | 'studio_part' | 'made_at' | 'words' | 'plan' | 'shots' | 'info' | 'settings' | 'broll_src'>
+const PART_COLS = 'id,status,note,outputs,studio_part,made_at,words,plan,shots,info,settings,broll_src'
+const partState = (p: PartRow | undefined): ClipState | null => (p ? { label: p.studio_part || 'A clip', status: p.status, note: p.note, hasOutput: !!p.outputs?.vertical?.url } : null)
+
+/** Videos waiting for their clips, moved on: ready once every clip is
+ *  edited, stopped (and said why) when one failed, waiting again when that
+ *  clip is tried again. A video that failed on its own (its join) is left
+ *  for the creator to try again. */
+export async function sweepCombos(db: Db, o: { userId?: string; ids?: string[] } = {}): Promise<number> {
+  let q = db.from('review_edits').select('id,user_id,status,note,studio_parts,info').eq('studio_role', 'combo').in('status', ['waiting', 'failed'])
+  if (o.userId) q = q.eq('user_id', o.userId)
+  if (o.ids?.length) q = q.in('id', o.ids)
+  const { data: combos, error } = await q.order('updated_at', { ascending: true }).limit(300)
+  if (error || !combos?.length) return 0
+  const want = combos.filter((c: { status: string; info: { clipFailed?: boolean } | null }) => c.status === 'waiting' || c.info?.clipFailed)
+  const ids = Array.from(new Set(want.flatMap((c: { studio_parts: string[] | null }) => c.studio_parts || []))) as string[]
+  if (!ids.length) return 0
+  const parts = new Map<string, PartRow>()
+  for (let i = 0; i < ids.length; i += 200) {
+    const { data } = await db.from('review_edits').select('id,status,note,outputs,studio_part').in('id', ids.slice(i, i + 200))
+    for (const p of (data ?? []) as PartRow[]) parts.set(p.id, p)
+  }
+  let moved = 0
+  for (const c of want as Array<{ id: string; status: string; note: string | null; studio_parts: string[] | null; info: Record<string, unknown> | null }>) {
+    const st = comboState((c.studio_parts || []).map((id) => partState(parts.get(id))))
+    if (st.state === 'ready') { await set(db, c.id, { status: 'ready_to_make', note: 'Its clips are edited. In line to be put together.', info: { ...(c.info || {}), clipFailed: false } }); moved++ }
+    else if (st.state === 'failed') { if (c.status !== 'failed' || c.note !== st.note) { await set(db, c.id, { status: 'failed', note: st.note, info: { ...(c.info || {}), clipFailed: true } }); moved++ } }
+    else if (c.status !== 'waiting' || c.note !== st.note) { await set(db, c.id, { status: 'waiting', note: st.note, info: { ...(c.info || {}), clipFailed: false } }); moved++ }
+  }
+  return moved
+}
+
+/** A clip was made: the videos waiting for it move on, and the videos put
+ *  together from its last cut are put together again (not one already sent). */
+async function releaseCombos(db: Db, userId: string, clipId: string, madeAt: string): Promise<void> {
+  const { data } = await db.from('review_edits').select('id,status,made_at,studio_send').eq('user_id', userId).eq('studio_role', 'combo').contains('studio_parts', [clipId]).limit(300)
+  const rows = (data ?? []) as Array<{ id: string; status: string; made_at: string | null; studio_send: { state?: string } | null }>
+  for (const r of rows) if (remakeOnClip(r, madeAt)) await set(db, r.id, { status: 'ready_to_make', note: 'One of its clips was made again, so it is being put together again.' })
+  const waiting = rows.filter((r) => r.status === 'waiting' || r.status === 'failed').map((r) => r.id)
+  if (waiting.length) await sweepCombos(db, { userId, ids: waiting })
+}
+
+/** This member's videos of one set that are ready, put together on the video
+ *  server in one batch: each checked against the brand's rules as a whole,
+ *  with the set's music under it. */
+async function startAssembling(db: Db, first: EditRow): Promise<void> {
+  let q = db.from('review_edits').select('*').eq('user_id', first.user_id).eq('status', 'ready_to_make').eq('studio_role', 'combo')
+  q = first.studio_project_id ? q.eq('studio_project_id', first.studio_project_id) : q.is('studio_project_id', null)
+  const { data: ready } = await q.order('updated_at', { ascending: true }).limit(ASSEMBLE_AT_ONCE)
+  const wanted = ((ready ?? []) as EditRow[]).filter((r) => r.studio_brand_id === first.studio_brand_id)
+  if (!wanted.some((r) => r.id === first.id)) wanted.unshift(first)
+  const { data: claimedRows } = await db.from('review_edits')
+    .update({ status: 'making', note: 'Being put together on MVP\u2019s video server', updated_at: now() })
+    .in('id', wanted.slice(0, ASSEMBLE_AT_ONCE).map((r) => r.id)).eq('status', 'ready_to_make').select('id')
+  const claimedIds = new Set(((claimedRows ?? []) as { id: string }[]).map((r) => r.id))
+  const combos = wanted.filter((r) => claimedIds.has(r.id))
+  if (!combos.length) return
+  // Their clips, each once.
+  const ids = Array.from(new Set(combos.flatMap((c) => c.studio_parts || [])))
+  const parts = new Map<string, PartRow>()
+  for (let i = 0; i < ids.length; i += 200) {
+    const { data } = await db.from('review_edits').select(PART_COLS).eq('user_id', first.user_id).in('id', ids.slice(i, i + 200))
+    for (const p of (data ?? []) as PartRow[]) parts.set(p.id, p)
+  }
+  const rules = await studioOf(db, first).catch(() => null)
+  const music = await musicFor(db, first).catch(() => null)
+  const job = (id: string) => makeRenderJob({ shortId: `edit-${id}`, userId: first.user_id, reservationId: null })
+  const clipUrls: string[] = []
+  const clipIndex = new Map<string, number>()
+  const items: { job: string; parts: number[]; music?: { url: string; volume: number } }[] = []
+  const sentIds: string[] = []
+  for (const c of combos) {
+    const mine = (c.studio_parts || []).map((id) => parts.get(id))
+    const st = comboState(mine.map(partState))
+    if (st.state !== 'ready') { await set(db, c.id, { status: st.state === 'failed' ? 'failed' : 'waiting', note: st.note, info: { ...(c.info || {}), clipFailed: st.state === 'failed' } }); continue }
+    const token = job(c.id)
+    if (!token) { await set(db, c.id, { status: 'failed', note: 'MVP\u2019s video server is not set up for background work.' }); continue }
+    // THE WHOLE VIDEO AGAINST THE BRAND'S RULES: every clip's words on the
+    // video's own timeline (lib/studio-clips joinWords).
+    if (rules) {
+      const each = (mine as PartRow[]).map((p) => {
+        const settings = cleanSettings(p.settings)
+        const vo = p.info?.voiceover === true
+        const spec = renderSpec({ words: p.words || [], lines: linesOf(p.words || []), plan: p.plan as Plan, shots: vo ? [] : p.shots || [], duration: p.info?.review?.duration || 0, settings, hasBroll: !vo && !!p.broll_src, silences: p.info?.review?.silences ?? [] })
+        return { words: outputWords(p.words || [], spec.segments), seconds: Number(p.outputs?.vertical?.seconds) || spec.seconds }
+      })
+      const all = joinWords(each)
+      await db.from('review_edits').update({ trybe_check: checkCut({ words: all.words, seconds: all.seconds, campaign: rules }) }).eq('id', c.id)
+    }
+    const placed: Placed = { title: null, pictures: [], callouts: [], music: music ? ('missed' in music ? { label: music.label, missed: music.missed } : { label: music.label, asked: true }) : null }
+    await set(db, c.id, { info: { ...(c.info || {}), placed, clipFailed: false } })
+    const idx = (mine as PartRow[]).map((p) => {
+      if (!clipIndex.has(p.id)) { clipIndex.set(p.id, clipUrls.length); clipUrls.push(String(p.outputs!.vertical.url)) }
+      return clipIndex.get(p.id)!
+    })
+    items.push({ job: token, parts: idx, ...(music && 'url' in music ? { music: { url: music.url, volume: 0.2 } } : {}) })
+    sentIds.push(c.id)
+  }
+  if (!items.length) return
+  const sent = await videoServer<{ accepted?: boolean; items?: number; music?: boolean }>('/assemble-edit', {
+    userId: first.user_id, callbackUrl: `${appUrl()}/api/review-edit/callback`, clips: clipUrls.map((url) => ({ url })), items,
+  }, 60_000)
+  if (!sent.ok) {
+    // A server from before clip first answers 404: back in line, said.
+    const back = sent.status === 404 || sent.status === 0
+    for (const id of sentIds) await set(db, id, back
+      ? { status: 'ready_to_make', note: `Waiting for MVP\u2019s video server to be updated (${sent.error}). It is tried again by itself.` }
+      : { status: 'failed', note: `The video server would not put it together: ${oneStop(sent.error)}.` })
+    return
+  }
+  for (const id of sentIds) await set(db, id, { note: `Being put together on MVP\u2019s video server, with ${items.length - 1} more of this set` })
+}
+
 /** What the video server reported back. */
 export async function finishMaking(db: Db, id: string, userId: string, body: Record<string, unknown>): Promise<boolean> {
-  const { data: row } = await db.from('review_edits').select('id,user_id,status,outputs,info').eq('id', id).eq('user_id', userId).maybeSingle()
+  const { data: row } = await db.from('review_edits').select('*').eq('id', id).eq('user_id', userId).maybeSingle()
   if (!row) return false
   if (body.ok !== true) {
     await set(db, id, { status: 'failed', note: `The video server could not make it: ${String(body.error || 'no reason given').slice(0, 300)}` })
@@ -632,11 +764,16 @@ export async function finishMaking(db: Db, id: string, userId: string, body: Rec
   const info = (row.info || {}) as NonNullable<EditRow['info']>
   const music = musicAfterFinish(info.placed?.music, body.music)
   const placedNow = info.placed ? { ...info.placed, music } : null
+  const madeAt = now()
+  // A video put together from clips says which (lib/studio-clips).
+  const from = row.studio_role === 'combo' && Number(body.assembled) > 0 ? ` Put together from ${String((row.review_src as { name?: string } | null)?.name || `${body.assembled} clips`)}.` : ''
   await set(db, id, {
-    status: 'done', outputs, made_at: now(),
-    note: `Made: ${clock(secs)} long${extra ? `, ${extra}` : ''}.${voiceoverWords(body.voiceover)}${musicWords(music)}`,
+    status: 'done', outputs, made_at: madeAt,
+    note: `Made: ${clock(secs)} long${extra ? `, ${extra}` : ''}.${from}${voiceoverWords(body.voiceover)}${musicWords(music)}`,
     ...(placedNow ? { info: { ...info, placed: placedNow } } : {}),
   })
+  // A clip made: the videos waiting for it, or put together from its last cut, go on.
+  if (row.studio_role === 'clip') await releaseCombos(db, userId, id, madeAt).catch(() => { /* the queue's sweep picks them up */ })
   return true
 }
 
@@ -721,6 +858,9 @@ export async function moveQueue(db: Db, o: { userId?: string; readBudget?: numbe
     else await set(db, s.id, { status: s.status === 'making' ? 'ready_to_make' : 'queued', note: 'Trying again' })
   }
 
+  // Videos waiting for their clips (clip first), moved on.
+  await sweepCombos(db).catch(() => 0)
+
   // Make: one at a time on the video server.
   let started = 0
   const { count: making } = await db.from('review_edits').select('id', { count: 'exact', head: true }).eq('status', 'making')
@@ -730,30 +870,36 @@ export async function moveQueue(db: Db, o: { userId?: string; readBudget?: numbe
     if (next) { await startMaking(db, next); started++ }
   }
 
-  // Read: the next queued video (this creator's first), as time allows.
+  // Read: the next queued videos (this creator's first), up to READ_AT_ONCE
+  // across everyone, side by side (Seb, 2026-11-27: "so we can render
+  // faster": a Video Builder set is nine clips, and one read every two
+  // minutes was most of the wait).
   let read = 0
   const budget = o.readBudget ?? 1
-  while (read < budget) {
-    // At most READ_AT_ONCE across everyone; the rest wait for the cron.
-    const { count: reading } = await db.from('review_edits').select('id', { count: 'exact', head: true }).eq('status', 'reading')
-    if ((reading ?? 0) >= READ_AT_ONCE) break
-    let row: EditRow | undefined
-    if (o.userId && read === 0) {
-      const { data } = await db.from('review_edits').select('*').eq('status', 'queued').eq('user_id', o.userId).order('created_at', { ascending: true }).limit(1)
-      row = data?.[0] as EditRow | undefined
+  const { count: reading } = await db.from('review_edits').select('id', { count: 'exact', head: true }).eq('status', 'reading')
+  const room = Math.max(0, Math.min(budget, READ_AT_ONCE - (reading ?? 0)))
+  const picked: EditRow[] = []
+  if (room > 0 && o.userId) {
+    const { data } = await db.from('review_edits').select('*').eq('status', 'queued').eq('user_id', o.userId).order('created_at', { ascending: true }).limit(1)
+    if (data?.[0]) picked.push(data[0] as EditRow)
+  }
+  // Then in turns between members.
+  if (picked.length < room) {
+    for (const id of await lineOrder(db, 'read')) {
+      if (picked.length >= room) break
+      if (picked.some((r) => r.id === id)) continue
+      const { data } = await db.from('review_edits').select('*').eq('id', id).eq('status', 'queued').maybeSingle()
+      if (data) picked.push(data as EditRow)
     }
-    // Then in turns between members.
-    if (!row) row = (await nextInLine(db, 'read')) ?? undefined
-    if (!row) break
-    await readTakes(db, row)
-    read++
-    // Read and nothing on the server: start it now rather than next tick.
+  }
+  await Promise.all(picked.map(async (row) => { await readTakes(db, row); read++ }))
+  // Read and nothing on the server: start it now rather than next tick.
+  if (picked.length) {
     const { count: busy } = await db.from('review_edits').select('id', { count: 'exact', head: true }).eq('status', 'making')
     if ((busy ?? 0) < MAKING_AT_ONCE) {
-      const { data: again } = await db.from('review_edits').select('*').eq('id', row.id).eq('status', 'ready_to_make').maybeSingle()
-      if (again) { await startMaking(db, again as EditRow); started++ }
+      const next = await nextInLine(db, 'make')
+      if (next) { await startMaking(db, next); started++ }
     }
-    if (Date.now() - t > 150_000) break
   }
 
   // Raw uploads: two days after the video was made, or three after it was

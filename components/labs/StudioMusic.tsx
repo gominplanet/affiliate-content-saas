@@ -15,6 +15,7 @@
 import { useEffect, useState } from 'react'
 import { Music2, Loader2, AlertTriangle } from 'lucide-react'
 import MusicBedMaker from '@/components/music/MusicBedMaker'
+import { brandUseWords } from '@/lib/music-bed'
 
 const ACCENT = 'var(--accent)'
 const AMBER = '#B45309'
@@ -24,21 +25,31 @@ interface Bed { id: string; moods: string[]; styles: string[]; tempo: string | n
 /** The video server mixes the set's music into each video it makes. */
 export const MUSIC_IN_RENDER = true
 
-export default function StudioMusic({ picked, onPick, disabled = false }: {
+export default function StudioMusic({ picked, onPick, disabled = false, brandId = null, brandName = '' }: {
   picked: { bedId: string; label: string } | null
   onPick: (m: { bedId: string; label: string } | null) => void
   disabled?: boolean
+  /** The set's brand: how many other creators use each library track for it. */
+  brandId?: string | null
+  brandName?: string
 }) {
   const [beds, setBeds] = useState<Bed[] | null>(null)
+  // THE MVP MUSIC LIBRARY (Seb, 2026-11-27): other members' accepted tracks, free to use.
+  const [library, setLibrary] = useState<Bed[]>([])
+  const [usedForBrand, setUsedForBrand] = useState<Record<string, number>>({})
+  const [allowWords, setAllowWords] = useState('')
   const [err, setErr] = useState<string | null>(null)
   const [making, setMaking] = useState(false)
 
   const load = async () => {
     try {
-      const r = await fetch('/api/music-bed', { cache: 'no-store', signal: AbortSignal.timeout(30_000) })
+      const r = await fetch(`/api/music-bed${brandId ? `?brand=${encodeURIComponent(brandId)}` : ''}`, { cache: 'no-store', signal: AbortSignal.timeout(30_000) })
       const j = await r.json().catch(() => ({}))
       if (!r.ok) { setErr(j.error || 'Your music did not load.'); return }
       setBeds(((j.beds || []) as Bed[]).filter((b) => b.status === 'accepted' && b.url)); setErr(null)
+      setLibrary(((j.library || []) as Bed[]).filter((b) => b.url))
+      setUsedForBrand((j.usedForBrand || {}) as Record<string, number>)
+      setAllowWords(String(j.allowanceWords || ''))
     } catch { setErr('Your music did not load. Check your connection.') }
   }
   useEffect(() => { void load() }, [])
@@ -56,9 +67,24 @@ export default function StudioMusic({ picked, onPick, disabled = false }: {
             {b.url && <audio controls preload="none" src={b.url} className="h-8 max-w-[260px]" />}
           </label>
         ))}
+        {library.length > 0 && (
+          <div className="pt-1 flex flex-col gap-1.5">
+            <p className="text-[12px] font-semibold" style={soft}>From the MVP music library: made by other members, free to use, never one of your new tracks</p>
+            {library.map((b) => (
+              <label key={b.id} className="flex flex-wrap items-center gap-2 text-[13px]">
+                <input type="radio" checked={picked?.bedId === b.id} onChange={() => onPick({ bedId: b.id, label: label(b) })} disabled={disabled} style={{ accentColor: 'var(--accent)' }} />
+                <span className="min-w-[10rem]">{label(b)}</span>
+                {b.url && <audio controls preload="none" src={b.url} className="h-8 max-w-[260px]" />}
+                {/* So a creator can keep their videos apart from other creators' for the same brand. */}
+                {brandName && <span className="text-[12px]" style={{ color: (usedForBrand[b.id] ?? 0) > 0 ? AMBER : 'var(--text-3)' }}>{brandUseWords(usedForBrand[b.id] ?? 0, brandName)}</span>}
+              </label>
+            ))}
+          </div>
+        )}
       </div>
       {!beds && !err && <p className="text-[12.5px] inline-flex items-center gap-1.5" style={soft}><Loader2 size={12} className="animate-spin" /> Reading your music...</p>}
-      {beds && beds.length === 0 && <p className="text-[12.5px]" style={soft}>No music beds yet. Make one below: tick a mood, a tempo and a style, listen, and accept it.</p>}
+      {beds && beds.length === 0 && library.length === 0 && <p className="text-[12.5px]" style={soft}>No music beds yet. Make one below: tick a mood, a tempo and a style, listen, and accept it.</p>}
+      {allowWords && <p className="text-[12px]" style={soft}>{allowWords}</p>}
       {err && <p className="text-[12.5px] inline-flex items-start gap-1.5" style={{ color: AMBER }}><AlertTriangle size={12} className="mt-0.5 shrink-0" /> {err}</p>}
       <button onClick={() => setMaking(!making)} className="text-[12.5px] font-semibold underline" style={{ color: ACCENT }}>{making ? 'Close' : 'Make a new music bed'}</button>
       {making && <div className="pt-1"><MusicBedMaker defaultSeconds={60} /><button onClick={() => void load()} className="mt-2 text-[12.5px] font-semibold underline" style={{ color: ACCENT }}>Show my accepted beds above</button></div>}

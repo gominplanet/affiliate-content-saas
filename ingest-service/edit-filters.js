@@ -191,8 +191,46 @@ function musicChain(input, seconds, volume) {
  *  ffmpeg's own way of spreading it plays it 3 dB quieter. Ends with the
  *  voice. Pure. */
 function musicMix(voice, channels) {
-  const both = Number(channels) === 1 ? 'pan=stereo|c0=c0|c1=c0,' : ''
-  return `[${voice}]${both}aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo[vst];[vst][mus]amerge=inputs=2,pan=stereo|c0=c0+c2|c1=c1+c3[amx]`
+  return `[${voice}]${stereoChain(channels)}[vst];[vst][mus]amerge=inputs=2,pan=stereo|c0=c0+c2|c1=c1+c3[amx]`
+}
+
+/** Any sound as stereo at 48 kHz, a one-channel voice at its full level in
+ *  both speakers. Pure. */
+function stereoChain(channels) {
+  return `${Number(channels) === 1 ? 'pan=stereo|c0=c0|c1=c0,' : ''}aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo`
+}
+
+// ── CLIP FIRST (Seb, 2026-11-27: "start the faster clip first method") ──────
+// A Video Builder set's hooks, bodies and CTAs are each edited once, as a
+// clip, and every video is those clips joined one after another (server.js
+// /assemble-edit), not made again from the start. For the join to be clean:
+// every clip's sound fades in and out at its very ends (so a join never
+// clicks), every clip's sound is stereo at 48 kHz, and every clip's picture
+// is encoded the same way (server.js CLIP_VIDEO_ARGS), so they join as they
+// are, without being made again.
+
+/** The sound of clips joined one after another, each read from its own file
+ *  (inputs from `first` on) and made exactly as long as its picture
+ *  (`seconds`, from its frames): the sound written in a file is a little
+ *  longer than its picture (the encoder's padding), and joining the files as
+ *  they are put a silence at every join and the voice later after each one.
+ *  Stereo, 48 kHz, out [aj]. Pure. */
+function clipsAudioGraph(seconds, first = 1) {
+  const each = seconds.map((d, i) => `[${first + i}:a:0]aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo,asetpts=PTS-STARTPTS,apad,atrim=end=${(Number(d) || 0).toFixed(4)}[ac${i}]`)
+  return `${each.join(';')};${seconds.map((_, i) => `[ac${i}]`).join('')}concat=n=${seconds.length}:v=0:a=1[aj]`
+}
+
+/** Where each clip's picture starts in the joined video, and how long it
+ *  is, from its frame count, so the picture and the sound join at the same
+ *  moments. Pure. */
+function clipList(files, frames) {
+  return files.map((f, i) => `file '${String(f).replace(/'/g, "'\\''")}'\nduration ${((Number(frames[i]) || 0) / FPS).toFixed(4)}`).join('\n') + '\n'
+}
+
+/** A clip's sound faded in and out over JOIN_FADE at its very ends. Pure. */
+function edgeFadeChain(seconds) {
+  const len = Math.max(0, Number(seconds) || 0)
+  return `afade=t=in:st=0:d=${JOIN_FADE},afade=t=out:st=${r3(Math.max(0, len - JOIN_FADE))}:d=${JOIN_FADE}`
 }
 
 // ── VOICEOVER OVER B-ROLL (Seb, 2026-11-26: "only voiceover type videos, and
@@ -269,6 +307,7 @@ function voiceoverShots(totalFrames, clipFrames, joins = []) {
  *                                  the creator's PNGs; without a start and end, on the whole video
  *   ass,                           captions file (vertical only)
  *   channels,                      the take's sound channels (1 for a one-channel voice)
+ *   stereo, edgeFade,              a Video Builder clip: stereo 48 kHz sound, faded at its ends
  *   music: { input, volume? },     a music bed under the voice (input looped by the caller)
  *   picture,                       a voiceover video: input index of its picture, already
  *                                  laid out over the finished length (voiceoverShots); the
@@ -319,12 +358,19 @@ function buildEditGraph(opts) {
     g.push(`[${v}]eq=contrast=1.06:saturation=1.18:brightness=0.01[mc]`)
     v = 'mc'
   }
-  // The music under the voice, once, before the formats split.
   let a = 'a0'
+  let channels = o.hasAudio === false ? 2 : o.channels
+  // A Video Builder clip, to be joined to others (clip first).
+  if (o.stereo || o.edgeFade) {
+    g.push(`[a0]${[o.stereo ? stereoChain(channels) : null, o.edgeFade ? edgeFadeChain(seconds) : null].filter(Boolean).join(',')}[a1]`)
+    a = 'a1'
+    if (o.stereo) channels = 2
+  }
+  // The music under the voice, once, before the formats split.
   const music = o.music && Number.isInteger(o.music.input) ? o.music : null
   if (music) {
     g.push(musicChain(music.input, seconds, music.volume))
-    g.push(musicMix(a, o.hasAudio === false ? 2 : o.channels))
+    g.push(musicMix(a, channels))
     a = 'amx'
   }
   const two = formats.length === 2
@@ -531,4 +577,4 @@ function filmedAtFrom(tags) {
   return read(t['com.apple.quicktime.creationdate']) || read(t.creation_time) || null
 }
 
-module.exports = { MUSIC_VOLUME, MUSIC_FADE_IN, MUSIC_FADE_OUT, MUSIC_LUFS, musicVolume, musicChain, musicMix, SHOT_FRAMES, SHOT_MIN, SHOT_MAX, CLIP_MIN, outputJoins, voiceoverShots, MAX_PICTURES, JOIN_FADE, joinFade, MAX_PARTS, takeParts, partStarts, partAt, concatList, joinedAudioGraph, joinAsIs, joinedOk, remakeSize, filmedAtFrom, silenceNoiseDb, parseSilences, parseMeanDb, hdrChain, driveAuth, authArgs, FPS, snapSegments, editSeconds, outputWindows, cleanInserts, trackSetpts, insertEnable, zoomExpr, cleanZooms, masterSize, placeAt, buildEditGraph }
+module.exports = { clipsAudioGraph, clipList, stereoChain, edgeFadeChain, MUSIC_VOLUME, MUSIC_FADE_IN, MUSIC_FADE_OUT, MUSIC_LUFS, musicVolume, musicChain, musicMix, SHOT_FRAMES, SHOT_MIN, SHOT_MAX, CLIP_MIN, outputJoins, voiceoverShots, MAX_PICTURES, JOIN_FADE, joinFade, MAX_PARTS, takeParts, partStarts, partAt, concatList, joinedAudioGraph, joinAsIs, joinedOk, remakeSize, filmedAtFrom, silenceNoiseDb, parseSilences, parseMeanDb, hdrChain, driveAuth, authArgs, FPS, snapSegments, editSeconds, outputWindows, cleanInserts, trackSetpts, insertEnable, zoomExpr, cleanZooms, masterSize, placeAt, buildEditGraph }

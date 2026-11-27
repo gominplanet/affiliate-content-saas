@@ -5,7 +5,11 @@
 // own storage, checks it for voices, and the creator accepts it or makes
 // another. Admin first (lib/labs-preview music_beds), then the Video Builder.
 //
-//   GET                       the creator's beds, newest first
+//   GET ?brand=               the creator's beds, newest first; the MVP music
+//                             library (other members' accepted tracks, migration
+//                             478) with how many other creators use each for
+//                             that brand; and the month's new tracks left
+//   POST { action: 'share' }  id, shared: whether an accepted track is in the library
 //   POST { action: 'make' }   moods, tempo, styles, seconds, model
 //   POST { action: 'check' }  id: run the voice check again
 //   POST { action: 'accept' } id: only a checked, clean preview
@@ -17,7 +21,10 @@ import { createServerClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { canUsePreview } from '@/lib/labs-preview'
 import { recordUsage } from '@/lib/ai-usage'
-import { BED_MODELS, audioUrlOf, bedPrompt, canAccept, engineInput, readAsk, voiceVerdict, type VoiceCheck } from '@/lib/music-bed'
+import { BED_MODELS, audioUrlOf, bedPrompt, canAccept, engineInput, readAsk, voiceVerdict, musicCapFor, musicAllowanceWords, type VoiceCheck, type MusicAllowance } from '@/lib/music-bed'
+import { checkUsageCap } from '@/lib/usage-cap'
+import { introCap, introNote } from '@/lib/intro-allowance'
+import { normalizeTier } from '@/lib/tier'
 
 export const maxDuration = 300
 
@@ -31,6 +38,40 @@ if (process.env.FAL_KEY) {
 // music_beds is newer than the generated database types.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Db = any
+
+/** The month's new tracks (lib/music-bed MUSIC_TRACKS_MONTHLY_CAP): counted on
+ *  the member's own billing month, a quarter in the first 7 days. */
+async function allowanceOf(admin: Db, userId: string, tier: string | null): Promise<MusicAllowance> {
+  const { data: ig } = await admin.from('integrations').select('*').eq('user_id', userId).maybeSingle()
+  const subscribedAt = (ig?.subscribed_at as string | null | undefined) ?? null
+  const cap = musicCapFor(normalizeTier(tier))
+  const limit = cap === null ? null : introCap(cap, subscribedAt)
+  const c = await checkUsageCap(admin, userId, ['music_bed'], limit, (ig?.subscription_period_start as string | null) ?? null, (ig?.subscription_period_end as string | null) ?? null)
+  const used = c?.used ?? 0
+  return { used, limit, left: limit === null ? null : Math.max(0, limit - used), resetLabel: c?.resetLabel ?? '', introNote: limit === null ? null : introNote(subscribedAt) }
+}
+
+/** Other members' accepted tracks, checked with no voices and shared, newest
+ *  first; never who made them. Empty before migration 478. */
+const LIBRARY_COLS = 'id, model, moods, tempo, styles, seconds, url, voice_check, status, accepted_at'
+async function libraryOf(admin: Db, userId: string, brandId: string | null): Promise<{ beds: unknown[]; usedForBrand: Record<string, number>; ready: boolean }> {
+  const { data, error } = await admin.from('music_beds').select(LIBRARY_COLS).eq('status', 'accepted').eq('shared', true).eq('voice_check', 'clean').neq('user_id', userId).order('accepted_at', { ascending: false }).limit(60)
+  if (error) return { beds: [], usedForBrand: {}, ready: false }
+  // How many other creators already picked each one for this brand.
+  const usedForBrand: Record<string, number> = {}
+  if (brandId) {
+    const { data: sets } = await admin.from('studio_projects').select('user_id, options').eq('brand_id', brandId).neq('user_id', userId).limit(1000)
+    const who = new Map<string, Set<string>>()
+    for (const p of (sets ?? []) as { user_id: string; options: { music?: { bedId?: string } | null } | null }[]) {
+      const b = p.options?.music?.bedId
+      if (!b) continue
+      if (!who.has(b)) who.set(b, new Set())
+      who.get(b)!.add(p.user_id)
+    }
+    for (const [b, set] of who) usedForBrand[b] = set.size
+  }
+  return { beds: data ?? [], usedForBrand, ready: true }
+}
 
 const tableMissing = (m?: string) => /music_beds/.test(m || '') && /does not exist|schema cache|could not find/i.test(m || '')
 const MISSING_WORDS = 'Music beds need migration 475 (the music_beds table). Run it in the Supabase SQL editor, then try again.'
@@ -64,13 +105,18 @@ async function checkVoices(url: string): Promise<{ check: VoiceCheck; heard: str
   }
 }
 
-export async function GET() {
+export async function GET(req: Request) {
   const g = await gate()
   if ('error' in g) return g.error
   const admin = createAdminClient() as Db
-  const { data, error } = await admin.from('music_beds').select(COLS).eq('user_id', g.userId).order('created_at', { ascending: false }).limit(40)
-  if (error) return NextResponse.json({ error: tableMissing(error.message) ? MISSING_WORDS : error.message }, { status: 500 })
-  return NextResponse.json({ beds: data || [] })
+  const brand = new URL(req.url).searchParams.get('brand')
+  const brandId = brand && /^[A-Za-z0-9_-]{4,80}$/.test(brand) ? brand : null
+  // Whether each of the creator's own accepted tracks is in the library (after migration 478).
+  let mine = await admin.from('music_beds').select(`${COLS}, shared`).eq('user_id', g.userId).order('created_at', { ascending: false }).limit(40)
+  if (mine.error && /shared/.test(mine.error.message)) mine = await admin.from('music_beds').select(COLS).eq('user_id', g.userId).order('created_at', { ascending: false }).limit(40)
+  if (mine.error) return NextResponse.json({ error: tableMissing(mine.error.message) ? MISSING_WORDS : mine.error.message }, { status: 500 })
+  const [library, allowance] = await Promise.all([libraryOf(admin, g.userId, brandId), allowanceOf(admin, g.userId, g.tier)])
+  return NextResponse.json({ beds: mine.data || [], library: library.beds, usedForBrand: library.usedForBrand, libraryReady: library.ready, allowance, allowanceWords: musicAllowanceWords(allowance) })
 }
 
 export async function POST(req: Request) {
@@ -85,6 +131,9 @@ export async function POST(req: Request) {
     if (!read.ok) return NextResponse.json({ error: read.error }, { status: 400 })
     const ask = read.ask
     if (!process.env.FAL_KEY) return NextResponse.json({ error: 'Music is not set up on this server (no fal key).' }, { status: 503 })
+    // THE MONTH'S NEW TRACKS: none made past what is left, said with when more come.
+    const allowance = await allowanceOf(admin, g.userId, g.tier)
+    if (allowance.left !== null && allowance.left <= 0) return NextResponse.json({ error: musicAllowanceWords(allowance), allowanceFull: true, allowance }, { status: 429 })
     // The table first, so a missing migration costs nothing.
     const probe = await admin.from('music_beds').select('id').limit(1)
     if (probe.error) return NextResponse.json({ error: tableMissing(probe.error.message) ? MISSING_WORDS : probe.error.message }, { status: 500 })
@@ -153,6 +202,13 @@ export async function POST(req: Request) {
     if (!canAccept(bed.voice_check, bed.status)) return NextResponse.json({ error: bed.voice_check === 'clean' ? 'This track is not a preview any more.' : 'Only a track checked with no voices can be accepted.' }, { status: 409 })
     const { data, error } = await admin.from('music_beds').update({ status: 'accepted', accepted_at: new Date().toISOString() }).eq('id', id).select(COLS).single()
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    return NextResponse.json({ bed: data })
+  }
+  // In the MVP music library or kept to its maker (migration 478).
+  if (action === 'share') {
+    const shared = body.shared === true
+    const { data, error } = await admin.from('music_beds').update({ shared }).eq('id', id).select(`${COLS}, shared`).single()
+    if (error) return NextResponse.json({ error: /shared/.test(error.message) ? 'Sharing tracks needs migration 478 (the shared music library). Run it in the Supabase SQL editor, then try again.' : error.message }, { status: /shared/.test(error.message) ? 503 : 500 })
     return NextResponse.json({ bed: data })
   }
   if (action === 'reject') {

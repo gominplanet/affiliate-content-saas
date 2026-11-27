@@ -144,6 +144,16 @@ check('HDR (HLG or PQ) gets the conversion, a normal take none', !!E.hdrChain('a
   check('the voice is still cut where the plan cuts it', /\[0:a\].*aselect='gte\(t,0\)\*lt\(t,4\)\+gte\(t,5\)\*lt\(t,9\)'/.test(g.graph))
 }
 
+// ── Clip first (Seb, 2026-11-27: "start the faster clip first method") ──────
+{
+  const g = E.buildEditGraph({ segments: [[0.5, 5.5]], srcW: 1080, srcH: 1920, hasAudio: true, channels: 1, formats: ['vertical'], stereo: true, edgeFade: true })
+  check('a clip’s sound is stereo and fades at its very ends, so joins never click', /\[a0\]pan=stereo\|c0=c0\|c1=c0,aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo,afade=t=in:st=0:d=0\.012,afade=t=out:st=4\.988:d=0\.012\[a1\]/.test(g.graph) && g.outputs.vertical.a === 'a1', g.graph)
+  check('an ordinary edit is not changed by it', !/\[a1\]/.test(E.buildEditGraph({ segments: [[0, 5]], srcW: 1920, srcH: 1080, hasAudio: true, formats: ['wide'] }).graph))
+  const ag = E.clipsAudioGraph([5, 6.5], 1)
+  check('each clip’s sound is made exactly as long as its picture, then joined', /\[1:a:0\].*apad,atrim=end=5\.0000\[ac0\]/.test(ag) && /\[2:a:0\].*atrim=end=6\.5000\[ac1\]/.test(ag) && /\[ac0\]\[ac1\]concat=n=2:v=0:a=1\[aj\]$/.test(ag), ag)
+  check('each clip’s picture is listed with its frames as its length', E.clipList(['/a.mp4', '/b.mp4'], [150, 195]) === "file '/a.mp4'\nduration 5.0000\nfile '/b.mp4'\nduration 6.5000\n")
+}
+
 // ── A real edit, where ffmpeg is installed ───────────────────────────────────
 let ffmpeg = true
 try { execFileSync('ffmpeg', ['-version'], { stdio: 'ignore' }) } catch { ffmpeg = false }
@@ -385,11 +395,73 @@ async function joinTest() {
   check('every file server.js needs is copied into the video server', local.length >= 3 && local.every((f) => copied.split(/\s+/).includes(f)), { local, copied })
 }
 
-;(ffmpeg ? joinTest() : Promise.resolve()).catch((e) => { fails.push(`the real join failed: ${String(e.stderr || e.message).slice(0, 600)}`) }).then(() => {
+// ── Clips joined into videos, where ffmpeg is installed ─────────────────────
+// Three clips made the way /render-edit makes a Video Builder clip (one with
+// a one-channel voice, one stereo), joined the way /assemble-edit joins them.
+// Read back: joined as they are, the frames and the length exact, each clip
+// where it should be, the sound joining at the same moments as the picture
+// with no silence at the joins, and the music under it at its level.
+const clipJoinTest = async () => {
+  const { joinClips, clipFrames, CLIP_VIDEO_ARGS } = require('./clip-join')
+  const { ffprobeInfo } = require('./join-takes')
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'clip-test-'))
+  const run = (args) => execFileSync('ffmpeg', ['-hide_banner', '-loglevel', 'error', ...args], { stdio: ['ignore', 'ignore', 'pipe'] })
+  const rgbAt = (f, at) => { const raw = execFileSync('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-ss', String(at), '-i', f, '-frames:v', '1', '-vf', 'scale=8:8', '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-']); const c = [0, 0, 0]; for (let i = 0; i < raw.length; i += 3) { c[0] += raw[i]; c[1] += raw[i + 1]; c[2] += raw[i + 2] } return c.map((x) => Math.round(x / (raw.length / 3))) }
+  const pcm = (f) => execFileSync('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-i', f, '-vn', '-ac', '1', '-ar', '48000', '-f', 's16le', '-'], { maxBuffer: 64 * 1024 * 1024 })
+  const level = (raw, at, ms = 2) => { const s0 = Math.round(at * 48000), n = 48 * ms; let q = 0; for (let i = s0; i < s0 + n; i++) { const x = raw.readInt16LE(i * 2); q += x * x } return Math.sqrt(q / n) }
+  try {
+    const make = (i, color, freq, ch, d, size = '1080x1920', clipArgs = true) => {
+      const src = path.join(dir, `src${i}.mp4`)
+      run(['-f', 'lavfi', '-i', `color=c=${color}:s=${size}:r=30:d=${d}`, '-f', 'lavfi', '-i', `sine=f=${freq}:d=${d}`, '-ac', String(ch), '-shortest', '-c:v', 'libx264', '-preset', 'ultrafast', '-c:a', 'aac', '-y', src])
+      const [w, h] = size.split('x').map(Number)
+      const built = E.buildEditGraph({ segments: [[0.5, d - 0.5]], srcW: w, srcH: h, hasAudio: true, channels: ch, formats: ['vertical'], color: true, stereo: true, edgeFade: true })
+      fs.writeFileSync(path.join(dir, 'g.txt'), built.graph)
+      const out = path.join(dir, `clip${i}.mp4`)
+      run(['-i', src, '-filter_complex_script', path.join(dir, 'g.txt'), '-map', `[${built.outputs.vertical.v}]`, '-map', `[${built.outputs.vertical.a}]`, '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '21', '-pix_fmt', 'yuv420p', ...(clipArgs ? CLIP_VIDEO_ARGS : []), '-c:a', 'aac', '-b:a', '160k', '-ar', '48000', '-ac', '2', '-movflags', '+faststart', '-y', out])
+      return out
+    }
+    const files = [make(0, 'red', 440, 1, 6), make(1, 'blue', 660, 2, 7), make(2, '0x00FF00', 880, 1, 5)]
+    const clips = []
+    for (const f of files) clips.push({ file: f, frames: await clipFrames(f), info: await ffprobeInfo(f) })
+    check('clips: each made the length of its kept part, written the same way', JSON.stringify(clips.map((c) => c.frames)) === '[150,180,120]' && clips.every((c) => c.info.sig === clips[0].info.sig), clips.map((c) => [c.frames, c.info.sig]))
+    const music = path.join(dir, 'music.wav')
+    run(['-f', 'lavfi', '-i', 'sine=f=220:d=4', '-ac', '2', '-y', music])
+    const t0 = Date.now()
+    const plain = await joinClips({ clips, work: fs.mkdtempSync(path.join(dir, 'a-')) })
+    const secs = (Date.now() - t0) / 1000
+    const withMusic = await joinClips({ clips, music: { file: music, volume: 0.2 }, work: fs.mkdtempSync(path.join(dir, 'b-')) })
+    check('clips: joined as they are, not made again', plain.remade === false && withMusic.remade === false && withMusic.mixed === true)
+    for (const [name, r] of [['without music', plain], ['with music', withMusic]]) {
+      const p = JSON.parse(execFileSync('ffprobe', ['-v', 'error', '-show_entries', 'stream=codec_type,duration', '-of', 'json', r.file]).toString())
+      const vd = Number(p.streams.find((x) => x.codec_type === 'video').duration), ad = Number(p.streams.find((x) => x.codec_type === 'audio').duration)
+      check(`clips ${name}: 450 frames, picture and sound both exactly 15 seconds`, await clipFrames(r.file) === 450 && Math.abs(vd - 15) < 0.01 && Math.abs(ad - 15) < 0.025 && r.seconds === 15, { vd, ad })
+    }
+    const seen = [2.5, 5.1, 10.9, 11.1].map((t) => rgbAt(plain.file, t))
+    check('clips: each where it should be, the joins at 5 and 11 seconds', seen[0][0] > 200 && seen[1][2] > 200 && seen[2][2] > 200 && seen[3][1] > 200, seen)
+    const raw = pcm(plain.file)
+    // The sound dips for the join's fade at exactly 5 and 11 seconds, and is full again 15 ms either side: no silence, no drift.
+    const at = (t) => Math.round(level(raw, t))
+    check('clips: the sound joins where the picture does, with no silence', [5, 11].every((j) => at(j - 0.02) > 1500 && at(j + 0.016) > 1500 && at(j - 0.002) < at(j - 0.02) * 0.6), [5, 11].map((j) => [at(j - 0.02), at(j - 0.002), at(j + 0.016)]))
+    let quiet = 0, worst = 0
+    for (let t = 0.1; t < 14.9; t += 0.002) { if (level(raw, t) < 200) { quiet += 2; worst = Math.max(worst, quiet) } else quiet = 0 }
+    check('clips: never a silence longer than the join fades', worst <= 12, worst)
+    const rawM = pcm(withMusic.file)
+    check('clips: the music is under the voice, which keeps its level', level(rawM, 3, 100) >= level(raw, 3, 100) * 0.97 && level(rawM, 3, 100) <= level(raw, 3, 100) * 1.1, [level(rawM, 3, 100), level(raw, 3, 100)])
+    // A clip written another way (an older server, another size) is made the same first, and still lines up.
+    const odd = make(3, 'yellow', 550, 2, 4, '720x1280', false)
+    const mixed = await joinClips({ clips: [clips[0], { file: odd, frames: await clipFrames(odd), info: await ffprobeInfo(odd) }], work: fs.mkdtempSync(path.join(dir, 'c-')) })
+    check('clips: one written another way is made the same first, the length still exact', mixed.remade === true && await clipFrames(mixed.file) === 240, mixed)
+    console.log(`   (three clips joined into a 15 second video: ${secs.toFixed(2)}s)`)
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+}
+
+;(ffmpeg ? joinTest().then(() => clipJoinTest().catch((e) => { fails.push(`the real clip join failed: ${String(e.stderr || e.message).slice(0, 600)}`) })) : Promise.resolve()).catch((e) => { fails.push(`the real join failed: ${String(e.stderr || e.message).slice(0, 600)}`) }).then(() => {
   if (fails.length) {
     console.error(`\n❌ edit-filters: ${fails.length} failure(s)\n`)
     for (const f of fails) console.error(`   • ${f}`)
     process.exit(1)
   }
-  console.log('✅ edit-filters: cuts, B-roll, zooms, colour, logo, pictures and both formats in one pass, the B-roll and pictures exactly where they were placed; several files joined into one take on the timeline its sound was read on; a voiceover video made from its B-roll, and music under the voice at its level')
+  console.log('✅ edit-filters: cuts, B-roll, zooms, colour, logo, pictures and both formats in one pass, the B-roll and pictures exactly where they were placed; several files joined into one take on the timeline its sound was read on; a voiceover video made from its B-roll, and music under the voice at its level; clips joined into videos with picture and sound exact')
 })

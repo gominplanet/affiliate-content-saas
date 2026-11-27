@@ -31,9 +31,12 @@ import { cleanSettings, clock, keepName, linesOf, DEFAULT_SETTINGS, MAX_CALLOUTS
 import { uploadKey } from '@/lib/review-edit-batch'
 import { suggestCallouts } from '@/lib/review-edit-callouts'
 import { promptChange } from '@/lib/review-edit-plan'
-import { brollFilesLine, moveQueue, deleteRaw, ownPath, hasUpload, serverJobs, finishMaking, takeFiles, editAllowance, allowanceFullWords, lineOrder, MAX_TAKE_FILES, EDIT_BUCKET, type EditRow, type Src, type TakeFile, type ServerView, editDb } from '@/lib/review-edit-server'
+import { brollFilesLine, moveQueue, deleteRaw, ownPath, hasUpload, serverJobs, finishMaking, takeFiles, editAllowance, allowanceFullWords, lineOrder, sweepCombos, MAX_TAKE_FILES, EDIT_BUCKET, type EditRow, type Src, type TakeFile, type ServerView, editDb } from '@/lib/review-edit-server'
 import { driveAccessToken, driveFile, isDriveId } from '@/lib/google-drive'
 import { placesInLine } from '@/lib/review-edit-queue'
+import { clipSettings, CLIP_SQL, type ClipPart } from '@/lib/studio-clips'
+import { recordUsage } from '@/lib/ai-usage'
+import { PRIMARY_FEATURE } from '@/lib/usage-cap'
 
 /** How big a file in storage is, from its public address: its size, 0 when
  *  it is not there, or null when that could not be found out. Asked twice
@@ -135,7 +138,11 @@ function view(r: EditRow, server?: ServerView | null, dropAsin?: string | null, 
     trybe: r.trybe_campaign_id ? { campaignId: r.trybe_campaign_id, idx: r.trybe_script_idx ?? null, check: r.trybe_check ?? null } : null,
     /** An Video Builder video (migration 476): checked against its brand's
      *  rules, and what happened when it was sent to the brand. */
-    studio: r.studio_brand_id ? { brandId: r.studio_brand_id, check: r.trybe_check ?? null, send: r.studio_send ?? null, voiceover: r.info?.voiceover === true } : null,
+    studio: r.studio_brand_id ? {
+      brandId: r.studio_brand_id, check: r.trybe_check ?? null, send: r.studio_send ?? null, voiceover: r.info?.voiceover === true,
+      // Clip first (lib/studio-clips): a clip and its label, or a video and its clips.
+      role: r.studio_role ?? null, part: r.studio_part ?? null, parts: r.studio_parts ?? null,
+    } : null,
     onServer,
   }
 }
@@ -164,14 +171,20 @@ export async function GET(request: Request) {
   // ONE VIDEO BUILDER SET'S VIDEOS (?project=, migration 477): one brand and product.
   const askedProject = new URL(request.url).searchParams.get('project')
   const forProject = askedProject && /^[0-9a-f-]{36}$/i.test(askedProject) ? askedProject : null
-  const listQ = () => {
+  // The Review Editor's own list leaves out the Video Builder's videos put
+  // together from clips: their cuts are their clips' (lib/studio-clips).
+  const listQ = (hideCombos: boolean) => {
     let q = db.from('review_edits').select('*').eq('user_id', g.userId)
     if (forBatch) q = q.eq('trybe_campaign_id', forBatch)
     if (forStudio) q = q.eq('studio_brand_id', forStudio)
     if (forProject) q = q.eq('studio_project_id', forProject)
+    if (hideCombos) q = q.or('studio_role.is.null,studio_role.neq.combo')
     return q.order('created_at', { ascending: false }).limit(forBatch || forStudio ? 300 : 40)
   }
-  const { data, error } = await listQ()
+  const plainList = !forBatch && !forStudio && !forProject
+  let { data, error } = await listQ(plainList)
+  // Before migration 478 there are none to leave out.
+  if (error && plainList && /studio_role/.test(error.message)) ({ data, error } = await listQ(false))
   if (error && forBatch && trybeMissing(error.message)) return NextResponse.json({ error: TRYBE_SQL, needsSql: true }, { status: 503 })
   if (error && forStudio && studioMissing(error.message)) return NextResponse.json({ error: /studio_project_id/.test(error.message) ? PROJECT_SQL : STUDIO_SQL, needsSql: true }, { status: 503 })
   if (error) return NextResponse.json({ error: missing(error.message) ? NEEDS_SQL : error.message, needsSql: missing(error.message) }, { status: missing(error.message) ? 503 : 500 })
@@ -189,7 +202,7 @@ export async function GET(request: Request) {
   if (server) {
     const heard = rows.filter((r) => r.status === 'making' && server.done[`edit-${r.id}`] && Date.parse(server.done[`edit-${r.id}`].at) >= Date.parse(r.updated_at))
     for (const r of heard) await finishMaking(db, r.id, r.user_id, { ...server.done[`edit-${r.id}`] })
-    if (heard.length) rows = ((await listQ()).data ?? rows) as EditRow[]
+    if (heard.length) rows = ((await listQ(plainList && !error)).data ?? rows) as EditRow[]
   }
   // An ASIN set on a finished video in Drop names its download too.
   const outs = rows.flatMap((r) => Object.values(r.outputs || {}).map((o) => o.url)).filter(Boolean)
@@ -272,7 +285,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ used: asked.map((f) => uploadKey(f.name, f.bytes)).filter((k) => seen.has(k)) })
   }
 
-  if (action === 'add') {
+  if (action === 'add' || action === 'studio_set') {
     // THE MONTH'S EDITED VIDEOS (lib/review-edit-server editAllowance): none
     // added past what is left, said in words with when more come.
     // The look first: what kind of video it is says which allowance it uses.
@@ -352,6 +365,64 @@ export async function POST(request: Request) {
       if (new Set([first, ...more].map(key)).size !== 1 + more.length) return { error: 'The same file is in this video twice.' }
       return more.length ? { ...first, more } : first
     }
+
+    // A VIDEO BUILDER SET, CLIP FIRST (lib/studio-clips; Seb, 2026-11-27: "so
+    // we can render faster"): each hook, body and CTA is one clip, read and
+    // edited once; each video is its clips joined. Only the videos use the
+    // month's TRYBE ad edits, counted now; a clip is never counted.
+    if (action === 'studio_set') {
+      if (!studio) return NextResponse.json({ error: 'Which TRYBE brand is this set for?' }, { status: 400 })
+      const probe = await db.from('review_edits').select('studio_role, studio_part, studio_parts').limit(1)
+      if (probe.error) return NextResponse.json({ error: /studio_role|studio_part/.test(probe.error.message) ? CLIP_SQL : probe.error.message, needsSql: /studio_role|studio_part/.test(probe.error.message) }, { status: 503 })
+      const rawClips = (Array.isArray(body.clips) ? body.clips : []).slice(0, 30) as Array<{ label?: unknown; review?: unknown; broll?: unknown }>
+      const rawCombos = (Array.isArray(body.combos) ? body.combos : []).slice(0, 300) as Array<{ label?: unknown; parts?: unknown }>
+      const labels = rawClips.map((c) => String(c.label || ''))
+      if (!rawClips.length || labels.some((l) => !/^[HBC]\d{1,2}$/.test(l)) || new Set(labels).size !== labels.length) return NextResponse.json({ error: 'The clips of this set are not named H1, B1, C1 and so on.' }, { status: 400 })
+      const combos = rawCombos.map((c) => ({ label: String(c.label || '').slice(0, 60), parts: (Array.isArray(c.parts) ? c.parts : []).map(String) }))
+      if (!combos.length || combos.some((c) => c.parts.length < 2 || c.parts.length > 3 || c.parts.some((x) => !labels.includes(x)))) return NextResponse.json({ error: 'Each video needs a hook and a body from this set, and a CTA if it has one.' }, { status: 400 })
+      if (allowance.left !== null && combos.length > allowance.left) return NextResponse.json({ error: allowanceFullWords(allowance), allowanceFull: true, allowance }, { status: 429 })
+      const prefix = String(body.namePrefix || '').trim().slice(0, 100) || 'Video'
+      const product = typeof body.product === 'string' ? body.product.trim().slice(0, 300) || null : null
+      if (settings.logo && !own(settings.logo.url)) settings.logo = null
+      settings.pictures = settings.pictures.filter((p) => own(p.url))
+      const partOf = (l: string): ClipPart => (l[0] === 'H' ? 'hook' : l[0] === 'B' ? 'body' : 'cta')
+      const clipRows: Record<string, unknown>[] = []
+      for (const c of rawClips) {
+        const label = String(c.label)
+        const review = await src(c.review)
+        if (!review) return NextResponse.json({ error: `${label}: its file is not one of your uploads in MVP. Press Process again.` }, { status: 400 })
+        if ('error' in review) return NextResponse.json({ error: `${label}: ${review.error}` }, { status: 400 })
+        const broll = c.broll ? await src(c.broll) : null
+        if (broll && 'error' in broll) return NextResponse.json({ error: `${label}, its B-roll: ${broll.error}` }, { status: 400 })
+        if (studio.voiceover && !broll) return NextResponse.json({ error: `${label}: a voiceover clip needs B-roll, which is its picture.` }, { status: 400 })
+        clipRows.push({
+          user_id: g.userId, name: `${prefix} ${label}`.slice(0, 120), status: 'queued', note: 'In line to be read',
+          review_src: review, broll_src: broll, product, settings: clipSettings(settings, partOf(label)),
+          // Never one of the month's edits: the videos are.
+          info: { counted: true, ...(studio.voiceover ? { voiceover: true } : {}) },
+          studio_brand_id: studio.brandId, ...(studio.projectId ? { studio_project_id: studio.projectId } : {}),
+          studio_role: 'clip', studio_part: label,
+        })
+      }
+      const { data: made, error: clipErr } = await db.from('review_edits').insert(clipRows).select('id, studio_part')
+      if (clipErr || !made) return NextResponse.json({ error: /studio_role|studio_part/.test(clipErr?.message || '') ? CLIP_SQL : clipErr?.message || 'The clips were not saved.' }, { status: 500 })
+      const idOf = new Map(((made ?? []) as { id: string; studio_part: string }[]).map((r) => [r.studio_part, r.id]))
+      const { data: vids, error: comboErr } = await db.from('review_edits').insert(combos.map((c) => ({
+        user_id: g.userId, name: `${prefix} ${c.label}`.slice(0, 120), status: 'waiting', note: 'Waiting for its clips to be edited',
+        review_src: { kind: 'combo', name: c.parts.join(', ').replace(/, ([^,]*)$/, ' and $1') }, broll_src: null, product, settings,
+        info: { counted: true },
+        studio_brand_id: studio.brandId, ...(studio.projectId ? { studio_project_id: studio.projectId } : {}),
+        studio_role: 'combo', studio_parts: c.parts.map((l) => idOf.get(l)),
+      }))).select('id')
+      if (comboErr || !vids) {
+        // Not half a set: the clips go again.
+        await db.from('review_edits').delete().in('id', Array.from(idOf.values()))
+        return NextResponse.json({ error: comboErr?.message || 'The videos were not saved.' }, { status: 500 })
+      }
+      for (let k = 0; k < vids.length; k++) recordUsage({ userId: g.userId, tier: g.tier, feature: PRIMARY_FEATURE.trybeEdit[0], model: 'counter', images: 0 })
+      after(async () => { try { await moveQueue(db, { userId: g.userId, readBudget: 1 }) } catch { /* the cron picks it up */ } })
+      return NextResponse.json({ ok: true, clips: made.length, videos: vids.length })
+    }
     const review = await src(body.review)
     if (!review) return NextResponse.json({ error: 'Add your talking take first.' }, { status: 400 })
     if ('error' in review) return NextResponse.json({ error: review.error }, { status: 400 })
@@ -386,6 +457,19 @@ export async function POST(request: Request) {
   // WHICH SCRIPT A TRYBE AD IS (migration 468), said by the creator when MVP
   // could not tell from the take, or put right when it guessed wrong. The
   // video is read again with that script.
+  // A VIDEO PUT TOGETHER FROM CLIPS (lib/studio-clips): its cuts are its
+  // clips'. Make it again waits for its clips and puts it together again.
+  if (row.studio_role === 'combo') {
+    if (['script', 'change', 'reread'].includes(action)) return NextResponse.json({ error: `This video is put together from its clips (${String((row.review_src as { name?: string } | null)?.name || 'its hook, body and CTA')}). Change the cuts of a clip in the Review Editor, and every video with that clip is put together again by itself.` }, { status: 409 })
+    if (action === 'make' || action === 'retry') {
+      if (row.status === 'making' && Date.now() - Date.parse(row.updated_at) <= STUCK_AFTER_MS) return NextResponse.json({ error: 'MVP is putting this one together right now.' }, { status: 409 })
+      await db.from('review_edits').update({ status: 'waiting', attempts: 0, note: 'Waiting for its clips', info: { ...(row.info || {}), clipFailed: false }, updated_at: now }).eq('id', row.id)
+      await sweepCombos(db, { userId: g.userId, ids: [row.id] })
+      after(async () => { try { await moveQueue(db, { userId: g.userId, readBudget: 1 }) } catch { /* the cron picks it up */ } })
+      return NextResponse.json({ ok: true })
+    }
+  }
+
   if (action === 'script') {
     if (!row.trybe_campaign_id) return NextResponse.json({ error: 'This video is not from a TRYBE batch.' }, { status: 400 })
     const idx = Number(body.idx)
@@ -479,6 +563,11 @@ export async function POST(request: Request) {
 
   if (action === 'remove') {
     if (row.status === 'making') return NextResponse.json({ error: 'It is being made right now. Remove it once it is done.' }, { status: 409 })
+    // A clip in videos stays until they are removed: they are made from it.
+    if (row.studio_role === 'clip') {
+      const { count } = await db.from('review_edits').select('id', { count: 'exact', head: true }).eq('user_id', g.userId).eq('studio_role', 'combo').contains('studio_parts', [row.id])
+      if (count) return NextResponse.json({ error: `${row.studio_part || 'This clip'} is in ${count} ${count === 1 ? 'video' : 'videos'} of your Video Builder set. Remove ${count === 1 ? 'that video' : 'those videos'} first.` }, { status: 409 })
+    }
     await deleteRaw(db, row)
     const files = [...Object.values(row.outputs || {}).map((o) => ownPath(o.url, g.userId)), `${g.userId}/edit-title-${row.id}.png`, ...Array.from({ length: MAX_CALLOUTS }, (_, k) => `${g.userId}/edit-callout-${row.id}-${k}.png`),
       // A thumbnail from a video frame, made while that existed (2026-11-02).
@@ -486,6 +575,19 @@ export async function POST(request: Request) {
       `${g.userId}/edit-thumbsrc-${row.id}.jpg`, `${g.userId}/edit-thumbcut-${row.id}.png`].filter((p): p is string => !!p)
     if (files.length) await db.storage.from(EDIT_BUCKET).remove(files)
     await db.from('review_edits').delete().eq('id', row.id)
+    // Its clips, once no other video uses them: their files too.
+    if (row.studio_role === 'combo' && row.studio_parts?.length) {
+      for (const clipId of row.studio_parts) {
+        const { count } = await db.from('review_edits').select('id', { count: 'exact', head: true }).eq('user_id', g.userId).eq('studio_role', 'combo').contains('studio_parts', [clipId])
+        if (count !== 0) continue
+        const { data: c } = await db.from('review_edits').select('*').eq('id', clipId).eq('user_id', g.userId).eq('studio_role', 'clip').maybeSingle()
+        if (!c || c.status === 'making') continue
+        await deleteRaw(db, c as EditRow)
+        const cf = [...Object.values(((c as EditRow).outputs) || {}).map((o) => ownPath(o.url, g.userId)), `${g.userId}/edit-title-${c.id}.png`].filter((x): x is string => !!x)
+        if (cf.length) await db.storage.from(EDIT_BUCKET).remove(cf)
+        await db.from('review_edits').delete().eq('id', c.id)
+      }
+    }
     return NextResponse.json({ ok: true })
   }
 

@@ -1307,6 +1307,7 @@ app.post('/dub', async (req, res) => {
 const { buildEditGraph, cleanInserts, snapSegments, editSeconds, masterSize, driveAuth, authArgs, hdrChain, filmedAtFrom, takeParts, partAt, joinedAudioGraph, outputJoins, voiceoverShots, musicVolume, FPS: EDIT_FPS, MAX_PICTURES: EDIT_MAX_PICTURES } = require('./edit-filters')
 // Several files of one take joined into one video, and what a video is.
 const { joinFiles, ffprobeInfo, probeWhy } = require('./join-takes')
+const { joinClips, clipFrames, CLIP_VIDEO_ARGS } = require('./clip-join')
 // Encoder threads per format. A small box stays at 2; a bigger one goes faster.
 const EDIT_THREADS = String(Math.max(1, Math.min(8, Number(process.env.EDIT_THREADS) || 2)))
 const EDIT_MAX_SOURCE_SEC = 60 * 60
@@ -1549,6 +1550,9 @@ async function renderEditJob(body, report = () => {}) {
   const voClips = voiceover ? takeParts(body.voiceover.clips) : null
   if (voiceover && !voClips) throw bad('A voiceover video needs at least one B-roll clip.')
   if (voiceover && (formats.length !== 1 || formats[0] !== 'vertical')) throw bad('A voiceover video is vertical only.')
+  // A VIDEO BUILDER CLIP (clip first): one hook, body or CTA, made once and
+  // joined to others by /assemble-edit. Vertical only.
+  const clip = body.clip === true && formats.length === 1 && formats[0] === 'vertical'
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'edit-'))
   try {
     report('download', 0)
@@ -1678,6 +1682,8 @@ async function renderEditJob(body, report = () => {}) {
     const built = buildEditGraph({
       segments: body.segments, srcW: info.w, srcH: info.h, hasAudio: info.hasAudio, transfer: hdrFallback ? '' : info.transfer, formats, cropX: body.cropX,
       inserts, brollSec, track, zooms: body.zooms, color: body.color === true, logo, title, pictures, ass, music, picture, channels: info.channels,
+      // A Video Builder clip (clip first): ready to be joined to others.
+      stereo: clip, edgeFade: clip,
     })
     fs.writeFileSync(path.join(dir, 'graph.txt'), built.graph)
     const outArgs = []
@@ -1686,8 +1692,8 @@ async function renderEditJob(body, report = () => {}) {
       files[f] = path.join(dir, `out-${f}.mp4`)
       outArgs.push('-map', `[${built.outputs[f].v}]`, '-map', `[${built.outputs[f].a}]`,
         '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '21', '-pix_fmt', 'yuv420p', '-threads', EDIT_THREADS,
-        '-x264-params', 'rc-lookahead=10:sync-lookahead=0',
-        '-c:a', 'aac', '-b:a', '160k', '-movflags', '+faststart', '-y', files[f])
+        '-x264-params', 'rc-lookahead=10:sync-lookahead=0', ...(clip ? CLIP_VIDEO_ARGS : []),
+        '-c:a', 'aac', '-b:a', '160k', ...(clip ? ['-ar', '48000', '-ac', '2'] : []), '-movflags', '+faststart', '-y', files[f])
     }
     report('make', 0)
     await runFfmpegProgress([...inputs, '-filter_complex_script', path.join(dir, 'graph.txt'), ...outArgs], 45 * 60_000, 'edit', built.seconds, (p) => report('make', p))
@@ -1773,6 +1779,109 @@ app.post(['/render-edit', '/render-voiceover'], async (req, res) => {
     editJobs.delete(id)
     const cb = await postRenderCallback(callbackUrl, { job, ...rec })
     rememberDone(id, { ...rec, at: new Date().toISOString(), delivered: cb.delivered, callback: cb.status })
+  })
+})
+
+
+/** One Video Builder video put together from clips already made. The
+ *  pictures are joined as they are when every clip was written the same way
+ *  (CLIP_VIDEO_ARGS; else made again, together, at 1080x1920), each exactly
+ *  its frames long; the sound is read from each clip and made exactly as
+ *  long as its picture (clipsAudioGraph), so picture and sound join at the
+ *  same moments and the voice never drifts; then the music under it. The
+ *  clips are downloaded once for the whole batch (`files`). */
+async function assembleOne(it, clips, files, musics, dir, userId, report) {
+  report('download', 0)
+  const local = []
+  for (const [k, ci] of it.parts.entries()) {
+    if (!files.has(ci)) {
+      const f = path.join(dir, `clip${ci}.mp4`)
+      try {
+        await assertPublicHttpUrl(clips[ci].url)
+        await downloadLarge(clips[ci].url, f, 10 * 60_000)
+        const info = await ffprobeInfo(f)
+        const frames = await clipFrames(f)
+        if (!info || !info.w || !info.hasAudio || !frames) throw new Error('it is not a finished clip with picture and sound')
+        files.set(ci, { file: f, info, frames })
+      } catch (e) { files.set(ci, { error: String((e && e.message) || e).slice(0, 160) }) }
+    }
+    const got = files.get(ci)
+    if (got.error) throw new Error(`Clip ${k + 1} of this video could not be used: ${got.error}`)
+    local.push(got)
+    report('download', Math.floor(((k + 1) / it.parts.length) * 100))
+  }
+  const work = fs.mkdtempSync(path.join(dir, 'item-'))
+  try {
+    report('make', 10)
+    let music = null, musicSaid = null
+    if (it.music) {
+      if (!musics.has(it.music.url)) musics.set(it.music.url, await fetchMusic(it.music, dir))
+      const m = musics.get(it.music.url)
+      if (m.ok) music = { file: m.file, volume: it.music.volume }
+      else musicSaid = `left out: ${m.why}`
+    }
+    const { file: out, seconds, remade, mixed } = await joinClips({ clips: local, music, work, threads: EDIT_THREADS, onPct: (p) => report('make', p) })
+    report('save', 0)
+    const key = `${userId}/edit-${Date.now()}-${require('crypto').randomUUID().slice(0, 8)}-vertical.mp4`
+    await uploadToSupabase(key, out)
+    return {
+      outputs: { vertical: { url: publicUrl(key), seconds } }, seconds, formats: ['vertical'],
+      assembled: it.parts.length, joined: remade ? 'made the same first' : 'as they are',
+      ...(it.music ? { music: mixed ? 'mixed' : musicSaid || 'left out' } : {}),
+    }
+  } finally {
+    try { fs.rmSync(work, { recursive: true, force: true }) } catch { /* ignore */ }
+  }
+}
+
+// POST /assemble-edit — Video Builder videos put together from clips already
+// made (clip first; Seb, 2026-11-27: "so we can render faster"). Body:
+//   { userId, callbackUrl, clips: [{ url }], items: [{ job, parts: [clip index], music?: { url, volume } }] }
+// Each clip is downloaded once for the batch; each item is posted back on
+// its own as it is done, the way /render-edit posts one, and listed on /jobs.
+app.post('/assemble-edit', async (req, res) => {
+  if (SECRET && req.get('x-ingest-secret') !== SECRET) return res.status(401).json({ error: 'unauthorized' })
+  const body = req.body || {}
+  const callbackUrl = String(body.callbackUrl || '')
+  if (!/^https:\/\//i.test(callbackUrl)) return res.status(400).json({ error: 'callbackUrl required' })
+  const userId = String(body.userId || '').trim() || 'ingest'
+  const clips = (Array.isArray(body.clips) ? body.clips : []).slice(0, 80).map((c) => ({ url: String((c && c.url) || '').trim() }))
+  if (!clips.length || !clips.every((c) => /^https:\/\//i.test(c.url))) return res.status(400).json({ error: 'clips required' })
+  const items = (Array.isArray(body.items) ? body.items : []).slice(0, 80).map((it) => ({
+    job: String((it && it.job) || '').slice(0, 300),
+    parts: (Array.isArray(it && it.parts) ? it.parts : []).map(Number).filter((i) => Number.isInteger(i) && i >= 0 && i < clips.length).slice(0, 8),
+    music: it && it.music && typeof it.music === 'object' && /^https:\/\//i.test(String(it.music.url || '')) ? { url: String(it.music.url), volume: it.music.volume } : null,
+  })).filter((it) => it.job && it.parts.length)
+  if (!items.length) return res.status(400).json({ error: 'items required' })
+  for (const it of items) editJobs.set(editIdOf(it.job), { at: Date.now(), stage: 'wait', pct: null, since: Date.now() })
+  res.status(202).json({ accepted: true, items: items.length, music: true })
+  renderQueue = renderQueue.then(async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'assemble-'))
+    const files = new Map(), musics = new Map()
+    try {
+      for (const it of items) {
+        const id = editIdOf(it.job)
+        const report = (stage, pct) => {
+          const j = editJobs.get(id)
+          if (!j) return
+          if (j.stage !== stage) { j.stage = stage; j.since = Date.now() }
+          j.pct = Number.isFinite(pct) ? pct : null
+        }
+        let rec
+        try {
+          rec = { ok: true, ...(await assembleOne(it, clips, files, musics, dir, userId, report)) }
+        } catch (e) {
+          console.error('[assemble-edit] failed', e && e.message)
+          rec = { ok: false, error: String((e && e.message) || e).slice(0, 400) }
+        }
+        editJobs.delete(id)
+        const cb = await postRenderCallback(callbackUrl, { job: it.job, ...rec })
+        rememberDone(id, { ...rec, at: new Date().toISOString(), delivered: cb.delivered, callback: cb.status })
+      }
+    } finally {
+      for (const it of items) editJobs.delete(editIdOf(it.job))
+      try { fs.rmSync(dir, { recursive: true, force: true }) } catch { /* ignore */ }
+    }
   })
 })
 

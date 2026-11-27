@@ -19,7 +19,11 @@ export interface StudioEdit {
   status: string
   note: string | null
   outputs: Record<string, { url: string; seconds: number }> | null
-  studio: { brandId: string; check: CutCheck | null; send: StudioSend | null; voiceover?: boolean } | null
+  studio: {
+    brandId: string; check: CutCheck | null; send: StudioSend | null; voiceover?: boolean
+    /** Clip first (lib/studio-clips): a clip and its label (H1), or a video and its clips. */
+    role?: 'clip' | 'combo' | null; part?: string | null; parts?: string[] | null
+  } | null
   /** What went on it, as the video server reported (lib/studio-render). */
   placed?: { music?: MusicPlaced | null } | null
 }
@@ -30,7 +34,9 @@ export const outputOf = (e: Pick<StudioEdit, 'outputs'>) => (e.outputs ? Object.
 /** Where a studio video stands, in words, and its colour. Pure. */
 export function studioStage(e: StudioEdit, brandName = 'the brand'): { word: string; tone: StudioTone } {
   if (e.status === 'failed') return { word: 'Not edited', tone: 'bad' }
-  if (e.status !== 'done') return { word: e.status === 'making' ? 'Being made' : e.status === 'ready_to_make' ? 'Waiting its turn' : 'Being read', tone: 'wait' }
+  if (e.status === 'waiting') return { word: 'Waiting for its clips', tone: 'wait' }
+  const combo = e.studio?.role === 'combo'
+  if (e.status !== 'done') return { word: e.status === 'making' ? (combo ? 'Being put together' : 'Being made') : e.status === 'ready_to_make' ? (combo ? 'In line to be put together' : 'Waiting its turn') : 'Being read', tone: 'wait' }
   const send = e.studio?.send
   if (send?.state === 'in_review') return { word: `Sent: ${brandName} is reviewing it`, tone: 'ok' }
   if (send?.state === 'sent_unconfirmed') return { word: 'Sent, not confirmed by TRYBE yet', tone: 'warn' }
@@ -39,6 +45,19 @@ export function studioStage(e: StudioEdit, brandName = 'the brand'): { word: str
   const notSent = send?.state === 'failed' ? 'Not sent. ' : ''
   if (!c) return { word: `${notSent}Edited, not checked against the brand's rules`, tone: 'warn' }
   return c.state === 'red' ? { word: `${notSent}Breaks a rule`, tone: 'bad' } : c.state === 'amber' ? { word: `${notSent}Worth a look`, tone: 'warn' } : { word: `${notSent}Ready to send`, tone: 'ok' }
+}
+
+/** A clip's state in a word, for the clips strip. Pure. */
+export function clipWord(status: string): { word: string; tone: StudioTone } {
+  if (status === 'done') return { word: 'edited', tone: 'ok' }
+  if (status === 'failed') return { word: 'not edited', tone: 'bad' }
+  return { word: status === 'making' ? 'being made' : status === 'ready_to_make' ? 'waiting its turn' : status === 'reading' ? 'being read' : 'in line', tone: 'wait' }
+}
+
+/** Clips in the order of their columns: hooks, bodies, CTAs, then number. Pure. */
+export function byLabel<T extends { studio?: { part?: string | null } | null }>(list: T[]): T[] {
+  const key = (e: T) => { const l = e.studio?.part || ''; return `${'HBC'.indexOf(l[0] || 'Z')}${String(Number(l.slice(1)) || 0).padStart(3, '0')}` }
+  return [...list].sort((a, b) => key(a).localeCompare(key(b)))
 }
 
 /** Send is offered for a finished video not already sent or being sent. A

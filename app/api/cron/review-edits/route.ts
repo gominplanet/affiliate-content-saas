@@ -16,7 +16,8 @@ export async function GET(request: Request) {
   if (!secret) return NextResponse.json({ error: 'CRON_SECRET not set' }, { status: 500 })
   if (request.headers.get('authorization') !== `Bearer ${secret}`) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   try {
-    const done = await moveQueue(editDb(), { readBudget: 1 })
+    // Up to three read side by side (READ_AT_ONCE), so a Video Builder set's clips are read in a few minutes.
+    const done = await moveQueue(editDb(), { readBudget: 3 })
     return NextResponse.json({ ok: true, ...done })
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)

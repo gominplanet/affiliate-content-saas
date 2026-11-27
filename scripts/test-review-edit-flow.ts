@@ -74,7 +74,7 @@ check('the dead air is found from the sound itself, when reading and for a video
 check('the title is drawn in its look, colour and size, and the page previews that same drawing', /drawTitle\(t\.text, \{ look: t\.look/.test(W) && /\/api\/review-edit\/title\?/.test(U) && /This is the picture MVP puts on the video/.test(U))
 check('a preview that cannot be drawn says so, never a blank', /The preview could not be drawn/.test(U) && /onError=\{\(\) => setTitleBad\(true\)\}/.test(U))
 check('a title can stay on for the whole video', /n === 0 \? 'the whole video'/.test(U) && /settings\.title\.seconds === 0 \? spec\.seconds \+ 1/.test(W))
-check('pictures are only ever the creator\u2019s own files, in a library of their own', (R.match(/settings\.pictures = settings\.pictures\.filter\(\(p\) => own\(p\.url\)\)/g) ?? []).length === 3 && /const PICTURE_NAME = \/\^pic-/.test(R) && /pic-\$\{crypto\.randomUUID\(\)\}/.test(U))
+check('pictures are only ever the creator\u2019s own files, in a library of their own', (R.match(/settings\.pictures = settings\.pictures\.filter\(\(p\) => own\(p\.url\)\)/g) ?? []).length === 4 && /const PICTURE_NAME = \/\^pic-/.test(R) && /pic-\$\{crypto\.randomUUID\(\)\}/.test(U))
 check('deleting from the library touches only a library picture of this creator', /action === 'forget_picture'[\s\S]{0,200}ownPath\(body\.url, g\.userId\)[\s\S]{0,120}PICTURE_NAME\.test/.test(R))
 check('no clean-up job deletes library pictures', !/pic/.test((read('app/api/cron/purge-shorts-sources/route.ts').match(/\^\(([^)]*)\)-/) ?? [''])[0]))
 check('the server lays the creator’s pictures and the product’s titles over the video, nine at most, each at its moment', /body\.pictures[\s\S]{0,80}\.slice\(0, EDIT_MAX_PICTURES\)/.test(S) && /pictures, ass,/.test(S))
