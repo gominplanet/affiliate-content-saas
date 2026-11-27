@@ -16,6 +16,7 @@ import { checkCut } from '../lib/trybe-edit'
 import { mixCombos, mixCounts, brollFor, mixLabel } from '../lib/studio-mix'
 import { scriptsSystem, scriptsInput, parseScripts, checkScripts, sheetText, secondsOf, VIDEO_TYPES } from '../lib/studio-scripts'
 import { canUsePreview } from '../lib/labs-preview'
+import { musicAfterAccept, musicAfterFinish, musicWords, voiceoverWords, VOICE_NAME } from '../lib/studio-render'
 import type { Word } from '../lib/review-edit'
 
 const failures: string[] = []
@@ -155,7 +156,7 @@ const MIX = read('components/labs/StudioMixer.tsx')
 check('the mixer has four columns, vertical only', /title: 'Hooks'/.test(MIX) && /title: 'Bodies'/.test(MIX) && /title: 'CTAs'/.test(MIX) && /title: 'B-roll'/.test(MIX) && /filmed sideways\. The Video Builder takes vertical 9:16 video only\./.test(MIX))
 check('each clip is uploaded once, then each combination is one video: hook, body and CTA joined, B-roll over it', /const up = new Map/.test(MIX) && /review: take\(parts\)/.test(MIX) && /broll: take\(roll\)/.test(MIX) && /studio: \{ brandId: brand\.id, /.test(MIX) && /more: fs\.slice\(1\)/.test(MIX))
 check('never more videos than the TRYBE ad edits left, and said', /combos\.slice\(0, Math\.max\(0, trybeLeft\)\)/.test(MIX) && /only the first \{trybeLeft\} of these/.test(MIX))
-check('the mixer comes first in the studio', /<StudioMixer brand=\{brand\}/.test(VID) && VID.indexOf('<StudioMixer') < VID.indexOf('A whole video filmed in one take'))
+check('the mixer comes first in the studio', /<StudioMixer [^>]*brand=\{brand\}/.test(VID) && VID.indexOf('<StudioMixer') < VID.indexOf('A whole video filmed in one take'))
 check('a clip shared by many videos stays until every one of them is done', /A STUDIO CLIP IS SHARED/.test(SRV) && /paths = paths\.filter\(\(p\) => !inUse\.has\(p\)\)/.test(SRV) && /if \(error\) return/.test(SRV))
 check('no dashes in the mixer', !/[–—]/.test(MIX.replace(/\/\/.*$/gm, '')))
 const STEP = read('components/labs/TrybeStudio.tsx')
@@ -165,12 +166,39 @@ check('the API keeps one set per brand and product, writes the scripts and keeps
 check('scripts are written only from read rules', /Read the brand\\u2019s rules first/.test(API))
 check('videos made in a set know it, and are listed by it', /studio_project_id: studio\.projectId/.test(RE) && /q\.eq\('studio_project_id', forProject\)/.test(RE) && /projectId \? \{ projectId \} : \{\}/.test(MIX))
 const MUS = read('components/labs/StudioMusic.tsx')
-check('music: none, an accepted bed, or a new one made there, and honest that it is not in the render yet', /No music/.test(MUS) && /status === 'accepted'/.test(MUS) && /<MusicBedMaker/.test(MUS) && /MUSIC_IN_RENDER = false/.test(MUS) && /until then they are made without it/.test(MUS))
-check('a voiceover set says it cannot be edited yet, instead of making talking videos from it', /MVP cannot edit voiceover videos yet/.test(VID) && /voiceover\s*\? \(/.test(VID))
+check('music: none, an accepted bed, or a new one made there, and now in the render', /No music/.test(MUS) && /status === 'accepted'/.test(MUS) && /<MusicBedMaker/.test(MUS) && /MUSIC_IN_RENDER = true/.test(MUS) && /Every video made from now on in this set gets this music/.test(MUS) && /Each video says on its card whether the music went in/.test(MUS))
+check('a voiceover set gets the mixer in its voiceover mode, its own state', /<StudioMixer key=\{voiceover \? 'voiceover' : 'talking'\} voiceover=\{voiceover\}/.test(VID) && !/MVP cannot edit voiceover videos yet/.test(VID))
+
+// THE VIDEO SERVER UPDATE (Seb, 2026-11-27: "we need to update.."): music in
+// the videos, and voiceover videos. Said from what the server reported.
+{
+  check('music: a server that says it mixes is asked; an older one is said, not hidden', musicAfterAccept({ label: 'Upbeat' }, true)?.asked === true && /being updated/.test(musicAfterAccept({ label: 'Upbeat' }, undefined)?.missed || '') && musicAfterAccept(null, true) === null)
+  const asked = { label: 'Upbeat', asked: true as const }
+  check('music: in only when the server reports it mixed', musicAfterFinish(asked, 'mixed')?.in === true && !musicAfterFinish(asked, 'mixed')?.missed)
+  const left = musicAfterFinish(asked, 'left out: the music file could not be downloaded (source fetch 404)')
+  check('music: left out says why, in plain words, never as in', !left?.in && /^The music was left out: the music file could not be downloaded/.test(left?.missed || '') && !/left out: left out/.test(left?.missed || ''))
+  check('music: a server that says nothing about it is not taken for mixed', !musicAfterFinish(asked, undefined)?.in && /did not say it was added/.test(musicAfterFinish(asked, undefined)?.missed || ''))
+  check('music: a reason found before the make stays the reason', musicAfterFinish({ label: 'x', missed: 'The music picked for this set is gone.' }, 'mixed')?.missed === 'The music picked for this set is gone.')
+  check('music: no music picked, nothing said', musicAfterFinish(null, 'mixed') === null && musicWords(null) === '')
+  check('music: the note names it when it is in', musicWords({ label: 'Upbeat, Pop (60 s)', in: true }) === ' Music: Upbeat, Pop (60 s), under the voice.')
+  check('voiceover: the shots and how many of the clips were used', voiceoverWords({ shots: 11, clips: 3, of: 4 }) === ' Voiceover over 11 shots from 3 of your 4 B-roll clips.' && voiceoverWords({ shots: 1, clips: 1, of: 1 }) === ' Voiceover over 1 shot from your B-roll clip.' && voiceoverWords(undefined) === '')
+  check('voiceover: a voice memo or a video is a voice file', ['take.m4a', 'memo.mp3', 'v.wav', 'phone.mov'].every((n) => VOICE_NAME.test(n)) && !VOICE_NAME.test('notes.pdf'))
+  for (const t of [musicAfterAccept({ label: 'a' }, false)?.missed || '', left?.missed || '', voiceoverWords({ shots: 2, clips: 1, of: 2 })]) check(`no dashes: ${t.slice(0, 30)}`, !/[\u2013\u2014]/.test(t))
+  const RS = read('lib/review-edit-server.ts')
+  check('voiceover: read from its voice alone, no shape check, no B-roll moments', /if \(row\.info\?\.voiceover === true\) return await readVoiceover\(/.test(RS) && /async function readVoiceover\(/.test(RS) && /plan\.placements = \[\]/.test(RS) && /info: \{ voiceover: true, review:/.test(RS))
+  check('voiceover: sent to its own address with its clips; nothing laid over it', /voiceover \? '\/render-voiceover' : '\/render-edit'/.test(RS) && /voiceover: \{ clips: joined\(src\.broll\) \? src\.broll\.parts : \[src\.broll\] \}/.test(RS) && /hasBroll: !voiceover && !!row\.broll_src/.test(RS))
+  check('music: the set\'s accepted bed only, at 0.2, and the outcome saved', /async function musicFor\(/.test(RS) && /bed\.status !== 'accepted'/.test(RS) && /music: \{ url: music\.url, volume: 0\.2 \}/.test(RS) && /musicAfterAccept\(placed\.music, sent\.data\.music\)/.test(RS) && /musicAfterFinish\(info\.placed\?\.music, body\.music\)/.test(RS))
+  const RT = read('app/api/review-edit/route.ts')
+  check('voiceover: marked when added, refused without B-roll', /voiceover: \(body\.studio as \{ voiceover\?: unknown \}\)\.voiceover === true/.test(RT) && /studio\?\.voiceover && !broll/.test(RT) && /\.\.\.\(studio\.voiceover \? \{ info: \{ voiceover: true \} \} : \{\}\)/.test(RT))
+  check('voiceover: the mixer takes voice files for the parts and needs B-roll', /const voice = voiceover && part !== 'broll'/.test(MIX) && /\(!voiceover \|\| clips\.broll\.length > 0\)/.test(MIX) && /\.\.\.\(voiceover \? \{ voiceover: true \} : \{\}\)/.test(MIX))
+  const SV = read('ingest-service/server.js')
+  check('the video server takes voiceovers at their own address and says it mixes music', /app\.post\(\['\/render-edit', '\/render-voiceover'\]/.test(SV) && /music: true, voiceover: true/.test(SV) && /music: built\.music \? 'mixed' : musicSaid \|\| 'left out'/.test(SV))
+  check('a finished card says what was made, amber when the music was left out', /e\.status === 'done' && e\.note && <p className="text-\[12\.5px\]" style=\{\{ color: e\.placed\?\.music\?\.missed \? AMBER/.test(VID))
+}
 check('the options and music are kept with the set', /action: 'options', projectId: project\.id/.test(VID))
 check('the shoot sheet prints, its words escaped', /function printSheet/.test(read('components/labs/TrybeStudioScripts.tsx')) && /const esc = /.test(read('components/labs/TrybeStudioScripts.tsx')))
 check('migration 477: the sets, and the video column, safe to run twice', existsSync('supabase/migrations/477_video_builder.sql') && /create table if not exists public\.studio_projects/.test(read('supabase/migrations/477_video_builder.sql')) && /add column if not exists studio_project_id uuid/.test(read('supabase/migrations/477_video_builder.sql')))
-for (const f of ['components/labs/TrybeStudioScripts.tsx', 'components/labs/StudioMusic.tsx', 'lib/studio-scripts.ts']) check(`${f}: no dashes in what the creator reads`, !/[–—]/.test(read(f).replace(/\/\/.*$/gm, '')))
+for (const f of ['components/labs/TrybeStudioScripts.tsx', 'components/labs/StudioMusic.tsx', 'lib/studio-scripts.ts', 'lib/studio-render.ts']) check(`${f}: no dashes in what the creator reads`, !/[–—]/.test(read(f).replace(/\/\/.*$/gm, '')))
 const MIG = 'supabase/migrations/476_edit_studio.sql'
 check('migration 476: the rules table and the two video columns, safe to run twice', existsSync(MIG) && /create table if not exists public\.trybe_brand_rules/.test(read(MIG)) && /add column if not exists studio_brand_id text/.test(read(MIG)) && /add column if not exists studio_send jsonb/.test(read(MIG)))
 

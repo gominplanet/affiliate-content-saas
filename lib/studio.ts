@@ -9,6 +9,7 @@
 // Pure, so it is tested (scripts/test-edit-studio.ts).
 
 import type { CutCheck } from './trybe-edit'
+import type { MusicPlaced } from './studio-render'
 
 export type StudioTone = 'ok' | 'warn' | 'bad' | 'wait'
 export interface StudioSend { state: 'in_review' | 'sent_unconfirmed' | 'failed' | 'sending'; at?: string | null; itemId?: string | null; note?: string | null }
@@ -18,7 +19,9 @@ export interface StudioEdit {
   status: string
   note: string | null
   outputs: Record<string, { url: string; seconds: number }> | null
-  studio: { brandId: string; check: CutCheck | null; send: StudioSend | null } | null
+  studio: { brandId: string; check: CutCheck | null; send: StudioSend | null; voiceover?: boolean } | null
+  /** What went on it, as the video server reported (lib/studio-render). */
+  placed?: { music?: MusicPlaced | null } | null
 }
 
 /** The finished file, or null. Pure. */

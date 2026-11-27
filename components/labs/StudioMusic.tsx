@@ -7,9 +7,10 @@
 // click on process"). No music, or one of your accepted beds (lib/music-bed),
 // or a new one made right here with the mood, tempo and style ticked.
 //
-// WHAT IS TRUE TODAY: the pick is kept with the set, and the music goes into
-// the videos with the next update to MVP's video server. Until then the panel
-// says the videos are made without it, so a pick never reads as music added.
+// The pick is kept with the set, and the video server mixes it under the
+// voice of every video made from then on (lib/review-edit-server musicFor,
+// ingest-service musicChain). Each video's card then says whether the music
+// really went in (lib/studio-render), so a pick never reads as music added.
 
 import { useEffect, useState } from 'react'
 import { Music2, Loader2, AlertTriangle } from 'lucide-react'
@@ -20,8 +21,8 @@ const AMBER = '#B45309'
 const soft = { color: 'var(--text-3)' }
 
 interface Bed { id: string; moods: string[]; styles: string[]; tempo: string | null; seconds: number; url: string | null; status: string }
-/** The music goes into the render once the video server can mix it. */
-export const MUSIC_IN_RENDER = false
+/** The video server mixes the set's music into each video it makes. */
+export const MUSIC_IN_RENDER = true
 
 export default function StudioMusic({ picked, onPick, disabled = false }: {
   picked: { bedId: string; label: string } | null
@@ -62,6 +63,7 @@ export default function StudioMusic({ picked, onPick, disabled = false }: {
       <button onClick={() => setMaking(!making)} className="text-[12.5px] font-semibold underline" style={{ color: ACCENT }}>{making ? 'Close' : 'Make a new music bed'}</button>
       {making && <div className="pt-1"><MusicBedMaker defaultSeconds={60} /><button onClick={() => void load()} className="mt-2 text-[12.5px] font-semibold underline" style={{ color: ACCENT }}>Show my accepted beds above</button></div>}
       {!MUSIC_IN_RENDER && picked && <p className="text-[12.5px]" style={{ color: AMBER }}>Your pick is kept with this set. The music goes into your videos with the next update to MVP&rsquo;s video server; until then they are made without it.</p>}
+      {MUSIC_IN_RENDER && picked && <p className="text-[12.5px]" style={soft}>Every video made from now on in this set gets this music, quiet under your voice, faded in and out. Videos already made keep their sound: make one again to add it. Each video says on its card whether the music went in.</p>}
     </div>
   )
 }

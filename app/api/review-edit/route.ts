@@ -135,7 +135,7 @@ function view(r: EditRow, server?: ServerView | null, dropAsin?: string | null, 
     trybe: r.trybe_campaign_id ? { campaignId: r.trybe_campaign_id, idx: r.trybe_script_idx ?? null, check: r.trybe_check ?? null } : null,
     /** An Video Builder video (migration 476): checked against its brand's
      *  rules, and what happened when it was sent to the brand. */
-    studio: r.studio_brand_id ? { brandId: r.studio_brand_id, check: r.trybe_check ?? null, send: r.studio_send ?? null } : null,
+    studio: r.studio_brand_id ? { brandId: r.studio_brand_id, check: r.trybe_check ?? null, send: r.studio_send ?? null, voiceover: r.info?.voiceover === true } : null,
     onServer,
   }
 }
@@ -292,13 +292,14 @@ export async function POST(request: Request) {
     }
     // AN EDIT STUDIO VIDEO (migration 476): a TRYBE ad for one brand, checked
     // against that brand's rules when it is made.
-    let studio: { brandId: string; projectId: string | null } | null = null
+    let studio: { brandId: string; projectId: string | null; voiceover: boolean } | null = null
     if (body.studio && typeof body.studio === 'object' && !trybe) {
       if (!canUsePreview('trybe_studio', g.tier)) return NextResponse.json({ error: 'The Video Builder is still being tested by the MVP team.', code: 'tier_not_allowed' }, { status: 403 })
       const b = (body.studio as { brandId?: unknown }).brandId
       if (typeof b !== 'string' || !/^[A-Za-z0-9_-]{4,80}$/.test(b)) return NextResponse.json({ error: 'Which TRYBE brand is this video for?' }, { status: 400 })
       const pid = (body.studio as { projectId?: unknown }).projectId
-      studio = { brandId: b, projectId: typeof pid === 'string' && /^[0-9a-f-]{36}$/i.test(pid) ? pid : null }
+      // A voiceover (lib/studio-render): its takes are the voice, its B-roll the whole picture.
+      studio = { brandId: b, projectId: typeof pid === 'string' && /^[0-9a-f-]{36}$/i.test(pid) ? pid : null, voiceover: (body.studio as { voiceover?: unknown }).voiceover === true }
       settings.kind = 'trybe'
     }
     const allowance = await editAllowance(db, g.userId, g.tier, settings.kind)
@@ -357,13 +358,14 @@ export async function POST(request: Request) {
     const broll = body.broll ? await src(body.broll) : null
     if (body.broll && !broll) return NextResponse.json({ error: 'That B-roll file is not one of your uploads in MVP. Add it again.' }, { status: 400 })
     if (broll && 'error' in broll) return NextResponse.json({ error: `The B-roll take: ${broll.error}` }, { status: 400 })
+    if (studio?.voiceover && !broll) return NextResponse.json({ error: 'A voiceover video needs B-roll: it is the whole picture. Add at least one B-roll clip.' }, { status: 400 })
     if (settings.logo && !own(settings.logo.url)) settings.logo = null
     settings.pictures = settings.pictures.filter((p) => own(p.url))
     const { data, error } = await db.from('review_edits').insert({
       user_id: g.userId, name: String(body.name || review.name || 'Review').slice(0, 120), status: 'queued', note: 'In line to be read',
       review_src: review, broll_src: broll, product: typeof body.product === 'string' ? body.product.trim().slice(0, 300) || null : null, settings,
       ...(trybe ? { trybe_campaign_id: trybe.campaignId, trybe_script_idx: trybe.idx } : {}),
-      ...(studio ? { studio_brand_id: studio.brandId, ...(studio.projectId ? { studio_project_id: studio.projectId } : {}) } : {}),
+      ...(studio ? { studio_brand_id: studio.brandId, ...(studio.projectId ? { studio_project_id: studio.projectId } : {}), ...(studio.voiceover ? { info: { voiceover: true } } : {}) } : {}),
     }).select('*').single()
     if (error && trybe && trybeMissing(error.message)) return NextResponse.json({ error: TRYBE_SQL, needsSql: true }, { status: 503 })
     if (error && studio && studioMissing(error.message)) return NextResponse.json({ error: /studio_project_id/.test(error.message) ? PROJECT_SQL : STUDIO_SQL, needsSql: true }, { status: 503 })

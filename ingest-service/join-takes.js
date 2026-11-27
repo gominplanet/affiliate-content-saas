@@ -36,6 +36,8 @@ function ffprobeInfo(input, auth = null) {
             w: rot === 90 ? h : w, h: rot === 90 ? w : h,
             duration: Number(j.format && j.format.duration) || 0,
             hasAudio: streams.some((x) => x.codec_type === 'audio'),
+            // Its sound's channels (1 is a one-channel voice, edit-filters musicMix).
+            channels: Number(a.channels) || 0,
             // HDR from a phone (edit-filters hdrChain): 'arib-std-b67' or 'smpte2084'.
             transfer: String(v.color_transfer || ''),
           })

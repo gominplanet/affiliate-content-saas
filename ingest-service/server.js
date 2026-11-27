@@ -1304,7 +1304,7 @@ app.post('/dub', async (req, res) => {
 // pass (edit-filters.js): wide for Amazon and YouTube, vertical for TRYBE and
 // TikTok, or both from the same decode. The raw takes are only ever in this
 // job's own temp folder, removed when the job ends, whatever happened.
-const { buildEditGraph, cleanInserts, snapSegments, editSeconds, masterSize, driveAuth, authArgs, hdrChain, filmedAtFrom, takeParts, partAt, joinedAudioGraph, FPS: EDIT_FPS, MAX_PICTURES: EDIT_MAX_PICTURES } = require('./edit-filters')
+const { buildEditGraph, cleanInserts, snapSegments, editSeconds, masterSize, driveAuth, authArgs, hdrChain, filmedAtFrom, takeParts, partAt, joinedAudioGraph, outputJoins, voiceoverShots, musicVolume, FPS: EDIT_FPS, MAX_PICTURES: EDIT_MAX_PICTURES } = require('./edit-filters')
 // Several files of one take joined into one video, and what a video is.
 const { joinFiles, ffprobeInfo, probeWhy } = require('./join-takes')
 // Encoder threads per format. A small box stays at 2; a bigger one goes faster.
@@ -1491,6 +1491,49 @@ async function fetchTake(parts, dir, name, what, onPct) {
   return (await joinFiles({ files, dir, name, what, tone: await canToneMap(), threads: EDIT_THREADS, onPct: (x) => onPct(50 + Math.floor(x / 2)) })).file
 }
 
+/** A voiceover's sound: each file's sound (a voice memo, or a video whose
+ *  sound is used), joined in order on the same timeline /stream-audio gave
+ *  the transcript (joinedAudioGraph, each file exactly its length). */
+async function fetchVoice(parts, dir, onPct) {
+  const wavs = [], lengths = []
+  for (const [i, p] of parts.entries()) {
+    const f = path.join(dir, `voice-file${i}`)
+    await assertPublicHttpUrl(p.url)
+    await downloadLarge(p.url, f, 15 * 60_000, p.auth, (x) => onPct(Math.floor((i * 100 + x) / parts.length)))
+    const fi = await ffprobeInfo(f)
+    const which = parts.length > 1 ? `Voice file ${i + 1} of ${parts.length}` : 'The voice file'
+    if (!fi || !fi.duration) throw new Error(`${which} could not be opened.`)
+    if (!fi.hasAudio) throw new Error(`${which} has no sound in it.`)
+    const w = path.join(dir, `voice${i}.wav`)
+    await runFfmpeg(['-i', f, '-vn', '-map', '0:a:0', '-ac', '1', '-ar', '48000', '-c:a', 'pcm_s16le', '-y', w], 5 * 60_000, 'the voice')
+    try { fs.unlinkSync(f) } catch { /* ignore */ }
+    wavs.push(w); lengths.push(fi.duration)
+  }
+  if (wavs.length === 1) return wavs[0]
+  const out = path.join(dir, 'voice.wav')
+  await runFfmpeg([...wavs.flatMap((w) => ['-i', w]), '-filter_complex', joinedAudioGraph(lengths, 48000), '-map', '[a]', '-c:a', 'pcm_s16le', '-y', out], 5 * 60_000, 'the joined voice')
+  for (const w of wavs) { try { fs.unlinkSync(w) } catch { /* ignore */ } }
+  return out
+}
+
+/** The music bed, downloaded and checked: a file with sound, or why not.
+ *  Never stops the video: without it, the video is made and says so. */
+async function fetchMusic(spec, dir) {
+  const url = String((spec && spec.url) || '')
+  if (!/^https:\/\//i.test(url)) return { ok: false, why: 'no music file was given' }
+  try {
+    const ext = (/\.(mp3|wav|m4a|aac|ogg)(?:\?|$)/i.exec(url) || [])[1] || 'audio'
+    const f = path.join(dir, `music.${ext.toLowerCase()}`)
+    await assertPublicHttpUrl(url)
+    await downloadToFile(url, f)
+    const mi = await ffprobeInfo(f)
+    if (!mi || !mi.hasAudio || !(mi.duration > 0.5)) return { ok: false, why: 'the music file has no sound in it' }
+    return { ok: true, file: f, seconds: mi.duration }
+  } catch (e) {
+    return { ok: false, why: `the music file could not be downloaded (${String((e && e.message) || e).slice(0, 120)})` }
+  }
+}
+
 async function renderEditJob(body, report = () => {}) {
   const bad = (msg) => Object.assign(new Error(msg), { status: 400 })
   const userId = String(body.userId || '').trim() || 'ingest'
@@ -1500,12 +1543,27 @@ async function renderEditJob(body, report = () => {}) {
   const brollParts = takeParts(body.brollParts, String(body.brollUrl || '').trim(), body.brollAuth)
   const formats = (Array.isArray(body.formats) ? body.formats : []).filter((f) => f === 'wide' || f === 'vertical')
   if (!formats.length) throw bad('no format')
+  // A VOICEOVER VIDEO (the Video Builder): the take is the voice, and the
+  // B-roll clips are the whole picture, vertical only.
+  const voiceover = !!(body.voiceover && typeof body.voiceover === 'object')
+  const voClips = voiceover ? takeParts(body.voiceover.clips) : null
+  if (voiceover && !voClips) throw bad('A voiceover video needs at least one B-roll clip.')
+  if (voiceover && (formats.length !== 1 || formats[0] !== 'vertical')) throw bad('A voiceover video is vertical only.')
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'edit-'))
   try {
     report('download', 0)
-    const main = await fetchTake(mainParts, dir, 'main', 'talking take', (p) => report('download', p))
-    const info = await ffprobeInfo(main)
-    if (!info || !info.w) throw new Error('The review take could not be read as a video.')
+    let main, info
+    if (voiceover) {
+      main = await fetchVoice(mainParts, dir, (p) => report('download', p))
+      const vi = await ffprobeInfo(main)
+      if (!vi || !vi.hasAudio || !vi.duration) throw new Error('The voiceover could not be heard.')
+      // Its picture is made from the B-roll at 1080x1920 below.
+      info = { w: 1080, h: 1920, duration: vi.duration, hasAudio: true, transfer: '', channels: 1 }
+    } else {
+      main = await fetchTake(mainParts, dir, 'main', 'talking take', (p) => report('download', p))
+      info = await ffprobeInfo(main)
+      if (!info || !info.w) throw new Error('The review take could not be read as a video.')
+    }
     if (info.duration > EDIT_MAX_SOURCE_SEC) throw new Error(`The review take is ${Math.round(info.duration / 60)} minutes; the editor takes up to ${EDIT_MAX_SOURCE_SEC / 60}.`)
     const snapped = snapSegments(body.segments, info.duration)
     if (!snapped) throw bad('nothing to keep')
@@ -1520,7 +1578,46 @@ async function renderEditJob(body, report = () => {}) {
     // B-roll: each moment cut from the take in turn, then joined into one
     // track in the order it is used, so the one pass reads it straight through.
     let track = null, inserts = [], brollSec = 0
-    if (brollParts && Array.isArray(body.inserts) && body.inserts.length) {
+    // THE VOICEOVER'S PICTURE: its B-roll clips taking turns over the cut
+    // voice (voiceoverShots), each shot cut to its frames, then joined.
+    let picture = null
+    const vo = { shots: 0, clips: 0, of: voClips ? voClips.length : 0 }
+    if (voiceover) {
+      report('broll', 0)
+      const clips = []
+      for (const [i, p] of voClips.entries()) {
+        const f = path.join(dir, `clip${i}.mp4`)
+        await assertPublicHttpUrl(p.url)
+        await downloadLarge(p.url, f, 15 * 60_000, p.auth, (x) => report('broll', Math.floor((i * 100 + x) / voClips.length)))
+        clips.push({ file: f, info: await ffprobeInfo(f) })
+      }
+      const frames = snapped.reduce((n, s) => n + (s.kb - s.ka), 0)
+      // Two frames short of each clip's end, so a shot never runs past it.
+      const usable = clips.map((c) => (c.info && c.info.w && c.info.duration ? Math.max(0, Math.floor(c.info.duration * EDIT_FPS) - 2) : 0))
+      const shots = voiceoverShots(frames, usable, outputJoins(snapped))
+      if (!shots) throw new Error('None of the B-roll clips could be used: each one needs to be a video at least half a second long.')
+      const list = []
+      for (let i = 0; i < shots.length; i++) {
+        report('cut', Math.floor((i / shots.length) * 100))
+        const sh = shots[i], c = clips[sh.clip]
+        const piece = path.join(dir, `shot${i}.mp4`)
+        const cHdr = hdrFallback ? null : hdrChain(c.info && c.info.transfer)
+        await runFfmpeg(['-ss', String(Math.round((sh.from / EDIT_FPS) * 1000) / 1000), '-i', c.file, '-an',
+          '-vf', `setpts=PTS-STARTPTS,fps=${EDIT_FPS},scale=${m.w}:${m.h}:force_original_aspect_ratio=increase,crop=${m.w}:${m.h},setsar=1${cHdr ? `,${cHdr}` : ''}`,
+          '-frames:v', String(sh.frames),
+          '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '18', '-pix_fmt', 'yuv420p', '-x264-params', 'bframes=0:ref=1',
+          '-threads', EDIT_THREADS, '-y', piece], 5 * 60_000, 'a B-roll shot')
+        list.push(`file '${piece}'`)
+      }
+      fs.writeFileSync(path.join(dir, 'shots.txt'), list.join('\n'))
+      await runFfmpeg(['-f', 'concat', '-safe', '0', '-i', path.join(dir, 'shots.txt'), '-c', 'copy', '-y', path.join(dir, 'picture.mp4')], 5 * 60_000, 'the B-roll picture')
+      for (const c of clips) { try { fs.unlinkSync(c.file) } catch { /* ignore */ } }
+      inputs.push('-i', path.join(dir, 'picture.mp4'))
+      picture = next++
+      vo.shots = shots.length
+      vo.clips = new Set(shots.map((x) => x.clip)).size
+    }
+    if (!voiceover && brollParts && Array.isArray(body.inserts) && body.inserts.length) {
       report('broll', 0)
       const broll = await fetchTake(brollParts, dir, 'broll', 'B-roll', (p) => report('broll', p))
       const bi = await ffprobeInfo(broll)
@@ -1563,6 +1660,16 @@ async function renderEditJob(body, report = () => {}) {
       const got = await png(p, `picture${i}`)
       if (got) pictures.push(got)
     }
+    // THE MUSIC BED, looped under the whole video; one that cannot be used
+    // is left out and said, never a reason to stop the video.
+    let music = null, musicSaid = null
+    if (body.music && typeof body.music === 'object') {
+      const got = await fetchMusic(body.music, dir)
+      if (got.ok) {
+        inputs.push('-stream_loop', '-1', '-i', got.file)
+        music = { input: next++, volume: musicVolume(body.music.volume) }
+      } else musicSaid = `left out: ${got.why}`
+    }
     let ass = null
     if (formats.includes('vertical') && Array.isArray(body.words) && body.words.length) {
       ass = path.join(dir, 'captions.ass')
@@ -1570,7 +1677,7 @@ async function renderEditJob(body, report = () => {}) {
     }
     const built = buildEditGraph({
       segments: body.segments, srcW: info.w, srcH: info.h, hasAudio: info.hasAudio, transfer: hdrFallback ? '' : info.transfer, formats, cropX: body.cropX,
-      inserts, brollSec, track, zooms: body.zooms, color: body.color === true, logo, title, pictures, ass,
+      inserts, brollSec, track, zooms: body.zooms, color: body.color === true, logo, title, pictures, ass, music, picture, channels: info.channels,
     })
     fs.writeFileSync(path.join(dir, 'graph.txt'), built.graph)
     const outArgs = []
@@ -1593,7 +1700,12 @@ async function renderEditJob(body, report = () => {}) {
       await uploadToSupabase(key, files[f])
       outputs[f] = { url: publicUrl(key), seconds: built.seconds }
     }
-    return { outputs, seconds: built.seconds, formats: built.formats, inserts: built.inserts.length, zooms: built.zooms.length, master: `${built.master.w}x${built.master.h}`, hdr: built.hdr ? 'converted' : /arib|2084/.test(info.transfer) ? 'not converted' : 'no' }
+    return {
+      outputs, seconds: built.seconds, formats: built.formats, inserts: built.inserts.length, zooms: built.zooms.length, master: `${built.master.w}x${built.master.h}`, hdr: built.hdr ? 'converted' : /arib|2084/.test(info.transfer) ? 'not converted' : 'no',
+      // What was really done, so MVP never says music or B-roll that is not there.
+      ...(body.music ? { music: built.music ? 'mixed' : musicSaid || 'left out' } : {}),
+      ...(voiceover ? { voiceover: vo } : {}),
+    }
   } finally {
     try { fs.rmSync(dir, { recursive: true, force: true }) } catch { /* ignore */ }
   }
@@ -1628,9 +1740,13 @@ app.get('/jobs', (req, res) => {
   })
 })
 
-app.post('/render-edit', async (req, res) => {
+// /render-voiceover is the same job for a voiceover video: MVP sends those
+// there, so a server from before them answers 404 and MVP waits for the
+// update, instead of this server failing to read a voice file as a video.
+app.post(['/render-edit', '/render-voiceover'], async (req, res) => {
   if (SECRET && req.get('x-ingest-secret') !== SECRET) return res.status(401).json({ error: 'unauthorized' })
   const body = req.body || {}
+  if (req.path === '/render-voiceover' && !(body.voiceover && typeof body.voiceover === 'object')) return res.status(400).json({ error: 'voiceover clips required' })
   const callbackUrl = String(body.callbackUrl || '')
   if (!/^https:\/\//i.test(callbackUrl)) return res.status(400).json({ error: 'callbackUrl required' })
   const job = String(body.job || '').slice(0, 300)
@@ -1644,7 +1760,8 @@ app.post('/render-edit', async (req, res) => {
   }
   // How many timed pictures it draws, so the app can say which product
   // titles an older server left out (it said nothing, and drew four).
-  res.status(202).json({ accepted: true, pictures: EDIT_MAX_PICTURES })
+  // And that it mixes music and makes voiceover videos (an older one said neither).
+  res.status(202).json({ accepted: true, pictures: EDIT_MAX_PICTURES, music: true, voiceover: true })
   renderQueue = renderQueue.then(async () => {
     let rec
     try {

@@ -10,6 +10,12 @@
 // chosen (lib/studio-mix) becomes one video in the review editor's queue: its
 // hook, body and CTA joined in that order, B-roll laid over it, the ticked
 // options on it, checked against the brand's rules when it is made.
+//
+// A VOICEOVER SET (Seb, 2026-11-26: "only voiceover type videos"): the hooks,
+// bodies and CTAs are the creator's voice (a voice memo, or a video whose
+// sound is used), and the B-roll is required, because it is the whole
+// picture: the video server lays the clips over the cut voice, taking turns
+// (lib/studio-render, ingest-service voiceoverShots).
 
 import { useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
@@ -20,6 +26,7 @@ import { BULK_VIDEO_MAX_BYTES, tooBigWords } from '@/lib/clip-source-limits'
 import { uploadTake } from '@/components/review-editor/upload-take'
 import { mixCombos, mixCounts, brollFor, MIX_WORDS, type MixMode } from '@/lib/studio-mix'
 import type { EditSettings } from '@/lib/review-edit'
+import { VOICE_NAME } from '@/lib/studio-render'
 
 const ACCENT = 'var(--accent)'
 const RED = '#DC2626'
@@ -30,11 +37,11 @@ const VIDEO_NAME = /\.(mov|mp4|m4v|mts|m2ts|avi|mkv|webm|3gp)$/i
 
 type Part = 'hook' | 'body' | 'cta' | 'broll'
 interface Clip { key: string; file: File; name: string; seconds: number | null }
-const PARTS: Array<{ id: Part; title: string; short: string; says: string }> = [
-  { id: 'hook', title: 'Hooks', short: 'H', says: 'The openings. Each one is tested against the others.' },
-  { id: 'body', title: 'Bodies', short: 'B', says: 'The middle: the product shown and talked about.' },
-  { id: 'cta', title: 'CTAs', short: 'C', says: 'The endings: what to do next. Optional when a body ends on its own.' },
-  { id: 'broll', title: 'B-roll', short: 'R', says: 'Optional: beauty shots and the product in use, laid over the talk.' },
+const PARTS: Array<{ id: Part; title: string; short: string; says: string; voice: string }> = [
+  { id: 'hook', title: 'Hooks', short: 'H', says: 'The openings. Each one is tested against the others.', voice: 'Your voice for each opening: a voice memo, or a video whose sound is used.' },
+  { id: 'body', title: 'Bodies', short: 'B', says: 'The middle: the product shown and talked about.', voice: 'Your voice for the middle, about the product.' },
+  { id: 'cta', title: 'CTAs', short: 'C', says: 'The endings: what to do next. Optional when a body ends on its own.', voice: 'Your voice for the endings. Optional when a body ends on its own.' },
+  { id: 'broll', title: 'B-roll', short: 'R', says: 'Optional: beauty shots and the product in use, laid over the talk.', voice: 'Needed: the whole picture. The clips take turns over your voice, a few seconds each.' },
 ]
 
 /** Shape and length from the browser's player, when the file's own box could not be read. */
@@ -52,7 +59,7 @@ function playerFacts(file: File): Promise<{ seconds: number | null; width: numbe
   })
 }
 
-export default function StudioMixer({ brand, settings, trybeLeft, onAdded, projectId = null, namePrefix }: {
+export default function StudioMixer({ brand, settings, trybeLeft, onAdded, projectId = null, namePrefix, voiceover = false }: {
   brand: { id: string; name: string }
   /** The options ticked above, on every video. */
   settings: EditSettings
@@ -63,6 +70,8 @@ export default function StudioMixer({ brand, settings, trybeLeft, onAdded, proje
   projectId?: string | null
   /** What each video's name starts with: the brand and product. */
   namePrefix?: string
+  /** A voiceover set: voice files, and B-roll for the whole picture. */
+  voiceover?: boolean
 }) {
   const [supabase] = useState(() => createBrowserClient())
   const [clips, setClips] = useState<Record<Part, Clip[]>>({ hook: [], body: [], cta: [], broll: [] })
@@ -79,7 +88,16 @@ export default function StudioMixer({ brand, settings, trybeLeft, onAdded, proje
     setReading(part); setResult(null)
     const bad: string[] = []
     const ok: Clip[] = []
+    const voice = voiceover && part !== 'broll'
     for (const f of chosen) {
+      if (voice) {
+        // A voice: any sound file, or a video whose sound is used; its shape does not matter.
+        if (!f.type.startsWith('audio/') && !f.type.startsWith('video/') && !VOICE_NAME.test(f.name)) { bad.push(`${f.name}: not a sound or video file.`); continue }
+        if (f.size > BULK_VIDEO_MAX_BYTES) { bad.push(`${f.name}: ${tooBigWords(f.size)}`); continue }
+        const p = await playerFacts(f)
+        ok.push({ key: `${part}:${f.name}:${f.size}:${f.lastModified}`, file: f, name: f.name, seconds: p.seconds })
+        continue
+      }
       if (!f.type.startsWith('video/') && !VIDEO_NAME.test(f.name)) { bad.push(`${f.name}: not a video file.`); continue }
       if (f.size > BULK_VIDEO_MAX_BYTES) { bad.push(`${f.name}: ${tooBigWords(f.size)}`); continue }
       let facts = await readVideoFacts(f)
@@ -99,7 +117,7 @@ export default function StudioMixer({ brand, settings, trybeLeft, onAdded, proje
   const counts = mixCounts(clips.hook.length, clips.body.length, clips.cta.length)
   const combos = useMemo(() => mixCombos(clips.hook.length, clips.body.length, clips.cta.length, mode), [clips.hook.length, clips.body.length, clips.cta.length, mode])
   const tooMany = trybeLeft !== null && combos.length > trybeLeft
-  const ready = clips.hook.length > 0 && clips.body.length > 0
+  const ready = clips.hook.length > 0 && clips.body.length > 0 && (!voiceover || clips.broll.length > 0)
 
   async function process() {
     if (!ready || running) return
@@ -144,7 +162,7 @@ export default function StudioMixer({ brand, settings, trybeLeft, onAdded, proje
       try {
         const r = await fetch('/api/review-edit', {
           method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: AbortSignal.timeout(90_000),
-          body: JSON.stringify({ action: 'add', name: `${namePrefix || brand.name} ${cb.label}`.slice(0, 120), review: take(parts), ...(roll.length ? { broll: take(roll) } : {}), settings, studio: { brandId: brand.id, ...(projectId ? { projectId } : {}) } }),
+          body: JSON.stringify({ action: 'add', name: `${namePrefix || brand.name} ${cb.label}`.slice(0, 120), review: take(parts), ...(roll.length ? { broll: take(roll) } : {}), settings, studio: { brandId: brand.id, ...(projectId ? { projectId } : {}), ...(voiceover ? { voiceover: true } : {}) } }),
         })
         const d = await r.json().catch(() => ({})) as { error?: string; allowanceFull?: boolean }
         if (r.ok) { added++; continue }
@@ -167,7 +185,7 @@ export default function StudioMixer({ brand, settings, trybeLeft, onAdded, proje
               <p className="text-[14px] font-bold flex-1">{p.title}</p>
               <span className="text-[12px] tabular-nums" style={soft}>{clips[p.id].length}</span>
             </div>
-            <p className="text-[12px]" style={soft}>{p.says}</p>
+            <p className="text-[12px]" style={soft}>{voiceover ? p.voice : p.says}</p>
             <ul className="space-y-1">
               {clips[p.id].map((c, i) => (
                 <li key={c.key} className="flex items-center gap-1.5 text-[12.5px]">
@@ -180,7 +198,7 @@ export default function StudioMixer({ brand, settings, trybeLeft, onAdded, proje
             </ul>
             <label className={`${btn} justify-center cursor-pointer mt-auto`} style={{ border: '1px dashed var(--border)', color: ACCENT }}>
               {reading === p.id ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />} Add {p.title.toLowerCase()}
-              <input type="file" accept="video/*,.mov,.mp4,.m4v" multiple className="hidden" disabled={!!running || !!reading} onChange={(e) => { void pick(p.id, e.target.files); e.target.value = '' }} />
+              <input type="file" accept={voiceover && p.id !== 'broll' ? 'audio/*,video/*,.m4a,.mp3,.wav,.aac,.caf,.mov,.mp4' : 'video/*,.mov,.mp4,.m4v'} multiple className="hidden" disabled={!!running || !!reading} onChange={(e) => { void pick(p.id, e.target.files); e.target.value = '' }} />
             </label>
           </div>
         ))}
@@ -200,7 +218,9 @@ export default function StudioMixer({ brand, settings, trybeLeft, onAdded, proje
           </div>
           <p className="text-[12.5px]" style={soft}>
             {combos.slice(0, 12).map((c) => c.label).join(', ')}{combos.length > 12 ? ` and ${combos.length - 12} more` : ''}.
-            {clips.broll.length > 0 ? ` Each gets B-roll laid over it${clips.broll.length > 6 ? ', 6 clips each, taking turns' : ''}.` : ''}
+            {voiceover
+              ? ` Your B-roll is the whole picture of each, the clips taking turns over your voice${clips.broll.length > 6 ? ', 6 clips each' : ''}.`
+              : clips.broll.length > 0 ? ` Each gets B-roll laid over it${clips.broll.length > 6 ? ', 6 clips each, taking turns' : ''}.` : ''}
             {' '}Each video uses one of your TRYBE ad edits.
           </p>
           {tooMany && <p className="text-[12.5px]" style={{ color: AMBER }}>You have {trybeLeft} TRYBE ad edits left this month, so only the first {trybeLeft} of these {combos.length} will be made.</p>}
@@ -212,7 +232,7 @@ export default function StudioMixer({ brand, settings, trybeLeft, onAdded, proje
           </div>
         </div>
       )}
-      {!ready && <p className="text-[12.5px] inline-flex items-center gap-1.5" style={soft}><Film size={13} /> Add at least one hook and one body to start. CTAs and B-roll are optional.</p>}
+      {!ready && <p className="text-[12.5px] inline-flex items-center gap-1.5" style={soft}><Film size={13} /> {voiceover ? 'Add at least one hook, one body and one B-roll clip to start. CTAs are optional.' : 'Add at least one hook and one body to start. CTAs and B-roll are optional.'}</p>}
       {result && (
         <div className="text-[13px] space-y-1">
           <p style={{ color: result.added ? 'var(--text)' : RED }}>{result.added} {result.added === 1 ? 'video is' : 'videos are'} in line to be made. Each shows below as it is edited and checked{result.skipped ? `; ${result.skipped} not made, no TRYBE ad edits left` : ''}.</p>

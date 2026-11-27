@@ -108,6 +108,42 @@ check('HDR (HLG or PQ) gets the conversion, a normal take none', !!E.hdrChain('a
   check('silence is 18 dB under the take’s average voice, so a soft word ending is not taken for it', E.silenceNoiseDb(-20) === -38 && E.silenceNoiseDb(-10) === -30 && E.silenceNoiseDb(-45) === -55 && E.silenceNoiseDb(undefined) === -42)
 }
 
+// ── Music under the voice (Seb, 2026-11-26, the Video Builder) ──────────────
+{
+  const chain = E.musicChain(4, 30, undefined)
+  check('a music bed is brought to one loudness, faded in over 0.3 s and out over the last 1.4 s, at 0.2 under the voice', /loudnorm=I=-20/.test(chain) && /afade=t=in:st=0:d=0\.3/.test(chain) && /afade=t=out:st=28\.6:d=1\.4/.test(chain) && /volume=0\.2\[mus\]$/.test(chain) && /atrim=0:30/.test(chain), chain)
+  check('the music volume stays between nearly off and as loud as the voice', E.musicVolume(5) === 1 && E.musicVolume(0.001) === 0.02 && E.musicVolume('x') === 0.2 && E.musicVolume(0.35) === 0.35)
+  check('a video shorter than the fade out still fades', /afade=t=out:st=0:d=1/.test(E.musicChain(2, 1, 0.2)))
+  const g = E.buildEditGraph({ segments: [[0, 10]], srcW: 1080, srcH: 1920, hasAudio: true, channels: 1, formats: ['vertical'], music: { input: 2, volume: 0.2 } })
+  check('the music is added to the voice as it is, never by amix (which halves the voice)', g.music === true && /amerge=inputs=2,pan=stereo\|c0=c0\+c2\|c1=c1\+c3\[amx\]/.test(g.graph) && !/amix/.test(g.graph) && g.outputs.vertical.a === 'amx', g.graph)
+  check('a one-channel voice goes to both speakers at its full level', /\[a0\]pan=stereo\|c0=c0\|c1=c0,aformat/.test(g.graph))
+  const st = E.buildEditGraph({ segments: [[0, 10]], srcW: 1080, srcH: 1920, hasAudio: true, channels: 2, formats: ['vertical'], music: { input: 2 } }).graph
+  check('a stereo take is not spread again', /\[a0\]aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo\[vst\]/.test(st), st)
+  const both = E.buildEditGraph({ segments: [[0, 10]], srcW: 1920, srcH: 1080, hasAudio: true, formats: ['wide', 'vertical'], music: { input: 1 } })
+  check('with two formats, the music goes in once, before the sound splits', both.graph.indexOf('amerge') < both.graph.indexOf('asplit') && /\[amx\]asplit=2/.test(both.graph))
+  check('no music asked, none in the graph', !/amerge|loudnorm/.test(E.buildEditGraph({ segments: [[0, 10]], srcW: 1080, srcH: 1920, hasAudio: true, formats: ['vertical'] }).graph))
+}
+
+// ── Voiceover over B-roll (Seb, 2026-11-26: "only voiceover type videos") ──
+{
+  const snapped = E.snapSegments([[0, 4], [5, 9]])
+  check('the cuts are found in the finished video', JSON.stringify(E.outputJoins(snapped)) === '[120]' && E.outputJoins(E.snapSegments([[0, 5]])).length === 0)
+  const shots = E.voiceoverShots(240, [58, 148, 88], [120])
+  const sum = shots.reduce((n, x) => n + x.frames, 0)
+  check('the B-roll covers the whole video, to the frame', sum === 240, shots)
+  check('the clips take turns', JSON.stringify(shots.map((x) => x.clip)) === '[0,1,2,0]', shots)
+  check('a shot changes where the voice was cut, when a cut is near', shots[0].frames + shots[1].frames === 120, shots)
+  check('a clip is never used past its end', shots.every((x) => x.from + x.frames <= [58, 148, 88][x.clip]), shots)
+  const long = E.voiceoverShots(30 * 30, [600], [])
+  check('one long clip: shots about 3 seconds each, each one later in the clip, never a sliver at the end', long.length >= 8 && long.every((x) => x.frames >= E.SHOT_MIN && x.frames <= E.SHOT_MAX) && long[1].from === long[0].frames && long.reduce((n, x) => n + x.frames, 0) === 900, long)
+  const wrap = E.voiceoverShots(300, [100], [])
+  check('a clip that runs out starts again from its beginning', wrap.reduce((n, x) => n + x.frames, 0) === 300 && wrap.some((x, i) => i > 0 && x.from === 0) && wrap.every((x) => x.from + x.frames <= 100), wrap)
+  check('a clip under half a second is not used, and with no clip there is no picture', E.voiceoverShots(90, [10], []) === null && E.voiceoverShots(90, [], []) === null && E.voiceoverShots(90, [10, 60], []).every((x) => x.clip === 1))
+  const g = E.buildEditGraph({ segments: [[0, 4], [5, 9]], srcW: 1080, srcH: 1920, hasAudio: true, formats: ['vertical'], picture: 1, track: 1, inserts: [{ at: 1, len: 2, from: 0 }], brollSec: 5 })
+  check('a voiceover video’s picture is its B-roll, the finished length, and nothing is laid over it', g.voiceover === true && /^\[1:v\]setpts=PTS-STARTPTS,fps=30,.*trim=end_frame=240/.test(g.graph) && !/\[0:v\]/.test(g.graph) && g.inserts.length === 0 && !/overlay=0:0:enable/.test(g.graph), g.graph.split(';')[0])
+  check('the voice is still cut where the plan cuts it', /\[0:a\].*aselect='gte\(t,0\)\*lt\(t,4\)\+gte\(t,5\)\*lt\(t,9\)'/.test(g.graph))
+}
+
 // ── A real edit, where ffmpeg is installed ───────────────────────────────────
 let ffmpeg = true
 try { execFileSync('ffmpeg', ['-version'], { stdio: 'ignore' }) } catch { ffmpeg = false }
@@ -200,6 +236,59 @@ if (ffmpeg) {
   }
 } else {
   console.log('   (ffmpeg not installed here: the real edit is skipped)')
+}
+
+// ── A real voiceover video with music, where ffmpeg is installed ────────────
+// Made the way server.js makes it: the voice (a sound file, quiet from 2 to 3
+// seconds), three coloured clips cut into shots by voiceoverShots and joined,
+// a music bed looped under it. Read back: the shape, the length, each clip
+// where the plan put it, the music heard where the voice is quiet, and the
+// voice exactly as loud as it was without the music.
+if (ffmpeg) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'vo-test-'))
+  const run = (args) => execFileSync('ffmpeg', ['-hide_banner', '-loglevel', 'error', ...args], { stdio: ['ignore', 'ignore', 'pipe'] })
+  const rgbAt = (f, at) => { const raw = execFileSync('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-ss', String(at), '-i', f, '-frames:v', '1', '-vf', 'scale=8:8', '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-']); const c = [0, 0, 0]; for (let i = 0; i < raw.length; i += 3) { c[0] += raw[i]; c[1] += raw[i + 1]; c[2] += raw[i + 2] } return c.map((x) => Math.round(x / (raw.length / 3))) }
+  const rms = (f, at) => { const raw = execFileSync('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-ss', String(at), '-i', f, '-t', '0.1', '-vn', '-ac', '1', '-ar', '48000', '-f', 's16le', '-']); let q = 0; for (let i = 0; i + 1 < raw.length; i += 2) { const x = raw.readInt16LE(i); q += x * x } return Math.sqrt(q / Math.max(1, raw.length / 2)) }
+  try {
+    const voice = path.join(dir, 'voice.wav')
+    run(['-f', 'lavfi', '-i', "sine=f=440:d=10,volume='if(between(t,2,3),0,1)':eval=frame", '-ac', '1', '-ar', '48000', '-c:a', 'pcm_s16le', '-y', voice])
+    const lens = [2, 5, 3]
+    const clips = ['red', 'blue', '0x00FF00'].map((c, i) => { const f = path.join(dir, `clip${i}.mp4`); run(['-f', 'lavfi', '-i', `color=c=${c}:s=720x1280:r=30:d=${lens[i]}`, '-c:v', 'libx264', '-preset', 'ultrafast', '-y', f]); return f })
+    const music = path.join(dir, 'music.wav')
+    run(['-f', 'lavfi', '-i', 'sine=f=220:d=4', '-ac', '2', '-y', music])
+    const segments = [[0, 4], [5, 9]]
+    const snapped = E.snapSegments(segments)
+    const shots = E.voiceoverShots(240, lens.map((l) => l * 30 - 2), E.outputJoins(snapped))
+    const list = shots.map((sh, i) => {
+      const piece = path.join(dir, `shot${i}.mp4`)
+      run(['-ss', String(sh.from / 30), '-i', clips[sh.clip], '-an', '-vf', 'setpts=PTS-STARTPTS,fps=30,scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1', '-frames:v', String(sh.frames), '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '18', '-pix_fmt', 'yuv420p', '-x264-params', 'bframes=0:ref=1', '-y', piece])
+      return `file '${piece}'`
+    })
+    fs.writeFileSync(path.join(dir, 'shots.txt'), list.join('\n'))
+    run(['-f', 'concat', '-safe', '0', '-i', path.join(dir, 'shots.txt'), '-c', 'copy', '-y', path.join(dir, 'picture.mp4')])
+    const out = {}
+    for (const withMusic of [false, true]) {
+      const built = E.buildEditGraph({ segments, srcW: 1080, srcH: 1920, hasAudio: true, channels: 1, formats: ['vertical'], picture: 1, color: true, ...(withMusic ? { music: { input: 2, volume: 0.2 } } : {}) })
+      fs.writeFileSync(path.join(dir, 'graph.txt'), built.graph)
+      out[withMusic] = path.join(dir, `${withMusic ? 'with' : 'without'}.mp4`)
+      run(['-i', voice, '-i', path.join(dir, 'picture.mp4'), ...(withMusic ? ['-stream_loop', '-1', '-i', music] : []), '-filter_complex_script', path.join(dir, 'graph.txt'), '-map', `[${built.outputs.vertical.v}]`, '-map', `[${built.outputs.vertical.a}]`, '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '160k', '-y', out[withMusic]])
+    }
+    const p = JSON.parse(execFileSync('ffprobe', ['-v', 'error', '-show_entries', 'stream=codec_type,width,height,channels:format=duration', '-of', 'json', out[true]]).toString())
+    const v = p.streams.find((x) => x.codec_type === 'video'), a = p.streams.find((x) => x.codec_type === 'audio')
+    check('voiceover: vertical, 1080x1920, 8 seconds after the cut, stereo sound with music', v.width === 1080 && v.height === 1920 && Math.abs(Number(p.format.duration) - 8) < 0.1 && a && a.channels === 2, p)
+    const seen = [0.5, 2.5, 5, 7.5].map((t) => rgbAt(out[true], t))
+    const is = (c, ch) => c[ch] > 200 && c.filter((_, i) => i !== ch).every((x) => x < 60)
+    check('voiceover: each clip shows where the plan put it (red, blue up to the cut, green, red again)', is(seen[0], 0) && is(seen[1], 2) && is(seen[2], 1) && is(seen[3], 0), seen)
+    const quietWithout = rms(out[false], 2.4), quietWith = rms(out[true], 2.4)
+    check('music: heard where the voice is quiet, well under the voice', quietWithout < 30 && quietWith > 200 && quietWith < rms(out[false], 1) * 0.4, { quietWithout, quietWith })
+    const voiceWithout = rms(out[false], 1), voiceWith = rms(out[true], 1)
+    check('music: the voice is exactly as loud as without it (never turned down)', voiceWith >= voiceWithout * 0.97 && voiceWith <= voiceWithout * 1.1, { voiceWithout, voiceWith })
+    check('music: faded out by the last frame', rms(out[true], 7.9) <= rms(out[false], 7.9) * 1.03)
+  } catch (e) {
+    fails.push(`the real voiceover failed: ${String(e.stderr || e.message).slice(0, 600)}`)
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
 }
 
 // ── Several files, one video (join-takes; Seb, 2026-11-02: "these files are
@@ -302,5 +391,5 @@ async function joinTest() {
     for (const f of fails) console.error(`   • ${f}`)
     process.exit(1)
   }
-  console.log('✅ edit-filters: cuts, B-roll, zooms, colour, logo, pictures and both formats in one pass, the B-roll and pictures exactly where they were placed; several files joined into one take on the timeline its sound was read on')
+  console.log('✅ edit-filters: cuts, B-roll, zooms, colour, logo, pictures and both formats in one pass, the B-roll and pictures exactly where they were placed; several files joined into one take on the timeline its sound was read on; a voiceover video made from its B-roll, and music under the voice at its level')
 })

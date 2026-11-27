@@ -31,6 +31,7 @@ import { normalizeTier } from '@/lib/tier'
 import { readCampaign, scriptFromRow, type Campaign, type Script } from '@/lib/trybe-batch'
 import { matchScript, scriptText, checkCut, type CutCheck } from '@/lib/trybe-edit'
 import { readSheet, sheetToCampaign } from '@/lib/studio-rules'
+import { musicAfterAccept, musicAfterFinish, musicWords, voiceoverWords, type MusicPlaced } from '@/lib/studio-render'
 
 export const EDIT_BUCKET = 'instagram-videos'
 /** Videos on the video server at once, across everyone. */
@@ -105,7 +106,10 @@ export interface EditRow {
   review_src: Src; broll_src: Src | null; product: string | null
   settings: unknown; info: { review?: { duration: number; width: number; height: number; hasAudio: boolean; silences?: [number, number][] }; broll?: { duration: number; unseen?: number[] }; placed?: Placed; brollCheck?: { fits: boolean; talk: string; shows: string }
     /** Counted as one of the member's edited videos (the first time it was read). */
-    counted?: boolean } | null
+    counted?: boolean
+    /** A Video Builder voiceover (set when it was added): the takes are the
+     *  voice, the B-roll is the whole picture (lib/studio-render). */
+    voiceover?: boolean } | null
   words: Word[] | null; shots: Shot[] | null; plan: Plan | null; outputs: Record<string, { url: string; seconds: number }> | null
   attempts: number; made_at: string | null; raw_deleted_at: string | null; created_at: string; updated_at: string
   /** A TRYBE ad from a batch (migration 468): its batch, its script once
@@ -114,6 +118,8 @@ export interface EditRow {
   /** An Video Builder video (migration 476): its TRYBE brand, whose rules
    *  check it, and what happened when it was sent to that brand. */
   studio_brand_id?: string | null; studio_send?: Record<string, unknown> | null
+  /** Its Video Builder set (migration 477): the set's music is under it. */
+  studio_project_id?: string | null
 }
 
 /** A studio video's brand rules as the cut check reads them (lib/studio-rules), or null. */
@@ -204,6 +210,7 @@ export async function readTakes(db: Db, row: EditRow): Promise<void> {
     const src = await takes(db, row)
     if (!src.ok) return await fail(src.error)
     const who = { userId: row.user_id, tier: await tierOf(db, row.user_id) }
+    if (row.info?.voiceover === true) return await readVoiceover(db, row, src, who, fail)
     const many = joined(src.review)
     const probe = await videoServer<{ duration: number; width: number; height: number; hasAudio: boolean; parts?: { duration: number; width: number; height: number; hasAudio: boolean }[] }>('/probe', { ...src.review, frames: 0 }, 90_000)
     // A server from before takes could be joined refuses the files, or reads one.
@@ -342,6 +349,56 @@ export async function readTakes(db: Db, row: EditRow): Promise<void> {
   }
 }
 
+/** A VOICEOVER VIDEO, READ (the Video Builder; Seb, 2026-11-26: "only
+ *  voiceover type videos, and then also videos that have talking head"). Its
+ *  takes are the voice (sound files, or videos whose sound is used) and its
+ *  B-roll is the whole picture, which the video server lays over the voice
+ *  once it is cut. So: the voice is written down and the cuts decided from
+ *  the words. There is no creator walking in to watch, no B-roll moments to
+ *  place, and no shape to check on a sound file. */
+async function readVoiceover(db: Db, row: EditRow, src: { review: Readable; broll: Readable | null }, who: { userId: string; tier: string }, fail: (note: string) => Promise<void>): Promise<void> {
+  if (!src.broll) return await fail('A voiceover video needs B-roll: it is the whole picture. Add B-roll clips to this set, then process it again.')
+  const files = takeFiles(row.review_src)
+  const audio = await videoServer<{ url: string; durationSeconds?: number; silences?: [number, number][] }>('/stream-audio', { ...src.review, userId: row.user_id, silences: true }, 295_000)
+  if (!audio.ok) return await fail(`MVP could not hear your voiceover: ${oneStop(audio.error)}.`)
+  const duration = Math.round((Number(audio.data.durationSeconds) || 0) * 100) / 100
+  const cues = await transcribeToCues(audio.data.url)
+  recordUsage({ userId: row.user_id, tier: who.tier, feature: 'review_edit_transcribe', model: 'fal-whisper', images: 1 })
+  const audioPath = ownPath(audio.data.url, row.user_id)
+  if (audioPath) await db.storage.from(EDIT_BUCKET).remove([audioPath])
+  const words = tidyWordTimes(cleanWords(cues.map((c) => ({ start: c.start, end: c.end, text: c.text }))))
+  if (words.length < 8 || !(duration > 1)) return await fail('MVP heard almost nothing in your voiceover. Check that the hook, body and CTA files are the ones with your voice on them.')
+  await set(db, row.id, { note: 'Deciding the cuts' })
+  const plan = await planEdit({ words, lines: linesOf(words), shots: [], product: row.product, kind: 'trybe', frames: [], who, script: null })
+  plan.placements = []
+  const settings = cleanSettings(row.settings)
+  if (!settings.title.text && plan.title) settings.title.text = plan.title
+  const clips = takeFiles(row.broll_src).length
+  await set(db, row.id, {
+    status: 'ready_to_make', attempts: 0,
+    note: `Read: ${plan.cuts.length} ${plan.cuts.length === 1 ? 'cut' : 'cuts'}. Waiting for its turn on the video server. Voiceover${files.length > 1 ? ` from ${files.length} voice files joined in order` : ''}, over ${clips} B-roll ${clips === 1 ? 'clip' : 'clips'} that make the whole picture.`,
+    info: { voiceover: true, review: { duration, width: 1080, height: 1920, hasAudio: true, silences: Array.isArray(audio.data.silences) ? audio.data.silences : undefined }, counted: true },
+    words, shots: [], plan, settings,
+  })
+  if (!row.info?.counted) recordUsage({ userId: row.user_id, tier: who.tier, feature: PRIMARY_FEATURE.trybeEdit[0], model: 'counter', images: 0 })
+}
+
+/** The music picked for a Video Builder set (studio_projects.options.music),
+ *  when it is still one of this creator's accepted beds; or why it is not
+ *  used; or null when the set has no music. */
+async function musicFor(db: Db, row: Pick<EditRow, 'user_id' | 'studio_project_id'>): Promise<{ url: string; label: string } | { missed: string; label: string } | null> {
+  if (!row.studio_project_id) return null
+  const { data: proj, error } = await db.from('studio_projects').select('options').eq('id', row.studio_project_id).eq('user_id', row.user_id).maybeSingle()
+  if (error) return { label: 'Music', missed: 'MVP could not read this set’s music choice, so this video was made without music. Press Make it again to try once more.' }
+  const m = (proj?.options as { music?: { bedId?: unknown; label?: unknown } | null } | null)?.music
+  if (!m || typeof m.bedId !== 'string') return null
+  const label = typeof m.label === 'string' && m.label.trim() ? m.label.trim().slice(0, 120) : 'Your music bed'
+  const { data: bed } = await db.from('music_beds').select('id, url, status').eq('id', m.bedId).eq('user_id', row.user_id).maybeSingle()
+  if (!bed?.url) return { label, missed: 'The music picked for this set is gone, so this video was made without music. Pick music again, then press Make it again.' }
+  if (bed.status !== 'accepted') return { label, missed: 'The music picked for this set is no longer accepted, so this video was made without music. Pick music again, then press Make it again.' }
+  return { label, url: String(bed.url) }
+}
+
 // ── THE MONTH'S EDITED VIDEOS (Seb, 2026-11-03: "go with 100 and 25 for free
 // week"). Counted on the member's real billing month (lib/usage-cap), a
 // quarter in their first 7 days (lib/intro-allowance). Used: the videos
@@ -405,7 +462,7 @@ export async function filmedTimes(token: string, fileIds: string[]): Promise<{ r
  *  video seconds, and what was left out and why: the card shows this, not
  *  the settings, so a title that could not be drawn or a picture waiting for
  *  words never said is seen as missing (Seb's rule: report what happened). */
-export interface Placed { title: { from: number; to: number } | { missed: string } | null; pictures: PictureTime[]; callouts?: CalloutTime[] }
+export interface Placed { title: { from: number; to: number } | { missed: string } | null; pictures: PictureTime[]; callouts?: CalloutTime[]; music?: MusicPlaced | null }
 
 /** The title as a picture, in the creator's folder, overwritten on each make. */
 /** Drawn for a 1920 wide frame: on the wide version it keeps its own size,
@@ -462,7 +519,10 @@ export async function startMaking(db: Db, row: EditRow): Promise<void> {
       }
     }
   }
-  const spec = renderSpec({ words, lines: linesOf(words), plan: row.plan, shots: row.shots || [], duration: row.info.review.duration, settings, hasBroll: !!row.broll_src, silences: silences ?? [] })
+  const voiceover = row.info?.voiceover === true
+  if (voiceover && !src.broll) return set(db, row.id, { status: 'failed', note: 'A voiceover video needs B-roll: it is the whole picture. Add B-roll clips to this set, then process it again.' })
+  // A voiceover's B-roll is its picture, made by the video server; nothing is laid over it.
+  const spec = renderSpec({ words, lines: linesOf(words), plan: row.plan, shots: voiceover ? [] : row.shots || [], duration: row.info.review.duration, settings, hasBroll: !voiceover && !!row.broll_src, silences: silences ?? [] })
   if (spec.seconds < 3) return set(db, row.id, { status: 'failed', note: 'Almost everything was cut. Put some cuts back and make it again.' })
   // THE FINISHED VIDEO AGAINST THE BRIEF (lib/trybe-edit checkCut): from the
   // words that are in this cut and when they are heard, every time it is made.
@@ -492,19 +552,27 @@ export async function startMaking(db: Db, row: EditRow): Promise<void> {
     calloutPics.push({ url: img.url, position: spec.calloutSpot, widthPct: img.widthPct, opacity: 1, startSec: c.from, endSec: c.to })
     calloutKs.push(c.k)
   }
+  // THE SET'S MUSIC, under the voice (lib/studio-render): asked for here,
+  // said as in only once the video server reports it mixed it.
+  const music = await musicFor(db, row).catch(() => null)
   const placed: Placed = {
     title: !settings.title.on || !settings.title.text ? null
       : title ? { from: settings.title.seconds === 0 ? 0 : 0.3, to: Math.min(spec.seconds, titleTo) }
       : { missed: 'The title could not be drawn, so it is not on this video. Make it again to try once more.' },
     pictures: spec.pictures,
     callouts,
+    music: music ? ('missed' in music ? { label: music.label, missed: music.missed } : { label: music.label, asked: true }) : null,
   }
   await set(db, row.id, { info: { ...info, placed } })
-  const broll = spec.inserts.length ? src.broll : null
-  const sent = await videoServer<{ accepted?: boolean; pictures?: number }>('/render-edit', {
+  const broll = !voiceover && spec.inserts.length ? src.broll : null
+  // A voiceover goes to its own address, so a server from before them
+  // answers 404 (wait for the update) instead of failing on a sound file.
+  const sent = await videoServer<{ accepted?: boolean; pictures?: number; music?: boolean }>(voiceover ? '/render-voiceover' : '/render-edit', {
     // One file each, or the files the video server joins first.
     ...(joined(src.review) ? { mainParts: src.review.parts } : { mainUrl: src.review.url, mainAuth: src.review.auth }),
     ...(broll ? (joined(broll) ? { brollParts: broll.parts } : { brollUrl: broll.url, brollAuth: broll.auth }) : {}),
+    ...(voiceover && src.broll ? { voiceover: { clips: joined(src.broll) ? src.broll.parts : [src.broll] } } : {}),
+    ...(music && 'url' in music ? { music: { url: music.url, volume: 0.2 } } : {}),
     userId: row.user_id, job, callbackUrl: `${appUrl()}/api/review-edit/callback`,
     segments: spec.segments, inserts: spec.inserts, zooms: spec.zooms, color: settings.color,
     formats: settings.formats, cropX: settings.cropX, words: spec.words,
@@ -521,6 +589,11 @@ export async function startMaking(db: Db, row: EditRow): Promise<void> {
       return { url: p.url, position: pic.position, widthPct: PICTURE_WIDTH[pic.size], opacity: pic.opacity, ...(pic.when === 'whole' ? {} : { startSec: p.from, endSec: p.to }) }
     }).concat(calloutPics),
   }, 60_000)
+  // A video server from before music makes the video without it, and says nothing.
+  if (sent.ok && placed.music?.asked) {
+    placed.music = musicAfterAccept(placed.music, sent.data.music)
+    if (placed.music?.missed) await set(db, row.id, { info: { ...info, placed } })
+  }
   // A video server older than the product titles draws four pictures and
   // says nothing: a title past what it draws is said to be left out.
   if (sent.ok && calloutPics.length) {
@@ -541,7 +614,7 @@ export async function startMaking(db: Db, row: EditRow): Promise<void> {
 
 /** What the video server reported back. */
 export async function finishMaking(db: Db, id: string, userId: string, body: Record<string, unknown>): Promise<boolean> {
-  const { data: row } = await db.from('review_edits').select('id,user_id,status,outputs').eq('id', id).eq('user_id', userId).maybeSingle()
+  const { data: row } = await db.from('review_edits').select('id,user_id,status,outputs,info').eq('id', id).eq('user_id', userId).maybeSingle()
   if (!row) return false
   if (body.ok !== true) {
     await set(db, id, { status: 'failed', note: `The video server could not make it: ${String(body.error || 'no reason given').slice(0, 300)}` })
@@ -555,7 +628,15 @@ export async function finishMaking(db: Db, id: string, userId: string, body: Rec
   if (stale.length) await db.storage.from(EDIT_BUCKET).remove(stale)
   const secs = Number(body.seconds) || Object.values(outputs)[0]?.seconds || 0
   const extra = [Number(body.inserts) > 0 && `${body.inserts} B-roll ${Number(body.inserts) === 1 ? 'moment' : 'moments'}`, Number(body.zooms) > 0 && `${body.zooms} slow ${Number(body.zooms) === 1 ? 'zoom' : 'zooms'}`].filter(Boolean).join(', ')
-  await set(db, id, { status: 'done', outputs, made_at: now(), note: `Made: ${clock(secs)} long${extra ? `, ${extra}` : ''}.` })
+  // What the server says it did with the music and the voiceover's picture (lib/studio-render).
+  const info = (row.info || {}) as NonNullable<EditRow['info']>
+  const music = musicAfterFinish(info.placed?.music, body.music)
+  const placedNow = info.placed ? { ...info.placed, music } : null
+  await set(db, id, {
+    status: 'done', outputs, made_at: now(),
+    note: `Made: ${clock(secs)} long${extra ? `, ${extra}` : ''}.${voiceoverWords(body.voiceover)}${musicWords(music)}`,
+    ...(placedNow ? { info: { ...info, placed: placedNow } } : {}),
+  })
   return true
 }
 

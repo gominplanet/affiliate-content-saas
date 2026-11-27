@@ -223,14 +223,9 @@ export default function TrybeStudioVideos({ brand, brands, brandsError, canSend,
       {/* MUSIC (Seb, 2026-11-27: "this is also where we choose if we want music or not and what type of music"). */}
       <StudioMusic picked={music} onPick={(m) => void saveOptions({ settings, music: m })} disabled={!project} />
 
-      {voiceover
-        ? (
-          <div className="rounded-xl p-3 text-[13px] space-y-1" style={{ background: 'rgba(217,119,6,0.08)', border: `1px solid ${AMBER}` }}>
-            <p className="font-semibold" style={{ color: AMBER }}>This set is {VIDEO_TYPES.voiceover.label.toLowerCase()}.</p>
-            <p>MVP cannot edit voiceover videos yet: that comes with the next update to MVP&rsquo;s video server. Your scripts and shot list are ready to record and film now. To make talking to camera videos instead, pick {VIDEO_TYPES.talking.label} in the Scripts step and write new scripts.</p>
-          </div>
-        )
-        : <StudioMixer brand={brand} settings={settings} trybeLeft={allowance?.left ?? null} onAdded={load} projectId={project?.id ?? null} namePrefix={project ? `${brand.name} ${project.product}` : brand.name} />}
+      {/* VOICEOVER SETS (Seb, 2026-11-27: "we need to update.."): your voice for each part, your B-roll for the picture. */}
+      {voiceover && <p className="text-[12.5px]" style={soft}>This set is {VIDEO_TYPES.voiceover.label.toLowerCase()}: add your recorded voice for each hook, body and CTA, and the B-roll that makes the picture. To make talking to camera videos instead, pick {VIDEO_TYPES.talking.label} in the Scripts step.</p>}
+      <StudioMixer key={voiceover ? 'voiceover' : 'talking'} voiceover={voiceover} brand={brand} settings={settings} trybeLeft={allowance?.left ?? null} onAdded={load} projectId={project?.id ?? null} namePrefix={project ? `${brand.name} ${project.product}` : brand.name} />
 
       {/* A WHOLE VIDEO IN ONE TAKE: the review editor's own batch, vertical only. */}
       <details className="rounded-xl border px-3 py-2" style={{ borderColor: 'var(--border)' }}>
@@ -279,6 +274,8 @@ export default function TrybeStudioVideos({ brand, brands, brandsError, canSend,
                   </span>
                 </div>
                 {e.status !== 'done' && e.note && <p className="text-[12.5px] inline-flex items-center gap-1.5" style={{ color: e.status === 'failed' ? RED : 'var(--text-3)' }}>{e.status !== 'failed' && <Loader2 size={12} className="animate-spin" />} {e.note}</p>}
+                {/* WHAT WAS MADE, said from what the video server reported: music left out reads amber, never as in (lib/studio-render). */}
+                {e.status === 'done' && e.note && <p className="text-[12.5px]" style={{ color: e.placed?.music?.missed ? AMBER : 'var(--text-3)' }}>{e.note}</p>}
                 {e.studio?.send?.note && <p className="text-[12.5px]" style={{ color: e.studio.send.state === 'failed' ? RED : AMBER }}>{e.studio.send.note}</p>}
                 {e.studio?.check && (
                   <ul className="flex flex-wrap gap-x-4 gap-y-1">

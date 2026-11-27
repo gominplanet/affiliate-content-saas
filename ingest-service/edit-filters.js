@@ -158,6 +158,100 @@ function placeAt(position, W, H, w, h) {
   }
 }
 
+// ── MUSIC UNDER THE VOICE (Seb, 2026-11-26, the Video Builder) ─────────────
+// A music bed the creator made and accepted (lib/music-bed), under every
+// video of a set. Seb's rules: brought to one loudness first (beds come out
+// of the engines at different levels), quiet under the voice (0.2), in over
+// 0.3 s and out over the last 1.4 s, as long as the video: a short bed plays
+// again from its start (the input is looped), a long one is cut.
+const MUSIC_VOLUME = 0.2
+const MUSIC_FADE_IN = 0.3
+const MUSIC_FADE_OUT = 1.4
+const MUSIC_LUFS = -20
+
+/** The bed's volume, kept between nearly off and as loud as the voice. */
+function musicVolume(v) {
+  const n = Number(v)
+  return Number.isFinite(n) && n > 0 ? Math.min(1, Math.max(0.02, Math.round(n * 100) / 100)) : MUSIC_VOLUME
+}
+
+/** The music input made ready to mix: stereo at 48 kHz, cut to the video's
+ *  length, one loudness, faded in and out, at its volume. Pure. */
+function musicChain(input, seconds, volume) {
+  const len = r3(Math.max(0.5, Number(seconds) || 0))
+  const out = r3(Math.max(0, len - MUSIC_FADE_OUT))
+  const fmt = 'aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo'
+  return `[${input}:a]${fmt},atrim=0:${len},asetpts=PTS-STARTPTS,loudnorm=I=${MUSIC_LUFS}:TP=-2:LRA=11,aresample=48000,${fmt},`
+    + `afade=t=in:st=0:d=${MUSIC_FADE_IN},afade=t=out:st=${out}:d=${r3(Math.min(MUSIC_FADE_OUT, len))},volume=${musicVolume(volume)}[mus]`
+}
+
+/** The voice and the music as one stereo sound, added together as they are
+ *  (amerge and pan, which every ffmpeg has; amix would turn the voice down
+ *  by half). A one-channel voice goes to both speakers at its full level:
+ *  ffmpeg's own way of spreading it plays it 3 dB quieter. Ends with the
+ *  voice. Pure. */
+function musicMix(voice, channels) {
+  const both = Number(channels) === 1 ? 'pan=stereo|c0=c0|c1=c0,' : ''
+  return `[${voice}]${both}aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo[vst];[vst][mus]amerge=inputs=2,pan=stereo|c0=c0+c2|c1=c1+c3[amx]`
+}
+
+// ── VOICEOVER OVER B-ROLL (Seb, 2026-11-26: "only voiceover type videos, and
+// then also videos that have talking head") ──────────────────────────────────
+// The creator's voice is the sound; their B-roll clips are the whole picture,
+// one shot after another. The shots are laid over the finished (cut) voice,
+// so a shot never breaks into slivers at a cut: where the voice was cut is a
+// good moment to change shot, and the plan does so when one is near.
+const SHOT_FRAMES = 3 * FPS
+const SHOT_MIN = Math.round(1.5 * FPS)
+const SHOT_MAX = Math.round(4.5 * FPS)
+/** A clip shorter than this is not used. */
+const CLIP_MIN = Math.round(0.5 * FPS)
+
+/** Where the cuts are in the finished video, in frames. Pure. */
+function outputJoins(snapped) {
+  const out = []
+  let k = 0
+  for (const s of snapped) { if (k > 0) out.push(k); k += s.kb - s.ka }
+  return out
+}
+
+/** The picture of a voiceover video: which clip shows when. totalFrames is
+ *  the finished video's length; clipFrames each clip's usable length, in the
+ *  order given (the order rotates from video to video, lib/studio-mix); joins
+ *  where the voice was cut. Clips take turns, each next use starting where
+ *  the last one stopped, back to its start when it runs out. Returns shots
+ *  [{ clip, from, frames }] (frames) that cover the video exactly, or null
+ *  when no clip is long enough. Pure. */
+function voiceoverShots(totalFrames, clipFrames, joins = []) {
+  const total = Math.max(0, Math.round(Number(totalFrames) || 0))
+  const clips = (Array.isArray(clipFrames) ? clipFrames : []).map((f, i) => ({ i, frames: Math.floor(Number(f) || 0) })).filter((c) => c.frames >= CLIP_MIN)
+  if (!total || !clips.length) return null
+  const at = (Array.isArray(joins) ? joins : []).map(Number).filter((j) => Number.isFinite(j)).sort((a, b) => a - b)
+  const cursor = new Map()
+  const shots = []
+  let pos = 0, k = 0
+  while (pos < total && shots.length < 600) {
+    const left = total - pos
+    let want
+    if (left <= SHOT_MAX) want = left
+    else {
+      const near = at.filter((j) => j >= pos + SHOT_MIN && j <= pos + SHOT_MAX)
+      want = near.length ? near.reduce((best, j) => (Math.abs(j - pos - SHOT_FRAMES) < Math.abs(best - pos - SHOT_FRAMES) ? j : best)) - pos : SHOT_FRAMES
+      // Never a sliver left at the end.
+      if (left - want < SHOT_MIN) want = Math.round(left / 2)
+    }
+    const c = clips[k % clips.length]
+    k++
+    const len = Math.max(1, Math.min(want, c.frames))
+    let from = cursor.get(c.i) || 0
+    if (from + len > c.frames) from = 0
+    shots.push({ clip: c.i, from, frames: len })
+    cursor.set(c.i, from + len)
+    pos += len
+  }
+  return pos >= total ? shots : null
+}
+
 /**
  * The whole edit as one filter graph.
  * opts: {
@@ -174,6 +268,11 @@ function placeAt(position, W, H, w, h) {
  *   pictures: [{ input, w, h, position, widthPct, opacity?, startSec?, endSec? }],
  *                                  the creator's PNGs; without a start and end, on the whole video
  *   ass,                           captions file (vertical only)
+ *   channels,                      the take's sound channels (1 for a one-channel voice)
+ *   music: { input, volume? },     a music bed under the voice (input looped by the caller)
+ *   picture,                       a voiceover video: input index of its picture, already
+ *                                  laid out over the finished length (voiceoverShots); the
+ *                                  take (input 0) is then its sound only
  * }
  * Returns { graph, outputs: { wide?: { v, a }, vertical?: { v, a } }, seconds, inserts, zooms }.
  */
@@ -186,13 +285,20 @@ function buildEditGraph(opts) {
   const m = masterSize(o.srcW, o.srcH, wantVertical)
   const formats = (o.formats || []).filter((f) => f === 'vertical' || (f === 'wide' && !m.upright))
   if (!formats.length) throw Object.assign(new Error(m.upright ? 'An upright take makes the vertical version only.' : 'no format'), { status: 400 })
-  const inserts = Number.isInteger(o.track) ? cleanInserts(o.inserts, seconds, o.brollSec) : []
+  // A voiceover video's B-roll is its whole picture, so nothing is laid over it.
+  const inserts = Number.isInteger(o.track) && !Number.isInteger(o.picture) ? cleanInserts(o.inserts, seconds, o.brollSec) : []
   const zooms = cleanZooms(o.zooms, seconds)
 
   const g = []
   // The take: constant 30 frames a second, the kept frames only, at the master size.
   const hdr = hdrChain(o.transfer)
-  g.push(`[0:v]setpts=PTS-STARTPTS,fps=${FPS},select='${videoKeep(snapped)}',setpts=N/${FPS}/TB,scale=${m.w}:${m.h}:force_original_aspect_ratio=increase,crop=${m.w}:${m.h},setsar=1${hdr ? `,${hdr}` : ''}[m0]`)
+  const voiceover = Number.isInteger(o.picture)
+  if (voiceover) {
+    // The picture is the B-roll, already the finished length (a frame or two
+    // short is held, never left black).
+    const frames = snapped.reduce((n, s) => n + (s.kb - s.ka), 0)
+    g.push(`[${o.picture}:v]setpts=PTS-STARTPTS,fps=${FPS},scale=${m.w}:${m.h}:force_original_aspect_ratio=increase,crop=${m.w}:${m.h},setsar=1,tpad=stop_mode=clone:stop_duration=2,trim=end_frame=${frames},setpts=PTS-STARTPTS[m0]`)
+  } else g.push(`[0:v]setpts=PTS-STARTPTS,fps=${FPS},select='${videoKeep(snapped)}',setpts=N/${FPS}/TB,scale=${m.w}:${m.h}:force_original_aspect_ratio=increase,crop=${m.w}:${m.h},setsar=1${hdr ? `,${hdr}` : ''}[m0]`)
   // A take with no sound gets silence, so every output still has a sound track.
   g.push(o.hasAudio === false
     ? `anullsrc=r=48000:cl=stereo,atrim=0:${seconds}[a0]`
@@ -213,13 +319,21 @@ function buildEditGraph(opts) {
     g.push(`[${v}]eq=contrast=1.06:saturation=1.18:brightness=0.01[mc]`)
     v = 'mc'
   }
+  // The music under the voice, once, before the formats split.
+  let a = 'a0'
+  const music = o.music && Number.isInteger(o.music.input) ? o.music : null
+  if (music) {
+    g.push(musicChain(music.input, seconds, music.volume))
+    g.push(musicMix(a, o.hasAudio === false ? 2 : o.channels))
+    a = 'amx'
+  }
   const two = formats.length === 2
   if (two) {
     g.push(`[${v}]split=2[fw][fv]`)
-    g.push(`[a0]asplit=2[aw][av]`)
+    g.push(`[${a}]asplit=2[aw][av]`)
   }
   const lab = { wide: two ? 'fw' : v, vertical: two ? 'fv' : v }
-  const alab = { wide: two ? 'aw' : 'a0', vertical: two ? 'av' : 'a0' }
+  const alab = { wide: two ? 'aw' : a, vertical: two ? 'av' : a }
   // An overlay used by both formats is split once.
   const pngIn = (spec, name) => {
     if (!spec) return {}
@@ -272,7 +386,7 @@ function buildEditGraph(opts) {
     }
     outputs[f] = { v: cur, a: alab[f] }
   }
-  return { graph: g.join(';\n'), outputs, seconds, inserts, zooms, master: m, formats, hdr: !!hdr }
+  return { graph: g.join(';\n'), outputs, seconds, inserts, zooms, master: m, formats, hdr: !!hdr && !voiceover, music: !!music, voiceover }
 }
 
 /** A creator's Google Drive token, only when the address is Google's Drive
@@ -417,4 +531,4 @@ function filmedAtFrom(tags) {
   return read(t['com.apple.quicktime.creationdate']) || read(t.creation_time) || null
 }
 
-module.exports = { MAX_PICTURES, JOIN_FADE, joinFade, MAX_PARTS, takeParts, partStarts, partAt, concatList, joinedAudioGraph, joinAsIs, joinedOk, remakeSize, filmedAtFrom, silenceNoiseDb, parseSilences, parseMeanDb, hdrChain, driveAuth, authArgs, FPS, snapSegments, editSeconds, outputWindows, cleanInserts, trackSetpts, insertEnable, zoomExpr, cleanZooms, masterSize, placeAt, buildEditGraph }
+module.exports = { MUSIC_VOLUME, MUSIC_FADE_IN, MUSIC_FADE_OUT, MUSIC_LUFS, musicVolume, musicChain, musicMix, SHOT_FRAMES, SHOT_MIN, SHOT_MAX, CLIP_MIN, outputJoins, voiceoverShots, MAX_PICTURES, JOIN_FADE, joinFade, MAX_PARTS, takeParts, partStarts, partAt, concatList, joinedAudioGraph, joinAsIs, joinedOk, remakeSize, filmedAtFrom, silenceNoiseDb, parseSilences, parseMeanDb, hdrChain, driveAuth, authArgs, FPS, snapSegments, editSeconds, outputWindows, cleanInserts, trackSetpts, insertEnable, zoomExpr, cleanZooms, masterSize, placeAt, buildEditGraph }
