@@ -493,3 +493,29 @@ export function readLiveBrand(json: unknown): LiveBrandRead {
     keys: Object.keys(o).slice(0, 80),
   }
 }
+
+// ── WHY ITS PAGE WAS NOT READ, SAID (Seb, 2026-11-27, Brickell Men's Products:
+// "should give me details.. too much unknown") ───────────────────────────────
+// The brand panel said "SCOUT could not read its page on TRYBE (no answer)"
+// for every answer that was not a page: a refused sign-in, a page TRYBE does
+// not show, TRYBE being down. Now it says which, and whether reading it again
+// can help.
+
+/** What came back when SCOUT asked for the brand's page, in words, and
+ *  whether MVP should ask again by itself. Pure. */
+export function liveReadWhy(r: { ok?: boolean; status?: number | null; error?: string | null; json?: unknown }): { words: string; again: boolean } {
+  const status = Number(r.status) || 0
+  const err = String(r.error || '').trim()
+  // TRYBE's own words, when its answer carries them ({ message } or { error }).
+  const j = (r.json && typeof r.json === 'object' ? r.json : {}) as Record<string, unknown>
+  const own = [j.message, j.error, j.detail].find((x) => typeof x === 'string' && x.trim()) as string | undefined
+  const said = own ? `, TRYBE said "${own.trim().slice(0, 120)}"` : ''
+  if (err === 'not-signed-in' || status === 401) return { words: `TRYBE says this Chrome is signed out of TRYBE (401${said}). Sign in to TRYBE once, then read it again`, again: false }
+  if (status === 403) return { words: `TRYBE did not show this brand’s page to your account (403${said})`, again: false }
+  if (status === 404) return { words: `TRYBE has no page for this brand (404${said}): it may have left TRYBE or changed its address`, again: false }
+  if (status >= 500) return { words: `TRYBE’s page was not working (${status}${said})`, again: true }
+  if (err) return { words: err.replace(/\.$/, ''), again: !/not allowed|no-access|install|update/i.test(err) }
+  if (status && !r.ok) return { words: `TRYBE answered ${status}${said}`, again: true }
+  if (r.ok && r.json == null) return { words: 'TRYBE answered with an empty page', again: true }
+  return { words: 'SCOUT gave no answer', again: true }
+}

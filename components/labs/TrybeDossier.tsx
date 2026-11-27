@@ -20,7 +20,7 @@ import { payLines, estimatePay } from '@/lib/trybe-pay'
 import { paidOutOf } from '@/lib/trybe-daily'
 import { testCall } from '@/lib/trybe-test-call'
 import { requestTrybeApi } from '@/lib/extension-frame'
-import { scorecard, verdictOf, seriesMove, readLiveBrand, type LiveBrandRead, type Dimension, type SamplePool, type ReplyPool, type DossierProduct, type TimelineItem, type SeriesPoint } from '@/lib/trybe-dossier'
+import { scorecard, verdictOf, seriesMove, readLiveBrand, liveReadWhy, type LiveBrandRead, type Dimension, type SamplePool, type ReplyPool, type DossierProduct, type TimelineItem, type SeriesPoint } from '@/lib/trybe-dossier'
 import { adLibraryUrl } from '@/lib/trybe-pick'
 import { readScoreParts, readSavedParts, partWord, PART_LABEL, type TrybeScoreParts } from '@/lib/trybe-score'
 import { keepTrybeFacts } from '@/lib/trybe-score-keep'
@@ -107,8 +107,12 @@ export default function TrybeDossier({ brandId, name, onClose, actions, scout = 
   const readLive = useCallback(async () => {
     if (!canDetails) return
     setLive({ state: 'reading' })
-    const r = await requestTrybeApi('GET', `/backend/api/creator/v2/brands/${encodeURIComponent(brandId)}/details`).catch(() => ({ ok: false as const, error: 'SCOUT did not answer.', json: undefined }))
-    if (!r.ok || r.json == null) { setLive({ state: 'failed', error: ('error' in r && r.error) || 'no answer' }); return }
+    const ask = () => requestTrybeApi('GET', `/backend/api/creator/v2/brands/${encodeURIComponent(brandId)}/details`).catch(() => ({ ok: false as const, error: 'SCOUT did not answer.', json: undefined, status: 0 }))
+    let r = await ask()
+    // NOT READ: why, in words (lib/trybe-dossier liveReadWhy), and asked once
+    // more by itself when that can help (TRYBE's tab still opening, a blip).
+    if ((!r.ok || r.json == null) && liveReadWhy(r).again) { await new Promise((ok) => setTimeout(ok, 4000)); r = await ask() }
+    if (!r.ok || r.json == null) { setLive({ state: 'failed', error: liveReadWhy(r).words }); return }
     const card = readBrandCard(r.json)
     const read = readLiveBrand(r.json)
     // ITS SCORE IN THREE PARTS (Seb, 2026-11-25): reviews, ads, chats.
@@ -153,7 +157,8 @@ export default function TrybeDossier({ brandId, name, onClose, actions, scout = 
     // Preserve: 146 reviews on its page, 22 in the list).
     rating: liveNum('rating') ?? (typeof listing?.review_rating === 'number' ? listing.review_rating : null),
     reviews: live?.read?.ratingCount ?? (typeof listing?.review_count === 'number' ? listing.review_count : null),
-    score: liveNum('score'),
+    // Read just now, else the score MVP kept from the last read of its page.
+    score: liveNum('score') ?? (typeof listing?.trybe_score === 'number' ? listing.trybe_score : null),
     approvedVideos: typeof listing?.stats?.videosApproved === 'number' ? listing.stats.videosApproved : null,
     // Read just now, else the parts MVP kept from the last read.
     parts: live?.parts ?? readSavedParts(listing?.trybe_parts),

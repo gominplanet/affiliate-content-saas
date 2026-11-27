@@ -8,7 +8,7 @@
 // came from, never scoring what was not read; and the page is wired in for the
 // team only, from wherever a brand's name is shown.
 import { readFileSync } from 'node:fs'
-import { samplePool, replyPool, metaSeries, seriesMove, timelineOf, dossierProducts, scorecard, verdictOf, readLiveBrand, type ScoreInput } from '../lib/trybe-dossier'
+import { samplePool, replyPool, metaSeries, seriesMove, timelineOf, dossierProducts, scorecard, verdictOf, readLiveBrand, liveReadWhy, type ScoreInput } from '../lib/trybe-dossier'
 import { POOL_MIN } from '../lib/trybe-changes'
 
 const fails: string[] = []
@@ -188,6 +188,18 @@ check('only with the new TRYBE switched on', /<DossierCtx\.Provider value=\{v2 \
 check('the new TRYBE is open to Pro, through its switch', /trybe_v2: 'labs'/.test(read('lib/labs-preview.ts')) && /v2=\{canUsePreview\('trybe_v2', tier\)\}/.test(read('app/(dashboard)/trybe/page.tsx')))
 check('what is not read says so on the page', /Not enough read|MVP has not counted its Meta ads yet/.test(D + read('lib/trybe-dossier.ts')) && /Read it again/.test(D))
 check('every outside link names where it goes', /Its ads on Meta Ad Library/.test(D) && /Watch on TRYBE/.test(D) && /Open on TRYBE/.test(D))
+
+// Seb, 2026-11-27 (Brickell Men's Products): "should give me details.. too much unknown".
+// Every answer that was not a page was said as "no answer".
+{
+  const w = (r: Parameters<typeof liveReadWhy>[0]) => liveReadWhy(r)
+  check('a page TRYBE does not show is said with its status and TRYBE\u2019s own words, and not asked again', /\(404, TRYBE said "Brand not found"\)/.test(w({ ok: false, status: 404, json: { message: 'Brand not found' } }).words) && !w({ ok: false, status: 404 }).again)
+  check('refused for this account (403) is said as such', /did not show this brand.s page to your account \(403\)/.test(w({ ok: false, status: 403 }).words))
+  check('signed out is said only for a 401 or SCOUT\u2019s not-signed-in', /signed out of TRYBE \(401\)/.test(w({ ok: false, status: 401 }).words) && /signed out/.test(w({ ok: false, error: 'not-signed-in' }).words) && !/signed out/.test(w({ ok: false, status: 500 }).words))
+  check('TRYBE down, or a blip, is asked again by itself', w({ ok: false, status: 502 }).again && w({ ok: false, status: 0 }).again && w({ ok: false, error: 'SCOUT did not answer.' }).again)
+  check('SCOUT\u2019s own words pass through; never the bare "no answer"', w({ ok: false, error: 'TRYBE did not renew its sign-in in your TRYBE tab in time. Press again in a moment' }).words.startsWith('TRYBE did not renew') && !Object.values({ a: w({ ok: false, status: 418 }), b: w({ ok: true, json: null }) }).some((x) => x.words === 'no answer'))
+  check('the panel says why, asks again once when it can help, and falls back to the score kept from the last read', /liveReadWhy\(r\)\.again\) \{ await new Promise/.test(D) && /setLive\(\{ state: 'failed', error: liveReadWhy\(r\)\.words \}\)/.test(D) && /score: liveNum\('score'\) \?\? \(typeof listing\?\.trybe_score === 'number'/.test(D) && !/\|\| 'no answer'/.test(D))
+}
 
 if (fails.length) {
   console.error(`\n❌ trybe-dossier: ${fails.length} failure(s)\n`)
