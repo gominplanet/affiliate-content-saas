@@ -42,7 +42,7 @@ export default function DriveBatch({ drive, loadDrive, settings, onAdded, left =
   /** A TRYBE batch these takes are for (lib/trybe-edit): every video is a
    *  TRYBE ad, and MVP finds each one's script from what is said. */
   trybe?: { campaignId: string } | null
-  /** An Edit Studio brand: every video is a TRYBE ad for it, vertical 9:16 only. */
+  /** An Video Builder brand: every video is a TRYBE ad for it, vertical 9:16 only. */
   studio?: { brandId: string } | null
 }) {
   const kindOf = (v: BatchVideo) => (trybe || studio ? 'trybe' as const : v.kind)
@@ -111,7 +111,7 @@ export default function DriveBatch({ drive, loadDrive, settings, onAdded, left =
       const aIds = new Set(a.map((f) => f.id)), bIds = new Set(b.map((f) => f.id))
       const aT = files.filter((f) => aIds.has(f.id)), bT = files.filter((f) => bIds.has(f.id))
       const named = new Map([...a, ...b].map((f) => [f.id, f.name]))
-      setProblems([...(d.problems ?? []).map((p) => `${named.get(p.id) || 'A file'}: ${p.error}`), ...sideways.map((f) => `${f.name}: filmed sideways. The Edit Studio takes vertical 9:16 video only.`)])
+      setProblems([...(d.problems ?? []).map((p) => `${named.get(p.id) || 'A file'}: ${p.error}`), ...sideways.map((f) => `${f.name}: filmed sideways. The Video Builder takes vertical 9:16 video only.`)])
       setPool(bT)
       setVideos(batchVideos(aT, bT))
     } catch (e) { toast.error(e instanceof Error ? e.message : 'Google’s picker did not open.') } finally { setBusy(null) }

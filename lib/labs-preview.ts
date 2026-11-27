@@ -165,7 +165,7 @@ const OPEN_TO: Record<PreviewFeature, 'admin' | 'labs'> = {
   live_trybe: 'admin',
   // MUSIC BEDS (Seb, 2026-11-26: "tick a few boxes in terms of mood and tempo
   // and style, and then be able to preview it and accept"): Stable Audio 3 on
-  // fal, checked for voices (lib/music-bed). Admin first, then the Edit Studio.
+  // fal, checked for voices (lib/music-bed). Admin first, then the Video Builder.
   music_beds: 'admin',
   // THE EDIT STUDIO (Seb, 2026-11-26: "this whole entire build is for users
   // who submit content to brands through trybe"): the brand's rules read from

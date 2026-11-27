@@ -4,7 +4,7 @@
 //
 // MUSIC BEDS (Seb, 2026-11-26: "tick a few boxes in terms of mood and tempo
 // and style, and then be able to preview it and accept"). The same panel the
-// Edit Studio will use: tick, make a preview, listen, accept or make another.
+// Video Builder will use: tick, make a preview, listen, accept or make another.
 // A track with voices is never offered, and a voice check that could not run
 // says so and blocks Accept until it is checked (lib/music-bed).
 

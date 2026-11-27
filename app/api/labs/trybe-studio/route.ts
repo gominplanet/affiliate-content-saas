@@ -26,12 +26,21 @@ import { recordUsage, usageFromAnthropic } from '@/lib/ai-usage'
 import { docsForScripts, type LinksDigest } from '@/lib/trybe-message-links'
 import { SHEET_SYSTEM, hashText, readQuestions, readSheet, sheetFromReply, sheetInput, upsertSource, SOURCE_TEXT_MAX, type OldSource, type RuleQuestion, type RuleSource, type SourceKind } from '@/lib/studio-rules'
 import { readFileBytes, readLinkText, READ_MAX_BYTES } from '@/lib/studio-read'
+import { scriptsSystem, scriptsInput, parseScripts, checkScripts, readScripts, MAX_PARTS, type VideoType } from '@/lib/studio-scripts'
+import { cleanSettings } from '@/lib/review-edit'
+import { BANNED_RULE } from '@/lib/scrub'
 
 export const maxDuration = 300
 
 const BUCKET = 'instagram-videos'
 const SHEET_MODEL = 'claude-sonnet-5'
-const NEEDS_SQL = 'The Edit Studio needs migration 476 in Supabase first.'
+const SCRIPT_MODEL = 'claude-sonnet-5'
+const PROJECT_SQL = 'The Video Builder needs migration 477 in Supabase first.'
+const projectMissing = (m?: string) => /studio_projects|studio_project_id/.test(m || '') && /does not exist|schema cache|could not find/i.test(m || '')
+const PROJECT_COLS = 'id, brand_id, brand_name, product, video_type, scripts, script_check, options, updated_at'
+interface ProjectRow { id: string; brand_id: string; brand_name: string | null; product: string; video_type: string; scripts: unknown; script_check: unknown; options: unknown; updated_at: string }
+const projectOut = (r: ProjectRow | null) => (r ? { id: r.id, brandId: r.brand_id, product: r.product, videoType: r.video_type === 'voiceover' ? 'voiceover' : 'talking', scripts: readScripts(r.scripts), check: r.script_check ?? null, options: r.options ?? null, updatedAt: r.updated_at } : null)
+const NEEDS_SQL = 'The Video Builder needs migration 476 in Supabase first.'
 const missing = (m?: string) => /trybe_brand_rules|studio_brand_id|studio_send/.test(m || '') && /does not exist|schema cache|could not find/i.test(m || '')
 const BRAND_ID = /^[A-Za-z0-9_-]{4,80}$/
 
@@ -45,7 +54,7 @@ async function gate() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: NextResponse.json({ error: 'Sign in again.' }, { status: 401 }) }
   const { data: intg } = await (supabase as Db).from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
-  if (!canUsePreview('trybe_studio', intg?.tier)) return { error: NextResponse.json({ error: 'The Edit Studio is still being tested by the MVP team.' }, { status: 403 }) }
+  if (!canUsePreview('trybe_studio', intg?.tier)) return { error: NextResponse.json({ error: 'The Video Builder is still being tested by the MVP team.' }, { status: 403 }) }
   return { userId: user.id as string, tier: (intg?.tier as string) || null }
 }
 
@@ -77,6 +86,80 @@ export async function GET(req: Request) {
   return NextResponse.json(out(row))
 }
 
+// THE VIDEO BUILDER'S PROJECTS (migration 477): one per creator, brand and
+// product, holding the video type, the modular scripts and the options.
+async function projectAction(action: string, body: Record<string, unknown>, g: { userId: string; tier: string | null }, db: Db): Promise<NextResponse> {
+  const now = new Date().toISOString()
+  if (action === 'project') {
+    const brandId = typeof body.brandId === 'string' ? body.brandId : ''
+    const product = typeof body.product === 'string' ? body.product.replace(/\s+/g, ' ').trim().slice(0, 160) : ''
+    if (!BRAND_ID.test(brandId) || !product) return NextResponse.json({ error: 'Pick the brand and the product first.' }, { status: 400 })
+    const brandName = typeof body.brandName === 'string' ? body.brandName.trim().slice(0, 120) : null
+    const { data: had, error: readErr } = await db.from('studio_projects').select(PROJECT_COLS).eq('user_id', g.userId).eq('brand_id', brandId).eq('product', product).maybeSingle()
+    if (readErr) return NextResponse.json({ error: projectMissing(readErr.message) ? PROJECT_SQL : readErr.message, needsSql: projectMissing(readErr.message) }, { status: projectMissing(readErr.message) ? 503 : 500 })
+    if (had) return NextResponse.json({ project: projectOut(had as ProjectRow) })
+    const { data, error } = await db.from('studio_projects').insert({ user_id: g.userId, brand_id: brandId, brand_name: brandName, product }).select(PROJECT_COLS).single()
+    if (error) return NextResponse.json({ error: projectMissing(error.message) ? PROJECT_SQL : error.message }, { status: 500 })
+    return NextResponse.json({ project: projectOut(data as ProjectRow) })
+  }
+  const id = typeof body.projectId === 'string' && /^[0-9a-f-]{36}$/i.test(body.projectId) ? body.projectId : ''
+  if (!id) return NextResponse.json({ error: 'Which video set?' }, { status: 400 })
+  const { data: pr, error: prErr } = await db.from('studio_projects').select(PROJECT_COLS).eq('id', id).eq('user_id', g.userId).maybeSingle()
+  if (prErr) return NextResponse.json({ error: projectMissing(prErr.message) ? PROJECT_SQL : prErr.message }, { status: 500 })
+  if (!pr) return NextResponse.json({ error: 'That video set is not yours or is gone.' }, { status: 404 })
+  const project = pr as ProjectRow
+
+  if (action === 'options') {
+    const o = (body.options && typeof body.options === 'object' ? body.options : {}) as Record<string, unknown>
+    const music = o.music && typeof o.music === 'object' ? o.music as Record<string, unknown> : null
+    const options = {
+      settings: cleanSettings({ ...((o.settings as object) || {}), kind: 'trybe' }),
+      music: music && typeof music.bedId === 'string' && /^[0-9a-f-]{36}$/i.test(music.bedId) ? { bedId: music.bedId, label: typeof music.label === 'string' ? music.label.slice(0, 120) : '' } : null,
+    }
+    const type: VideoType = body.videoType === 'voiceover' ? 'voiceover' : 'talking'
+    const { data, error } = await db.from('studio_projects').update({ options, video_type: type, updated_at: now }).eq('id', id).select(PROJECT_COLS).single()
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    return NextResponse.json({ project: projectOut(data as ProjectRow) })
+  }
+
+  if (action === 'scripts') {
+    // MODULAR SCRIPTS (lib/studio-scripts): from the brand's rules, checked
+    // against them, and written again once when a rule is broken.
+    const { row } = await readRow(db, g.userId, project.brand_id)
+    if (!row?.sheet) return NextResponse.json({ error: 'Read the brand\u2019s rules first: the scripts are written from them.' }, { status: 400 })
+    const sheet = readSheet(row.sheet)
+    const type: VideoType = body.videoType === 'voiceover' ? 'voiceover' : 'talking'
+    const n = (v: unknown, lo: number) => Math.max(lo, Math.min(MAX_PARTS, Math.round(Number(v) || 3)))
+    const counts = { hooks: n(body.hooks, 1), bodies: n(body.bodies, 1), ctas: Math.max(0, Math.min(MAX_PARTS, Math.round(Number(body.ctas ?? 3)))) }
+    const context = typeof body.context === 'string' ? body.context.slice(0, 2000) : ''
+    const spend = await spendGate(g.userId, g.tier)
+    if (spend) return spend
+    const system = scriptsSystem({ type, ...counts, bannedRule: BANNED_RULE })
+    const brandName = project.brand_name || row.brand_name || 'the brand'
+    const ask = async (fix?: string[]) => {
+      const msg = await createAnthropicClient().messages.create({ model: SCRIPT_MODEL, max_tokens: 8000, system, messages: [{ role: 'user', content: scriptsInput({ brandName, product: project.product, sheet, context, fix }) }] }, { signal: AbortSignal.timeout(170_000) })
+      try { const u = usageFromAnthropic(msg); recordUsage({ userId: g.userId, tier: g.tier, feature: 'studio_scripts', model: SCRIPT_MODEL, input: u.input, output: u.output }) } catch { /* best-effort */ }
+      return parseScripts((msg.content as Array<{ type: string; text?: string }>).map((b) => (b.type === 'text' ? b.text || '' : '')).join(''), type)
+    }
+    try {
+      let scripts = await ask()
+      if (!scripts) return NextResponse.json({ error: 'MVP wrote scripts it could not read. Try again.' }, { status: 502 })
+      let check = checkScripts(scripts, sheet)
+      // One rewrite when a rule is broken; what is still wrong after it is said.
+      if (check.state === 'red') {
+        const again = await ask(check.items.filter((i) => i.tone === 'bad').map((i) => i.text)).catch(() => null)
+        if (again) { const c2 = checkScripts(again, sheet); if (c2.items.filter((i) => i.tone === 'bad').length <= check.items.filter((i) => i.tone === 'bad').length) { scripts = again; check = c2 } }
+      }
+      const { data, error } = await db.from('studio_projects').update({ scripts, script_check: check, video_type: type, updated_at: now }).eq('id', id).select(PROJECT_COLS).single()
+      if (error) return NextResponse.json({ error: `The scripts were written but not saved: ${error.message}` }, { status: 500 })
+      return NextResponse.json({ project: projectOut(data as ProjectRow) })
+    } catch (e) {
+      return NextResponse.json({ error: `MVP could not write the scripts: ${e instanceof Error ? e.message.slice(0, 160) : 'no answer'}` }, { status: 502 })
+    }
+  }
+  return NextResponse.json({ error: 'Unknown action.' }, { status: 400 })
+}
+
 export async function POST(req: Request) {
   const g = await gate()
   if ('error' in g) return g.error
@@ -85,6 +168,8 @@ export async function POST(req: Request) {
   const db = createAdminClient() as Db
   const now = new Date().toISOString()
   const who = { userId: g.userId, tier: g.tier }
+
+  if (action === 'project' || action === 'scripts' || action === 'options') return projectAction(action, body, g, db)
 
   // A PDF or picture goes straight to storage (it can be bigger than a request
   // to MVP may carry); the server reads it from there and deletes it.

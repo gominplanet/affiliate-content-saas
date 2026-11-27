@@ -92,7 +92,7 @@ export default function ComputerBatch({ settings, onAdded, left = null, trybeLef
   /** A TRYBE batch these takes are for (lib/trybe-edit): every video is a
    *  TRYBE ad, and MVP finds each one's script from what is said. */
   trybe?: { campaignId: string } | null
-  /** An Edit Studio brand (components/labs/TrybeStudio): every video is a
+  /** An Video Builder brand (components/labs/TrybeStudio): every video is a
    *  TRYBE ad for it, and only vertical 9:16 files are taken. */
   studio?: { brandId: string } | null
 }) {
@@ -164,7 +164,7 @@ export default function ComputerBatch({ settings, onAdded, left = null, trybeLef
       // THE EDIT STUDIO TAKES VERTICAL 9:16 ONLY (Seb, 2026-11-26): a sideways
       // file is left out and said, before a byte goes up.
       const takes = studio ? read.filter((t) => !(t.width && t.height && t.width > t.height)) : read
-      if (studio) for (const t of read) if (!takes.includes(t)) { bad.push(`${t.name}: filmed sideways. The Edit Studio takes vertical 9:16 video only.`); files.current.delete(t.id) }
+      if (studio) for (const t of read) if (!takes.includes(t)) { bad.push(`${t.name}: filmed sideways. The Video Builder takes vertical 9:16 video only.`); files.current.delete(t.id) }
       const nextTalk = which === 'a' ? takes : talk
       const nextRoll = which === 'b' ? takes : roll
       if (which === 'a') setTalk(takes); else setRoll(takes)

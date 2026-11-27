@@ -407,7 +407,7 @@ const TABS: Array<{ id: Tab; label: string; icon: LucideIcon; group: TabGroup; s
   { id: 'create', label: 'Make videos', icon: Clapperboard, group: 'create', says: 'Pick a brand, pick the product you have, and get ten shooting scripts that follow its brief.' },
   { id: 'upload', label: 'Upload videos', icon: UploadCloud, group: 'create', says: 'Add the videos you filmed and send each one to its TRYBE brand, without leaving this page.' },
   // THE EDIT STUDIO (Seb, 2026-11-26; labs-preview trybe_studio).
-  { id: 'studio', label: 'Edit Studio', icon: Wand2, group: 'create', says: 'The brand\u2019s rules read from everything it gave you, your vertical takes edited as TRYBE ads with the options you tick, each checked against the rules, and sent in one press.' },
+  { id: 'studio', label: 'Video Builder', icon: Wand2, group: 'create', says: 'Step by step: pick the brand and product, MVP reads its rules and writes hooks, bodies and CTAs to shoot, then puts your clips together into videos, checks each one and sends it in one press.' },
   // (How they win, once a team-only tab here, was removed 2026-10-18: its
   // words now show in Make videos, under Their best videos.)
   { id: 'week', label: 'This week', icon: CalendarDays, group: 'create', says: 'Your samples, ticked as they arrive, and your next 7 days planned from them.' },
@@ -623,7 +623,7 @@ export default function TrybeOutreach({ preview = false, free = false, v2 = fals
     if (t === 'home' && !v2) return
     // The Top 100 board only where Labs opens it.
     if (t === 'top100' && !topBoard) return
-    // The Edit Studio only where Labs opens it.
+    // The Video Builder only where Labs opens it.
     if (t === 'studio' && !studio) return
     if (proOnly(t as Tab)) { setLockedTab(t as Tab); return }
     setLockedTab(null); setTab(t as Tab)

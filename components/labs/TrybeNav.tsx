@@ -31,7 +31,7 @@ const GROUPS: Group[] = [
     // ONE SCRIPT TAB (Seb, 2026-11-06: "Under Tribe, it should only be brand
     // scripts"): pick the brand, pick the product, and the script agent writes.
     { label: 'Brand scripts', icon: Clapperboard, tabs: ['create'] },
-    { label: 'Edit Studio', icon: Wand2, tabs: ['studio'] },
+    { label: 'Video Builder', icon: Wand2, tabs: ['studio'] },
     { label: 'Upload', icon: UploadCloud, tabs: ['upload'] },
     { label: 'This week', icon: CalendarDays, tabs: ['week'] },
     { label: 'What’s working', icon: Lightbulb, tabs: ['working'] },
@@ -79,7 +79,7 @@ export const GROUPS_V3: Group[] = [
   ] },
   { id: 'videos', label: 'Videos', icon: Clapperboard, hint: 'Script to approval', items: [
     { label: 'Brand scripts', icon: Clapperboard, tabs: ['create'] },
-    { label: 'Edit Studio', icon: Wand2, tabs: ['studio'] },
+    { label: 'Video Builder', icon: Wand2, tabs: ['studio'] },
     { label: 'Upload', icon: UploadCloud, tabs: ['upload'] },
     { label: 'Submissions', icon: ListChecks, tabs: ['submissions'] },
     { label: 'What\u2019s working', icon: Lightbulb, tabs: ['working'] },

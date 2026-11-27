@@ -26,8 +26,8 @@ check('five jobs in the order a creator works', GROUPS_V3.map((g) => g.label).jo
 check('Home holds what is happening', shape[0] === 'Home: Today[home] This week[week] What changed[changes]')
 check('Find brands holds the searching, the Top 100 board, and the brands you already filmed', shape[1] === 'Find brands: Find brands[find] Star brands[stars] Top 100[top100] Match my TikTok[filmed]')
 check('Messages holds every word to and from a brand', shape[2] === 'Messages: Inbox[inbox] Ready to send[queue] Sent[sent]')
-// The Edit Studio (Seb, 2026-11-26) sits between the scripts and the upload; the menu shows it only where Labs opens it.
-check('Videos holds a video from script to approval', shape[3] === 'Videos: Brand scripts[create] Edit Studio[studio] Upload[upload] Submissions[submissions] What’s working[working]')
+// The Video Builder (Seb, 2026-11-26) sits between the scripts and the upload; the menu shows it only where Labs opens it.
+check('Videos holds a video from script to approval', shape[3] === 'Videos: Brand scripts[create] Video Builder[studio] Upload[upload] Submissions[submissions] What’s working[working]')
 check('Earnings holds what came of it', shape[4] === 'Earnings: Earnings[analytics] By brand[brands]')
 const ALL = ['home', 'create', 'upload', 'find', 'stars', 'top100', 'filmed', 'queue', 'sent', 'inbox', 'analytics', 'submissions', 'brands', 'week', 'changes', 'working', 'studio']
 const seen = GROUPS_V3.flatMap((g) => g.items.flatMap((it) => it.tabs))

@@ -19,6 +19,9 @@ import { Loader2, AlertTriangle, Check, Download, Film, UploadCloud, HardDrive, 
 import ComputerBatch from '@/components/review-editor/ComputerBatch'
 import DriveBatch from '@/components/review-editor/DriveBatch'
 import StudioMixer from '@/components/labs/StudioMixer'
+import StudioMusic from '@/components/labs/StudioMusic'
+import type { BuilderProject } from '@/components/labs/TrybeStudioScripts'
+import { VIDEO_TYPES } from '@/lib/studio-scripts'
 import type { DriveState } from '@/components/review-editor/drive-picker'
 import DropTrybePicker, { emptyChoice, choiceBlocker, type TrybeChoice } from '@/components/labs/DropTrybePicker'
 import { DEFAULT_SETTINGS, TITLE_LOOKS, TITLE_COLORS, cleanSettings, type EditSettings, type TitleLook, type TitleColor, type LogoSize } from '@/lib/review-edit'
@@ -48,7 +51,7 @@ function Toggle({ on, onChange, label, says }: { on: boolean; onChange: (v: bool
   )
 }
 
-export default function TrybeStudioVideos({ brand, brands, brandsError, canSend, hasRules }: {
+export default function TrybeStudioVideos({ brand, brands, brandsError, canSend, hasRules, project = null, onProject }: {
   brand: { id: string; name: string }
   /** The brands this creator works with on TRYBE (for the send's program and product). */
   brands: MyBrand[] | null
@@ -57,6 +60,9 @@ export default function TrybeStudioVideos({ brand, brands, brandsError, canSend,
   canSend: boolean
   /** The brand's rules are read: finished videos are checked against them. */
   hasRules: boolean
+  /** The Video Builder set (one brand and product): its options, music and videos. */
+  project?: BuilderProject | null
+  onProject?: (p: BuilderProject) => void
 }) {
   const [edits, setEdits] = useState<StudioEdit[] | null>(null)
   const [allowance, setAllowance] = useState<Allowance | null>(null)
@@ -73,7 +79,7 @@ export default function TrybeStudioVideos({ brand, brands, brandsError, canSend,
 
   const load = useCallback(async () => {
     try {
-      const r = await fetch(`/api/review-edit?studio=${encodeURIComponent(brand.id)}`, { cache: 'no-store', signal: AbortSignal.timeout(60_000) })
+      const r = await fetch(`/api/review-edit?studio=${encodeURIComponent(brand.id)}${project ? `&project=${encodeURIComponent(project.id)}` : ''}`, { cache: 'no-store', signal: AbortSignal.timeout(60_000) })
       const d = await r.json().catch(() => ({}))
       if (!r.ok) { setErr(d.error || 'Your videos for this brand could not be read.'); return }
       setErr(null)
@@ -83,9 +89,12 @@ export default function TrybeStudioVideos({ brand, brands, brandsError, canSend,
       // words or pictures: a disclosure like "Product provided in exchange for
       // review #ad" is for your own reviews, not a TRYBE ad the brand runs
       // (Seb, 2026-11-26: "This is not necessary").
+      // The options kept with this video set win; else your saved look's style.
+      const kept = project?.options?.settings
+      if (kept && !adopted.current) { adopted.current = true; setLook({ ...cleanSettings(kept), kind: 'trybe', formats: ['vertical'], logo: null, pictures: [], callouts: [] }) }
       if (d.defaults && !adopted.current) { adopted.current = true; const saved = cleanSettings(d.defaults); setLook({ ...saved, kind: 'trybe', formats: ['vertical'], logo: null, pictures: [], callouts: [], captions: true, title: { ...saved.title, on: false, text: '' } }) }
     } catch { setErr('Your videos for this brand could not be read. Check your connection.') }
-  }, [brand.id])
+  }, [brand.id, project?.id]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { setEdits(null); void load() }, [load])
   const busy = (edits ?? []).some((e) => e.status !== 'done' && e.status !== 'failed')
   useEffect(() => {
@@ -109,6 +118,25 @@ export default function TrybeStudioVideos({ brand, brands, brandsError, canSend,
   const setTitle = (patch: Partial<EditSettings['title']>) => setLook((l) => ({ ...l, title: { ...l.title, ...patch } }))
   // Every studio video: a vertical TRYBE ad, no logo, with the options ticked.
   const settings = cleanSettings({ ...look, kind: 'trybe', formats: ['vertical'], logo: null })
+  // THE OPTIONS AND MUSIC, KEPT WITH THE VIDEO SET (migration 477), a moment
+  // after the last change, so the set opens the same way after the shoot.
+  const music = project?.options?.music ?? null
+  const saveOptions = useCallback(async (next: { settings: EditSettings; music: { bedId: string; label: string } | null }) => {
+    if (!project) return
+    try {
+      const r = await fetch('/api/labs/trybe-studio', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'options', projectId: project.id, videoType: project.videoType, options: next }), signal: AbortSignal.timeout(20_000) })
+      const j = await r.json().catch(() => ({}))
+      if (r.ok && j.project) onProject?.(j.project as BuilderProject)
+    } catch { /* kept on this page; saved with the next change */ }
+  }, [project, onProject])
+  const lookKey = JSON.stringify(settings)
+  useEffect(() => {
+    if (!project || !adopted.current) return
+    const t = setTimeout(() => { void saveOptions({ settings, music }) }, 1200)
+    return () => clearTimeout(t)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lookKey])
+  const voiceover = project?.videoType === 'voiceover'
 
   const saveSend = async (id: string, send: Record<string, unknown>) => {
     try { await fetch('/api/review-edit', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'studio_sent', id, send }), signal: AbortSignal.timeout(20_000) }) } catch { /* said on the card; the record in Drop has it too */ }
@@ -188,11 +216,21 @@ export default function TrybeStudioVideos({ brand, brands, brandsError, canSend,
             <label className="inline-flex items-center gap-1.5">For <select value={look.title.seconds} onChange={(e) => setTitle({ seconds: Number(e.target.value) })} className="rounded-lg border bg-transparent px-2 py-1" style={{ borderColor: 'var(--border)' }}>{[2, 3, 4, 5, 6, 8, 0].map((n) => <option key={n} value={n}>{n === 0 ? 'the whole video' : `${n} seconds`}</option>)}</select></label>
           </div>
         )}
-        <p className="text-[12px] mt-2" style={soft}>Coming next in the studio: caption styles, music beds, end cues and fine print, and a voiceover over your B-roll.</p>
+        <p className="text-[12px] mt-2" style={soft}>Coming next: caption styles, end cues and fine print.</p>
       </div>
 
       {/* HOOKS × BODIES × CTAs, WITH B-ROLL (Seb, 2026-11-26): the studio's way in. */}
-      <StudioMixer brand={brand} settings={settings} trybeLeft={allowance?.left ?? null} onAdded={load} />
+      {/* MUSIC (Seb, 2026-11-27: "this is also where we choose if we want music or not and what type of music"). */}
+      <StudioMusic picked={music} onPick={(m) => void saveOptions({ settings, music: m })} disabled={!project} />
+
+      {voiceover
+        ? (
+          <div className="rounded-xl p-3 text-[13px] space-y-1" style={{ background: 'rgba(217,119,6,0.08)', border: `1px solid ${AMBER}` }}>
+            <p className="font-semibold" style={{ color: AMBER }}>This set is {VIDEO_TYPES.voiceover.label.toLowerCase()}.</p>
+            <p>MVP cannot edit voiceover videos yet: that comes with the next update to MVP&rsquo;s video server. Your scripts and shot list are ready to record and film now. To make talking to camera videos instead, pick {VIDEO_TYPES.talking.label} in the Scripts step and write new scripts.</p>
+          </div>
+        )
+        : <StudioMixer brand={brand} settings={settings} trybeLeft={allowance?.left ?? null} onAdded={load} projectId={project?.id ?? null} namePrefix={project ? `${brand.name} ${project.product}` : brand.name} />}
 
       {/* A WHOLE VIDEO IN ONE TAKE: the review editor's own batch, vertical only. */}
       <details className="rounded-xl border px-3 py-2" style={{ borderColor: 'var(--border)' }}>

@@ -52,13 +52,17 @@ function playerFacts(file: File): Promise<{ seconds: number | null; width: numbe
   })
 }
 
-export default function StudioMixer({ brand, settings, trybeLeft, onAdded }: {
+export default function StudioMixer({ brand, settings, trybeLeft, onAdded, projectId = null, namePrefix }: {
   brand: { id: string; name: string }
   /** The options ticked above, on every video. */
   settings: EditSettings
   /** TRYBE ad edits left this month, or null for no limit. */
   trybeLeft: number | null
   onAdded: () => Promise<void>
+  /** The Video Builder set these videos belong to (migration 477). */
+  projectId?: string | null
+  /** What each video's name starts with: the brand and product. */
+  namePrefix?: string
 }) {
   const [supabase] = useState(() => createBrowserClient())
   const [clips, setClips] = useState<Record<Part, Clip[]>>({ hook: [], body: [], cta: [], broll: [] })
@@ -81,7 +85,7 @@ export default function StudioMixer({ brand, settings, trybeLeft, onAdded }: {
       let facts = await readVideoFacts(f)
       if (!facts.width || !facts.height) { const p = await playerFacts(f); facts = { ...facts, seconds: facts.seconds ?? p.seconds, width: p.width, height: p.height } }
       // Vertical 9:16 only (Seb, 2026-11-26): a sideways clip is left out and named.
-      if (facts.width && facts.height && facts.width > facts.height) { bad.push(`${f.name}: filmed sideways. The Edit Studio takes vertical 9:16 video only.`); continue }
+      if (facts.width && facts.height && facts.width > facts.height) { bad.push(`${f.name}: filmed sideways. The Video Builder takes vertical 9:16 video only.`); continue }
       ok.push({ key: `${part}:${f.name}:${f.size}:${f.lastModified}`, file: f, name: f.name, seconds: facts.seconds })
     }
     setClips((c) => {
@@ -140,7 +144,7 @@ export default function StudioMixer({ brand, settings, trybeLeft, onAdded }: {
       try {
         const r = await fetch('/api/review-edit', {
           method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: AbortSignal.timeout(90_000),
-          body: JSON.stringify({ action: 'add', name: `${brand.name} ${cb.label}`, review: take(parts), ...(roll.length ? { broll: take(roll) } : {}), settings, studio: { brandId: brand.id } }),
+          body: JSON.stringify({ action: 'add', name: `${namePrefix || brand.name} ${cb.label}`.slice(0, 120), review: take(parts), ...(roll.length ? { broll: take(roll) } : {}), settings, studio: { brandId: brand.id, ...(projectId ? { projectId } : {}) } }),
         })
         const d = await r.json().catch(() => ({})) as { error?: string; allowanceFull?: boolean }
         if (r.ok) { added++; continue }

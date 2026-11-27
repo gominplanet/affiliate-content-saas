@@ -3,7 +3,7 @@
 // MUSIC BEDS (lib/music-bed): tick a mood, a tempo and a style, MVP makes a
 // preview with Stable Audio 3 on fal at the length asked, keeps it in MVP's
 // own storage, checks it for voices, and the creator accepts it or makes
-// another. Admin first (lib/labs-preview music_beds), then the Edit Studio.
+// another. Admin first (lib/labs-preview music_beds), then the Video Builder.
 //
 //   GET                       the creator's beds, newest first
 //   POST { action: 'make' }   moods, tempo, styles, seconds, model

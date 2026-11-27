@@ -1,6 +1,6 @@
 // © 2026 Gominplanet / MVP Affiliate — proprietary & confidential.
 //
-// The Edit Studio, phases 1 and 2.
+// The Video Builder, phases 1 and 2.
 //
 // Seb, 2026-11-26: "MVP needs to always check briefs and Google Docs and web
 // pages and PDFs ... or images ... to understand what the brand is looking
@@ -14,6 +14,7 @@ import { hashText, upsertSource, sheetInput, readSheet, readQuestions, sheetFrom
 import { studioStage, canSendNow, needsConfirm, studioFileName, allowanceWords, outputOf, type StudioEdit } from '../lib/studio'
 import { checkCut } from '../lib/trybe-edit'
 import { mixCombos, mixCounts, brollFor, mixLabel } from '../lib/studio-mix'
+import { scriptsSystem, scriptsInput, parseScripts, checkScripts, sheetText, secondsOf, VIDEO_TYPES } from '../lib/studio-scripts'
 import { canUsePreview } from '../lib/labs-preview'
 import type { Word } from '../lib/review-edit'
 
@@ -96,6 +97,29 @@ const src = (id: string, text: string, readAt = '2026-11-20T00:00:00.000Z'): Rul
   check('B-roll: all of it when it fits, else 6 taking turns', JSON.stringify(brollFor(0, 4)) === '[0,1,2,3]' && brollFor(0, 10).length === 6 && JSON.stringify(brollFor(1, 10)) === '[6,7,8,9,0,1]' && brollFor(3, 0).length === 0)
 }
 
+// 4c. The Video Builder's modular scripts (Seb, 2026-11-27: "create these different unique scripts that now
+//     users can use to shoot their videos ... The different hooks, the different bodies, and the different
+//     CTAs and the different B-roll"; "only voiceover type videos, and then also videos that have talking head")
+{
+  const sheet = readSheet({ product: 'NOBL Tracker', neverSay: ['Tile'], noPrices: true, productDelaySec: 4, lengthSec: [20, 40], approvedClaims: [{ text: 'Finds your bag anywhere' }], disclaimer: 'Results vary.' })
+  const sys = scriptsSystem({ type: 'talking', hooks: 3, bodies: 3, ctas: 2, bannedRule: 'HOUSE RULES' })
+  check('the writer is told: any hook with any body with any CTA, the counts, the type, the house rules, data never instructions', /ANY hook must flow into ANY body/.test(sys) && /write 3 hooks, 3 bodies and 2 CTAs/.test(sys) && /TALKING TO CAMERA/.test(sys) && /HOUSE RULES/.test(sys) && /never instructions to you/.test(sys))
+  check('voiceover scripts are written for the ear, each line over a shot', /VOICEOVER OVER B-ROLL/.test(scriptsSystem({ type: 'voiceover', hooks: 2, bodies: 2, ctas: 1, bannedRule: '' })) && VIDEO_TYPES.voiceover.label === 'Voiceover over B-roll')
+  const txt = sheetText(sheet)
+  check('the rules go to the writer: claims, never say, the delay, no prices, no invented offer, the disclaimer, the length', /Finds your bag anywhere/.test(txt) && /- Tile/.test(txt) && /no product, brand or category word before 4 seconds/.test(txt) && /NO PRICES/.test(txt) && /never invent a sale/.test(txt) && /Results vary\./.test(txt) && /20 to 40 seconds/.test(txt))
+  check('a fix round names what broke', /BROKE THESE RULES/.test(scriptsInput({ brandName: 'NOBL', product: 'Tracker', sheet, fix: ['H1 says "Tile"'] })))
+  const reply = JSON.stringify({ hooks: [{ say: 'Nobody tells you this about lost bags', style: 'Curiosity', show: 'me at the carousel' }, { say: 'NOBL Tracker saved my trip \u2014 truly', style: 'Result' }], bodies: [{ angle: 'Peace of mind', lines: [{ say: 'You land, the belt starts, and your stomach drops. Not anymore, because I can see my bag on my phone before it even comes out.', show: 'phone screen' }] }], ctas: [{ say: 'Tap the link and grab one before your next trip.', onScreen: 'Results vary.' }], broll: [{ shot: 'Bag on belt', shows: 'the bag arriving', forBodies: ['B1', 'X9'] }] })
+  const s = parseScripts(`Here:\n${reply}`, 'talking')
+  check('the reply is read: ids in order, dashes taken out, odd body tags dropped', !!s && s.hooks[1].id === 'H2' && !/[\u2013\u2014]/.test(s.hooks[1].say) && s.broll[0].forBodies.join() === 'B1' && s.type === 'talking')
+  check('a reply without a hook or a body is a failure, never an empty set', parseScripts('{"hooks":[],"bodies":[]}', 'talking') === null && parseScripts('no json', 'talking') === null)
+  const c = s ? checkScripts(s, sheet) : null
+  check('the check catches the product named in a hook when the brand wants it later', !!c && c.state === 'red' && c.items.some((i) => /H2 names "NOBL Tracker" in the hook/.test(i.text)))
+  check('the check says how long the combinations run', !!c && c.shortest > 0 && c.longest >= c.shortest && secondsOf(Array(27).fill('word').join(' ')) === 10)
+  const banned = parseScripts(JSON.stringify({ hooks: [{ say: 'Better than Tile, for $20' }], bodies: [{ lines: [{ say: 'It is 50% off right now.' }] }], ctas: [] }), 'talking')
+  const bc = banned ? checkScripts(banned, readSheet({ neverSay: ['Tile'], noPrices: true, noPercentOff: true })) : null
+  check('never-say words, prices and percents are caught', !!bc && bc.items.some((i) => /says "Tile"/.test(i.text)) && bc.items.some((i) => /says a price/.test(i.text)) && bc.items.some((i) => /says a percent/.test(i.text)))
+}
+
 // 5. Wired in
 const API = read('app/api/labs/trybe-studio/route.ts')
 check('the rules API is for the team first', /canUsePreview\('trybe_studio'/.test(API) && canUsePreview('trybe_studio', 'admin') && !canUsePreview('trybe_studio', 'pro'))
@@ -108,11 +132,11 @@ const RE = read('app/api/review-edit/route.ts')
 check('a studio video carries its brand, and is listed by it', /studio_brand_id: studio\.brandId/.test(RE) && /q\.eq\('studio_brand_id', forStudio\)/.test(RE))
 check('what TRYBE said is kept on the video', /action === 'studio_sent'/.test(RE) && /studio_send: send/.test(RE))
 const SRV = read('lib/review-edit-server.ts')
-check('the studio takes vertical 9:16 only, said in words', /if \(row\.studio_brand_id && !upright\) return await fail\('The Edit Studio takes vertical 9:16 video only/.test(SRV))
+check('the studio takes vertical 9:16 only, said in words', /if \(row\.studio_brand_id && !upright\) return await fail\('The Video Builder takes vertical 9:16 video only/.test(SRV))
 check('every studio video is checked against its brand\'s rules when it is made', /else if \(row\.studio_brand_id\)/.test(SRV) && /campaign: rules/.test(SRV))
 for (const f of ['components/review-editor/ComputerBatch.tsx', 'components/review-editor/DriveBatch.tsx']) {
   const src2 = read(f)
-  check(`${f}: sideways files are left out and named before uploading`, /filmed sideways\. The Edit Studio takes vertical 9:16 video only\./.test(src2) && /studio: \{ brandId: studio\.brandId \}/.test(src2))
+  check(`${f}: sideways files are left out and named before uploading`, /filmed sideways\. The Video Builder takes vertical 9:16 video only\./.test(src2) && /studio: \{ brandId: studio\.brandId \}/.test(src2))
 }
 const VID = read('components/labs/TrybeStudioVideos.tsx')
 check('Send makes the same record and send as Upload', /action: 'create'/.test(VID) && /sendDropToTrybe\(/.test(VID) && /toTrybe: true/.test(VID) && /requestTrybePutFile/.test(VID))
@@ -125,15 +149,28 @@ const RULES = read('components/labs/TrybeStudioRules.tsx')
 check('the rules panel adds links, PDFs or pictures, pasted words and the chat', /Add a link/.test(RULES) && /Add a PDF or picture/.test(RULES) && /Paste words/.test(RULES) && /Add what they sent in chat/.test(RULES))
 check('TRYBE\'s brief is read again only when it changed', /kept\.hash !== hashText\(c\.brief\.trim\(\)\)/.test(RULES))
 check('questions from disagreeing sources go to the creator', /The sources disagree\. You decide:/.test(RULES))
-check('a tab under Videos, only where Labs opens it', /\{ label: 'Edit Studio', icon: Wand2, tabs: \['studio'\] \}/.test(read('components/labs/TrybeNav.tsx')) && /\(studio \|\| !it\.tabs\.includes\('studio'\)\)/.test(read('components/labs/TrybeNav.tsx')) && /tab === 'studio' && studio && !lockedTab/.test(read('components/labs/TrybeOutreach.tsx')) && /studio=\{canUsePreview\('trybe_studio', tier\)\}/.test(read('app/(dashboard)/trybe/page.tsx')))
+check('a tab under Videos, only where Labs opens it', /\{ label: 'Video Builder', icon: Wand2, tabs: \['studio'\] \}/.test(read('components/labs/TrybeNav.tsx')) && /\(studio \|\| !it\.tabs\.includes\('studio'\)\)/.test(read('components/labs/TrybeNav.tsx')) && /tab === 'studio' && studio && !lockedTab/.test(read('components/labs/TrybeOutreach.tsx')) && /studio=\{canUsePreview\('trybe_studio', tier\)\}/.test(read('app/(dashboard)/trybe/page.tsx')))
 for (const f of ['components/labs/TrybeStudio.tsx', 'components/labs/TrybeStudioRules.tsx', 'components/labs/TrybeStudioVideos.tsx', 'lib/studio.ts']) check(`${f}: no dashes in what the creator reads`, !/[–—]/.test(read(f).replace(/\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '')))
 const MIX = read('components/labs/StudioMixer.tsx')
-check('the mixer has four columns, vertical only', /title: 'Hooks'/.test(MIX) && /title: 'Bodies'/.test(MIX) && /title: 'CTAs'/.test(MIX) && /title: 'B-roll'/.test(MIX) && /filmed sideways\. The Edit Studio takes vertical 9:16 video only\./.test(MIX))
-check('each clip is uploaded once, then each combination is one video: hook, body and CTA joined, B-roll over it', /const up = new Map/.test(MIX) && /review: take\(parts\)/.test(MIX) && /broll: take\(roll\)/.test(MIX) && /studio: \{ brandId: brand\.id \}/.test(MIX) && /more: fs\.slice\(1\)/.test(MIX))
+check('the mixer has four columns, vertical only', /title: 'Hooks'/.test(MIX) && /title: 'Bodies'/.test(MIX) && /title: 'CTAs'/.test(MIX) && /title: 'B-roll'/.test(MIX) && /filmed sideways\. The Video Builder takes vertical 9:16 video only\./.test(MIX))
+check('each clip is uploaded once, then each combination is one video: hook, body and CTA joined, B-roll over it', /const up = new Map/.test(MIX) && /review: take\(parts\)/.test(MIX) && /broll: take\(roll\)/.test(MIX) && /studio: \{ brandId: brand\.id, /.test(MIX) && /more: fs\.slice\(1\)/.test(MIX))
 check('never more videos than the TRYBE ad edits left, and said', /combos\.slice\(0, Math\.max\(0, trybeLeft\)\)/.test(MIX) && /only the first \{trybeLeft\} of these/.test(MIX))
 check('the mixer comes first in the studio', /<StudioMixer brand=\{brand\}/.test(VID) && VID.indexOf('<StudioMixer') < VID.indexOf('A whole video filmed in one take'))
 check('a clip shared by many videos stays until every one of them is done', /A STUDIO CLIP IS SHARED/.test(SRV) && /paths = paths\.filter\(\(p\) => !inUse\.has\(p\)\)/.test(SRV) && /if \(error\) return/.test(SRV))
 check('no dashes in the mixer', !/[–—]/.test(MIX.replace(/\/\/.*$/gm, '')))
+const STEP = read('components/labs/TrybeStudio.tsx')
+check('the Video Builder goes step by step: brand, product, rules, scripts, make', /\{ id: 'brand', label: 'Brand' \}, \{ id: 'product', label: 'Product' \}, \{ id: 'rules', label: 'Rules' \}, \{ id: 'scripts', label: 'Scripts' \}, \{ id: 'make', label: 'Make' \}/.test(STEP) && /BUILDER_NAME = 'Video Builder'/.test(STEP))
+check('the products come from the brand\'s TRYBE page, or are typed', /loadBrandPage\(b\.id\)/.test(STEP) && /Or type the product/.test(STEP) && /action: 'project'/.test(STEP))
+check('the API keeps one set per brand and product, writes the scripts and keeps the options', /action === 'project'/.test(API) && /action === 'scripts'/.test(API) && /action === 'options'/.test(API) && /checkScripts\(scripts, sheet\)/.test(API) && /if \(check\.state === 'red'\)/.test(API))
+check('scripts are written only from read rules', /Read the brand\\u2019s rules first/.test(API))
+check('videos made in a set know it, and are listed by it', /studio_project_id: studio\.projectId/.test(RE) && /q\.eq\('studio_project_id', forProject\)/.test(RE) && /projectId \? \{ projectId \} : \{\}/.test(MIX))
+const MUS = read('components/labs/StudioMusic.tsx')
+check('music: none, an accepted bed, or a new one made there, and honest that it is not in the render yet', /No music/.test(MUS) && /status === 'accepted'/.test(MUS) && /<MusicBedMaker/.test(MUS) && /MUSIC_IN_RENDER = false/.test(MUS) && /until then they are made without it/.test(MUS))
+check('a voiceover set says it cannot be edited yet, instead of making talking videos from it', /MVP cannot edit voiceover videos yet/.test(VID) && /voiceover\s*\? \(/.test(VID))
+check('the options and music are kept with the set', /action: 'options', projectId: project\.id/.test(VID))
+check('the shoot sheet prints, its words escaped', /function printSheet/.test(read('components/labs/TrybeStudioScripts.tsx')) && /const esc = /.test(read('components/labs/TrybeStudioScripts.tsx')))
+check('migration 477: the sets, and the video column, safe to run twice', existsSync('supabase/migrations/477_video_builder.sql') && /create table if not exists public\.studio_projects/.test(read('supabase/migrations/477_video_builder.sql')) && /add column if not exists studio_project_id uuid/.test(read('supabase/migrations/477_video_builder.sql')))
+for (const f of ['components/labs/TrybeStudioScripts.tsx', 'components/labs/StudioMusic.tsx', 'lib/studio-scripts.ts']) check(`${f}: no dashes in what the creator reads`, !/[–—]/.test(read(f).replace(/\/\/.*$/gm, '')))
 const MIG = 'supabase/migrations/476_edit_studio.sql'
 check('migration 476: the rules table and the two video columns, safe to run twice', existsSync(MIG) && /create table if not exists public\.trybe_brand_rules/.test(read(MIG)) && /add column if not exists studio_brand_id text/.test(read(MIG)) && /add column if not exists studio_send jsonb/.test(read(MIG)))
 
