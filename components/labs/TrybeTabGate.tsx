@@ -19,6 +19,14 @@
 // and then opens TRYBE in the same press. A no-access answer to Open TRYBE
 // (lost since the page looked) does the same. Not allowed after that says so
 // in words, never as SCOUT's code.
+//
+// NOT ASKED WHEN SCOUT CAN DO IT (Seb, 2026-11-27: "We really have to figure
+// out how to get MVP to stop always asking for tribe connection"). A SCOUT
+// that opens TRYBE behind MVP (1.53.5+) is left to: while it opens, the card
+// says so in one quiet line and nothing pops up (the pop-up had decided to
+// show a moment before the opening began). The creator is asked only for
+// what only they can do: sign in to TRYBE, allow SCOUT on it, or open it when
+// SCOUT could not. "SCOUT did not say" never pops up either.
 
 import { useEffect, useState } from 'react'
 import { ExternalLink, Handshake, X, Loader2, ShieldCheck } from 'lucide-react'
@@ -35,7 +43,7 @@ function openError(error?: string): string {
   return `Chrome said "${error.slice(0, 120)}"`
 }
 
-export default function TrybeTabGate({ state, inBackground, onCheck, onAllowed, holdPopup = false }: {
+export default function TrybeTabGate({ state, inBackground, onCheck, onAllowed, holdPopup = false, openTried = true }: {
   state: TrybeTabState | 'checking'
   /** SCOUT can open TRYBE behind MVP's tab (1.53.5+). */
   inBackground: boolean
@@ -45,19 +53,24 @@ export default function TrybeTabGate({ state, inBackground, onCheck, onAllowed, 
   onAllowed: () => void
   /** SCOUT is opening TRYBE by itself right now: the pop-up waits for it. */
   holdPopup?: boolean
+  /** SCOUT has tried to open TRYBE by itself this visit (so closed now means it could not). */
+  openTried?: boolean
 }) {
   const needed = state === 'closed' || state === 'signed-out' || state === 'unknown' || state === 'not-allowed'
   const [pop, setPop] = useState(false)
   const [busy, setBusy] = useState(false)
   const [said, setSaid] = useState<string | null>(null)
 
+  // SCOUT opens TRYBE by itself: nothing to ask the creator until it could not.
+  const scoutOpensIt = inBackground && state === 'closed' && (holdPopup || !openTried)
+  const askNow = needed && !scoutOpensIt && state !== 'unknown'
   useEffect(() => {
-    if (!needed) { setPop(false); return }
+    if (!askNow) { setPop(false); return }
     if (holdPopup) return
     let shown = false
     try { shown = sessionStorage.getItem(SEEN_KEY) === '1' } catch { /* show it */ }
     if (!shown) { setPop(true); try { sessionStorage.setItem(SEEN_KEY, '1') } catch { /* this visit only */ } }
-  }, [needed, holdPopup])
+  }, [askNow, holdPopup])
 
   // While it is needed, look again every few seconds: signing in happens in
   // another tab, and this page should notice without a reload.
@@ -68,6 +81,7 @@ export default function TrybeTabGate({ state, inBackground, onCheck, onAllowed, 
   }, [needed, onCheck])
 
   if (!needed) return null
+  if (scoutOpensIt) return <p className="text-[13px] inline-flex items-center gap-1.5" style={{ color: 'var(--text-soft)' }}><Loader2 size={13} className="animate-spin" /> SCOUT is opening TRYBE in a tab behind this one. Nothing to do here.</p>
 
   const notAllowed = state === 'not-allowed'
   const signedOut = state === 'signed-out'

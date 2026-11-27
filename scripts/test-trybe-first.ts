@@ -107,7 +107,7 @@ async function main() {
   check('one opener, so TRYBE is never opened twice', /if \(trybeOpening\) return trybeOpening/.test(opener) && /\.finally\(\(\) => \{ trybeOpening = null \}\)/.test(opener))
   check('it opens next to the MVP tab that asked, behind it, kept awake, loaded and watched', /index: near\.index \+ 1/.test(opener) && /active: !!focus/.test(opener) && /autoDiscardable: false/.test(opener) && /waitForTabLoad\(t\.id, 30000\)/.test(opener) && /files: \['trybe-hook\.js'\]/.test(opener))
   check('never a window of its own for TRYBE', !/windows\.create/.test(opener))
-  check('SCOUT remembers which MVP tab asked', /if \(\/\^MVP_TRYBE_\/\.test\(msg\.type\) && sender && sender\.tab && sender\.tab\.id != null\) trybeLastMvpTab = sender\.tab\.id/.test(B))
+  check('SCOUT remembers which MVP tab asked', /if \(\/\^MVP_TRYBE_\/\.test\(msg\.type\) && sender && sender\.tab && sender\.tab\.id != null\) \{\s*trybeLastMvpTab = sender\.tab\.id/.test(B))
   check('MVP’s own Open TRYBE uses the same opener', /const id = await trybeOpenBehind\(sender && sender\.tab \? sender\.tab\.id : null, !!msg\.focus\)/.test(B))
   check('the brand list read and Send all open TRYBE first instead of stopping', /try \{ tabId = await trybeApiTabId\(\) \} catch \(e\) \{ tabId = null \}/.test(B) && /try \{ runTab = await trybeApiTabId\(\) \} catch \(e\) \{ runTab = null \}/.test(B) && /Stopped: SCOUT could not open TRYBE in this Chrome/.test(B))
 

@@ -8,12 +8,12 @@
  *     store installs to "update" — isScoutOutdated survives only as a
  *     low-level helper, not a user-facing gate.
  */
-export const SCOUT_LATEST_VERSION = '1.60.13'
+export const SCOUT_LATEST_VERSION = '1.61.0'
 
 /** One-line "what's new". No longer shown in a nag (store installs auto-update);
  *  kept as a changelog note for whoever bumps the version. */
 export const SCOUT_WHATS_NEW =
-  'Match my TikTok: download your matched TikTok videos to upload them to TRYBE. SCOUT saves each one to your Downloads folder.'
+  'TRYBE stays ready: SCOUT keeps your TRYBE sign-in fresh in the background, so MVP stops asking you to open or sign in to TRYBE.'
 
 /** Canonical download for the latest SCOUT build (public/, rebuilt from
  *  extension/ on every version bump). Used by the EPC banner + the top-bar

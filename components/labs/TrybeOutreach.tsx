@@ -891,6 +891,8 @@ export default function TrybeOutreach({ preview = false, free = false, v2 = fals
   // While SCOUT is opening it, the gate's pop-up waits (it asked to open
   // TRYBE at the very moment TRYBE was opening by itself).
   const [autoOpening, setAutoOpening] = useState(false)
+  // Tried at least once this visit: closed after that means SCOUT could not open it.
+  const [openTried, setOpenTried] = useState(false)
   useEffect(() => {
     if (preview || !tabInBackground || trybeTab !== 'closed') return
     let live = true
@@ -898,7 +900,7 @@ export default function TrybeOutreach({ preview = false, free = false, v2 = fals
       if (Date.now() - autoOpenedAt.current < 20_000) return
       autoOpenedAt.current = Date.now()
       setAutoOpening(true)
-      void ensureTrybeTab().then((s) => { if (!live) return; setTrybeTab(s); if (s === 'not-allowed') setAccess('not-granted') }).finally(() => { if (live) setAutoOpening(false) })
+      void ensureTrybeTab().then((s) => { if (!live) return; setTrybeTab(s); if (s === 'not-allowed') setAccess('not-granted') }).finally(() => { if (live) { setAutoOpening(false); setOpenTried(true) } })
     }
     go()
     // Still closed (it would not open): tried again every 20 seconds.
@@ -2575,7 +2577,7 @@ export default function TrybeOutreach({ preview = false, free = false, v2 = fals
       {/* TRYBE OPEN FIRST: everything below goes through the creator's TRYBE tab. */}
       {/* Not allowed on TRYBE yet, or no longer: the same card asks for it first. */}
       {!preview && tabScout && (access === 'granted' || access === 'not-granted') && (
-        <TrybeTabGate state={access === 'not-granted' ? 'not-allowed' : trybeTab} inBackground={tabScout && tabOpens} onCheck={lookTab} holdPopup={autoOpening}
+        <TrybeTabGate state={access === 'not-granted' ? 'not-allowed' : trybeTab} inBackground={tabScout && tabOpens} onCheck={lookTab} holdPopup={autoOpening} openTried={openTried}
           onAllowed={() => { setAccess('granted'); lookTab() }} />
       )}
 
