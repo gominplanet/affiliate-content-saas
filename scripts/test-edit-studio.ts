@@ -285,6 +285,12 @@ check('migration 476: the rules table and the two video columns, safe to run twi
   check('chat: the button finds the chat on TRYBE through SCOUT and sends the brand’s messages', /onClick=\{\(\) => void readChat\(\)\}/.test(RULES2) && /findBrandChat\(list, brand\)/.test(RULES2) && /brandLines\(msgs\)/.test(RULES2) && /found none with \$\{brand\.name\}/.test(RULES2))
 }
 
+// Seb, 2026-11-28: "Why is there both buttons? One that says write the scripts and the other one that says next: make."
+{
+  const ST = read('components/labs/TrybeStudio.tsx')
+  check('one main button at a time: Next only once the rules are read or the scripts written; before that, a quiet skip', /const stepDone = step === 'rules' \? !!sheet : step === 'scripts' \? !!project\?\.scripts : true/.test(ST) && /\(stepDone\s*\? <button onClick=\{\(\) => setStep\(next\.id\)\} className="[^"]*" style=\{\{ background: ACCENT/.test(ST) && /Skip: I already filmed my videos/.test(ST))
+}
+
 if (failures.length) {
   console.error(`test-edit-studio: ${failures.length} failed`)
   for (const f of failures) console.error(`  ✗ ${f}`)

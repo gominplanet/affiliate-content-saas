@@ -93,6 +93,9 @@ export default function TrybeStudio({ canRead }: {
   const idx = STEPS.findIndex((s) => s.id === step)
   const next = STEPS[idx + 1]
   const prev = STEPS[idx - 1]
+  // This step's own job done: the rules read, the scripts written.
+  const stepDone = step === 'rules' ? !!sheet : step === 'scripts' ? !!project?.scripts : true
+  const skipWords = step === 'scripts' ? 'Skip: I already filmed my videos' : step === 'rules' ? 'Skip the rules for now' : `Skip to ${next?.label ?? 'the next step'}`
 
   return (
     <div className="space-y-4">
@@ -179,7 +182,12 @@ export default function TrybeStudio({ canRead }: {
       {step !== 'brand' && (
         <div className="flex flex-wrap items-center justify-between gap-2">
           {prev ? <button onClick={() => setStep(prev.id)} className="inline-flex items-center gap-1 text-[13px] font-semibold" style={{ color: ACCENT }}><ArrowLeft size={13} /> {prev.label}</button> : <span />}
-          {next && reached[next.id] && <button onClick={() => setStep(next.id)} className="inline-flex items-center gap-1.5 rounded-xl px-4 py-2 text-[13.5px] font-semibold" style={{ background: ACCENT, color: '#fff' }}>Next: {next.label} <ArrowRight size={14} /></button>}
+          {/* ONE MAIN BUTTON AT A TIME (Seb, 2026-11-28: "Why is there both buttons? ... I guess write
+              the scripts is first and then we click make"). Until this step's own job is done (the rules
+              read, the scripts written), going on is a quiet skip, never a second main button beside it. */}
+          {next && reached[next.id] && (stepDone
+            ? <button onClick={() => setStep(next.id)} className="inline-flex items-center gap-1.5 rounded-xl px-4 py-2 text-[13.5px] font-semibold" style={{ background: ACCENT, color: '#fff' }}>Next: {next.label} <ArrowRight size={14} /></button>
+            : <button onClick={() => setStep(next.id)} className="inline-flex items-center gap-1 text-[13px] font-semibold underline" style={{ color: 'var(--text-3)' }}>{skipWords} <ArrowRight size={13} /></button>)}
         </div>
       )}
     </div>
