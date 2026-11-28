@@ -22,6 +22,11 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { canUsePreview } from '@/lib/labs-preview'
 import { spendGate } from '@/lib/ai-spend'
 import { cleanLines, chatText, chatLinks } from '@/lib/studio-chat'
+import { splitVoice, splitWords } from '@/lib/voice-split'
+import { videoServer, ownPath } from '@/lib/review-edit-server'
+import { transcribeToCues, transcriptionConfigured } from '@/lib/shorts-transcribe'
+import { cleanWords, tidyWordTimes } from '@/lib/review-edit'
+import type { ModularScripts } from '@/lib/studio-scripts'
 import { createAnthropicClient } from '@/lib/anthropic'
 import { recordUsage, usageFromAnthropic } from '@/lib/ai-usage'
 import { docsForScripts, type LinksDigest } from '@/lib/trybe-message-links'
@@ -110,6 +115,40 @@ async function projectAction(action: string, body: Record<string, unknown>, g: {
   if (!pr) return NextResponse.json({ error: 'That video set is not yours or is gone.' }, { status: 404 })
   const project = pr as ProjectRow
 
+  // ONE RECORDING, EVERY PART (lib/voice-split; Seb, 2026-11-28: "could I
+  // send everything at once in one file where I just say all the hooks, all
+  // the bodies, and all the CTAs, and let MVP do the rest?"). The recording,
+  // uploaded by the creator, is written down word by word, each part of the
+  // set's scripts is found in it (or each part's name said aloud), and the
+  // video server cuts each into its own file for the mixer's columns. The one
+  // recording is deleted once cut; what was not heard is named.
+  if (action === 'split_voice') {
+    const url = typeof body.url === 'string' ? body.url : ''
+    const own = ownPath(url, g.userId)
+    if (!own || !/\/source-edit-/.test(own)) return NextResponse.json({ error: 'That recording is not one of your uploads. Add it again.' }, { status: 400 })
+    if (!transcriptionConfigured()) return NextResponse.json({ error: 'MVP cannot write down what you say right now (no speech service set up).' }, { status: 503 })
+    const audio = await videoServer<{ url: string; durationSeconds?: number }>('/stream-audio', { url, userId: g.userId }, 295_000)
+    if (!audio.ok) return NextResponse.json({ error: audio.status === 404 ? 'MVP\u2019s video server is being updated. Try again in a few minutes.' : `MVP could not hear the recording: ${audio.error}.` }, { status: 502 })
+    const cues = await transcribeToCues(audio.data.url)
+    recordUsage({ userId: g.userId, tier: g.tier, feature: 'studio_voice_split', model: 'fal-whisper', images: 1 })
+    const heardPath = ownPath(audio.data.url, g.userId)
+    if (heardPath) await db.storage.from(BUCKET).remove([heardPath]).catch(() => null)
+    const words = tidyWordTimes(cleanWords(cues.map((c) => ({ start: c.start, end: c.end, text: c.text }))))
+    if (words.length < 4) return NextResponse.json({ error: 'MVP heard almost nothing in that recording. Check that it is the one with your voice.' }, { status: 400 })
+    const duration = Number(audio.data.durationSeconds) || words[words.length - 1].end + 1
+    const split = splitVoice(words, project.scripts as ModularScripts | null, duration)
+    if (!split.found.length) return NextResponse.json({ error: splitWords(split), split }, { status: 422 })
+    const cut = await videoServer<{ cuts: Array<{ id: string; url: string; seconds: number; bytes: number }> }>('/cut-audio', { url, userId: g.userId, cuts: split.found.map((f) => ({ id: f.label, start: f.start, end: f.end })) }, 180_000)
+    if (!cut.ok) return NextResponse.json({ error: cut.status === 404 ? 'MVP found the parts, but its video server is being updated and cannot cut them yet. Try again in a few minutes.' : `MVP found the parts but could not cut them: ${cut.error}.` }, { status: 502 })
+    // The one recording is not needed once cut.
+    await db.storage.from(BUCKET).remove([own]).catch(() => null)
+    const byId = new Map(cut.data.cuts.map((c) => [c.id, c]))
+    return NextResponse.json({
+      words: splitWords(split), how: split.how, missing: split.missing,
+      parts: split.found.map((f) => ({ label: f.label, kind: f.kind, heard: f.heard, start: f.start, end: f.end, ...(byId.get(f.label) ? { url: byId.get(f.label)!.url, seconds: byId.get(f.label)!.seconds, bytes: byId.get(f.label)!.bytes } : {}) })).filter((p) => 'url' in p),
+    })
+  }
+
   if (action === 'options') {
     const o = (body.options && typeof body.options === 'object' ? body.options : {}) as Record<string, unknown>
     const music = o.music && typeof o.music === 'object' ? o.music as Record<string, unknown> : null
@@ -170,7 +209,7 @@ export async function POST(req: Request) {
   const now = new Date().toISOString()
   const who = { userId: g.userId, tier: g.tier }
 
-  if (action === 'project' || action === 'scripts' || action === 'options') return projectAction(action, body, g, db)
+  if (action === 'project' || action === 'scripts' || action === 'options' || action === 'split_voice') return projectAction(action, body, g, db)
 
   // A PDF or picture goes straight to storage (it can be bigger than a request
   // to MVP may carry); the server reads it from there and deletes it.

@@ -24,7 +24,7 @@
 
 import { useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
-import { Loader2, Plus, X, AlertTriangle, Wand2, Film } from 'lucide-react'
+import { Loader2, Plus, X, AlertTriangle, Wand2, Film, Mic, Check } from 'lucide-react'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { readVideoFacts } from '@/lib/video-file-facts'
 import { BULK_VIDEO_MAX_BYTES, tooBigWords } from '@/lib/clip-source-limits'
@@ -42,7 +42,9 @@ const btn = 'inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-[13px] f
 const VIDEO_NAME = /\.(mov|mp4|m4v|mts|m2ts|avi|mkv|webm|3gp)$/i
 
 type Part = 'hook' | 'body' | 'cta' | 'broll'
-interface Clip { key: string; file: File; name: string; seconds: number | null }
+/** A clip from this computer (file), or one already in MVP: a part cut from
+ *  one recording (up), lib/voice-split. */
+interface Clip { key: string; file: File | null; name: string; seconds: number | null; up?: { url: string; bytes: number; name: string } }
 const PARTS: Array<{ id: Part; title: string; short: string; says: string; voice: string }> = [
   { id: 'hook', title: 'Hooks', short: 'H', says: 'The openings. Each one is tested against the others.', voice: 'Your voice for each opening: a voice memo, or a video whose sound is used.' },
   { id: 'body', title: 'Bodies', short: 'B', says: 'The middle: the product shown and talked about.', voice: 'Your voice for the middle, about the product.' },
@@ -87,6 +89,38 @@ export default function StudioMixer({ brand, settings, trybeLeft, onAdded, proje
   const [running, setRunning] = useState<string | null>(null)
   const [result, setResult] = useState<{ added: number; clips: number; failed: string[]; skipped: number } | null>(null)
   const stop = useRef(false)
+  // ONE RECORDING, EVERY PART (lib/voice-split): uploading, then MVP listening.
+  const [splitting, setSplitting] = useState<string | null>(null)
+  const [splitSaid, setSplitSaid] = useState<{ tone: 'ok' | 'warn' | 'bad'; text: string } | null>(null)
+
+  async function splitOne(list: FileList | null) {
+    const f = list?.[0]
+    if (!f || splitting) return
+    setSplitSaid(null)
+    if (!projectId) { setSplitSaid({ tone: 'bad', text: 'Pick the product first: the recording is split by this set\u2019s scripts.' }); return }
+    if (!f.type.startsWith('audio/') && !f.type.startsWith('video/') && !VOICE_NAME.test(f.name)) { setSplitSaid({ tone: 'bad', text: `${f.name} is not a sound or video file.` }); return }
+    if (f.size > BULK_VIDEO_MAX_BYTES) { setSplitSaid({ tone: 'bad', text: `${f.name}: ${tooBigWords(f.size)}` }); return }
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) { setSplitSaid({ tone: 'bad', text: 'Sign in again, then add the recording.' }); return }
+    try {
+      setSplitting('Uploading your recording')
+      const u = await uploadTake(supabase, user.id, f, (sent) => setSplitting(`Uploading your recording (${Math.min(99, Math.round((sent / Math.max(1, f.size)) * 100))}%)`))
+      setSplitting('MVP is listening and finding each hook, body and CTA. Usually under a minute.')
+      const r = await fetch('/api/labs/trybe-studio', { method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: AbortSignal.timeout(290_000), body: JSON.stringify({ action: 'split_voice', projectId, brandId: brand.id, url: u.url }) })
+      const d = await r.json().catch(() => ({})) as { error?: string; words?: string; missing?: string[]; parts?: Array<{ label: string; kind: Part; url: string; seconds: number; bytes: number }> }
+      if (!r.ok || !d.parts) { setSplitSaid({ tone: 'bad', text: d.error || `MVP answered ${r.status}. Try again.` }); return }
+      const add: Record<Part, Clip[]> = { hook: [], body: [], cta: [], broll: [] }
+      for (const p of d.parts) {
+        if (p.kind !== 'hook' && p.kind !== 'body' && p.kind !== 'cta') continue
+        const name = `${p.label} from ${f.name}`.slice(0, 120)
+        add[p.kind].push({ key: `${p.kind}:split:${p.label}:${u.path}`, file: null, name, seconds: p.seconds, up: { url: p.url, bytes: p.bytes, name } })
+      }
+      setClips((c) => ({ hook: [...c.hook, ...add.hook], body: [...c.body, ...add.body], cta: [...c.cta, ...add.cta], broll: c.broll }))
+      setSplitSaid({ tone: d.missing?.length ? 'warn' : 'ok', text: `${d.words || ''} Each part is in its column below: press Listen to check where it was cut.` })
+    } catch (e) {
+      setSplitSaid({ tone: 'bad', text: e instanceof Error ? e.message : 'The recording was not split. Try again.' })
+    } finally { setSplitting(null) }
+  }
 
   async function pick(part: Part, list: FileList | null) {
     const chosen = Array.from(list ?? [])
@@ -139,15 +173,18 @@ export default function StudioMixer({ brand, settings, trybeLeft, onAdded, proje
     const brollOf = need.map((c, k) => clipBroll(k, c.part, clips.broll.length, voiceover))
     const needed = new Set<string>()
     need.forEach((c, k) => { needed.add(clips[c.part][c.i].key); for (const r of brollOf[k]) needed.add(clips.broll[r].key) })
-    const all = [...clips.hook, ...clips.body, ...clips.cta, ...clips.broll].filter((c) => needed.has(c.key))
-    const up = new Map<string, { url: string; bytes: number; name: string }>()
+    const every = [...clips.hook, ...clips.body, ...clips.cta, ...clips.broll]
+    // Parts cut from one recording are in MVP already.
+    const all = every.filter((c) => needed.has(c.key) && !c.up && c.file)
+    const up = new Map<string, { url: string; bytes: number; name: string }>(every.filter((c) => c.up).map((c) => [c.key, c.up!]))
     for (let i = 0; i < all.length; i++) {
       if (stop.current) { setRunning(null); setResult({ added: 0, clips: 0, failed: ['Nothing was made: you stopped.'], skipped }); return }
       const c = all[i]
       setRunning(`Uploading ${i + 1} of ${all.length}: ${c.name}`)
       try {
-        const u = await uploadTake(supabase, user.id, c.file, (sent) => setRunning(`Uploading ${i + 1} of ${all.length}: ${c.name} (${Math.min(99, Math.round((sent / Math.max(1, c.file.size)) * 100))}%)`))
-        up.set(c.key, { url: u.url, bytes: c.file.size, name: c.name })
+        const file = c.file!
+        const u = await uploadTake(supabase, user.id, file, (sent) => setRunning(`Uploading ${i + 1} of ${all.length}: ${c.name} (${Math.min(99, Math.round((sent / Math.max(1, file.size)) * 100))}%)`))
+        up.set(c.key, { url: u.url, bytes: file.size, name: c.name })
       } catch (e) {
         setRunning(null)
         toast.error(`${c.name}: ${e instanceof Error ? e.message : 'the upload failed.'} Nothing was made: press Process again.`)
@@ -180,6 +217,20 @@ export default function StudioMixer({ brand, settings, trybeLeft, onAdded, proje
 
   return (
     <div className="space-y-3">
+      {voiceover && (
+        <div className="rounded-2xl border p-3 flex flex-wrap items-center gap-3" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
+          <div className="flex-1 min-w-[16rem]">
+            <p className="text-[14px] font-bold">Recorded every line in one go?</p>
+            <p className="text-[12.5px]" style={soft}>Add the one recording. MVP finds each hook, body and CTA of your scripts in it, keeps the last good take of each, and puts every part in its column. No scripts? Say each part&rsquo;s name before it: &ldquo;Hook one&rdquo;, &ldquo;Body two&rdquo;, &ldquo;CTA one&rdquo;.</p>
+          </div>
+          <label className={`${btn} cursor-pointer`} style={{ border: '1px solid var(--border)', color: ACCENT }}>
+            {splitting ? <Loader2 size={14} className="animate-spin" /> : <Mic size={14} />} Add one recording
+            <input type="file" accept="audio/*,video/*,.m4a,.mp3,.wav,.aac,.caf,.mov,.mp4" className="hidden" disabled={!!splitting || !!running} onChange={(e) => { void splitOne(e.target.files); e.target.value = '' }} />
+          </label>
+          {splitting && <p className="w-full text-[12.5px] inline-flex items-center gap-1.5" style={soft}><Loader2 size={12} className="animate-spin" /> {splitting}</p>}
+          {splitSaid && <p className="w-full text-[12.5px] inline-flex items-start gap-1.5" style={{ color: splitSaid.tone === 'bad' ? RED : splitSaid.tone === 'warn' ? AMBER : 'var(--text)' }}>{splitSaid.tone === 'ok' ? <Check size={13} className="mt-0.5 shrink-0" /> : <AlertTriangle size={13} className="mt-0.5 shrink-0" />} {splitSaid.text}</p>}
+        </div>
+      )}
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {PARTS.map((p) => (
           <div key={p.id} className="rounded-2xl border p-3 flex flex-col gap-2" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
@@ -195,6 +246,7 @@ export default function StudioMixer({ brand, settings, trybeLeft, onAdded, proje
                   <span className="font-semibold tabular-nums" style={{ color: ACCENT }}>{p.id === 'broll' ? '' : `${p.short}${i + 1}`}</span>
                   <span className="truncate flex-1" title={c.name}>{c.name}</span>
                   {c.seconds != null && <span className="tabular-nums" style={soft}>{Math.round(c.seconds)}s</span>}
+                  {c.up && <a href={c.up.url} target="_blank" rel="noopener noreferrer" className="font-semibold" style={{ color: ACCENT }}>Listen</a>}
                   <button onClick={() => setClips((x) => ({ ...x, [p.id]: x[p.id].filter((y) => y.key !== c.key) }))} disabled={!!running} aria-label={`Remove ${c.name}`} style={soft}><X size={12} /></button>
                 </li>
               ))}

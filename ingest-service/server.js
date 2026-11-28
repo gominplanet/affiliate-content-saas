@@ -1885,6 +1885,48 @@ app.post('/assemble-edit', async (req, res) => {
   })
 })
 
+// POST /cut-audio — one voiceover recording cut into its parts (Seb,
+// 2026-11-28: "send everything at once in one file where I just say all the
+// hooks, all the bodies, and all the CTAs, and let MVP do the rest"). MVP
+// finds where each part is said (lib/voice-split) and sends the times; each
+// part comes back as its own sound file in the creator's folder, named
+// source-edit- like any take, so the raw clean-up removes it in time.
+//   body: { url, auth?, userId, cuts: [{ id, start, end }] }  ->  { duration, cuts: [{ id, url, seconds, bytes }] }
+app.post('/cut-audio', async (req, res) => {
+  if (SECRET && req.get('x-ingest-secret') !== SECRET) return res.status(401).json({ error: 'unauthorized' })
+  const url = String(req.body?.url || '').trim()
+  const userId = String(req.body?.userId || '').trim() || 'ingest'
+  if (!/^https:\/\//i.test(url)) return res.status(400).json({ error: 'bad url' })
+  const cuts = (Array.isArray(req.body?.cuts) ? req.body.cuts : []).slice(0, 20)
+    .map((c) => ({ id: String((c && c.id) || '').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 12), start: Number(c && c.start), end: Number(c && c.end) }))
+    .filter((c) => c.id && Number.isFinite(c.start) && Number.isFinite(c.end) && c.start >= 0 && c.end - c.start >= 0.3)
+  if (!cuts.length) return res.status(400).json({ error: 'no parts to cut' })
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cut-'))
+  try {
+    await assertPublicHttpUrl(url)
+    const src = path.join(dir, 'recording')
+    await downloadLarge(url, src, 10 * 60_000, driveAuth(url, req.body?.auth))
+    const info = await ffprobeInfo(src)
+    if (!info || !info.hasAudio || !info.duration) return res.status(422).json({ error: 'The recording has no sound MVP can read.' })
+    const out = []
+    for (const c of cuts) {
+      const start = Math.min(c.start, info.duration)
+      const len = Math.max(0.3, Math.min(c.end, info.duration) - start)
+      const file = path.join(dir, `${c.id}.m4a`)
+      await runFfmpeg(['-ss', start.toFixed(3), '-i', src, '-t', len.toFixed(3), '-vn', '-map', '0:a:0', '-ac', '1', '-ar', '48000', '-c:a', 'aac', '-b:a', '160k', '-movflags', '+faststart', '-y', file], 120_000, `cutting ${c.id}`)
+      const key = `${userId}/source-edit-${require('crypto').randomUUID()}.m4a`
+      await uploadToSupabase(key, file, 'audio/mp4')
+      out.push({ id: c.id, url: publicUrl(key), seconds: Math.round(len * 100) / 100, bytes: fs.statSync(file).size })
+    }
+    return res.json({ duration: Math.round(info.duration * 100) / 100, cuts: out })
+  } catch (e) {
+    console.error('[cut-audio] failed', e && e.message)
+    return res.status(502).json({ error: String((e && e.message) || e).slice(0, 300) })
+  } finally {
+    try { fs.rmSync(dir, { recursive: true, force: true }) } catch { /* ignore */ }
+  }
+})
+
 // BUILD marker: bump this string when the service code changes so the Railway
 // deploy logs unambiguously show which build is actually running (Railway can
 // re-run an older commit).

@@ -168,7 +168,7 @@ export function oneStop(s: unknown): string {
   return String(s ?? '').replace(/[\s.]+$/, '')
 }
 
-async function videoServer<T>(path: string, body: unknown, timeoutMs: number): Promise<{ ok: true; data: T } | { ok: false; status: number; error: string }> {
+export async function videoServer<T>(path: string, body: unknown, timeoutMs: number): Promise<{ ok: true; data: T } | { ok: false; status: number; error: string }> {
   if (!base()) return { ok: false, status: 0, error: 'MVP’s video server is not set up.' }
   try {
     const r = await fetch(`${base()}${path}`, {
