@@ -8,7 +8,7 @@
 // scripts; the video server cuts each part into its own file.
 
 import { readFileSync } from 'node:fs'
-import { splitVoice, splitByLabels, splitWords, settle, partsFromScripts, norm, MATCH_MIN, type HeardWord } from '../lib/voice-split'
+import { splitVoice, splitByLabels, splitWords, settle, partsFromScripts, norm, cutDone, CUT_STALE_MS, MATCH_MIN, type HeardWord, type CutJob } from '../lib/voice-split'
 import type { ModularScripts } from '../lib/studio-scripts'
 
 const failures: string[] = []
@@ -73,8 +73,31 @@ check('an older video server is said, never a failure without words', /its video
 const SV = read('ingest-service/server.js')
 check('the video server cuts each part into its own file in the creator’s folder', /app\.post\('\/cut-audio'/.test(SV) && /source-edit-\$\{require\('crypto'\)\.randomUUID\(\)\}\.m4a/.test(SV) && /'-ss', start\.toFixed\(3\), '-i', src, '-t', len\.toFixed\(3\)/.test(SV))
 const MIX = read('components/labs/StudioMixer.tsx')
-check('the voiceover mixer takes one recording and fills the columns, each part to listen to', /Add one recording/.test(MIX) && /action: 'split_voice'/.test(MIX) && /\{c\.up && <a href=\{c\.up\.url\}/.test(MIX) && /\.filter\(\(c\) => needed\.has\(c\.key\) && !c\.up && c\.file\)/.test(MIX))
+check('the voiceover mixer takes one recording and fills the columns, each part to listen to', /Add one recording/.test(MIX) && /action: voiceover \? 'split_voice' : 'split_video'/.test(MIX) && /\{c\.up && <a href=\{c\.up\.url\}/.test(MIX) && /\.filter\(\(c\) => needed\.has\(c\.key\) && !c\.up && c\.file\)/.test(MIX))
 for (const f of ['lib/voice-split.ts', 'components/labs/StudioMixer.tsx']) check(`${f}: no dashes in what the creator reads`, !/[–—]/.test(read(f).replace(/\/\/.*$/gm, '')))
+
+// ── A long talking take, cut in the background (Seb, 2026-11-28: "one long
+// video of me just talking ... and have it properly cut") ──────────────────
+{
+  const job: CutJob = { userId: 'u1', projectId: 'p1', state: 'cutting', at: '2026-11-28T10:00:00Z', own: 'u1/source-edit-x.mp4', missing: [], words: 'Found 1 hook and 1 body.',
+    parts: [{ label: 'H1', kind: 'hook', heard: 'a', start: 1, end: 3 }, { label: 'B1', kind: 'body', heard: 'b', start: 4, end: 9 }] }
+  const done = cutDone(job, { ok: true, cuts: [{ id: 'H1', url: 'https://x.supabase.co/u1/source-edit-1.mp4', seconds: 2, bytes: 100 }, { id: 'B1', url: 'https://x.supabase.co/u1/source-edit-2.mp4', seconds: 5, bytes: 200 }] }, '2026-11-28T10:03:00Z')
+  check('the cut parts are put on the parts, each with its file', done.state === 'done' && done.parts.every((p) => p.url && p.bytes) && done.parts[1].seconds === 5)
+  check('a part the server did not cut keeps no file, and none at all is a failure said', !cutDone(job, { ok: true, cuts: [{ id: 'H1', url: 'https://x/a.mp4' }] }, 'now').parts[1].url && cutDone(job, { ok: true, cuts: [] }, 'now').state === 'failed')
+  check('a failed cut says the server’s reason', cutDone(job, { ok: false, error: 'The video has no sound' }, 'now').error === 'The video has no sound')
+  check('an address that is not a web address is never taken for a file', !cutDone(job, { ok: true, cuts: [{ id: 'H1', url: 'javascript:alert(1)' }, { id: 'B1', url: 'https://x/b.mp4' }] }, 'now').parts[0].url)
+  check('a cut not posted back in 45 minutes is said as lost', CUT_STALE_MS === 45 * 60_000)
+  const API3 = read('app/api/labs/trybe-studio/route.ts')
+  check('a talking take: found now, cut in the background, asked after', /action === 'split_video'/.test(API3) && /'\/cut-video'/.test(API3) && /studiocut:\$\{jobId\}/.test(API3) && /action === 'split_status'/.test(API3) && /Date\.now\(\) - Date\.parse\(st\.at\) > CUT_STALE_MS/.test(API3) && /own: undefined, userId: undefined/.test(API3))
+  const CB = read('app/api/labs/trybe-studio/cut-callback/route.ts')
+  check('the callback checks the secret and the signed job, keeps the parts, and deletes the one take', /x-ingest-secret/.test(CB) && /readRenderJob\(/.test(CB) && /startsWith\('cut-'\)/.test(CB) && /was\.userId !== job\.userId/.test(CB) && /cutDone\(was, body, now\)/.test(CB) && /remove\(\[was\.own\]\)/.test(CB))
+  const MW = read('middleware.ts')
+  check('the video server’s reports reach MVP, not the sign-in page', /'\/api\/review-edit\/callback'/.test(MW) && /'\/api\/labs\/trybe-studio\/cut-callback'/.test(MW))
+  const SV2 = read('ingest-service/server.js')
+  check('the server cuts each part from its own first frame, upright, at most 1080x1920, normal colour, sound kept', /app\.post\('\/cut-video'/.test(SV2) && /'-ss', start\.toFixed\(3\), '-i', src, '-t', len\.toFixed\(3\), '-map', '0:v:0', '-map', '0:a:0'/.test(SV2) && /force_original_aspect_ratio=decrease/.test(SV2) && /hdrChain\(info\.transfer\)/.test(SV2) && /renderQueue = renderQueue\.then/.test(SV2.slice(SV2.indexOf("app.post('/cut-video'"))))
+  const MIX2 = read('components/labs/StudioMixer.tsx')
+  check('the talking mixer takes one vertical video, waits for the cut, and fills the columns', /'Add one video'/.test(MIX2) && /action: voiceover \? 'split_voice' : 'split_video'/.test(MIX2) && /action: 'split_status', job: d\.job/.test(MIX2) && /was filmed sideways\. The Video Builder takes vertical 9:16 video only\./.test(MIX2) && /fillParts\(parts, f\.name, u\.path\)/.test(MIX2))
+}
 
 if (failures.length) {
   console.error(`test-voice-split: ${failures.length} failed`)

@@ -22,7 +22,8 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { canUsePreview } from '@/lib/labs-preview'
 import { spendGate } from '@/lib/ai-spend'
 import { cleanLines, chatText, chatLinks } from '@/lib/studio-chat'
-import { splitVoice, splitWords } from '@/lib/voice-split'
+import { splitVoice, splitWords, type CutJob, CUT_STALE_MS } from '@/lib/voice-split'
+import { makeRenderJob } from '@/lib/render-job'
 import { videoServer, ownPath } from '@/lib/review-edit-server'
 import { transcribeToCues, transcriptionConfigured } from '@/lib/shorts-transcribe'
 import { cleanWords, tidyWordTimes } from '@/lib/review-edit'
@@ -38,6 +39,8 @@ import { BANNED_RULE } from '@/lib/scrub'
 
 export const maxDuration = 300
 
+/** The app's own address, for the video server's answer (as lib/review-edit-server). */
+const appUrl = () => (process.env.NEXT_PUBLIC_APP_URL || 'https://www.mvpaffiliate.io').replace(/\/+$/, '')
 const BUCKET = 'instagram-videos'
 const SHEET_MODEL = 'claude-sonnet-5'
 const SCRIPT_MODEL = 'claude-sonnet-5'
@@ -122,7 +125,7 @@ async function projectAction(action: string, body: Record<string, unknown>, g: {
   // set's scripts is found in it (or each part's name said aloud), and the
   // video server cuts each into its own file for the mixer's columns. The one
   // recording is deleted once cut; what was not heard is named.
-  if (action === 'split_voice') {
+  if (action === 'split_voice' || action === 'split_video') {
     const url = typeof body.url === 'string' ? body.url : ''
     const own = ownPath(url, g.userId)
     if (!own || !/\/source-edit-/.test(own)) return NextResponse.json({ error: 'That recording is not one of your uploads. Add it again.' }, { status: 400 })
@@ -138,7 +141,29 @@ async function projectAction(action: string, body: Record<string, unknown>, g: {
     const duration = Number(audio.data.durationSeconds) || words[words.length - 1].end + 1
     const split = splitVoice(words, project.scripts as ModularScripts | null, duration)
     if (!split.found.length) return NextResponse.json({ error: splitWords(split), split }, { status: 422 })
-    const cut = await videoServer<{ cuts: Array<{ id: string; url: string; seconds: number; bytes: number }> }>('/cut-audio', { url, userId: g.userId, cuts: split.found.map((f) => ({ id: f.label, start: f.start, end: f.end })) }, 180_000)
+    const cuts = split.found.map((f) => ({ id: f.label, start: f.start, end: f.end }))
+
+    // A TALKING TAKE (Seb, 2026-11-28: "one long video of me just talking ...
+    // and have it properly cut"): minutes of video to cut, so the video server
+    // cuts it in the background and posts each part back (cut-callback); the
+    // Video Builder asks how it is going (split_status).
+    if (action === 'split_video') {
+      const jobId = crypto.randomUUID()
+      const job = makeRenderJob({ shortId: `cut-${jobId}`, userId: g.userId, reservationId: null })
+      if (!job) return NextResponse.json({ error: 'MVP\u2019s video server is not set up for background work.' }, { status: 503 })
+      const parts = split.found.map((f) => ({ label: f.label, kind: f.kind, heard: f.heard, start: f.start, end: f.end }))
+      const state: CutJob = { userId: g.userId, projectId: project.id, state: 'cutting', at: now, own, parts, missing: split.missing, words: splitWords(split) }
+      const kept = await db.from('trybe_directory_meta').upsert({ key: `studiocut:${jobId}`, value: state, updated_at: now })
+      if (kept.error) return NextResponse.json({ error: `MVP found the parts but could not keep track of the cut: ${kept.error.message}` }, { status: 500 })
+      const sent = await videoServer<{ accepted?: boolean }>('/cut-video', { url, userId: g.userId, job, callbackUrl: `${appUrl()}/api/labs/trybe-studio/cut-callback`, cuts }, 60_000)
+      if (!sent.ok) {
+        await db.from('trybe_directory_meta').upsert({ key: `studiocut:${jobId}`, value: { ...state, state: 'failed', error: sent.error }, updated_at: now })
+        return NextResponse.json({ error: sent.status === 404 ? 'MVP found the parts, but its video server is being updated and cannot cut them yet. Try again in a few minutes.' : `MVP found the parts but the video server would not cut them: ${sent.error}.` }, { status: 502 })
+      }
+      return NextResponse.json({ job: jobId, words: splitWords(split), how: split.how, missing: split.missing, parts })
+    }
+
+    const cut = await videoServer<{ cuts: Array<{ id: string; url: string; seconds: number; bytes: number }> }>('/cut-audio', { url, userId: g.userId, cuts }, 180_000)
     if (!cut.ok) return NextResponse.json({ error: cut.status === 404 ? 'MVP found the parts, but its video server is being updated and cannot cut them yet. Try again in a few minutes.' : `MVP found the parts but could not cut them: ${cut.error}.` }, { status: 502 })
     // The one recording is not needed once cut.
     await db.storage.from(BUCKET).remove([own]).catch(() => null)
@@ -147,6 +172,18 @@ async function projectAction(action: string, body: Record<string, unknown>, g: {
       words: splitWords(split), how: split.how, missing: split.missing,
       parts: split.found.map((f) => ({ label: f.label, kind: f.kind, heard: f.heard, start: f.start, end: f.end, ...(byId.get(f.label) ? { url: byId.get(f.label)!.url, seconds: byId.get(f.label)!.seconds, bytes: byId.get(f.label)!.bytes } : {}) })).filter((p) => 'url' in p),
     })
+  }
+
+  // HOW THE CUT IS GOING (split_video): cutting, done with each part's file,
+  // or failed with why. One the video server never answered says so.
+  if (action === 'split_status') {
+    const jobId = typeof body.job === 'string' && /^[0-9a-f-]{36}$/i.test(body.job) ? body.job : ''
+    if (!jobId) return NextResponse.json({ error: 'Which cut?' }, { status: 400 })
+    const { data: hit } = await db.from('trybe_directory_meta').select('value').eq('key', `studiocut:${jobId}`).maybeSingle()
+    const st = (hit?.value ?? null) as CutJob | null
+    if (!st || st.userId !== g.userId) return NextResponse.json({ error: 'That cut is not yours or is gone.' }, { status: 404 })
+    if (st.state === 'cutting' && Date.now() - Date.parse(st.at) > CUT_STALE_MS) return NextResponse.json({ ...st, own: undefined, userId: undefined, state: 'failed', error: 'MVP\u2019s video server stopped before it finished cutting (it may have restarted). Add the video again.' })
+    return NextResponse.json({ ...st, own: undefined, userId: undefined })
   }
 
   if (action === 'options') {
@@ -209,7 +246,7 @@ export async function POST(req: Request) {
   const now = new Date().toISOString()
   const who = { userId: g.userId, tier: g.tier }
 
-  if (action === 'project' || action === 'scripts' || action === 'options' || action === 'split_voice') return projectAction(action, body, g, db)
+  if (action === 'project' || action === 'scripts' || action === 'options' || action === 'split_voice' || action === 'split_video' || action === 'split_status') return projectAction(action, body, g, db)
 
   // A PDF or picture goes straight to storage (it can be bigger than a request
   // to MVP may carry); the server reads it from there and deletes it.

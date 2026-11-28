@@ -71,6 +71,14 @@ const publicPaths = [
   // render cannot finish inside the request). No session; the route checks the
   // ingest secret and a signed job token (lib/render-job).
   '/api/youtube/shorts/render-callback',
+  // The video server reports a Review Editor or Video Builder edit (and a clip
+  // first batch, item by item) here, and a long talking take it cut into its
+  // parts (Seb, 2026-11-28). No session; each route checks the ingest secret
+  // and a signed job token (lib/render-job). Without these entries each report
+  // was sent to /login, and the result waited for the two-minute cron to find
+  // it on the video server: every next video started up to two minutes late.
+  '/api/review-edit/callback',
+  '/api/labs/trybe-studio/cut-callback',
   // "Work with brands" inbox — public POST hit by the WP blog's brand-contact
   // form (cross-origin, no session). Enforces its OWN auth: HMAC + honeypot +
   // hCaptcha. CORS preflight (OPTIONS) must reach the handler too. Note the

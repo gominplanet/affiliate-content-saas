@@ -171,3 +171,29 @@ export function splitWords(r: SplitResult): string {
   const list = got.length > 1 ? `${got.slice(0, -1).join(', ')} and ${got[got.length - 1]}` : got[0]
   return `Found ${list}${r.how === 'labels' ? ' by the names you said' : ''}.${r.missing.length ? ` Not heard: ${r.missing.join(', ')}. Record ${r.missing.length === 1 ? 'it' : 'them'} on ${r.missing.length === 1 ? 'its' : 'their'} own and add ${r.missing.length === 1 ? 'it' : 'them'} to ${r.missing.length === 1 ? 'its column' : 'their columns'}.` : ''}`
 }
+
+// ── A TALKING TAKE, CUT IN THE BACKGROUND (Seb, 2026-11-28: "one long video of
+// me just talking ... and have it properly cut") ────────────────────────────
+/** A cut the video server is doing, kept in trybe_directory_meta under
+ *  studiocut:<id> until it posts back (app/api/labs/trybe-studio/cut-callback). */
+export interface CutJob {
+  userId: string; projectId: string; state: 'cutting' | 'done' | 'failed'; at: string
+  /** The one recording in the creator's folder, deleted once cut. */
+  own: string
+  parts: Array<{ label: string; kind: SplitKind; heard: string; start: number; end: number; url?: string; seconds?: number; bytes?: number }>
+  missing: string[]; words: string; error?: string
+}
+/** A cut not posted back in this long was lost (the server restarted). */
+export const CUT_STALE_MS = 45 * 60_000
+
+/** The video server's answer put on the parts: each with its file, or the
+ *  cut failed with why. Pure. */
+export function cutDone(job: CutJob, posted: { ok?: unknown; error?: unknown; cuts?: unknown }, at: string): CutJob {
+  if (posted.ok !== true) return { ...job, state: 'failed', at, error: String(posted.error || 'the video server gave no reason').slice(0, 300) }
+  const list = Array.isArray(posted.cuts) ? posted.cuts as Array<{ id?: unknown; url?: unknown; seconds?: unknown; bytes?: unknown }> : []
+  const byId = new Map(list.filter((c) => typeof c.url === 'string' && /^https:\/\//.test(c.url as string)).map((c) => [String(c.id), c]))
+  const parts = job.parts.map((p) => { const c = byId.get(p.label); return c ? { ...p, url: String(c.url), seconds: Number(c.seconds) || undefined, bytes: Number(c.bytes) || undefined } : p })
+  const cut = parts.filter((p) => p.url).length
+  if (!cut) return { ...job, parts, state: 'failed', at, error: 'The video server cut none of the parts.' }
+  return { ...job, parts, state: 'done', at }
+}

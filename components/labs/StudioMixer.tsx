@@ -22,7 +22,7 @@
 // picture: the video server lays the clips over the cut voice, taking turns
 // (lib/studio-render, ingest-service voiceoverShots).
 
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { Loader2, Plus, X, AlertTriangle, Wand2, Film, Mic, Check } from 'lucide-react'
 import { createBrowserClient } from '@/lib/supabase/client'
@@ -93,30 +93,65 @@ export default function StudioMixer({ brand, settings, trybeLeft, onAdded, proje
   const [splitting, setSplitting] = useState<string | null>(null)
   const [splitSaid, setSplitSaid] = useState<{ tone: 'ok' | 'warn' | 'bad'; text: string } | null>(null)
 
+  // Left the page while a long cut runs: stop asking.
+  const gone = useRef(false)
+  useEffect(() => () => { gone.current = true }, [])
+
+  /** The parts, in their columns, each already in MVP. */
+  function fillParts(parts: Array<{ label: string; kind: Part; url?: string; seconds?: number; bytes?: number }>, from: string, path: string) {
+    const add: Record<Part, Clip[]> = { hook: [], body: [], cta: [], broll: [] }
+    for (const p of parts) {
+      if ((p.kind !== 'hook' && p.kind !== 'body' && p.kind !== 'cta') || !p.url) continue
+      const name = `${p.label} from ${from}`.slice(0, 120)
+      add[p.kind].push({ key: `${p.kind}:split:${p.label}:${path}`, file: null, name, seconds: p.seconds ?? null, up: { url: p.url, bytes: p.bytes ?? 0, name } })
+    }
+    setClips((c) => ({ hook: [...c.hook, ...add.hook], body: [...c.body, ...add.body], cta: [...c.cta, ...add.cta], broll: c.broll }))
+  }
+
   async function splitOne(list: FileList | null) {
     const f = list?.[0]
     if (!f || splitting) return
     setSplitSaid(null)
     if (!projectId) { setSplitSaid({ tone: 'bad', text: 'Pick the product first: the recording is split by this set\u2019s scripts.' }); return }
-    if (!f.type.startsWith('audio/') && !f.type.startsWith('video/') && !VOICE_NAME.test(f.name)) { setSplitSaid({ tone: 'bad', text: `${f.name} is not a sound or video file.` }); return }
+    if (voiceover && !f.type.startsWith('audio/') && !f.type.startsWith('video/') && !VOICE_NAME.test(f.name)) { setSplitSaid({ tone: 'bad', text: `${f.name} is not a sound or video file.` }); return }
+    if (!voiceover && !f.type.startsWith('video/') && !VIDEO_NAME.test(f.name)) { setSplitSaid({ tone: 'bad', text: `${f.name} is not a video file.` }); return }
     if (f.size > BULK_VIDEO_MAX_BYTES) { setSplitSaid({ tone: 'bad', text: `${f.name}: ${tooBigWords(f.size)}` }); return }
+    if (!voiceover) {
+      // Vertical 9:16 only, as every clip in the Video Builder.
+      let facts = await readVideoFacts(f)
+      if (!facts.width || !facts.height) { const pf = await playerFacts(f); facts = { ...facts, width: pf.width, height: pf.height } }
+      if (facts.width && facts.height && facts.width > facts.height) { setSplitSaid({ tone: 'bad', text: `${f.name} was filmed sideways. The Video Builder takes vertical 9:16 video only.` }); return }
+    }
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) { setSplitSaid({ tone: 'bad', text: 'Sign in again, then add the recording.' }); return }
     try {
       setSplitting('Uploading your recording')
       const u = await uploadTake(supabase, user.id, f, (sent) => setSplitting(`Uploading your recording (${Math.min(99, Math.round((sent / Math.max(1, f.size)) * 100))}%)`))
       setSplitting('MVP is listening and finding each hook, body and CTA. Usually under a minute.')
-      const r = await fetch('/api/labs/trybe-studio', { method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: AbortSignal.timeout(290_000), body: JSON.stringify({ action: 'split_voice', projectId, brandId: brand.id, url: u.url }) })
-      const d = await r.json().catch(() => ({})) as { error?: string; words?: string; missing?: string[]; parts?: Array<{ label: string; kind: Part; url: string; seconds: number; bytes: number }> }
+      const ask = (b: Record<string, unknown>, ms: number) => fetch('/api/labs/trybe-studio', { method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: AbortSignal.timeout(ms), body: JSON.stringify({ projectId, brandId: brand.id, ...b }) })
+      const r = await ask({ action: voiceover ? 'split_voice' : 'split_video', url: u.url }, 290_000)
+      type SplitPartOut = { label: string; kind: Part; url?: string; seconds?: number; bytes?: number }
+      const d = await r.json().catch(() => ({})) as { error?: string; words?: string; missing?: string[]; job?: string; parts?: SplitPartOut[] }
       if (!r.ok || !d.parts) { setSplitSaid({ tone: 'bad', text: d.error || `MVP answered ${r.status}. Try again.` }); return }
-      const add: Record<Part, Clip[]> = { hook: [], body: [], cta: [], broll: [] }
-      for (const p of d.parts) {
-        if (p.kind !== 'hook' && p.kind !== 'body' && p.kind !== 'cta') continue
-        const name = `${p.label} from ${f.name}`.slice(0, 120)
-        add[p.kind].push({ key: `${p.kind}:split:${p.label}:${u.path}`, file: null, name, seconds: p.seconds, up: { url: p.url, bytes: p.bytes, name } })
+      let parts: SplitPartOut[] = d.parts
+      if (!voiceover && d.job) {
+        // CUT IN THE BACKGROUND (ingest-service /cut-video): asked how it goes every few seconds.
+        const n = d.parts.length
+        setSplitting(`${d.words || `Found ${n} parts.`} The video server is cutting ${n === 1 ? 'it' : `all ${n}`} now: a long video takes a few minutes. Keep this tab open.`)
+        let done: { state?: string; error?: string; parts?: SplitPartOut[] } = {}
+        for (let i = 0; i < 360 && !gone.current; i++) {
+          await new Promise((ok) => setTimeout(ok, 5000))
+          const st = await ask({ action: 'split_status', job: d.job }, 30_000).then((x) => x.json()).catch(() => null) as typeof done | null
+          if (!st) continue
+          if (st.state === 'done' || st.state === 'failed') { done = st; break }
+        }
+        if (gone.current) return
+        if (done.state !== 'done' || !done.parts) { setSplitSaid({ tone: 'bad', text: done.error ? `The video was not cut: ${done.error}` : 'The video server did not finish cutting in 30 minutes. Add the video again.' }); return }
+        parts = done.parts
       }
-      setClips((c) => ({ hook: [...c.hook, ...add.hook], body: [...c.body, ...add.body], cta: [...c.cta, ...add.cta], broll: c.broll }))
-      setSplitSaid({ tone: d.missing?.length ? 'warn' : 'ok', text: `${d.words || ''} Each part is in its column below: press Listen to check where it was cut.` })
+      fillParts(parts, f.name, u.path)
+      const cut = parts.filter((p) => p.url).length
+      setSplitSaid({ tone: d.missing?.length || cut < parts.length ? 'warn' : 'ok', text: `${d.words || ''}${cut < parts.length ? ` ${parts.length - cut} could not be cut.` : ''} Each part is in its column below: press ${voiceover ? 'Listen' : 'Watch'} to check where it was cut.` })
     } catch (e) {
       setSplitSaid({ tone: 'bad', text: e instanceof Error ? e.message : 'The recording was not split. Try again.' })
     } finally { setSplitting(null) }
@@ -217,20 +252,19 @@ export default function StudioMixer({ brand, settings, trybeLeft, onAdded, proje
 
   return (
     <div className="space-y-3">
-      {voiceover && (
-        <div className="rounded-2xl border p-3 flex flex-wrap items-center gap-3" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
-          <div className="flex-1 min-w-[16rem]">
-            <p className="text-[14px] font-bold">Recorded every line in one go?</p>
-            <p className="text-[12.5px]" style={soft}>Add the one recording. MVP finds each hook, body and CTA of your scripts in it, keeps the last good take of each, and puts every part in its column. No scripts? Say each part&rsquo;s name before it: &ldquo;Hook one&rdquo;, &ldquo;Body two&rdquo;, &ldquo;CTA one&rdquo;.</p>
-          </div>
-          <label className={`${btn} cursor-pointer`} style={{ border: '1px solid var(--border)', color: ACCENT }}>
-            {splitting ? <Loader2 size={14} className="animate-spin" /> : <Mic size={14} />} Add one recording
-            <input type="file" accept="audio/*,video/*,.m4a,.mp3,.wav,.aac,.caf,.mov,.mp4" className="hidden" disabled={!!splitting || !!running} onChange={(e) => { void splitOne(e.target.files); e.target.value = '' }} />
-          </label>
-          {splitting && <p className="w-full text-[12.5px] inline-flex items-center gap-1.5" style={soft}><Loader2 size={12} className="animate-spin" /> {splitting}</p>}
-          {splitSaid && <p className="w-full text-[12.5px] inline-flex items-start gap-1.5" style={{ color: splitSaid.tone === 'bad' ? RED : splitSaid.tone === 'warn' ? AMBER : 'var(--text)' }}>{splitSaid.tone === 'ok' ? <Check size={13} className="mt-0.5 shrink-0" /> : <AlertTriangle size={13} className="mt-0.5 shrink-0" />} {splitSaid.text}</p>}
+      {/* ONE FILE, EVERY PART (lib/voice-split): a voiceover recording, or a long talking take (Seb, 2026-11-28). */}
+      <div className="rounded-2xl border p-3 flex flex-wrap items-center gap-3" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
+        <div className="flex-1 min-w-[16rem]">
+          <p className="text-[14px] font-bold">{voiceover ? 'Recorded every line in one go?' : 'Filmed every line in one long take?'}</p>
+          <p className="text-[12.5px]" style={soft}>{voiceover ? 'Add the one recording.' : 'Add the one video, vertical.'} MVP finds each hook, body and CTA of your scripts in it, keeps the last good take of each, {voiceover ? 'and puts every part in its column' : 'cuts each one out cleanly, and puts every part in its column'}. No scripts? Say each part&rsquo;s name before it: &ldquo;Hook one&rdquo;, &ldquo;Body two&rdquo;, &ldquo;CTA one&rdquo;.</p>
         </div>
-      )}
+        <label className={`${btn} cursor-pointer`} style={{ border: '1px solid var(--border)', color: ACCENT }}>
+          {splitting ? <Loader2 size={14} className="animate-spin" /> : voiceover ? <Mic size={14} /> : <Film size={14} />} {voiceover ? 'Add one recording' : 'Add one video'}
+          <input type="file" accept={voiceover ? 'audio/*,video/*,.m4a,.mp3,.wav,.aac,.caf,.mov,.mp4' : 'video/*,.mov,.mp4,.m4v'} className="hidden" disabled={!!splitting || !!running} onChange={(e) => { void splitOne(e.target.files); e.target.value = '' }} />
+        </label>
+        {splitting && <p className="w-full text-[12.5px] inline-flex items-center gap-1.5" style={soft}><Loader2 size={12} className="animate-spin" /> {splitting}</p>}
+        {splitSaid && <p className="w-full text-[12.5px] inline-flex items-start gap-1.5" style={{ color: splitSaid.tone === 'bad' ? RED : splitSaid.tone === 'warn' ? AMBER : 'var(--text)' }}>{splitSaid.tone === 'ok' ? <Check size={13} className="mt-0.5 shrink-0" /> : <AlertTriangle size={13} className="mt-0.5 shrink-0" />} {splitSaid.text}</p>}
+      </div>
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {PARTS.map((p) => (
           <div key={p.id} className="rounded-2xl border p-3 flex flex-col gap-2" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
@@ -246,7 +280,7 @@ export default function StudioMixer({ brand, settings, trybeLeft, onAdded, proje
                   <span className="font-semibold tabular-nums" style={{ color: ACCENT }}>{p.id === 'broll' ? '' : `${p.short}${i + 1}`}</span>
                   <span className="truncate flex-1" title={c.name}>{c.name}</span>
                   {c.seconds != null && <span className="tabular-nums" style={soft}>{Math.round(c.seconds)}s</span>}
-                  {c.up && <a href={c.up.url} target="_blank" rel="noopener noreferrer" className="font-semibold" style={{ color: ACCENT }}>Listen</a>}
+                  {c.up && <a href={c.up.url} target="_blank" rel="noopener noreferrer" className="font-semibold" style={{ color: ACCENT }}>{voiceover ? 'Listen' : 'Watch'}</a>}
                   <button onClick={() => setClips((x) => ({ ...x, [p.id]: x[p.id].filter((y) => y.key !== c.key) }))} disabled={!!running} aria-label={`Remove ${c.name}`} style={soft}><X size={12} /></button>
                 </li>
               ))}

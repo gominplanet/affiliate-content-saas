@@ -1927,6 +1927,72 @@ app.post('/cut-audio', async (req, res) => {
   }
 })
 
+// POST /cut-video — one long talking take cut into its hooks, bodies and CTAs
+// (Seb, 2026-11-28: "one long video of me just talking, putting out all these
+// hooks and the body of the videos and the CTAs ... and have it properly
+// cut"). MVP finds where each part is said (lib/voice-split) and sends the
+// times. A long phone video takes minutes to cut, so this runs in the render
+// line and posts each part back when done, like /render-edit. Each part is
+// re-encoded from its own first frame (never cut on a keyframe that starts
+// early), upright as filmed, at most 1080x1920, brought to normal colour when
+// filmed in HDR, sound kept; named source-edit- like any take.
+//   body: { url, auth?, userId, job, callbackUrl, cuts: [{ id, start, end }] }
+//   posts { job, ok, cuts: [{ id, url, seconds, bytes }] } | { job, ok: false, error }
+async function cutVideoJob(body) {
+  const url = String(body.url || '').trim()
+  const userId = String(body.userId || '').trim() || 'ingest'
+  const cuts = (Array.isArray(body.cuts) ? body.cuts : []).slice(0, 20)
+    .map((c) => ({ id: String((c && c.id) || '').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 12), start: Number(c && c.start), end: Number(c && c.end) }))
+    .filter((c) => c.id && Number.isFinite(c.start) && Number.isFinite(c.end) && c.start >= 0 && c.end - c.start >= 0.3)
+  if (!cuts.length) throw new Error('no parts to cut')
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cutv-'))
+  try {
+    await assertPublicHttpUrl(url)
+    const src = path.join(dir, 'take')
+    await downloadLarge(url, src, 20 * 60_000, driveAuth(url, body.auth))
+    const info = await ffprobeInfo(src)
+    if (!info || !info.w) throw new Error('The video could not be read as a video.')
+    if (!info.hasAudio) throw new Error('The video has no sound, so its parts could not be found.')
+    const hdr = (await canToneMap()) ? hdrChain(info.transfer) : null
+    const out = []
+    for (const c of cuts) {
+      const start = Math.min(c.start, info.duration)
+      const len = Math.max(0.3, Math.min(c.end, info.duration) - start)
+      const file = path.join(dir, `${c.id}.mp4`)
+      await runFfmpeg(['-ss', start.toFixed(3), '-i', src, '-t', len.toFixed(3), '-map', '0:v:0', '-map', '0:a:0',
+        '-vf', `scale=w=1080:h=1920:force_original_aspect_ratio=decrease:force_divisible_by=2,setsar=1${hdr ? `,${hdr}` : ',format=yuv420p'}`,
+        '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '18', '-pix_fmt', 'yuv420p', '-threads', EDIT_THREADS,
+        '-c:a', 'aac', '-b:a', '192k', '-ac', '2', '-ar', '48000', '-movflags', '+faststart', '-y', file], 15 * 60_000, `cutting ${c.id}`)
+      const key = `${userId}/source-edit-${require('crypto').randomUUID()}.mp4`
+      await uploadToSupabase(key, file)
+      out.push({ id: c.id, url: publicUrl(key), seconds: Math.round(len * 100) / 100, bytes: fs.statSync(file).size })
+      try { fs.unlinkSync(file) } catch { /* ignore */ }
+    }
+    return { cuts: out, hdr: hdr ? 'converted' : 'no' }
+  } finally {
+    try { fs.rmSync(dir, { recursive: true, force: true }) } catch { /* ignore */ }
+  }
+}
+app.post('/cut-video', async (req, res) => {
+  if (SECRET && req.get('x-ingest-secret') !== SECRET) return res.status(401).json({ error: 'unauthorized' })
+  const body = req.body || {}
+  const callbackUrl = String(body.callbackUrl || '')
+  if (!/^https:\/\//i.test(callbackUrl)) return res.status(400).json({ error: 'callbackUrl required' })
+  if (!/^https:\/\//i.test(String(body.url || ''))) return res.status(400).json({ error: 'bad url' })
+  const job = String(body.job || '').slice(0, 300)
+  res.status(202).json({ accepted: true })
+  otherRenders++
+  renderQueue = renderQueue.then(async () => {
+    let rec
+    try { rec = { ok: true, ...(await cutVideoJob(body)) } } catch (e) {
+      console.error('[cut-video] failed', e && e.message)
+      rec = { ok: false, error: String((e && e.message) || e).slice(0, 400) }
+    }
+    otherRenders = Math.max(0, otherRenders - 1)
+    await postRenderCallback(callbackUrl, { job, ...rec })
+  })
+})
+
 // BUILD marker: bump this string when the service code changes so the Railway
 // deploy logs unambiguously show which build is actually running (Railway can
 // re-run an older commit).
