@@ -367,7 +367,7 @@ async function dmDueAt(sb: Sb, userId: string): Promise<number | null> {
   if (error) return null
   const { data: q } = await sb.from('ig_dm_sends').select('send_after')
     .eq('user_id', userId).eq('platform', 'instagram').eq('status', 'queued')
-    .order('send_after', { ascending: false }).limit(1)
+    .order('send_after', { ascending: false, nullsFirst: false }).limit(1)
   const times = ((sent || []) as Array<{ sent_at: string | null }>).map((r) => Date.parse(String(r.sent_at))).filter(Number.isFinite)
   const lastQueued = Date.parse(String((q || [])[0]?.send_after ?? ''))
   return nextDmAt({ now, lastSentAt: times[0] ?? null, sentInHour: times, lastQueuedAt: Number.isFinite(lastQueued) ? lastQueued : null })
