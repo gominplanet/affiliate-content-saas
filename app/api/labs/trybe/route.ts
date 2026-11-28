@@ -3150,7 +3150,7 @@ Weigh posts pushed to social, and TRYBE brands they earned with or submitted to,
     else found.push(...((ideasRead.data || []) as Kept[]))
     const copies = body.withCopies === true || !!ideasRead.error
     const [samplesRead, brandRead] = copies ? await Promise.all([
-      admin.from('trybe_samples').select('id, product, ideas, ideas_at').eq('user_id', ownerId).eq('brand_id', brandId).not('ideas', 'is', null).order('ideas_at', { ascending: false }).limit(20),
+      admin.from('trybe_samples').select('id, product, ideas, ideas_at').eq('user_id', ownerId).eq('brand_id', brandId).not('ideas', 'is', null).order('ideas_at', { ascending: false, nullsFirst: false }).limit(20),
       admin.from('trybe_brands').select('video_plan, video_plan_at').eq('user_id', ownerId).eq('brand_id', brandId).maybeSingle(),
     ]) : [{ data: [], error: null }, { data: null, error: null }]
     if (samplesRead.error) failed.push(samplesRead.error.message)

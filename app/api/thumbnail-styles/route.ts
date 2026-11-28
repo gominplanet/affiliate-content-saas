@@ -26,7 +26,7 @@ export async function GET() {
     .from('thumbnail_styles')
     .select('id,name,reference_url,created_at')
     .eq('user_id', ownerId)
-    .order('created_at', { ascending: false })
+    .order('created_at', { ascending: false, nullsFirst: false })
   return NextResponse.json({ ok: true, styles: data ?? [] })
 }
 
