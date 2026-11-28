@@ -20,6 +20,7 @@ import { musicAfterAccept, musicAfterFinish, musicWords, voiceoverWords, VOICE_N
 import { neededClips, comboLabels, clipBroll, clipSettings, comboState, remakeOnClip, joinWords } from '../lib/studio-clips'
 import { musicCapFor, musicAllowanceWords, brandUseWords, MUSIC_TRACKS_MONTHLY_CAP } from '../lib/music-bed'
 import { DEFAULT_SETTINGS } from '../lib/review-edit'
+import { findBrandChat, brandLines, cleanLines, chatText, chatLinks, CHAT_MAX_LINKS } from '../lib/studio-chat'
 import type { Word } from '../lib/review-edit'
 
 const failures: string[] = []
@@ -255,6 +256,33 @@ check('migration 476: the rules table and the two video columns, safe to run twi
   check('music: a set can use a library track, and a track kept back is no longer used for others', /read\.data\.user_id === row\.user_id \|\| read\.data\.shared === true/.test(SRV))
   check('music: the picker offers the library with how fresh each is for the brand', /From the MVP music library/.test(MUS) && /brandUseWords\(usedForBrand\[b\.id\] \?\? 0, brandName\)/.test(MUS) && /brandId=\{brand\.id\} brandName=\{brand\.name\}/.test(VID))
   check('music: the maker says how many new tracks are left, and stops at none', /disabled=\{making \|\| allow\?\.left === 0\}/.test(read('components/music/MusicBedMaker.tsx')))
+}
+
+// WHAT THEY SENT IN CHAT, FROM THE CHAT ITSELF (Seb, 2026-11-28: "I've opened
+// the chat, I've read the chat, it just doesn't want to automatically add it")
+{
+  const chats = [
+    { id: 'c1', name: 'Oros', raw: { brandId: 'brand-oros-1' } },
+    { id: 'c2', name: 'Chef Preserve Team', raw: { participants: [{ type: 'brand', brandId: 'brand-chef-9' }] } },
+    { id: 'c3', name: 'Halo', raw: {} },
+  ]
+  check('chat: the one TRYBE ties to the brand, else the one named like it', findBrandChat(chats, { id: 'brand-chef-9', name: 'Chef Preserve' })?.id === 'c2' && findBrandChat(chats, { id: 'zzzz-unknown', name: 'Halo' })?.id === 'c3' && findBrandChat(chats, { id: 'nope-0000', name: 'Nobody' }) === null)
+  const msgs = [
+    { text: 'Hi! Here is our brief: https://docs.google.com/document/d/abc123/edit', who: 'Chef Preserve', at: 2000, mine: false },
+    { text: 'Thanks, will film this week', who: 'You', at: 3000, mine: true },
+    { text: 'Do not say 5x longer.', who: 'Chef Preserve', at: 1000, mine: null },
+    { text: '   ', who: 'Chef Preserve', at: 4000, mine: false },
+  ]
+  const lines = brandLines(msgs)
+  check('chat: only the brand’s messages, oldest first, never yours or empty ones', lines.length === 2 && lines[0].text === 'Do not say 5x longer.' && lines.every((l) => l.who === 'Chef Preserve'))
+  const words = chatText(lines)
+  check('chat: each message with its day and who sent it', /^Jan 1, Chef Preserve: Do not say 5x longer\.\nJan 1, Chef Preserve: Hi! Here is our brief/.test(words))
+  check('chat: the links in it, each once', chatLinks([...lines, ...lines]).length === 1 && chatLinks(lines)[0].kind === 'gdoc' && CHAT_MAX_LINKS === 6)
+  check('chat: what the browser sends is cleaned: text only, capped', cleanLines([{ text: 'a', who: 'B', at: 1 }, { text: '' }, 'junk', { text: 'x'.repeat(5000) }]).length === 2 && cleanLines([{ text: 'x'.repeat(5000) }])[0].text.length === 4000 && cleanLines(null).length === 0)
+  const API2 = read('app/api/labs/trybe-studio/route.ts')
+  check('chat: the server keeps the messages, reads each new link, and says why one was not read', /const lines = cleanLines\(chat\?\.messages\)/.test(API2) && /chatLinks\(lines\)\.filter\(\(l\) => !done\.has\(l\.url\)\)/.test(API2) && /readLinkText\(l\.url, who\)/.test(API2) && /error: r\.why/.test(API2) && /has no messages from them yet/.test(API2))
+  const RULES2 = read('components/labs/TrybeStudioRules.tsx')
+  check('chat: the button finds the chat on TRYBE through SCOUT and sends the brand’s messages', /onClick=\{\(\) => void readChat\(\)\}/.test(RULES2) && /findBrandChat\(list, brand\)/.test(RULES2) && /brandLines\(msgs\)/.test(RULES2) && /found none with \$\{brand\.name\}/.test(RULES2))
 }
 
 if (failures.length) {

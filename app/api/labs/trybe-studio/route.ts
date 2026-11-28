@@ -21,6 +21,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { canUsePreview } from '@/lib/labs-preview'
 import { spendGate } from '@/lib/ai-spend'
+import { cleanLines, chatText, chatLinks } from '@/lib/studio-chat'
 import { createAnthropicClient } from '@/lib/anthropic'
 import { recordUsage, usageFromAnthropic } from '@/lib/ai-usage'
 import { docsForScripts, type LinksDigest } from '@/lib/trybe-message-links'
@@ -232,12 +233,42 @@ export async function POST(req: Request) {
   }
 
   if (action === 'chat') {
-    // What the brand sent in chat, as Messages already read it (Pro): its
-    // documents and the do's and don'ts MVP wrote from them.
+    // WHAT THE BRAND SENT IN CHAT (lib/studio-chat; Seb, 2026-11-28: "I've
+    // opened the chat, I've read the chat, it just doesn't want to
+    // automatically add it"). The brand's own messages, found on TRYBE by the
+    // Video Builder through SCOUT, every link in them read here, and what
+    // Messages already read and kept (msglinks). Each is a source, with what
+    // could not be read said.
     const { data: hit } = await db.from('trybe_directory_meta').select('value').eq('key', `msglinks:${g.userId}:${brandId}`).maybeSingle()
-    const sent = docsForScripts((hit?.value ?? null) as LinksDigest | null)
-    if (!sent.text.trim()) return NextResponse.json({ error: 'MVP has not read anything this brand sent you in chat yet. Open your chat with them in Messages and read its links, or add the files here.' }, { status: 400 })
-    add({ id: 'chat', kind: 'chat', label: `From your chat (${sent.docs.length || 'its'} ${sent.docs.length === 1 ? 'document' : 'documents'})`, text: sent.text, error: null })
+    const digest = (hit?.value ?? null) as LinksDigest | null
+    const sent = docsForScripts(digest)
+    const chat = body.chat && typeof body.chat === 'object' ? body.chat as Record<string, unknown> : null
+    const lines = cleanLines(chat?.messages)
+    const words = chatText(lines)
+    // Links Messages already read are not read again.
+    const done = new Set((digest?.links ?? []).filter((l) => l.ok && l.text).map((l) => l.url))
+    const links = chatLinks(lines).filter((l) => !done.has(l.url))
+    if (!words && !sent.text.trim() && !links.length) {
+      return NextResponse.json({ error: chat
+        ? `Your chat with ${brandName} on TRYBE has no messages from them yet, so there is nothing to add. When they send their brief or links, press this again.`
+        : 'MVP has not read anything this brand sent you in chat yet. Open your chat with them in Messages and read its links, or add the files here.' }, { status: 400 })
+    }
+    if (words || sent.text.trim()) {
+      const n = lines.length
+      add({ id: 'chat', kind: 'chat', label: n ? `Your chat with ${brandName} (${n} ${n === 1 ? 'message' : 'messages'} from them${sent.docs.length ? `, ${sent.docs.length} ${sent.docs.length === 1 ? 'document' : 'documents'} read in Messages` : ''})` : `From your chat (${sent.docs.length || 'its'} ${sent.docs.length === 1 ? 'document' : 'documents'})`,
+        text: [words ? `Messages from ${brandName}:\n${words}` : '', sent.text].filter(Boolean).join('\n\n'), error: null })
+    }
+    if (links.length) {
+      // A PDF or picture behind a link is read by Claude: within the day's spend.
+      const spend = await spendGate(g.userId, g.tier)
+      if (spend) return spend
+      const read = await Promise.all(links.map(async (l) => ({ l, r: await readLinkText(l.url, who).catch(() => ({ text: '', why: 'MVP could not open the link.' })) })))
+      for (const { l, r } of read) {
+        let host = l.url
+        try { host = new URL(l.url).hostname.replace(/^www\./, '') } catch { /* the address itself */ }
+        add({ id: `chatlink:${hashText(l.url)}`, kind: 'link', label: `Link from your chat: ${host}`, url: l.url, text: r.text, error: r.why })
+      }
+    }
     return save({})
   }
 

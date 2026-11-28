@@ -12,6 +12,8 @@ import { useCallback, useEffect, useState } from 'react'
 import { Loader2, AlertTriangle, Link2, FileUp, Type, MessageCircle, RefreshCw, X, Pencil, Check, ShieldCheck, HelpCircle } from 'lucide-react'
 import { requestTrybeApi } from '@/lib/extension-frame'
 import { readBrandCard } from '@/lib/trybe-brand-page'
+import { listOf, readConversation, readMessage, myIds } from '@/components/labs/TrybeInbox'
+import { findBrandChat, brandLines } from '@/lib/studio-chat'
 import { hashText, sheetCount, POLICY_WORDS, type StudioSheet, type RuleQuestion, type Policy, type SourceKind } from '@/lib/studio-rules'
 
 const ACCENT = 'var(--accent)'
@@ -144,6 +146,44 @@ export default function TrybeStudioRules({ brand, canRead, onSheet }: {
     try { take(await call({ brandId: brand.id, brandName: brand.name, ...body }, ms)); return true } catch (e) { setErr(e instanceof Error ? e.message : 'No answer'); return false } finally { setBusy(null) }
   }, [brand.id, brand.name, take])
 
+  // WHAT THEY SENT IN CHAT, FROM THE CHAT ITSELF (lib/studio-chat; Seb,
+  // 2026-11-28: "I've opened the chat, I've read the chat, it just doesn't
+  // want to automatically add it"). The chat with this brand found on TRYBE
+  // through SCOUT, the brand's own messages taken from it, and MVP's server
+  // reads every link in them. Without SCOUT, only what Messages already read.
+  const readChat = useCallback(async () => {
+    if (!canRead) { await run('chat', { action: 'chat' }); return }
+    setBusy('chat'); setErr(null)
+    try {
+      let chat: NonNullable<ReturnType<typeof readConversation>> | null = null
+      let looked = 0
+      for (let page = 1; page <= 3 && !chat; page++) {
+        const r = await requestTrybeApi('GET', `/backend/api/channels?page=${page}&limit=100`)
+        if (!r.ok) { setErr(`MVP could not read your chats on TRYBE (${r.error || `TRYBE answered ${r.status}`}). Try again in a moment.`); return }
+        const list = listOf(r.json).map(readConversation).filter((c): c is NonNullable<typeof c> => !!c)
+        looked += list.length
+        chat = findBrandChat(list, brand)
+        if (list.length < 100) break
+      }
+      if (!chat) { setErr(`MVP looked through your ${looked} latest chats on TRYBE and found none with ${brand.name}. When they write to you, press this again, or paste what they sent.`); return }
+      // Whose each message is: your own ids from TRYBE's profile.
+      const p = await requestTrybeApi('GET', '/backend/api/profile')
+      const me = p.ok ? myIds(p.json) : []
+      const msgs: NonNullable<ReturnType<typeof readMessage>>[] = []
+      for (let page = 1; page <= 2; page++) {
+        const r = await requestTrybeApi('GET', `/backend/api/channels/${encodeURIComponent(chat.id)}/messages?page=${page}&limit=50`)
+        if (!r.ok) { setErr(`MVP found your chat with ${brand.name} but could not read its messages (${r.error || `TRYBE answered ${r.status}`}). Try again in a moment.`); return }
+        const got = listOf(r.json).map((m) => readMessage(m, me)).filter((m): m is NonNullable<typeof m> => !!m)
+        msgs.push(...got)
+        if (got.length < 50) break
+      }
+      setBusy(null)
+      await run('chat', { action: 'chat', chat: { name: chat.name, messages: brandLines(msgs) } }, 240_000)
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'SCOUT did not answer.')
+    } finally { setBusy((b) => (b === 'chat' ? null : b)) }
+  }, [brand, canRead, run])
+
   // What MVP has, then TRYBE's brief read through SCOUT: sent only when it is
   // new or changed, so the brief document is not read again every visit.
   useEffect(() => {
@@ -224,7 +264,7 @@ export default function TrybeStudioRules({ brand, canRead, onSheet }: {
             <label className={`${btn} cursor-pointer`} style={btnSoft}>{busy === 'file' ? <Loader2 size={14} className="animate-spin" /> : <FileUp size={14} />} Add a PDF or picture
               <input type="file" accept="application/pdf,image/png,image/jpeg,image/webp,text/plain" className="hidden" disabled={!!busy} onChange={(e) => { void addFile(e.target.files?.[0] ?? null); e.target.value = '' }} /></label>
             <button className={btn} style={btnSoft} onClick={() => setAdding(adding === 'text' ? null : 'text')} disabled={!!busy}><Type size={14} /> Paste words</button>
-            <button className={btn} style={btnSoft} onClick={() => void run('chat', { action: 'chat' })} disabled={!!busy}>{busy === 'chat' ? <Loader2 size={14} className="animate-spin" /> : <MessageCircle size={14} />} Add what they sent in chat</button>
+            <button className={btn} style={btnSoft} onClick={() => void readChat()} disabled={!!busy}>{busy === 'chat' ? <Loader2 size={14} className="animate-spin" /> : <MessageCircle size={14} />} Add what they sent in chat</button>
           </div>
           {adding === 'link' && (
             <div className="flex flex-wrap gap-2 mb-2">
